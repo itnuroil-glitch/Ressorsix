@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, TouchableOpacity, Modal, Switch, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CustomDropdown, SearchableDropdown } from './CustomFieldsTab';
-
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+import { API_URL } from '../config';
 
 const COLORS = {
   primary: '#1A4D3E',
