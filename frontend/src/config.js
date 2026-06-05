@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
-// For Web development, localhost is preferred and extremely reliable.
-// For mobile devices/emulators, we use the machine's current local IP.
+// For Web development, use the EXPO_PUBLIC_API_URL_WEB env variable.
+// For Mobile devices/emulators, use the EXPO_PUBLIC_API_URL_MOBILE env variable.
 export const API_URL = Platform.OS === 'web'
-  ? 'http://localhost:5000'
-  : 'http://192.168.0.104:5000';
+  ? (process.env.EXPO_PUBLIC_API_URL_WEB || 'http://localhost:5000')
+  : (process.env.EXPO_PUBLIC_API_URL_MOBILE || 'http://192.168.0.104:5000');

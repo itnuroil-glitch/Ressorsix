@@ -178,7 +178,7 @@ const CustomDropdown = ({ selectedValue, onValueChange, options }) => {
   );
 };
 
-export default function FieldPermissionsTab({ user, showToast, renderTableToolbar, renderTablePagination }) {
+export default function FieldPermissionsTab({ user, showToast, renderTableToolbar, renderTablePagination, isSidebarCollapsed }) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width > 768;
 
@@ -663,7 +663,7 @@ export default function FieldPermissionsTab({ user, showToast, renderTableToolba
 
       {/* MODAL */}
       <Modal visible={isModalOpen} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, isLargeScreen && { marginLeft: isSidebarCollapsed ? 78 : 260 }]}>
           <View style={[styles.modalCard, { height: '90%' }]}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleWrapper}>

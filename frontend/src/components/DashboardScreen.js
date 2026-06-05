@@ -4297,15 +4297,15 @@ export default function DashboardScreen({ user, onSignOut }) {
       case 'country':
         return renderCountryTab();
       case 'custom_fields':
-        return <CustomFieldsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} />;
+        return <CustomFieldsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'field_permissions':
-        return <FieldPermissionsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} />;
+        return <FieldPermissionsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'vehicle_insurance':
-        return <VehicleInsuranceTab user={user} showToast={showToast} />;
+        return <VehicleInsuranceTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'vehicle_details':
-        return <VehicleDetailsTab user={user} showToast={showToast} />;
+        return <VehicleDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'vehicle_purchase':
-        return <VehiclePurchaseTab user={user} showToast={showToast} />;
+        return <VehiclePurchaseTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'state':
         return renderStateTab();
       case 'employees':
@@ -4323,6 +4323,11 @@ export default function DashboardScreen({ user, onSignOut }) {
   const selectedParentModule = newParentId
     ? modules.find(m => String(m.id) === newParentId)
     : null;
+
+  const dynamicModalOverlayStyle = [
+    styles.modalOverlay,
+    isLargeScreen && { marginLeft: isSidebarCollapsed ? 78 : 260 }
+  ];
 
   return (
     <SafeAreaView style={styles.container}>
@@ -4378,7 +4383,7 @@ export default function DashboardScreen({ user, onSignOut }) {
         transparent={true}
         onRequestClose={() => setChangePasswordVisible(false)}
       >
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setChangePasswordVisible(false)}>
+        <TouchableOpacity style={dynamicModalOverlayStyle} activeOpacity={1} onPress={() => setChangePasswordVisible(false)}>
           <TouchableOpacity
             activeOpacity={1}
             onPress={() => { }}
@@ -4482,7 +4487,7 @@ export default function DashboardScreen({ user, onSignOut }) {
         transparent={true}
         onRequestClose={() => setDeleteConfirmationVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={dynamicModalOverlayStyle}>
           <View style={[styles.modalCard, { width: width > 768 ? 480 : '95%', maxWidth: 480 }]}>
 
             {/* Modal Header */}
@@ -4557,7 +4562,7 @@ export default function DashboardScreen({ user, onSignOut }) {
           setIsAddModalOpen(false);
         }}
       >
-        <View style={styles.modalOverlay}>
+        <View style={dynamicModalOverlayStyle}>
           <View style={[styles.modalCard, { width: width > 768 ? 720 : '95%', maxWidth: 720, maxHeight: '90%' }]}>
 
             {/* Modal Header */}
@@ -4778,7 +4783,7 @@ export default function DashboardScreen({ user, onSignOut }) {
           setIsAddCountryModalOpen(false);
         }}
       >
-        <View style={styles.modalOverlay}>
+        <View style={dynamicModalOverlayStyle}>
           <View style={[styles.modalCard, { width: width > 768 ? 720 : '95%', maxWidth: 720, maxHeight: '90%' }]}>
 
             {/* Modal Header */}
@@ -4857,7 +4862,7 @@ export default function DashboardScreen({ user, onSignOut }) {
           setIsAddStateModalOpen(false);
         }}
       >
-        <View style={styles.modalOverlay}>
+        <View style={dynamicModalOverlayStyle}>
           <View style={[styles.modalCard, { width: width > 768 ? 720 : '95%', maxWidth: 720, maxHeight: '90%' }]}>
 
             {/* Modal Header */}
@@ -4968,7 +4973,7 @@ export default function DashboardScreen({ user, onSignOut }) {
           setIsAddClientModalOpen(false);
         }}
       >
-        <View style={styles.modalOverlay}>
+        <View style={dynamicModalOverlayStyle}>
           <View style={[styles.modalCard, { width: width > 1500 ? 1400 : '95%', maxWidth: 1400, maxHeight: '92%', display: 'flex', flexDirection: 'column' }]}>
 
             {/* Modal Header */}
@@ -5730,7 +5735,7 @@ export default function DashboardScreen({ user, onSignOut }) {
           setIsAddRoleModalOpen(false);
         }}
       >
-        <View style={styles.modalOverlay}>
+        <View style={dynamicModalOverlayStyle}>
           <View style={[styles.modalCard, { width: width > 768 ? 720 : '95%', maxWidth: 720, maxHeight: '90%' }]}>
 
             {/* Modal Header */}
@@ -5870,7 +5875,7 @@ export default function DashboardScreen({ user, onSignOut }) {
           setIsAddDepartmentModalOpen(false);
         }}
       >
-        <View style={styles.modalOverlay}>
+        <View style={dynamicModalOverlayStyle}>
           <View style={[styles.modalCard, { width: width > 768 ? 720 : '95%', maxWidth: 720, maxHeight: '90%' }]}>
 
             {/* Modal Header */}
@@ -6010,7 +6015,7 @@ export default function DashboardScreen({ user, onSignOut }) {
           setIsAddSmtpModalOpen(false);
         }}
       >
-        <View style={styles.modalOverlay}>
+        <View style={dynamicModalOverlayStyle}>
           <View style={[styles.modalCard, { width: width > 768 ? 800 : '95%', maxWidth: 800, maxHeight: '90%' }]}>
 
             {/* Modal Header */}
@@ -6417,7 +6422,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                 setIsCompanyModalOpen(false);
               }}
             >
-              <View style={styles.modalOverlay}>
+              <View style={dynamicModalOverlayStyle}>
                 <View style={[styles.modalCard, { width: width > 768 ? 720 : '95%', maxWidth: 720, maxHeight: '90%' }]}>
 
                   {/* Modal Header */}
@@ -6964,7 +6969,7 @@ export default function DashboardScreen({ user, onSignOut }) {
             {/* Employee Modal */}
             {isEmployeeModalOpen && (
               <Modal transparent={true} animationType="fade" visible={isEmployeeModalOpen}>
-                <View style={styles.modalOverlay}>
+                <View style={dynamicModalOverlayStyle}>
                   <View style={[styles.modalCard, { width: width > 768 ? 720 : '95%', maxWidth: 720, maxHeight: '90%' }]}>
                     {/* Modal Header */}
                     <View style={styles.modalHeader}>

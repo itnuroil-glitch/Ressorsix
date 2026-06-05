@@ -181,7 +181,7 @@ export const CustomDropdown = ({ selectedValue, onValueChange, options }) => {
   );
 };
 
-export default function CustomFieldsTab({ user, showToast, renderTableToolbar, renderTablePagination }) {
+export default function CustomFieldsTab({ user, showToast, renderTableToolbar, renderTablePagination, isSidebarCollapsed }) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width > 768;
 
@@ -692,7 +692,7 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
 
       {/* MODAL */}
       <Modal visible={isModalOpen} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, isLargeScreen && { marginLeft: isSidebarCollapsed ? 78 : 260 }]}>
           <View style={[styles.modalCard, { height: '90%' }]}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleWrapper}>
@@ -1065,7 +1065,7 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
 
       {/* SUBSECTION MODAL */}
       <Modal visible={!!activeSubsectionModal} transparent animationType="slide">
-        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.75)', justifyContent: 'center', alignItems: 'center', padding: 20, zIndex: 10000 }}>
+        <View style={[{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.75)', justifyContent: 'center', alignItems: 'center', padding: 20, zIndex: 10000 }, isLargeScreen && { marginLeft: isSidebarCollapsed ? 78 : 260 }]}>
           <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, width: '100%', maxWidth: 850, maxHeight: '90%', display: 'flex', flexDirection: 'column', shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 15 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 20, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>

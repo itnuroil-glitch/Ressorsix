@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, TouchableOpacity, Modal, Switch } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, TouchableOpacity, Modal, Switch, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CustomDropdown, SearchableDropdown } from './CustomFieldsTab';
 
@@ -19,7 +19,9 @@ const COLORS = {
   white: '#FFFFFF',
 };
 
-export default function VehicleDetailsTab({ user, showToast }) {
+export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed }) {
+  const { width } = useWindowDimensions();
+  const isLargeScreen = width > 768;
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fieldsLayout, setFieldsLayout] = useState(null);
@@ -990,7 +992,7 @@ export default function VehicleDetailsTab({ user, showToast }) {
         animationType="fade"
         onRequestClose={() => { setIsFormOpen(false); setEditingRecord(null); setFormData({}); setIsViewOnly(false); }}
       >
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, isLargeScreen && { marginLeft: isSidebarCollapsed ? 78 : 260 }]}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
