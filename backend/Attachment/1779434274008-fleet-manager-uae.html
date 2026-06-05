@@ -1,0 +1,3024 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FleetDesk UAE — Vehicle Asset Management</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0f1117;
+  --bg2: #171b25;
+  --bg3: #1e2334;
+  --bg4: #252b3b;
+  --border: rgba(255,255,255,0.07);
+  --border2: rgba(255,255,255,0.13);
+  --text: #e8eaf0;
+  --text2: #8b91a6;
+  --text3: #565d72;
+  --accent: #3d8ef0;
+  --accent2: #1a6bd4;
+  --gold: #f0b429;
+  --red: #e85151;
+  --green: #3dce84;
+  --orange: #f07a3d;
+  --purple: #9b6ef0;
+  --teal: #3dcece;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.4);
+  --font: 'DM Sans', sans-serif;
+  --mono: 'DM Mono', monospace;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 4px; }
+
+/* Layout */
+.app { display: flex; height: 100vh; overflow: hidden; }
+
+/* Sidebar */
+.sidebar {
+  width: 230px; min-width: 230px;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+}
+.sidebar-logo {
+  padding: 20px 18px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.logo-mark {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
+}
+.logo-icon {
+  width: 28px; height: 28px; background: var(--accent);
+  border-radius: 7px; display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 600; color: #fff;
+}
+.logo-text { font-size: 14px; font-weight: 600; color: var(--text); }
+.logo-sub { font-size: 11px; color: var(--text3); }
+
+/* Company switcher */
+.company-switcher {
+  margin: 12px 12px 4px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.company-label { font-size: 10px; color: var(--text3); margin-bottom: 2px; }
+.company-name { font-size: 12px; font-weight: 500; color: var(--text); display: flex; align-items: center; justify-content: space-between; }
+
+.nav-group { padding: 8px 0; }
+.nav-section { font-size: 10px; color: var(--text3); padding: 6px 18px 3px; text-transform: uppercase; letter-spacing: 0.08em; }
+.nav-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 18px; font-size: 12.5px; color: var(--text2);
+  cursor: pointer; border-left: 2px solid transparent;
+  transition: all 0.15s; user-select: none;
+}
+.nav-item:hover { background: var(--bg3); color: var(--text); }
+.nav-item.active { background: rgba(61,142,240,0.1); color: var(--accent); border-left-color: var(--accent); font-weight: 500; }
+.nav-badge { margin-left: auto; font-size: 10px; background: var(--red); color: #fff; padding: 1px 6px; border-radius: 10px; }
+.nav-badge.warn { background: var(--orange); }
+
+/* Main content */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.topbar {
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+  padding: 14px 24px; display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.topbar-left h1 { font-size: 16px; font-weight: 600; color: var(--text); }
+.topbar-left p { font-size: 12px; color: var(--text3); margin-top: 1px; }
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+
+/* Buttons */
+.btn {
+  padding: 7px 14px; border-radius: var(--radius-sm); font-size: 12.5px;
+  font-family: var(--font); border: 1px solid var(--border2); background: var(--bg3);
+  color: var(--text); cursor: pointer; font-weight: 500; transition: all 0.15s;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.btn:hover { background: var(--bg4); border-color: var(--border2); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent2); }
+.btn-sm { padding: 4px 10px; font-size: 11px; }
+.btn-danger { background: rgba(232,81,81,0.15); border-color: rgba(232,81,81,0.3); color: var(--red); }
+.btn-success { background: rgba(61,206,132,0.15); border-color: rgba(61,206,132,0.3); color: var(--green); }
+
+/* Content area */
+.content { flex: 1; overflow-y: auto; padding: 20px 24px; }
+
+/* Pages */
+.page { display: none; }
+.page.active { display: block; }
+
+/* Stats row */
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+.stat-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 16px;
+}
+.stat-label { font-size: 11px; color: var(--text3); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+.stat-value { font-size: 24px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.stat-sub { font-size: 11px; color: var(--text3); margin-top: 4px; }
+.stat-card.warn .stat-value { color: var(--orange); }
+.stat-card.danger .stat-value { color: var(--red); }
+.stat-card.success .stat-value { color: var(--green); }
+.stat-card.accent .stat-value { color: var(--accent); }
+
+/* Alerts */
+.alerts-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+.alert-card {
+  border-radius: var(--radius-sm); padding: 10px 13px;
+  border: 1px solid; font-size: 12px;
+}
+.alert-card.red { background: rgba(232,81,81,0.08); border-color: rgba(232,81,81,0.25); }
+.alert-card.amber { background: rgba(240,122,61,0.08); border-color: rgba(240,122,61,0.25); }
+.alert-card.blue { background: rgba(61,142,240,0.08); border-color: rgba(61,142,240,0.25); }
+.alert-title { font-weight: 500; margin-bottom: 3px; }
+.alert-card.red .alert-title { color: var(--red); }
+.alert-card.amber .alert-title { color: var(--orange); }
+.alert-card.blue .alert-title { color: var(--accent); }
+.alert-body { color: var(--text2); font-size: 11px; }
+
+/* Cards */
+.card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px;
+}
+.card-title { font-size: 13px; font-weight: 500; color: var(--text2); margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* Two col */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+/* Table */
+.table-wrap { overflow-x: auto; margin: 0 -18px; padding: 0 18px; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+thead th { text-align: left; padding: 8px 10px; color: var(--text3); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); white-space: nowrap; }
+tbody td { padding: 10px 10px; color: var(--text); border-bottom: 1px solid var(--border); vertical-align: middle; }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: var(--bg3); }
+.mono { font-family: var(--mono); font-size: 11.5px; }
+
+/* Badges */
+.badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 20px; font-weight: 500; white-space: nowrap; }
+.badge-green { background: rgba(61,206,132,0.12); color: var(--green); border: 1px solid rgba(61,206,132,0.2); }
+.badge-red { background: rgba(232,81,81,0.12); color: var(--red); border: 1px solid rgba(232,81,81,0.2); }
+.badge-amber { background: rgba(240,122,61,0.12); color: var(--orange); border: 1px solid rgba(240,122,61,0.2); }
+.badge-blue { background: rgba(61,142,240,0.12); color: var(--accent); border: 1px solid rgba(61,142,240,0.2); }
+.badge-gray { background: rgba(139,145,166,0.12); color: var(--text2); border: 1px solid rgba(139,145,166,0.15); }
+.badge-purple { background: rgba(155,110,240,0.12); color: var(--purple); border: 1px solid rgba(155,110,240,0.2); }
+
+/* Forms */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.form-group { display: flex; flex-direction: column; gap: 5px; }
+.form-group.full { grid-column: 1 / -1; }
+.form-label { font-size: 11px; color: var(--text2); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+.form-input, .form-select, .form-textarea {
+  background: var(--bg3); border: 1px solid var(--border2);
+  border-radius: var(--radius-sm); padding: 8px 11px;
+  font-size: 13px; color: var(--text); font-family: var(--font);
+  transition: border-color 0.15s; outline: none;
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--accent); }
+.form-input::placeholder { color: var(--text3); }
+.form-select option { background: var(--bg3); }
+.form-textarea { resize: vertical; min-height: 70px; }
+.form-section { font-size: 13px; font-weight: 600; color: var(--text); margin: 18px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+
+/* Tabs */
+.tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
+.tab { padding: 9px 16px; font-size: 12.5px; color: var(--text3); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.15s; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 500; }
+
+/* Modal overlay */
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.65); z-index: 1000;
+  align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--bg2); border: 1px solid var(--border2);
+  border-radius: 14px; width: 680px; max-width: 96vw;
+  max-height: 88vh; overflow-y: auto; box-shadow: var(--shadow);
+  animation: fadeUp 0.2s ease;
+}
+@keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+.modal-header {
+  padding: 18px 22px 14px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-title { font-size: 15px; font-weight: 600; }
+.modal-close { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 18px; padding: 2px 6px; border-radius: 4px; }
+.modal-close:hover { color: var(--text); background: var(--bg4); }
+.modal-body { padding: 20px 22px; }
+.modal-footer { padding: 14px 22px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; }
+
+/* Config panel */
+.config-panel {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px; margin-bottom: 20px;
+}
+.config-step { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+.config-step:last-child { margin-bottom: 0; }
+.step-num { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+.step-content h3 { font-size: 13px; font-weight: 500; margin-bottom: 3px; }
+.step-content p { font-size: 12px; color: var(--text2); line-height: 1.5; }
+.step-content a { color: var(--accent); text-decoration: none; }
+.step-content a:hover { text-decoration: underline; }
+
+/* Search & filter bar */
+.filter-bar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.search-input {
+  flex: 1; min-width: 180px; background: var(--bg3); border: 1px solid var(--border2);
+  border-radius: var(--radius-sm); padding: 7px 12px 7px 32px; font-size: 12.5px;
+  color: var(--text); font-family: var(--font); outline: none; position: relative;
+}
+.search-wrap { position: relative; flex: 1; min-width: 180px; }
+.search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text3); font-size: 13px; pointer-events: none; }
+
+/* Empty state */
+.empty-state { text-align: center; padding: 48px 20px; color: var(--text3); }
+.empty-icon { font-size: 32px; margin-bottom: 10px; }
+.empty-title { font-size: 14px; font-weight: 500; color: var(--text2); margin-bottom: 6px; }
+.empty-sub { font-size: 12px; }
+
+/* Status dot */
+.status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+.dot-green { background: var(--green); }
+.dot-red { background: var(--red); }
+.dot-amber { background: var(--orange); }
+
+/* Connection status bar */
+.conn-bar {
+  padding: 6px 24px; font-size: 11.5px;
+  display: flex; align-items: center; gap: 8px;
+  border-top: 1px solid var(--border);
+  background: var(--bg2); color: var(--text3);
+}
+.conn-indicator { width: 7px; height: 7px; border-radius: 50%; background: var(--text3); }
+.conn-indicator.connected { background: var(--green); }
+.conn-indicator.error { background: var(--red); }
+
+/* Loading spinner */
+.spinner { width: 16px; height: 16px; border: 2px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Toast notification */
+.toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+.toast {
+  background: var(--bg3); border: 1px solid var(--border2); border-radius: var(--radius-sm);
+  padding: 10px 16px; font-size: 12.5px; min-width: 240px;
+  box-shadow: var(--shadow); animation: toastIn 0.2s ease; display: flex; align-items: center; gap: 8px;
+}
+@keyframes toastIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+.toast.success { border-color: rgba(61,206,132,0.3); }
+.toast.error { border-color: rgba(232,81,81,0.3); }
+.toast.success .toast-icon { color: var(--green); }
+.toast.error .toast-icon { color: var(--red); }
+
+/* Document attachment cards */
+.doc-card { display:flex; align-items:center; gap:10px; padding:9px 12px; background:var(--bg3); border:1px solid var(--border); border-radius:var(--radius-sm); margin-bottom:6px; }
+.doc-icon { font-size:20px; flex-shrink:0; }
+.doc-info { flex:1; min-width:0; }
+.doc-name { font-size:12px; font-weight:500; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.doc-meta { font-size:11px; color:var(--text3); margin-top:1px; }
+.doc-label-badge { font-size:10px; padding:2px 8px; border-radius:20px; background:rgba(61,142,240,0.12); color:var(--accent); border:1px solid rgba(61,142,240,0.2); margin-left:6px; }
+
+.renew-urgent td { background: rgba(232,81,81,0.05); }
+.renew-soon td { background: rgba(240,122,61,0.05); }
+</style>
+</head>
+<body>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- MAIN APP -->
+<div class="app">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-mark">
+        <div class="logo-icon">F</div>
+        <div class="logo-text">FleetDesk UAE</div>
+      </div>
+      <div class="logo-sub">Vehicle Asset Management</div>
+    </div>
+
+    <div class="company-switcher" onclick="openModal('companyModal')">
+      <div class="company-label">Active company</div>
+      <div class="company-name" id="activeCompanyName">All Companies <span>▾</span></div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-section">Overview</div>
+      <div class="nav-item active" onclick="nav('dashboard',this)">⊞ &nbsp;Dashboard</div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-section">Vehicles</div>
+      <div class="nav-item" onclick="nav('vehicles',this)">🚗 &nbsp;All Vehicles</div>
+      <div class="nav-item" onclick="openAddVehicle()">＋ &nbsp;Add Vehicle</div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-section">Compliance</div>
+      <div class="nav-item" onclick="nav('insurance',this)">🛡 &nbsp;Insurance</div>
+      <div class="nav-item" onclick="nav('permits',this)">📋 &nbsp;Permits & Mulkiya</div>
+      <div class="nav-item" onclick="nav('fines',this)" id="navFines">⚠ &nbsp;Traffic Fines</div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-section">Financials</div>
+      <div class="nav-item" onclick="nav('purchase',this)">🏷 &nbsp;Purchase Records</div>
+      <div class="nav-item" onclick="nav('expenses',this)">💳 &nbsp;Expenses</div>
+      <div class="nav-item" onclick="nav('fuel',this)">⛽ &nbsp;Fuel Log</div>
+      <div class="nav-item" onclick="nav('toll',this)">🚦 &nbsp;Toll (Salik / Darb)</div>
+      <div class="nav-item" onclick="nav('tollaccounts',this)">🏦 &nbsp;Toll Accounts</div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-section">Maintenance</div>
+      <div class="nav-item" onclick="nav('maintenance',this)">🔧 &nbsp;Maintenance</div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-section">Reports</div>
+      <div class="nav-item" onclick="nav('renewals',this)">📅 &nbsp;Renewal Calendar</div>
+      <div class="nav-item" onclick="nav('reports',this)">📊 &nbsp;Reports</div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-section">Setup</div>
+      <div class="nav-item" onclick="nav('companies',this)">🏢 &nbsp;Companies</div>
+      <div class="nav-item" onclick="nav('settings',this)">⚙ &nbsp;Google Sheets</div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-left">
+        <h1 id="pageTitle">Dashboard</h1>
+        <p id="pageSubtitle">All companies · All emirates</p>
+      </div>
+      <div class="topbar-right">
+        <span id="syncStatus" style="font-size:11px;color:var(--text3);">Not connected to Google Sheets</span>
+        <button class="btn btn-sm" onclick="syncAll()">↻ &nbsp;Sync</button>
+        <button class="btn btn-primary btn-sm" onclick="openAddVehicle()">+ Add Vehicle</button>
+      </div>
+    </div>
+
+    <div class="content" id="mainContent">
+
+      <!-- DASHBOARD -->
+      <div id="page-dashboard" class="page active">
+        <div class="stats-grid" id="dashStats">
+          <div class="stat-card accent"><div class="stat-label">Total Vehicles</div><div class="stat-value" id="s-total">0</div><div class="stat-sub">Across all companies</div></div>
+          <div class="stat-card warn"><div class="stat-label">Expiring ≤ 30 days</div><div class="stat-value" id="s-expiring">0</div><div class="stat-sub">Insurance / Mulkiya</div></div>
+          <div class="stat-card danger"><div class="stat-label">Unpaid Fines</div><div class="stat-value" id="s-fines">AED 0</div><div class="stat-sub" id="s-fines-count">0 fines</div></div>
+          <div class="stat-card"><div class="stat-label">MTD Expenses</div><div class="stat-value" id="s-expenses">AED 0</div><div class="stat-sub">This month total</div></div>
+        </div>
+        <div class="alerts-row" id="dashAlerts">
+          <div class="alert-card red"><div class="alert-title">0 vehicles — insurance expiring &lt;7 days</div><div class="alert-body" id="alert-ins">No urgent alerts</div></div>
+          <div class="alert-card amber"><div class="alert-title" id="alert-mul-title">0 Mulkiya renewals &lt;30 days</div><div class="alert-body" id="alert-mul">Check renewal calendar</div></div>
+          <div class="alert-card blue"><div class="alert-title" id="alert-maint-title">0 vehicles due for service</div><div class="alert-body" id="alert-maint">No upcoming services</div></div>
+        </div>
+        <div class="two-col">
+          <div class="card">
+            <div class="card-title">Fleet by company</div>
+            <table>
+              <thead><tr><th>Company</th><th>Traffic File No.</th><th>Vehicles</th><th>Emirates</th><th>TF Status</th></tr></thead>
+              <tbody id="dashCompanyTable"><tr><td colspan="4" style="text-align:center;color:var(--text3);padding:20px;">Add companies in Settings to begin</td></tr></tbody>
+            </table>
+          </div>
+          <div class="card">
+            <div class="card-title">Recent activity</div>
+            <table>
+              <thead><tr><th>Date</th><th>Plate</th><th>Action</th></tr></thead>
+              <tbody id="dashActivity"><tr><td colspan="3" style="text-align:center;color:var(--text3);padding:20px;">No recent activity</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- VEHICLES -->
+      <div id="page-vehicles" class="page">
+        <div class="filter-bar">
+          <div class="search-wrap">
+            <span class="search-icon">🔍</span>
+            <input class="search-input" id="vehicleSearch" placeholder="Search plate, make, model, driver..." oninput="renderVehicles()">
+          </div>
+          <select class="form-select" id="vFilterType" style="width:130px;" onchange="renderVehicles()">
+            <option value="">All types</option>
+            <option>Sedan</option><option>SUV</option><option>Van</option><option>Pickup</option><option>Truck</option><option>Bus</option><option>Motorcycle</option>
+          </select>
+          <select class="form-select" id="vFilterCompany" style="width:160px;" onchange="renderVehicles()">
+            <option value="">All companies</option>
+          </select>
+          <select class="form-select" id="vFilterEmirate" style="width:130px;" onchange="renderVehicles()">
+            <option value="">All emirates</option>
+            <option>Dubai</option><option>Sharjah</option><option>Abu Dhabi</option><option>Ajman</option><option>RAK</option><option>Fujairah</option><option>UAQ</option>
+          </select>
+        </div>
+        <div class="card" style="padding:0 0 0 0;">
+          <div class="table-wrap" style="padding:0 18px;">
+            <table>
+              <thead><tr><th>Asset Code</th><th>Plate</th><th>Make / Model</th><th>Year</th><th>Type</th><th>Emirate</th><th>Company</th><th>Traffic File</th><th>Seats</th><th>Payload</th><th>Insurance</th><th>Mulkiya</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="vehiclesTable"><tr><td colspan="14" class="empty-state"><div class="empty-icon">🚗</div><div class="empty-title">No vehicles yet</div><div class="empty-sub">Add a company first, then register vehicles under it</div></td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- INSURANCE -->
+      <div id="page-insurance" class="page">
+        <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);">
+          <div class="stat-card"><div class="stat-label">Total policies</div><div class="stat-value" id="ins-total">0</div></div>
+          <div class="stat-card danger"><div class="stat-label">Expiring &lt;7 days</div><div class="stat-value" id="ins-7">0</div></div>
+          <div class="stat-card warn"><div class="stat-label">Expiring 7–30 days</div><div class="stat-value" id="ins-30">0</div></div>
+          <div class="stat-card"><div class="stat-label">Annual premium total</div><div class="stat-value" id="ins-cost">AED 0</div></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+          <button class="btn btn-primary" onclick="openInsuranceModal()">+ Add Insurance Policy</button>
+        </div>
+        <div class="card" style="padding:0 0 0 0;">
+          <div class="table-wrap" style="padding:0 18px;">
+            <table>
+              <thead><tr><th>Plate</th><th>Company</th><th>Insurer</th><th>Policy No.</th><th>Type</th><th>Start</th><th>Expiry</th><th>Premium (AED)</th><th>Agency Repair</th><th>Excess (AED)</th><th>Status</th><th>Docs</th><th>Actions</th></tr></thead>
+              <tbody id="insuranceTable"><tr><td colspan="13" style="text-align:center;color:var(--text3);padding:24px;">No insurance records yet</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- PERMITS -->
+      <div id="page-permits" class="page">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+          <button class="btn btn-primary" onclick="openModal('permitModal')">+ Add Permit / Mulkiya</button>
+        </div>
+        <div class="card" style="padding:0 0 0 0;">
+          <div class="table-wrap" style="padding:0 18px;">
+            <table>
+              <thead><tr><th>Plate</th><th>Company</th><th>Emirate</th><th>Mulkiya Expiry</th><th>Permit No.</th><th>Permit Type</th><th>Permit Expiry</th><th>Authority</th><th>Fee (AED)</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="permitsTable"><tr><td colspan="11" style="text-align:center;color:var(--text3);padding:24px;">No permit records yet</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- FINES -->
+      <div id="page-fines" class="page">
+        <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);">
+          <div class="stat-card danger"><div class="stat-label">Outstanding</div><div class="stat-value" id="fine-outstanding">AED 0</div></div>
+          <div class="stat-card success"><div class="stat-label">Paid this year</div><div class="stat-value" id="fine-paid">AED 0</div></div>
+          <div class="stat-card warn"><div class="stat-label">Open fines</div><div class="stat-value" id="fine-open">0</div></div>
+          <div class="stat-card"><div class="stat-label">Total black points</div><div class="stat-value" id="fine-points">0</div></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+          <button class="btn btn-primary" onclick="openModal('fineModal')">+ Record Fine</button>
+        </div>
+        <div class="card" style="padding:0 0 0 0;">
+          <div class="table-wrap" style="padding:0 18px;">
+            <table>
+              <thead><tr><th>Plate</th><th>Company</th><th>Fine No.</th><th>Date</th><th>Violation</th><th>Authority</th><th>Amount (AED)</th><th>Black Pts</th><th>Paid Date</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="finesTable"><tr><td colspan="11" style="text-align:center;color:var(--text3);padding:24px;">No fines recorded</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- PURCHASE -->
+      <div id="page-purchase" class="page">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+          <button class="btn btn-primary" onclick="openPurchaseModal()">+ Add Purchase Record</button>
+        </div>
+        <div class="card" style="padding:0 0 0 0;">
+          <div class="table-wrap" style="padding:0 18px;">
+            <table>
+              <thead><tr><th>Plate</th><th>Make / Model</th><th>Company</th><th>Purchase Date</th><th>Supplier</th><th>Price (AED)</th><th>Payment</th><th>Chassis No.</th><th>Documents</th><th>Actions</th></tr></thead>
+              <tbody id="purchaseTable"><tr><td colspan="9" style="text-align:center;color:var(--text3);padding:24px;">No purchase records yet</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- EXPENSES -->
+      <div id="page-expenses" class="page">
+        <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);">
+          <div class="stat-card"><div class="stat-label">This month</div><div class="stat-value" id="exp-month">AED 0</div></div>
+          <div class="stat-card"><div class="stat-label">Fuel</div><div class="stat-value" id="exp-fuel">AED 0</div></div>
+          <div class="stat-card"><div class="stat-label">Maintenance</div><div class="stat-value" id="exp-maint">AED 0</div></div>
+          <div class="stat-card"><div class="stat-label">Other</div><div class="stat-value" id="exp-other">AED 0</div></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+          <button class="btn btn-primary" onclick="openModal('expenseModal')">+ Add Expense</button>
+        </div>
+        <div class="card" style="padding:0 0 0 0;">
+          <div class="table-wrap" style="padding:0 18px;">
+            <table>
+              <thead><tr><th>Date</th><th>Plate</th><th>Company</th><th>Category</th><th>Description</th><th>Amount (AED)</th><th>Vendor</th><th>Notes</th><th>Actions</th></tr></thead>
+              <tbody id="expensesTable"><tr><td colspan="9" style="text-align:center;color:var(--text3);padding:24px;">No expenses logged</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- FUEL LOG -->
+      <div id="page-fuel" class="page">
+        <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);">
+          <div class="stat-card"><div class="stat-label">This month cost</div><div class="stat-value" id="fuel-cost">AED 0</div></div>
+          <div class="stat-card"><div class="stat-label">Total litres</div><div class="stat-value" id="fuel-litres">0 L</div></div>
+          <div class="stat-card"><div class="stat-label">Avg per fill</div><div class="stat-value" id="fuel-avg">AED 0</div></div>
+          <div class="stat-card"><div class="stat-label">Fills this month</div><div class="stat-value" id="fuel-fills">0</div></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+          <button class="btn btn-primary" onclick="openModal('fuelModal')">+ Log Fuel Fill</button>
+        </div>
+        <div class="card" style="padding:0 0 0 0;">
+          <div class="table-wrap" style="padding:0 18px;">
+            <table>
+              <thead><tr><th>Date</th><th>Plate</th><th>Company</th><th>Station</th><th>Fuel Type</th><th>Litres</th><th>Cost (AED)</th><th>Odometer (km)</th><th>Driver</th><th>Actions</th></tr></thead>
+              <tbody id="fuelTable"><tr><td colspan="10" style="text-align:center;color:var(--text3);padding:24px;">No fuel logs yet</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TOLL TRANSACTIONS -->
+      <div id="page-toll" class="page">
+        <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);">
+          <div class="stat-card"><div class="stat-label">This month total</div><div class="stat-value" id="toll-month">AED 0</div></div>
+          <div class="stat-card accent"><div class="stat-label">Salik (Dubai)</div><div class="stat-value" id="toll-salik">AED 0</div></div>
+          <div class="stat-card success"><div class="stat-label">Darb (Abu Dhabi)</div><div class="stat-value" id="toll-darb">AED 0</div></div>
+          <div class="stat-card warn"><div class="stat-label">Low balance accounts</div><div class="stat-value" id="toll-low">0</div></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <div style="display:flex;gap:8px;">
+            <select class="form-select" id="tollFilterType" style="width:140px;" onchange="renderToll()">
+              <option value="">All types</option><option value="Salik">Salik (Dubai)</option><option value="Darb">Darb (Abu Dhabi)</option>
+            </select>
+            <select class="form-select" id="tollFilterCompany" style="width:170px;" onchange="renderToll()">
+              <option value="">All companies</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" onclick="openTollTxnModal()">+ Add Transaction</button>
+        </div>
+        <div class="card" style="padding:0;">
+          <div class="table-wrap" style="padding:0 18px;">
+            <table>
+              <thead><tr><th>Date</th><th>Type</th><th>Plate</th><th>Company</th><th>Account No.</th><th>Gate / Location</th><th>Amount (AED)</th><th>Balance After</th><th>Top-up</th><th>Actions</th></tr></thead>
+              <tbody id="tollTable"><tr><td colspan="10" style="text-align:center;color:var(--text3);padding:24px;">No toll records yet</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TOLL ACCOUNTS -->
+      <div id="page-tollaccounts" class="page">
+        <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);">
+          <div class="stat-card"><div class="stat-label">Total accounts</div><div class="stat-value" id="ta-total">0</div></div>
+          <div class="stat-card accent"><div class="stat-label">Salik accounts</div><div class="stat-value" id="ta-salik">0</div></div>
+          <div class="stat-card success"><div class="stat-label">Darb accounts</div><div class="stat-value" id="ta-darb">0</div></div>
+          <div class="stat-card warn"><div class="stat-label">Low balance (&lt;AED 50)</div><div class="stat-value" id="ta-low">0</div></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+          <button class="btn btn-primary" onclick="openModal('tollAccountModal')">+ Add Toll Account</button>
+        </div>
+
+        <!-- Salik Section -->
+        <div class="card" style="margin-bottom:14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="background:rgba(61,142,240,0.15);border:1px solid rgba(61,142,240,0.3);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;color:var(--accent);">🚗 SALIK — Dubai</div>
+              <span style="font-size:12px;color:var(--text3);">RTA Dubai toll system · AED 4 per gate crossing</span>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Account No.</th><th>Company</th><th>Account Name</th><th>Registered Vehicles</th><th>Current Balance</th><th>Last Top-up</th><th>Auto-Recharge</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="salikAccountsTable"><tr><td colspan="9" style="text-align:center;color:var(--text3);padding:20px;">No Salik accounts added</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Darb Section -->
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="background:rgba(61,206,132,0.15);border:1px solid rgba(61,206,132,0.3);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;color:var(--green);">🚗 DARB — Abu Dhabi</div>
+              <span style="font-size:12px;color:var(--text3);">ITC Abu Dhabi toll system · Variable per zone</span>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Account No.</th><th>Company</th><th>Account Name</th><th>Registered Vehicles</th><th>Current Balance</th><th>Last Top-up</th><th>Auto-Recharge</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="darbAccountsTable"><tr><td colspan="9" style="text-align:center;color:var(--text3);padding:20px;">No Darb accounts added</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Vehicle-Account linking -->
+        <div class="card">
+          <div class="card-title" style="margin-bottom:14px;">Vehicle — Toll Account Linking</div>
+          <p style="font-size:12px;color:var(--text2);margin-bottom:14px;">Link each vehicle plate to its toll account. Vehicles registered in Dubai use Salik; Abu Dhabi use Darb. A vehicle can have both if it crosses emirates.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Plate</th><th>Company</th><th>Emirate</th><th>Salik Account</th><th>Darb Account</th><th>Tag / Sticker No.</th><th>Tag Status</th><th>Actions</th></tr></thead>
+              <tbody id="vehicleTollLinkTable"><tr><td colspan="8" style="text-align:center;color:var(--text3);padding:20px;">Add vehicles first, then link them to toll accounts</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- MAINTENANCE -->
+      <div id="page-maintenance" class="page">
+        <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);">
+          <div class="stat-card"><div class="stat-label">This month cost</div><div class="stat-value" id="maint-cost">AED 0</div></div>
+          <div class="stat-card"><div class="stat-label">Total jobs</div><div class="stat-value" id="maint-jobs">0</div></div>
+          <div class="stat-card warn"><div class="stat-label">Due for service</div><div class="stat-value" id="maint-due">0</div></div>
+          <div class="stat-card"><div class="stat-label">Avg per service</div><div class="stat-value" id="maint-avg">AED 0</div></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+          <button class="btn btn-primary" onclick="openModal('maintModal')">+ Log Service</button>
+        </div>
+        <div class="card" style="padding:0 0 0 0;">
+          <div class="table-wrap" style="padding:0 18px;">
+            <table>
+              <thead><tr><th>Date</th><th>Plate</th><th>Company</th><th>Service Type</th><th>Workshop</th><th>Cost (AED)</th><th>Odometer</th><th>Next Due (km)</th><th>Next Date</th><th>Notes</th><th>Actions</th></tr></thead>
+              <tbody id="maintTable"><tr><td colspan="11" style="text-align:center;color:var(--text3);padding:24px;">No maintenance records yet</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- RENEWAL CALENDAR -->
+      <div id="page-renewals" class="page">
+        <div class="filter-bar">
+          <select class="form-select" id="renewFilter" style="width:160px;" onchange="renderRenewals()">
+            <option value="30">Next 30 days</option>
+            <option value="60">Next 60 days</option>
+            <option value="90">Next 90 days</option>
+            <option value="180" selected>Next 180 days</option>
+            <option value="365">Next 365 days</option>
+          </select>
+          <select class="form-select" id="renewTypeFilter" style="width:140px;" onchange="renderRenewals()">
+            <option value="">All types</option>
+            <option value="Insurance">Insurance</option>
+            <option value="Mulkiya">Mulkiya</option>
+            <option value="Permit">Permit</option>
+            <option value="Traffic File">Traffic File</option>
+          </select>
+        </div>
+        <div class="card" style="padding:0 0 0 0;">
+          <div class="table-wrap" style="padding:0 18px;">
+            <table>
+              <thead><tr><th>Expiry date</th><th>Days left</th><th>Plate</th><th>Company</th><th>Type</th><th>Authority / Provider</th><th>Est. Cost (AED)</th><th>Action</th></tr></thead>
+              <tbody id="renewalsTable"><tr><td colspan="8" style="text-align:center;color:var(--text3);padding:24px;">No upcoming renewals</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:8px;">Sorted by urgency · Includes insurance, Mulkiya, and permit renewals</div>
+      </div>
+
+      <!-- REPORTS -->
+      <div id="page-reports" class="page">
+        <div class="two-col">
+          <div class="card">
+            <div class="card-title">Expense breakdown (this month)</div>
+            <div id="reportExpenseBreakdown" style="padding:10px 0;"></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Cost per vehicle (top 5)</div>
+            <div id="reportCostPerVehicle" style="padding:10px 0;"></div>
+          </div>
+        </div>
+        <div class="two-col">
+          <div class="card">
+            <div class="card-title">Cost per company</div>
+            <div id="reportCostPerCompany" style="padding:10px 0;"></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Export data</div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+              <button class="btn" onclick="exportCSV('vehicles')">⬇ &nbsp;Export Vehicles CSV</button>
+              <button class="btn" onclick="exportCSV('expenses')">⬇ &nbsp;Export Expenses CSV</button>
+              <button class="btn" onclick="exportCSV('fines')">⬇ &nbsp;Export Fines CSV</button>
+              <button class="btn" onclick="exportCSV('maintenance')">⬇ &nbsp;Export Maintenance CSV</button>
+              <button class="btn btn-primary" onclick="syncAll()">↑ &nbsp;Push all data to Google Sheets</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- COMPANIES -->
+      <div id="page-companies" class="page">
+        <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);">
+          <div class="stat-card accent"><div class="stat-label">Total companies</div><div class="stat-value" id="co-total">0</div></div>
+          <div class="stat-card"><div class="stat-label">Total vehicles</div><div class="stat-value" id="co-vehicles">0</div></div>
+          <div class="stat-card warn"><div class="stat-label">Traffic files expiring</div><div class="stat-value" id="co-tfexpiring">0</div><div class="stat-sub">within 30 days</div></div>
+          <div class="stat-card"><div class="stat-label">Emirates covered</div><div class="stat-value" id="co-emirates">0</div></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+          <button class="btn btn-primary" onclick="openModal('companyDetailModal')">+ Add Company</button>
+        </div>
+        <div class="card" style="padding:0;">
+          <div class="table-wrap" style="padding:0 18px;">
+            <table>
+              <thead><tr><th>Company Name</th><th>Trade License No.</th><th>Traffic File No.</th><th>Emirate</th><th>TF Expiry</th><th>TF Status</th><th>Vehicles</th><th>Owner / Contact</th><th>Actions</th></tr></thead>
+              <tbody id="companiesTable"><tr><td colspan="9" style="text-align:center;color:var(--text3);padding:28px;">No companies added yet. Add a company first before registering vehicles.</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div style="margin-top:10px;padding:10px 14px;background:rgba(61,142,240,0.08);border:1px solid rgba(61,142,240,0.2);border-radius:var(--radius-sm);font-size:12px;color:var(--text2);">
+          ℹ &nbsp;<b style="color:var(--accent);">Required setup order:</b> Add company with Traffic File Number → then register vehicles under that company.
+        </div>
+      </div>
+
+      <!-- SETTINGS -->
+      <div id="page-settings" class="page">
+        <div class="card">
+          <div class="card-title">Google Sheets Integration</div>
+          <div class="config-panel">
+            <div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:14px;">Setup Guide — Connect to Google Sheets</div>
+            <div class="config-step">
+              <div class="step-num">1</div>
+              <div class="step-content">
+                <h3>Create a Google Sheet</h3>
+                <p>Go to <a href="https://sheets.google.com" target="_blank">sheets.google.com</a> and create a new spreadsheet. Name it "FleetDesk UAE". Copy the spreadsheet ID from the URL (the long alphanumeric string between /d/ and /edit).</p>
+              </div>
+            </div>
+            <div class="config-step">
+              <div class="step-num">2</div>
+              <div class="step-content">
+                <h3>Get an API Key or use Apps Script</h3>
+                <p>For <strong>read-only</strong>: Go to <a href="https://console.developers.google.com" target="_blank">Google Cloud Console</a> → Create project → Enable "Google Sheets API" → Credentials → Create API Key. Make your sheet public (View).<br><br>For <strong>read + write</strong>: In your Google Sheet go to Extensions → Apps Script → paste the provided webhook script below → Deploy as Web App.</p>
+              </div>
+            </div>
+            <div class="config-step">
+              <div class="step-num">3</div>
+              <div class="step-content">
+                <h3>Apps Script Webhook (for write access)</h3>
+                <p>Paste this in your Google Apps Script editor and deploy as Web App (Anyone can access):</p>
+                <pre style="background:var(--bg4);padding:10px;border-radius:6px;font-size:10.5px;color:var(--text2);margin-top:6px;overflow-x:auto;font-family:var(--mono);">function doPost(e) {
+  var data = JSON.parse(e.postData.contents);
+  var ss = SpreadsheetApp.openById(data.sheetId);
+  var sheet = ss.getSheetByName(data.tab) || ss.insertSheet(data.tab);
+  if (data.action === 'append') {
+    sheet.appendRow(data.row);
+  } else if (data.action === 'clear_and_write') {
+    sheet.clearContents();
+    data.rows.forEach(function(r){ sheet.appendRow(r); });
+  }
+  return ContentService.createTextOutput(JSON.stringify({status:'ok'}))
+    .setMimeType(ContentService.MimeType.JSON);
+}</pre>
+              </div>
+            </div>
+            <div class="config-step">
+              <div class="step-num">4</div>
+              <div class="step-content">
+                <h3>Enter your credentials below</h3>
+                <p>Paste your Sheet ID and Web App URL (or API Key) to activate sync.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">Google Sheet ID</label>
+              <input class="form-input" id="cfg-sheetId" placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" value="">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Apps Script Web App URL (for write)</label>
+              <input class="form-input" id="cfg-webAppUrl" placeholder="https://script.google.com/macros/s/...">
+            </div>
+            <div class="form-group">
+              <label class="form-label">API Key (for read-only)</label>
+              <input class="form-input" id="cfg-apiKey" placeholder="AIzaSy...">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Auto-sync interval</label>
+              <select class="form-select" id="cfg-syncInterval">
+                <option value="0">Manual only</option>
+                <option value="5">Every 5 minutes</option>
+                <option value="15">Every 15 minutes</option>
+                <option value="30">Every 30 minutes</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:14px;">
+            <button class="btn btn-primary" onclick="saveSheetConfig()">Save configuration</button>
+            <button class="btn" onclick="testSheetConnection()">Test connection</button>
+            <button class="btn btn-success" onclick="initSheetStructure()">Initialize sheet structure</button>
+          </div>
+          <div id="connResult" style="margin-top:10px;font-size:12px;color:var(--text2);"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Companies</div>
+          <p style="font-size:12px;color:var(--text2);margin-bottom:12px;">Manage companies and their Traffic File Numbers from the dedicated Companies page.</p>
+          <button class="btn btn-primary" onclick="nav('companies', document.querySelector('.nav-item:has(+ .nav-item)'))">Go to Companies →</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Data Management</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button class="btn" onclick="exportAllJSON()">⬇ Export all data (JSON backup)</button>
+            <button class="btn" onclick="importJSON()">⬆ Import backup (JSON)</button>
+            <input type="file" id="importFile" accept=".json" style="display:none;" onchange="loadJSONBackup(event)">
+            <button class="btn btn-danger" onclick="clearAllData()">🗑 Clear all local data</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+
+    <div class="conn-bar">
+      <div class="conn-indicator" id="connIndicator"></div>
+      <span id="connLabel">Not connected to Google Sheets · Data stored locally in browser</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--text3);" id="lastSyncLabel"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== MODALS ==================== -->
+
+<!-- Company Detail Modal -->
+<div class="modal-overlay" id="companyDetailModal">
+  <div class="modal" style="width:700px;">
+    <div class="modal-header">
+      <div class="modal-title" id="companyDetailModalTitle">Add Company</div>
+      <button class="modal-close" onclick="closeModal('companyDetailModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="co-id">
+      <div class="form-section">Company Information</div>
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Company Name *</label><input class="form-input" id="co-name" placeholder="e.g. Al Noor Transport LLC"></div>
+        <div class="form-group"><label class="form-label">Primary Emirate *</label>
+          <select class="form-select" id="co-emirate">
+            <option>Dubai</option><option>Sharjah</option><option>Abu Dhabi</option><option>Ajman</option><option>RAK</option><option>Fujairah</option><option>UAQ</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Trade License No.</label><input class="form-input" id="co-tradelicense" placeholder="e.g. TL-123456"></div>
+        <div class="form-group"><label class="form-label">Trade License Expiry</label><input class="form-input" id="co-tlexpiry" type="date"></div>
+        <div class="form-group"><label class="form-label">Owner / Manager Name</label><input class="form-input" id="co-owner" placeholder="Full name"></div>
+        <div class="form-group"><label class="form-label">Contact Number</label><input class="form-input" id="co-phone" placeholder="+971 4 XXX XXXX"></div>
+        <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="co-email" type="email" placeholder="company@email.com"></div>
+        <div class="form-group"><label class="form-label">Address</label><input class="form-input" id="co-address" placeholder="Company address"></div>
+      </div>
+
+      <div class="form-section">Traffic File Details</div>
+      <div style="padding:10px 12px;background:rgba(61,142,240,0.08);border:1px solid rgba(61,142,240,0.2);border-radius:var(--radius-sm);font-size:12px;color:var(--text2);margin-bottom:12px;">
+        A Traffic File (TF) is issued by the Roads &amp; Transport Authority (RTA) or Traffic Department per emirate. Each company must have a Traffic File before vehicles can be registered under it.
+      </div>
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Traffic File Number *</label><input class="form-input" id="co-tfno" placeholder="e.g. TF-DXB-00123456"></div>
+        <div class="form-group"><label class="form-label">Issuing Authority</label>
+          <select class="form-select" id="co-tfauthority">
+            <option>RTA Dubai</option>
+            <option>Sharjah Traffic Dept.</option>
+            <option>Abu Dhabi Police — Traffic</option>
+            <option>Ajman Traffic Dept.</option>
+            <option>RAK Traffic Dept.</option>
+            <option>Fujairah Traffic Dept.</option>
+            <option>UAQ Traffic Dept.</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Traffic File Issue Date</label><input class="form-input" id="co-tfissue" type="date"></div>
+        <div class="form-group"><label class="form-label">Traffic File Expiry Date *</label><input class="form-input" id="co-tfexpiry" type="date"></div>
+        <div class="form-group"><label class="form-label">Max Vehicles Allowed</label><input class="form-input" id="co-tfmaxvehicles" type="number" placeholder="e.g. 50"></div>
+        <div class="form-group"><label class="form-label">TF Category / Type</label>
+          <select class="form-select" id="co-tftype">
+            <option>Private</option>
+            <option>Commercial — Transport</option>
+            <option>Commercial — Logistics / Freight</option>
+            <option>Commercial — Heavy Equipment</option>
+            <option>Commercial — Rental</option>
+            <option>Government</option>
+            <option>Mixed</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">TF Renewal Fee (AED)</label><input class="form-input" id="co-tffee" type="number" placeholder="0"></div>
+        <div class="form-group"><label class="form-label">Last Renewed Date</label><input class="form-input" id="co-tflastrenewed" type="date"></div>
+      </div>
+
+      <div class="form-section">Additional Traffic Files (other emirates)</div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">If this company also operates in other emirates, add those Traffic File numbers below.</p>
+      <div id="co-extraTFList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;"></div>
+      <button class="btn btn-sm" onclick="addExtraTFRow()" style="margin-bottom:4px;">+ Add another Traffic File</button>
+
+      <div class="form-group" style="margin-top:12px;"><label class="form-label">Notes</label><textarea class="form-textarea" id="co-notes" placeholder="Any notes about this company or traffic file..."></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('companyDetailModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveCompanyDetail()">Save Company</button>
+    </div>
+  </div>
+</div>
+
+<!-- Vehicle Modal -->
+<div class="modal-overlay" id="vehicleModal">
+  <div class="modal" style="width:720px;">
+    <div class="modal-header">
+      <div class="modal-title" id="vehicleModalTitle">Add Vehicle</div>
+      <button class="modal-close" onclick="closeModal('vehicleModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="v-id">
+      <div class="form-section">Vehicle Information</div>
+      <!-- Company + Traffic File selector -->
+      <div style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);padding:14px 16px;margin-bottom:14px;">
+        <div class="form-grid" style="margin-bottom:10px;">
+          <div class="form-group">
+            <label class="form-label">Company * <span style="color:var(--text3);font-weight:400;text-transform:none;font-size:11px;">(must be set up in Companies first)</span></label>
+            <select class="form-select" id="v-company" onchange="onVehicleCompanyChange()"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Traffic File Number</label>
+            <input class="form-input" id="v-tfno-display" readonly placeholder="Auto-filled from company" style="opacity:0.7;cursor:default;">
+          </div>
+        </div>
+        <div id="v-company-tf-info" style="display:none;padding:8px 12px;background:rgba(61,206,132,0.08);border:1px solid rgba(61,206,132,0.2);border-radius:var(--radius-sm);font-size:12px;">
+          <span id="v-tf-details" style="color:var(--text2);"></span>
+        </div>
+        <div id="v-no-company-warn" style="padding:8px 12px;background:rgba(240,122,61,0.1);border:1px solid rgba(240,122,61,0.25);border-radius:var(--radius-sm);font-size:12px;color:var(--orange);">
+          ⚠ No companies found. Please <a onclick="closeModal('vehicleModal');nav('companies',null);" style="color:var(--accent);cursor:pointer;text-decoration:underline;">add a company with a Traffic File Number</a> first.
+        </div>
+      </div>
+      <div class="form-grid">
+        <!-- Asset Code — auto-generated, editable -->
+        <div class="form-group">
+          <label class="form-label">Vehicle ID / Asset Code <span style="color:var(--text3);font-weight:400;text-transform:none;font-size:11px;">— auto-generated</span></label>
+          <div style="display:flex;gap:6px;">
+            <input class="form-input" id="v-assetcode" placeholder="VEH-0001" style="flex:1;font-family:var(--mono);font-weight:500;" readonly>
+            <button type="button" class="btn btn-sm" onclick="regenerateAssetCode()" title="Generate new code" style="padding:0 10px;flex-shrink:0;">↺</button>
+          </div>
+        </div>
+        <div class="form-group" style="grid-column:1/-1;">
+          <label class="form-label">Plate Number * <span style="color:var(--text3);font-weight:400;text-transform:none;font-size:11px;">— UAE format: Emirate Code · Code (letters/numbers) · Number</span></label>
+          <div style="display:flex;align-items:stretch;gap:0;border:1px solid var(--border2);border-radius:var(--radius-sm);overflow:hidden;">
+            <!-- Emirate code pill -->
+            <div style="display:flex;align-items:center;padding:0 12px;background:var(--bg4);border-right:1px solid var(--border2);min-width:64px;justify-content:center;">
+              <span id="v-plate-code" style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--accent);letter-spacing:0.05em;">DXB</span>
+            </div>
+            <div style="display:flex;align-items:center;padding:0 6px;background:var(--bg3);border-right:1px solid var(--border2);color:var(--text3);font-size:14px;font-weight:300;">·</div>
+            <input class="form-input" id="v-plate-letters" maxlength="4"
+              placeholder="A or 12"
+              oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'');buildPlate()"
+              style="border:none;border-radius:0;width:90px;text-align:center;font-family:var(--mono);font-size:15px;font-weight:600;letter-spacing:0.08em;">
+            <div style="display:flex;align-items:center;padding:0 6px;background:var(--bg3);border-left:1px solid var(--border2);border-right:1px solid var(--border2);color:var(--text3);font-size:14px;font-weight:300;">·</div>
+            <input class="form-input" id="v-plate-number" maxlength="5"
+              placeholder="12345"
+              oninput="this.value=this.value.replace(/[^0-9]/g,'');buildPlate()"
+              style="border:none;border-radius:0;flex:1;font-family:var(--mono);font-size:15px;font-weight:600;letter-spacing:0.08em;">
+            <div style="display:flex;align-items:center;padding:0 14px;background:var(--bg4);border-left:1px solid var(--border2);min-width:130px;">
+              <span style="font-size:10px;color:var(--text3);margin-right:6px;">PLATE:</span>
+              <span id="v-plate-preview" style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text);">—</span>
+            </div>
+          </div>
+          <input type="hidden" id="v-plate">
+        </div>
+        <div class="form-group"><label class="form-label">Emirate *</label>
+          <select class="form-select" id="v-emirate" onchange="onEmirateChange()">
+            <option value="Dubai">Dubai</option>
+            <option value="Sharjah">Sharjah</option>
+            <option value="Abu Dhabi">Abu Dhabi</option>
+            <option value="Ajman">Ajman</option>
+            <option value="RAK">Ras Al Khaimah</option>
+            <option value="Fujairah">Fujairah</option>
+            <option value="UAQ">Umm Al Quwain</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Vehicle Type</label>
+          <select class="form-select" id="v-type" onchange="onVehicleTypeChange()">
+            <optgroup label="Passenger">
+              <option value="Sedan">Sedan</option>
+              <option value="SUV">SUV</option>
+              <option value="Hatchback">Hatchback</option>
+              <option value="Coupe">Coupe</option>
+              <option value="MPV / People Carrier">MPV / People Carrier</option>
+            </optgroup>
+            <optgroup label="Commercial — Passenger">
+              <option value="Bus">Bus</option>
+              <option value="Minibus">Minibus</option>
+              <option value="Staff Van">Staff Van</option>
+            </optgroup>
+            <optgroup label="Commercial — Cargo">
+              <option value="Van — Cargo">Van — Cargo</option>
+              <option value="Pickup">Pickup</option>
+              <option value="Pickup — Double Cab">Pickup — Double Cab</option>
+              <option value="Truck — Light">Truck — Light (up to 3.5t)</option>
+              <option value="Truck — Medium">Truck — Medium (3.5t–10t)</option>
+              <option value="Truck — Heavy">Truck — Heavy (10t+)</option>
+              <option value="Chiller Van">Chiller Van</option>
+              <option value="Chiller Truck">Chiller Truck</option>
+              <option value="Flatbed Truck">Flatbed Truck</option>
+              <option value="Tipper Truck">Tipper Truck</option>
+              <option value="Tanker">Tanker</option>
+              <option value="Container Truck">Container Truck</option>
+              <option value="Curtain Side">Curtain Side Truck</option>
+            </optgroup>
+            <optgroup label="Heavy Equipment">
+              <option value="Forklift">Forklift</option>
+              <option value="Reach Stacker">Reach Stacker</option>
+              <option value="Crane">Crane</option>
+              <option value="Excavator">Excavator</option>
+              <option value="Loader">Loader</option>
+              <option value="Compactor">Compactor</option>
+              <option value="Bulldozer">Bulldozer</option>
+              <option value="Scissor Lift">Scissor Lift</option>
+              <option value="Boom Lift">Boom Lift</option>
+            </optgroup>
+            <optgroup label="Other">
+              <option value="Motorcycle">Motorcycle</option>
+              <option value="Tractor Unit">Tractor Unit</option>
+              <option value="Trailer">Trailer</option>
+              <option value="Other">Other</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Make</label><input class="form-input" id="v-make" placeholder="Toyota / Ford / Nissan..."></div>
+        <div class="form-group"><label class="form-label">Model</label><input class="form-input" id="v-model" placeholder="Hiace / Patrol / Transit..."></div>
+        <div class="form-group"><label class="form-label">Year</label><input class="form-input" id="v-year" placeholder="2023" type="number" min="1990" max="2030"></div>
+        <div class="form-group"><label class="form-label">Color</label><input class="form-input" id="v-color" placeholder="White / Silver / Black..."></div>
+        <!-- Seating capacity — shown for all, relevant for passenger types -->
+        <div class="form-group" id="v-seating-group">
+          <label class="form-label">Seating Capacity <span style="color:var(--text3);font-weight:400;text-transform:none;font-size:11px;">— incl. driver</span></label>
+          <input class="form-input" id="v-seating" type="number" min="1" max="100" placeholder="e.g. 5">
+        </div>
+        <!-- Payload capacity — shown for cargo/truck types -->
+        <div class="form-group" id="v-payload-group">
+          <label class="form-label">Payload Capacity <span style="color:var(--text3);font-weight:400;text-transform:none;font-size:11px;">— kg</span></label>
+          <input class="form-input" id="v-payload" type="number" min="0" placeholder="e.g. 1500">
+        </div>
+        <div class="form-group"><label class="form-label">Chassis No. (VIN)</label><input class="form-input" id="v-chassis" placeholder="17-character VIN"></div>
+        <div class="form-group"><label class="form-label">Engine No.</label><input class="form-input" id="v-engine" placeholder="Engine number"></div>
+        <div class="form-group"><label class="form-label">Fuel Type</label>
+          <select class="form-select" id="v-fuel"><option>Petrol</option><option>Diesel</option><option>Electric</option><option>Hybrid</option><option>CNG</option></select></div>
+        <div class="form-group"><label class="form-label">Current Mileage (km)</label><input class="form-input" id="v-mileage" placeholder="e.g. 45000" type="number"></div>
+        <div class="form-group"><label class="form-label">Status</label>
+          <select class="form-select" id="v-status"><option>Active</option><option>Inactive</option><option>In Service</option><option>Sold</option></select></div>
+      </div>
+      <div class="form-group full" style="margin-top:10px;"><label class="form-label">Notes</label><textarea class="form-textarea" id="v-notes" placeholder="Any additional notes..."></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('vehicleModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveVehicle()">Save Vehicle</button>
+    </div>
+  </div>
+</div>
+
+<!-- Insurance Modal -->
+<div class="modal-overlay" id="insModal">
+  <div class="modal" style="width:720px;">
+    <div class="modal-header">
+      <div class="modal-title" id="insModalTitle">Add Insurance Policy</div>
+      <button class="modal-close" onclick="closeModal('insModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="ins-id">
+
+      <div class="form-section">Policy Details</div>
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Vehicle Plate *</label><select class="form-select" id="ins-plate"></select></div>
+        <div class="form-group"><label class="form-label">Insurance Company *</label><input class="form-input" id="ins-insurer" placeholder="AXA / Orient / Oman Insurance..."></div>
+        <div class="form-group"><label class="form-label">Policy Number</label><input class="form-input" id="ins-policy" placeholder="Policy no."></div>
+        <div class="form-group"><label class="form-label">Type</label>
+          <select class="form-select" id="ins-type"><option>Comprehensive</option><option>Third Party</option><option>Third Party + Fire &amp; Theft</option></select></div>
+        <div class="form-group"><label class="form-label">Start Date *</label><input class="form-input" id="ins-start" type="date"></div>
+        <div class="form-group"><label class="form-label">Expiry Date *</label><input class="form-input" id="ins-expiry" type="date"></div>
+        <div class="form-group"><label class="form-label">Annual Premium (AED)</label><input class="form-input" id="ins-premium" type="number" placeholder="0.00"></div>
+        <div class="form-group"><label class="form-label">Agent / Broker</label><input class="form-input" id="ins-agent" placeholder="Agent name"></div>
+        <div class="form-group"><label class="form-label">Agency Repair</label>
+          <select class="form-select" id="ins-agencyrepair">
+            <option value="Yes">Yes — Agency repair included</option>
+            <option value="No">No — Non-agency repair</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Excess Amount (AED)</label><input class="form-input" id="ins-excess" type="number" placeholder="e.g. 500"></div>
+      </div>
+      <div class="form-group" style="margin-top:4px;"><label class="form-label">Notes</label><textarea class="form-textarea" id="ins-notes" placeholder="Any notes about this policy..."></textarea></div>
+
+      <!-- Document Attachments -->
+      <div class="form-section" style="margin-top:18px;">Document Attachments</div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:12px;">Attach the insurance policy document, premium invoices, endorsements, and any related files.</p>
+
+      <div id="ins-dropzone"
+        ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+        ondragleave="this.style.borderColor=''"
+        ondrop="handleInsDocDrop(event)"
+        style="border:2px dashed var(--border2);border-radius:var(--radius);padding:22px;text-align:center;cursor:pointer;transition:border-color 0.15s;margin-bottom:12px;"
+        onclick="document.getElementById('ins-file-input').click()">
+        <div style="font-size:22px;margin-bottom:6px;">📎</div>
+        <div style="font-size:13px;font-weight:500;color:var(--text);">Click to attach or drag &amp; drop files</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px;">PDF, JPG, PNG, DOCX — up to 5MB per file · multiple files supported</div>
+        <input type="file" id="ins-file-input" multiple accept=".pdf,.jpg,.jpeg,.png,.docx,.doc" style="display:none;" onchange="handleInsDocFiles(this.files)">
+      </div>
+
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+        <span style="font-size:11px;color:var(--text3);align-self:center;margin-right:2px;">Quick label:</span>
+        <button type="button" class="btn btn-sm" onclick="setInsDocLabel('Policy Document')">Policy Document</button>
+        <button type="button" class="btn btn-sm" onclick="setInsDocLabel('Premium Invoice')">Premium Invoice</button>
+        <button type="button" class="btn btn-sm" onclick="setInsDocLabel('Endorsement')">Endorsement</button>
+        <button type="button" class="btn btn-sm" onclick="setInsDocLabel('Cover Note')">Cover Note</button>
+        <button type="button" class="btn btn-sm" onclick="setInsDocLabel('Claim Document')">Claim Document</button>
+        <button type="button" class="btn btn-sm" onclick="setInsDocLabel('Other')">Other</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <input class="form-input" id="ins-doc-label" placeholder="Document label (optional — select above or type)" style="flex:1;">
+      </div>
+
+      <div id="ins-attachments-list"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('insModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveInsurance()">Save Policy</button>
+    </div>
+  </div>
+</div>
+
+<!-- Permit Modal -->
+<div class="modal-overlay" id="permitModal">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">Add Permit / Mulkiya</div><button class="modal-close" onclick="closeModal('permitModal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="permit-id">
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Vehicle Plate *</label><select class="form-select" id="permit-plate"></select></div>
+        <div class="form-group"><label class="form-label">Mulkiya Expiry Date *</label><input class="form-input" id="permit-mulkiya" type="date"></div>
+        <div class="form-group"><label class="form-label">Permit Number</label><input class="form-input" id="permit-no" placeholder="Permit / RTA ref number"></div>
+        <div class="form-group"><label class="form-label">Permit Type</label>
+          <select class="form-select" id="permit-type"><option>Private</option><option>Commercial</option><option>Transport</option><option>Heavy Truck</option><option>Bus/Coach</option><option>Motorcycle</option><option>Special</option></select></div>
+        <div class="form-group"><label class="form-label">Permit Expiry Date</label><input class="form-input" id="permit-expiry" type="date"></div>
+        <div class="form-group"><label class="form-label">Issuing Authority</label>
+          <select class="form-select" id="permit-authority"><option>RTA Dubai</option><option>Sharjah Traffic Dept.</option><option>Abu Dhabi Police</option><option>Ajman Traffic Dept.</option><option>RAK Traffic Dept.</option><option>Fujairah Traffic Dept.</option><option>MOI</option></select></div>
+        <div class="form-group"><label class="form-label">Renewal Fee (AED)</label><input class="form-input" id="permit-fee" type="number" placeholder="0"></div>
+        <div class="form-group"><label class="form-label">Date Renewed</label><input class="form-input" id="permit-renewed" type="date"></div>
+      </div>
+      <div class="form-group" style="margin-top:10px;"><label class="form-label">Notes</label><textarea class="form-textarea" id="permit-notes"></textarea></div>
+    </div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal('permitModal')">Cancel</button><button class="btn btn-primary" onclick="savePermit()">Save Record</button></div>
+  </div>
+</div>
+
+<!-- Fine Modal -->
+<div class="modal-overlay" id="fineModal">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">Record Traffic Fine</div><button class="modal-close" onclick="closeModal('fineModal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="fine-id">
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Vehicle Plate *</label><select class="form-select" id="fine-plate"></select></div>
+        <div class="form-group"><label class="form-label">Fine Number</label><input class="form-input" id="fine-no" placeholder="Fine reference number"></div>
+        <div class="form-group"><label class="form-label">Violation Date *</label><input class="form-input" id="fine-date" type="date"></div>
+        <div class="form-group"><label class="form-label">Violation Type</label>
+          <select class="form-select" id="fine-violation">
+            <option>Speeding (20-30km/h over)</option><option>Speeding (30+ km/h over)</option><option>Signal jump</option><option>Illegal parking</option><option>Seatbelt violation</option><option>Mobile phone use</option><option>Reckless driving</option><option>Wrong lane</option><option>Expired registration</option><option>Other</option>
+          </select></div>
+        <div class="form-group"><label class="form-label">Issuing Authority</label>
+          <select class="form-select" id="fine-authority"><option>Dubai Police</option><option>Sharjah Police</option><option>Abu Dhabi Police</option><option>RTA</option><option>MOI</option><option>Ajman Police</option></select></div>
+        <div class="form-group"><label class="form-label">Fine Amount (AED) *</label><input class="form-input" id="fine-amount" type="number" placeholder="0"></div>
+        <div class="form-group"><label class="form-label">Black Points</label><input class="form-input" id="fine-points" type="number" placeholder="0"></div>
+        <div class="form-group"><label class="form-label">Paid Date (if paid)</label><input class="form-input" id="fine-paid-date" type="date"></div>
+        <div class="form-group"><label class="form-label">Driver at fault</label><input class="form-input" id="fine-driver" placeholder="Driver name (if known)"></div>
+      </div>
+      <div class="form-group" style="margin-top:10px;"><label class="form-label">Notes</label><textarea class="form-textarea" id="fine-notes"></textarea></div>
+    </div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal('fineModal')">Cancel</button><button class="btn btn-primary" onclick="saveFine()">Save Fine</button></div>
+  </div>
+</div>
+
+<!-- Purchase Modal -->
+<div class="modal-overlay" id="purchaseModal">
+  <div class="modal" style="width:740px;">
+    <div class="modal-header">
+      <div class="modal-title" id="purchaseModalTitle">Add Purchase Record</div>
+      <button class="modal-close" onclick="closeModal('purchaseModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="pur-id">
+
+      <div class="form-section">Purchase Details</div>
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Vehicle Plate *</label><select class="form-select" id="pur-plate"></select></div>
+        <div class="form-group"><label class="form-label">Purchase Date *</label><input class="form-input" id="pur-date" type="date"></div>
+        <div class="form-group"><label class="form-label">Supplier / Dealer</label><input class="form-input" id="pur-supplier" placeholder="Al Futtaim / Al Tayer..."></div>
+        <div class="form-group"><label class="form-label">Purchase Price (AED) *</label><input class="form-input" id="pur-price" type="number" placeholder="0"></div>
+        <div class="form-group"><label class="form-label">Payment Method</label>
+          <select class="form-select" id="pur-payment" onchange="onPurPaymentChange()">
+            <option>Cash</option><option>Bank Finance</option><option>Lease</option><option>Company Cheque</option><option>PDC (Post-Dated Cheque)</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Chassis No. (VIN)</label><input class="form-input" id="pur-chassis" placeholder="VIN number"></div>
+        <div class="form-group"><label class="form-label">Invoice No.</label><input class="form-input" id="pur-invoice" placeholder="Invoice reference"></div>
+        <div class="form-group"><label class="form-label">VAT Amount (AED)</label><input class="form-input" id="pur-vat" type="number" placeholder="5% of price"></div>
+      </div>
+
+      <!-- Finance section — shown only for Bank Finance / Lease -->
+      <div id="pur-finance-section" style="display:none;">
+        <div class="form-section">Finance / Lease Details</div>
+        <div class="form-grid">
+          <div class="form-group"><label class="form-label">Bank / Finance Company</label><input class="form-input" id="pur-bank" placeholder="Emirates NBD / ADCB / DIB..."></div>
+          <div class="form-group"><label class="form-label">Finance Agreement No.</label><input class="form-input" id="pur-financeref" placeholder="Agreement / contract number"></div>
+          <div class="form-group"><label class="form-label">Loan / Lease Amount (AED)</label><input class="form-input" id="pur-loanamt" type="number" placeholder="0"></div>
+          <div class="form-group"><label class="form-label">Down Payment (AED)</label><input class="form-input" id="pur-downpayment" type="number" placeholder="0"></div>
+          <div class="form-group"><label class="form-label">Monthly Instalment (AED)</label><input class="form-input" id="pur-instalment" type="number" placeholder="0"></div>
+          <div class="form-group"><label class="form-label">Tenure (months)</label><input class="form-input" id="pur-tenure" type="number" placeholder="e.g. 48"></div>
+          <div class="form-group"><label class="form-label">Interest / Profit Rate (%)</label><input class="form-input" id="pur-rate" type="number" placeholder="e.g. 3.5" step="0.01"></div>
+          <div class="form-group"><label class="form-label">Finance Start Date</label><input class="form-input" id="pur-financestart" type="date"></div>
+          <div class="form-group"><label class="form-label">Finance End Date</label><input class="form-input" id="pur-financeend" type="date"></div>
+          <div class="form-group"><label class="form-label">Balloon / Residual (AED)</label><input class="form-input" id="pur-balloon" type="number" placeholder="0 if none"></div>
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-top:4px;"><label class="form-label">Notes</label><textarea class="form-textarea" id="pur-notes" placeholder="Any additional notes about this purchase..."></textarea></div>
+
+      <!-- Document Attachments -->
+      <div class="form-section" style="margin-top:18px;">Document Attachments</div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:12px;">Attach purchase bills, finance agreements, ownership transfer documents, warranty cards, and any related files. Documents are stored in your browser — export a JSON backup to preserve them.</p>
+
+      <!-- Drop zone -->
+      <div id="pur-dropzone"
+        ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+        ondragleave="this.style.borderColor=''"
+        ondrop="handlePurDrop(event)"
+        style="border:2px dashed var(--border2);border-radius:var(--radius);padding:22px;text-align:center;cursor:pointer;transition:border-color 0.15s;margin-bottom:12px;"
+        onclick="document.getElementById('pur-file-input').click()">
+        <div style="font-size:22px;margin-bottom:6px;">📎</div>
+        <div style="font-size:13px;font-weight:500;color:var(--text);">Click to attach or drag &amp; drop files</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px;">PDF, JPG, PNG, DOCX — up to 5MB per file · multiple files supported</div>
+        <input type="file" id="pur-file-input" multiple accept=".pdf,.jpg,.jpeg,.png,.docx,.doc,.xlsx,.xls" style="display:none;" onchange="handlePurFiles(this.files)">
+      </div>
+
+      <!-- Document type quick-add buttons -->
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+        <span style="font-size:11px;color:var(--text3);align-self:center;margin-right:2px;">Quick label:</span>
+        <button type="button" class="btn btn-sm" onclick="setPurDocLabel('Purchase Invoice')">Purchase Invoice</button>
+        <button type="button" class="btn btn-sm" onclick="setPurDocLabel('Finance Agreement')">Finance Agreement</button>
+        <button type="button" class="btn btn-sm" onclick="setPurDocLabel('Ownership Transfer')">Ownership Transfer</button>
+        <button type="button" class="btn btn-sm" onclick="setPurDocLabel('Warranty Card')">Warranty Card</button>
+        <button type="button" class="btn btn-sm" onclick="setPurDocLabel('PDC Cheque Scan')">PDC Cheque Scan</button>
+        <button type="button" class="btn btn-sm" onclick="setPurDocLabel('Other')">Other</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <input class="form-input" id="pur-doc-label" placeholder="Document label (optional — select above or type)" style="flex:1;">
+      </div>
+
+      <!-- Attached files list -->
+      <div id="pur-attachments-list"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('purchaseModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="savePurchase()">Save Record</button>
+    </div>
+  </div>
+</div>
+
+<!-- Expense Modal -->
+<div class="modal-overlay" id="expenseModal">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">Add Expense</div><button class="modal-close" onclick="closeModal('expenseModal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="exp-id">
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Vehicle Plate *</label><select class="form-select" id="exp-plate"></select></div>
+        <div class="form-group"><label class="form-label">Date *</label><input class="form-input" id="exp-date" type="date"></div>
+        <div class="form-group"><label class="form-label">Category *</label>
+          <select class="form-select" id="exp-category"><option>Fuel</option><option>Maintenance</option><option>Insurance</option><option>Registration / Mulkiya</option><option>Traffic Fine</option><option>Toll / Salik</option><option>Tyres</option><option>Parking</option><option>Cleaning / Wash</option><option>Other</option></select></div>
+        <div class="form-group"><label class="form-label">Amount (AED) *</label><input class="form-input" id="exp-amount" type="number" placeholder="0.00"></div>
+        <div class="form-group"><label class="form-label">Vendor / Supplier</label><input class="form-input" id="exp-vendor" placeholder="Shop / garage name"></div>
+        <div class="form-group"><label class="form-label">Receipt No.</label><input class="form-input" id="exp-receipt" placeholder="Receipt / invoice no."></div>
+      </div>
+      <div class="form-group" style="margin-top:10px;"><label class="form-label">Description / Notes</label><textarea class="form-textarea" id="exp-notes" placeholder="What was this for?"></textarea></div>
+    </div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal('expenseModal')">Cancel</button><button class="btn btn-primary" onclick="saveExpense()">Save Expense</button></div>
+  </div>
+</div>
+
+<!-- Fuel Modal -->
+<div class="modal-overlay" id="fuelModal">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">Log Fuel Fill</div><button class="modal-close" onclick="closeModal('fuelModal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="fuel-id">
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Vehicle Plate *</label><select class="form-select" id="fuel-plate"></select></div>
+        <div class="form-group"><label class="form-label">Date *</label><input class="form-input" id="fuel-date" type="date"></div>
+        <div class="form-group"><label class="form-label">Fuel Station</label><input class="form-input" id="fuel-station" placeholder="ENOC / ADNOC / EPPCO..."></div>
+        <div class="form-group"><label class="form-label">Fuel Type</label>
+          <select class="form-select" id="fuel-type"><option>Special 95</option><option>Super 98</option><option>Diesel E+</option><option>Electric (kWh)</option></select></div>
+        <div class="form-group"><label class="form-label">Quantity (Litres)</label><input class="form-input" id="fuel-litres" type="number" placeholder="0.0"></div>
+        <div class="form-group"><label class="form-label">Total Cost (AED) *</label><input class="form-input" id="fuel-cost" type="number" placeholder="0.00"></div>
+        <div class="form-group"><label class="form-label">Odometer (km)</label><input class="form-input" id="fuel-odo" type="number" placeholder="Current mileage"></div>
+        <div class="form-group"><label class="form-label">Driver</label><input class="form-input" id="fuel-driver" placeholder="Driver name"></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal('fuelModal')">Cancel</button><button class="btn btn-primary" onclick="saveFuel()">Save Log</button></div>
+  </div>
+</div>
+
+<!-- Toll Account Modal -->
+<div class="modal-overlay" id="tollAccountModal">
+  <div class="modal" style="width:640px;">
+    <div class="modal-header"><div class="modal-title" id="tollAccountModalTitle">Add Toll Account</div><button class="modal-close" onclick="closeModal('tollAccountModal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="ta-id">
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Toll System *</label>
+          <select class="form-select" id="ta-type" onchange="updateTollAccountUI()">
+            <option value="Salik">Salik (Dubai — RTA)</option>
+            <option value="Darb">Darb (Abu Dhabi — ITC)</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Company *</label><select class="form-select" id="ta-company"></select></div>
+        <div class="form-group"><label class="form-label">Account Number *</label><input class="form-input" id="ta-accountno" placeholder="e.g. SAL-00123456 / DARB-009876"></div>
+        <div class="form-group"><label class="form-label">Account Name</label><input class="form-input" id="ta-accountname" placeholder="Account holder name"></div>
+        <div class="form-group"><label class="form-label">Current Balance (AED)</label><input class="form-input" id="ta-balance" type="number" placeholder="0.00"></div>
+        <div class="form-group"><label class="form-label">Minimum Balance (AED)</label><input class="form-input" id="ta-minbalance" type="number" placeholder="50" value="50"></div>
+        <div class="form-group"><label class="form-label">Auto-Recharge Enabled</label>
+          <select class="form-select" id="ta-autorecharge"><option value="No">No</option><option value="Yes">Yes</option></select></div>
+        <div class="form-group"><label class="form-label">Auto-Recharge Amount (AED)</label><input class="form-input" id="ta-rechargeamt" type="number" placeholder="200"></div>
+        <div class="form-group"><label class="form-label">Account Open Date</label><input class="form-input" id="ta-opendate" type="date"></div>
+        <div class="form-group"><label class="form-label">Linked RTA/ITC Email</label><input class="form-input" id="ta-email" type="email" placeholder="account@email.com"></div>
+      </div>
+      <div class="form-section" style="margin-top:16px;">Linked Vehicles</div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">Select which vehicles are registered under this toll account. You can also manage this from the Vehicle–Toll Account Linking table.</p>
+      <div id="ta-vehiclesChecklist" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;max-height:160px;overflow-y:auto;padding:2px;"></div>
+      <div class="form-group" style="margin-top:12px;"><label class="form-label">Notes</label><textarea class="form-textarea" id="ta-notes" placeholder="Any notes about this account..."></textarea></div>
+    </div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal('tollAccountModal')">Cancel</button><button class="btn btn-primary" onclick="saveTollAccount()">Save Account</button></div>
+  </div>
+</div>
+
+<!-- Toll Transaction Modal -->
+<div class="modal-overlay" id="tollModal">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title" id="tollTxnModalTitle">Add Toll Transaction</div><button class="modal-close" onclick="closeModal('tollModal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="toll-id">
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Toll System *</label>
+          <select class="form-select" id="toll-type" onchange="updateTollTxnGates()">
+            <option value="Salik">Salik (Dubai)</option>
+            <option value="Darb">Darb (Abu Dhabi)</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Toll Account *</label><select class="form-select" id="toll-account" onchange="fillVehiclesForAccount()"></select></div>
+        <div class="form-group"><label class="form-label">Vehicle Plate *</label><select class="form-select" id="toll-plate"></select></div>
+        <div class="form-group"><label class="form-label">Date *</label><input class="form-input" id="toll-date" type="date"></div>
+        <div class="form-group"><label class="form-label">Gate / Location</label>
+          <select class="form-select" id="toll-gate">
+            <option>Garhoud Bridge</option><option>Al Maktoum Bridge</option><option>Al Safa North</option><option>Al Safa South</option><option>Al Barsha</option><option>Al Mamzar North</option><option>Al Mamzar South</option><option>Airport Tunnel</option><option>Business Bay</option><option>Jebel Ali</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Transaction Amount (AED)</label><input class="form-input" id="toll-amount" type="number" value="4"></div>
+        <div class="form-group"><label class="form-label">Balance After Transaction (AED)</label><input class="form-input" id="toll-balance" type="number" placeholder="0.00"></div>
+        <div class="form-group"><label class="form-label">Top-up This Transaction (AED)</label><input class="form-input" id="toll-topup" type="number" placeholder="0 — leave blank if no top-up"></div>
+        <div class="form-group full"><label class="form-label">Notes</label><input class="form-input" id="toll-notes" placeholder="Any notes"></div>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal('tollModal')">Cancel</button><button class="btn btn-primary" onclick="saveToll()">Save Transaction</button></div>
+  </div>
+</div>
+
+<!-- Maintenance Modal -->
+<div class="modal-overlay" id="maintModal">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">Log Maintenance / Service</div><button class="modal-close" onclick="closeModal('maintModal')">✕</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="maint-id">
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Vehicle Plate *</label><select class="form-select" id="maint-plate"></select></div>
+        <div class="form-group"><label class="form-label">Service Date *</label><input class="form-input" id="maint-date" type="date"></div>
+        <div class="form-group"><label class="form-label">Service Type</label>
+          <select class="form-select" id="maint-type"><option>Oil change</option><option>Tyre change</option><option>Tyre rotation</option><option>Brake service</option><option>A/C service</option><option>Battery replacement</option><option>General inspection</option><option>Body repair</option><option>Engine repair</option><option>Transmission</option><option>Suspension</option><option>Electrical</option><option>Other</option></select></div>
+        <div class="form-group"><label class="form-label">Workshop / Garage</label><input class="form-input" id="maint-workshop" placeholder="Garage name"></div>
+        <div class="form-group"><label class="form-label">Cost (AED) *</label><input class="form-input" id="maint-cost" type="number" placeholder="0.00"></div>
+        <div class="form-group"><label class="form-label">Odometer at Service (km)</label><input class="form-input" id="maint-odo" type="number" placeholder="Current km"></div>
+        <div class="form-group"><label class="form-label">Next Service (km)</label><input class="form-input" id="maint-nextodo" type="number" placeholder="e.g. 55000"></div>
+        <div class="form-group"><label class="form-label">Next Service Date</label><input class="form-input" id="maint-nextdate" type="date"></div>
+      </div>
+      <div class="form-group" style="margin-top:10px;"><label class="form-label">Parts replaced / Notes</label><textarea class="form-textarea" id="maint-notes" placeholder="List of parts, issues found, recommendations..."></textarea></div>
+    </div>
+    <div class="modal-footer"><button class="btn" onclick="closeModal('maintModal')">Cancel</button><button class="btn btn-primary" onclick="saveMaint()">Save Service</button></div>
+  </div>
+</div>
+
+<!-- Company Modal -->
+<div class="modal-overlay" id="companyModal">
+  <div class="modal" style="width:420px;">
+    <div class="modal-header"><div class="modal-title">Switch Company</div><button class="modal-close" onclick="closeModal('companyModal')">✕</button></div>
+    <div class="modal-body">
+      <div id="companyList" style="display:flex;flex-direction:column;gap:6px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== JAVASCRIPT ==================== -->
+<script>
+// ===== DATA STORE =====
+let DB = {
+  companies: [],
+  vehicles: [],
+  insurance: [],
+  permits: [],
+  fines: [],
+  purchases: [],
+  expenses: [],
+  fuel: [],
+  toll: [],
+  tollAccounts: [],
+  maintenance: [],
+  settings: { sheetId: '', webAppUrl: '', apiKey: '', syncInterval: 0 },
+  activeCompany: 'all',
+  lastSync: null
+};
+
+// Load from localStorage
+function loadDB() {
+  try {
+    const saved = localStorage.getItem('fleetdesk_uae');
+    if (saved) DB = JSON.parse(saved);
+    if (!DB.companies) DB.companies = [];
+    if (!DB.settings) DB.settings = { sheetId:'', webAppUrl:'', apiKey:'', syncInterval:0 };
+    if (!DB.fuel) DB.fuel = [];
+    if (!DB.toll) DB.toll = [];
+    if (!DB.tollAccounts) DB.tollAccounts = [];
+  } catch(e) { console.error('Load error', e); }
+}
+function saveDB() {
+  try { localStorage.setItem('fleetdesk_uae', JSON.stringify(DB)); } catch(e) {}
+}
+
+// ===== NAV =====
+function nav(pageId, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + pageId).classList.add('active');
+  if (el) el.classList.add('active');
+
+  const titles = {
+    dashboard: ['Dashboard', 'All companies · All emirates'],
+    vehicles: ['All Vehicles', 'Fleet registry'],
+    insurance: ['Insurance', 'Policy tracker'],
+    permits: ['Permits & Mulkiya', 'Registration renewals · RTA / Traffic Dept.'],
+    fines: ['Traffic Fines', 'Fines from Dubai Police, RTA, MOI'],
+    purchase: ['Purchase Records', 'Acquisition history'],
+    expenses: ['Expenses', 'All vehicle costs'],
+    fuel: ['Fuel Log', 'Fuel fills & consumption'],
+    toll: ['Toll Transactions', 'Salik (Dubai) & Darb (Abu Dhabi)'],
+    tollaccounts: ['Toll Accounts', 'Salik & Darb account management · vehicle linking'],
+    maintenance: ['Maintenance', 'Service history'],
+    renewals: ['Renewal Calendar', 'Insurance · Mulkiya · Permits'],
+    reports: ['Reports', 'Analytics & export'],
+    companies: ['Companies', 'Traffic File Numbers · company registry'],
+    settings: ['Settings', 'Google Sheets & configuration']
+  };
+  const t = titles[pageId] || [pageId, ''];
+  document.getElementById('pageTitle').textContent = t[0];
+  document.getElementById('pageSubtitle').textContent = t[1];
+
+  renderPage(pageId);
+}
+
+function renderPage(p) {
+  if (p === 'dashboard') renderDashboard();
+  else if (p === 'vehicles') renderVehicles();
+  else if (p === 'insurance') renderInsurance();
+  else if (p === 'permits') renderPermits();
+  else if (p === 'fines') renderFines();
+  else if (p === 'purchase') renderPurchases();
+  else if (p === 'expenses') renderExpenses();
+  else if (p === 'fuel') renderFuel();
+  else if (p === 'toll') renderToll();
+  else if (p === 'tollaccounts') renderTollAccounts();
+  else if (p === 'maintenance') renderMaint();
+  else if (p === 'renewals') renderRenewals();
+  else if (p === 'reports') renderReports();
+  else if (p === 'companies') renderCompanies();
+  else if (p === 'settings') renderSettings();
+}
+
+// ===== UTILS =====
+function uid() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 5); }
+function fmtDate(d) { if (!d) return '—'; const dt = new Date(d); return dt.toLocaleDateString('en-AE', {day:'numeric',month:'short',year:'numeric'}); }
+function daysUntil(d) { if (!d) return 9999; return Math.ceil((new Date(d) - new Date()) / 86400000); }
+function fmtAED(n) { return 'AED ' + Number(n||0).toLocaleString('en-AE', {minimumFractionDigits:0, maximumFractionDigits:0}); }
+function todayVal() { return new Date().toISOString().split('T')[0]; }
+function thisMonth() { const n = new Date(); return n.getFullYear() + '-' + String(n.getMonth()+1).padStart(2,'0'); }
+
+function daysBadge(days) {
+  if (days <= 0) return `<span class="badge badge-red">Expired</span>`;
+  if (days <= 7) return `<span class="badge badge-red">${days}d</span>`;
+  if (days <= 30) return `<span class="badge badge-amber">${days}d</span>`;
+  return `<span class="badge badge-green">${days}d</span>`;
+}
+function statusBadge(s) {
+  const m = {Active:'badge-green',Inactive:'badge-gray','In Service':'badge-amber',Sold:'badge-red',Expired:'badge-red',Valid:'badge-green',Paid:'badge-green',Unpaid:'badge-red'};
+  return `<span class="badge ${m[s]||'badge-gray'}">${s}</span>`;
+}
+
+function getVehicle(plate) { return DB.vehicles.find(v => v.plate === plate) || {}; }
+function getCompanyName(plate) { const v = getVehicle(plate); return v.company || '—'; }
+
+function filteredVehicles() {
+  if (DB.activeCompany === 'all') return DB.vehicles;
+  return DB.vehicles.filter(v => v.company === DB.activeCompany);
+}
+
+// ===== TOAST =====
+function toast(msg, type='success') {
+  const tc = document.getElementById('toastContainer');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.innerHTML = `<span class="toast-icon">${type==='success'?'✓':'✕'}</span> ${msg}`;
+  tc.appendChild(t);
+  setTimeout(() => { t.style.opacity='0'; t.style.transform='translateX(20px)'; t.style.transition='all 0.3s'; setTimeout(()=>t.remove(), 350); }, 3000);
+}
+
+// ===== MODAL =====
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+  populatePlateDropdowns();
+  populateCompanyDropdowns();
+  const tac = document.getElementById('ta-company');
+  if (tac) tac.innerHTML = DB.companies.map(c=>`<option>${c.name}</option>`).join('')||'<option>Add companies first</option>';
+  if (id === 'tollAccountModal') updateTollAccountUI();
+}
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// ===== ASSET CODE GENERATOR =====
+function generateAssetCode() {
+  const count = DB.vehicles.length + 1;
+  return 'VEH-' + String(count).padStart(4, '0');
+}
+function regenerateAssetCode() {
+  const el = document.getElementById('v-assetcode');
+  if (el) el.value = generateAssetCode();
+}
+
+// Show/hide seating & payload based on vehicle type
+function onVehicleTypeChange() {
+  const type = document.getElementById('v-type')?.value || '';
+  const cargoTypes = ['Van — Cargo','Pickup','Pickup — Double Cab','Truck — Light','Truck — Medium','Truck — Heavy','Chiller Van','Chiller Truck','Flatbed Truck','Tipper Truck','Tanker','Container Truck','Curtain Side','Forklift','Reach Stacker','Crane','Excavator','Loader','Compactor','Bulldozer','Scissor Lift','Boom Lift','Tractor Unit','Trailer'];
+  const passengerTypes = ['Sedan','SUV','Hatchback','Coupe','MPV / People Carrier','Bus','Minibus','Staff Van'];
+  const payloadGrp = document.getElementById('v-payload-group');
+  const seatingGrp = document.getElementById('v-seating-group');
+  if (payloadGrp) payloadGrp.style.display = cargoTypes.includes(type) ? '' : 'none';
+  if (seatingGrp) seatingGrp.style.display = cargoTypes.includes(type) && !passengerTypes.includes(type) ? 'none' : '';
+}
+
+
+const EMIRATE_CODES = {
+  'Dubai': 'DXB',
+  'Sharjah': 'SHJ',
+  'Abu Dhabi': 'AUH',
+  'Ajman': 'AJM',
+  'RAK': 'RAK',
+  'Fujairah': 'FUJ',
+  'UAQ': 'UAQ'
+};
+
+function onEmirateChange() {
+  const emirate = document.getElementById('v-emirate').value;
+  const code = EMIRATE_CODES[emirate] || emirate.substring(0,3).toUpperCase();
+  const codeEl = document.getElementById('v-plate-code');
+  if (codeEl) codeEl.textContent = code;
+  buildPlate();
+  onVehicleCompanyChange();
+}
+
+function buildPlate() {
+  const code = document.getElementById('v-plate-code')?.textContent || '';
+  const letters = document.getElementById('v-plate-letters')?.value || '';
+  const number = document.getElementById('v-plate-number')?.value || '';
+  const preview = document.getElementById('v-plate-preview');
+  const hidden = document.getElementById('v-plate');
+  if (letters && number) {
+    const plate = `${code} ${letters} ${number}`;
+    if (preview) { preview.textContent = plate; preview.style.color = 'var(--text)'; }
+    if (hidden) hidden.value = plate;
+  } else {
+    if (preview) { preview.textContent = '—'; preview.style.color = 'var(--text3)'; }
+    if (hidden) hidden.value = '';
+  }
+}
+
+function parsePlateToFields(plateStr) {
+  // Format: "DXB A 12345" or "DXB AA 12345" or "DXB 12 12345"
+  if (!plateStr) return;
+  const parts = plateStr.trim().split(/\s+/);
+  if (parts.length === 3) {
+    const [code, letters, number] = parts;
+    const codeEl = document.getElementById('v-plate-code');
+    const lettersEl = document.getElementById('v-plate-letters');
+    const numberEl = document.getElementById('v-plate-number');
+    if (codeEl) codeEl.textContent = code;
+    if (lettersEl) lettersEl.value = letters;
+    if (numberEl) numberEl.value = number;
+    buildPlate();
+  }
+}
+
+function clearPlateFields() {
+  const lettersEl = document.getElementById('v-plate-letters');
+  const numberEl = document.getElementById('v-plate-number');
+  if (lettersEl) lettersEl.value = '';
+  if (numberEl) numberEl.value = '';
+  const preview = document.getElementById('v-plate-preview');
+  if (preview) { preview.textContent = '—'; preview.style.color = 'var(--text3)'; }
+  const hidden = document.getElementById('v-plate');
+  if (hidden) hidden.value = '';
+}
+
+
+function populatePlateDropdowns() {
+  const opts = `<option value="">— Select plate —</option>` + DB.vehicles.map(v => `<option value="${v.plate}">${v.plate} · ${v.make} ${v.model}</option>`).join('');
+  ['ins-plate','permit-plate','fine-plate','pur-plate','exp-plate','fuel-plate','toll-plate','maint-plate'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = opts;
+  });
+}
+function populateCompanyDropdowns() {
+  const opts = DB.companies.map(c => `<option value="${c.name}">${c.name}${c.tfNo?' · TF: '+c.tfNo:''}</option>`).join('');
+  const vCompEl = document.getElementById('v-company');
+  if (vCompEl) {
+    vCompEl.innerHTML = opts || '<option value="">No companies yet — add one first</option>';
+    onVehicleCompanyChange();
+  }
+  const fc = document.getElementById('vFilterCompany');
+  if (fc) fc.innerHTML = '<option value="">All companies</option>' + DB.companies.map(c => `<option>${c.name}</option>`).join('');
+}
+
+// Called when company selection changes in vehicle modal
+function onVehicleCompanyChange() {
+  const sel = document.getElementById('v-company');
+  const tfDisplay = document.getElementById('v-tfno-display');
+  const tfInfo = document.getElementById('v-company-tf-info');
+  const tfDetails = document.getElementById('v-tf-details');
+  const warn = document.getElementById('v-no-company-warn');
+  if (!sel) return;
+  if (!DB.companies.length) {
+    if (warn) warn.style.display = 'block';
+    if (tfInfo) tfInfo.style.display = 'none';
+    if (tfDisplay) tfDisplay.value = '';
+    return;
+  }
+  if (warn) warn.style.display = 'none';
+  const co = DB.companies.find(c => c.name === sel.value);
+  if (co && co.tfNo) {
+    if (tfDisplay) tfDisplay.value = co.tfNo;
+    const d = daysUntil(co.tfExpiry);
+    const expStr = co.tfExpiry ? ` · Expires: ${fmtDate(co.tfExpiry)} (${d > 0 ? d + ' days' : 'EXPIRED'})` : '';
+    const authStr = co.tfAuthority ? ` · ${co.tfAuthority}` : '';
+    const typeStr = co.tfType ? ` · ${co.tfType}` : '';
+    if (tfDetails) tfDetails.innerHTML = `<b style="color:var(--green);">✓ Traffic File: ${co.tfNo}</b>${authStr}${typeStr}${expStr}`;
+    if (tfInfo) tfInfo.style.display = 'block';
+    if (d <= 30 && d >= 0) tfInfo.style.background = 'rgba(240,122,61,0.08)';
+    else if (d < 0) tfInfo.style.background = 'rgba(232,81,81,0.08)';
+    else tfInfo.style.background = 'rgba(61,206,132,0.08)';
+  } else {
+    if (tfDisplay) tfDisplay.value = co ? 'No Traffic File recorded' : '';
+    if (tfInfo) tfInfo.style.display = co ? 'block' : 'none';
+    if (tfDetails && co) tfDetails.innerHTML = `<span style="color:var(--orange);">⚠ This company has no Traffic File Number. Please update the company record first.</span>`;
+  }
+}
+
+// ===== COMPANIES PAGE =====
+function renderCompanies() {
+  const list = DB.companies;
+  document.getElementById('co-total').textContent = list.length;
+  document.getElementById('co-vehicles').textContent = DB.vehicles.length;
+  const expiring = list.filter(c => { const d = daysUntil(c.tfExpiry); return d >= 0 && d <= 30; }).length;
+  document.getElementById('co-tfexpiring').textContent = expiring;
+  document.getElementById('co-emirates').textContent = [...new Set(list.map(c => c.emirate).filter(Boolean))].length;
+
+  if (!list.length) {
+    document.getElementById('companiesTable').innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:28px;">No companies added yet. Add a company first before registering vehicles.</td></tr>';
+    return;
+  }
+
+  document.getElementById('companiesTable').innerHTML = list.map(c => {
+    const vCount = DB.vehicles.filter(v => v.company === c.name).length;
+    const d = c.tfExpiry ? daysUntil(c.tfExpiry) : null;
+    const tfBadge = d === null ? `<span class="badge badge-gray">No expiry set</span>`
+      : d < 0 ? `<span class="badge badge-red">Expired</span>`
+      : d <= 7 ? `<span class="badge badge-red">${d}d left</span>`
+      : d <= 30 ? `<span class="badge badge-amber">${d}d left</span>`
+      : `<span class="badge badge-green">Valid · ${d}d</span>`;
+    const tfNoCell = c.tfNo
+      ? `<span class="mono" style="font-size:12px;font-weight:500;">${c.tfNo}</span><br><span style="font-size:10px;color:var(--text3);">${c.tfAuthority||''}</span>`
+      : `<span style="color:var(--red);font-size:11px;">⚠ Not set</span>`;
+    return `<tr>
+      <td><div style="font-weight:500;">${c.name}</div><div style="font-size:11px;color:var(--text3);">${c.tfType||''}</div></td>
+      <td class="mono" style="font-size:11px;">${c.tradeLicense||'—'}</td>
+      <td>${tfNoCell}</td>
+      <td>${c.emirate||'—'}</td>
+      <td style="font-weight:500;color:${d!==null&&d<=30?d<0?'var(--red)':'var(--orange)':'var(--text)'}">${c.tfExpiry ? fmtDate(c.tfExpiry) : '—'}</td>
+      <td>${tfBadge}</td>
+      <td><span class="badge badge-blue">${vCount} vehicle${vCount!==1?'s':''}</span></td>
+      <td style="font-size:12px;">${c.owner||'—'}<br><span style="font-size:11px;color:var(--text3);">${c.phone||''}</span></td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-sm" onclick="editCompanyDetail('${c.id}')">Edit</button>
+        <button class="btn btn-sm" onclick="viewCompanyVehicles('${c.name}')">Vehicles</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteCompany('${c.id}')">Del</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function saveCompanyDetail() {
+  const id = document.getElementById('co-id').value;
+  // Collect extra TF rows
+  const extraTFs = [];
+  document.querySelectorAll('.extra-tf-row').forEach(row => {
+    const no = row.querySelector('.extra-tf-no')?.value?.trim();
+    const auth = row.querySelector('.extra-tf-auth')?.value;
+    const exp = row.querySelector('.extra-tf-exp')?.value;
+    if (no) extraTFs.push({ no, auth, exp });
+  });
+  const r = {
+    id: id || uid(),
+    name: document.getElementById('co-name').value.trim(),
+    emirate: document.getElementById('co-emirate').value,
+    tradeLicense: document.getElementById('co-tradelicense').value.trim(),
+    tlExpiry: document.getElementById('co-tlexpiry').value,
+    owner: document.getElementById('co-owner').value.trim(),
+    phone: document.getElementById('co-phone').value.trim(),
+    email: document.getElementById('co-email').value.trim(),
+    address: document.getElementById('co-address').value.trim(),
+    tfNo: document.getElementById('co-tfno').value.trim(),
+    tfAuthority: document.getElementById('co-tfauthority').value,
+    tfIssue: document.getElementById('co-tfissue').value,
+    tfExpiry: document.getElementById('co-tfexpiry').value,
+    tfMaxVehicles: document.getElementById('co-tfmaxvehicles').value,
+    tfType: document.getElementById('co-tftype').value,
+    tfFee: document.getElementById('co-tffee').value,
+    tfLastRenewed: document.getElementById('co-tflastrenewed').value,
+    extraTFs,
+    notes: document.getElementById('co-notes').value
+  };
+  if (!r.name) { toast('Company name is required', 'error'); return; }
+  if (!r.tfNo) { toast('Traffic File Number is required', 'error'); return; }
+  if (id) { const i = DB.companies.findIndex(x => x.id === id); if (i >= 0) DB.companies[i] = r; }
+  else DB.companies.push(r);
+  saveDB(); closeModal('companyDetailModal'); renderCompanies();
+  populateCompanyDropdowns(); toast('Company saved');
+}
+
+function editCompanyDetail(id) {
+  const c = DB.companies.find(x => x.id === id); if (!c) return;
+  document.getElementById('co-id').value = c.id;
+  document.getElementById('co-companyDetailModalTitle') && (document.getElementById('companyDetailModalTitle').textContent = 'Edit Company');
+  const map = { name:'co-name', emirate:'co-emirate', tradeLicense:'co-tradelicense', tlExpiry:'co-tlexpiry', owner:'co-owner', phone:'co-phone', email:'co-email', address:'co-address', tfNo:'co-tfno', tfAuthority:'co-tfauthority', tfIssue:'co-tfissue', tfExpiry:'co-tfexpiry', tfMaxVehicles:'co-tfmaxvehicles', tfType:'co-tftype', tfFee:'co-tffee', tfLastRenewed:'co-tflastrenewed', notes:'co-notes' };
+  Object.entries(map).forEach(([k, elId]) => { const el = document.getElementById(elId); if (el) el.value = c[k]||''; });
+  // Populate extra TFs
+  const extraList = document.getElementById('co-extraTFList');
+  extraList.innerHTML = '';
+  (c.extraTFs||[]).forEach(tf => addExtraTFRow(tf));
+  openModal('companyDetailModal');
+}
+
+function addExtraTFRow(tf) {
+  const div = document.createElement('div');
+  div.className = 'extra-tf-row form-grid';
+  div.style.cssText = 'grid-template-columns:2fr 2fr 1.5fr auto;gap:8px;align-items:end;';
+  div.innerHTML = `
+    <div class="form-group"><label class="form-label">TF Number</label><input class="form-input extra-tf-no" placeholder="Traffic File No." value="${tf?.no||''}"></div>
+    <div class="form-group"><label class="form-label">Authority</label>
+      <select class="form-select extra-tf-auth">
+        <option ${tf?.auth==='RTA Dubai'?'selected':''}>RTA Dubai</option>
+        <option ${tf?.auth==='Sharjah Traffic Dept.'?'selected':''}>Sharjah Traffic Dept.</option>
+        <option ${tf?.auth==='Abu Dhabi Police — Traffic'?'selected':''}>Abu Dhabi Police — Traffic</option>
+        <option ${tf?.auth==='Ajman Traffic Dept.'?'selected':''}>Ajman Traffic Dept.</option>
+        <option ${tf?.auth==='RAK Traffic Dept.'?'selected':''}>RAK Traffic Dept.</option>
+        <option ${tf?.auth==='Fujairah Traffic Dept.'?'selected':''}>Fujairah Traffic Dept.</option>
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">TF Expiry</label><input class="form-input extra-tf-exp" type="date" value="${tf?.exp||''}"></div>
+    <button class="btn btn-sm btn-danger" style="margin-bottom:0;" onclick="this.parentElement.remove()">✕</button>`;
+  document.getElementById('co-extraTFList').appendChild(div);
+}
+
+function deleteCompany(id) {
+  const c = DB.companies.find(x => x.id === id); if (!c) return;
+  const vCount = DB.vehicles.filter(v => v.company === c.name).length;
+  if (vCount > 0) { toast(`Cannot delete: ${vCount} vehicle(s) registered under this company`, 'error'); return; }
+  if (!confirm(`Delete company "${c.name}"?`)) return;
+  DB.companies = DB.companies.filter(x => x.id !== id);
+  saveDB(); renderCompanies(); populateCompanyDropdowns(); toast('Company deleted');
+}
+
+function viewCompanyVehicles(companyName) {
+  // Switch to vehicles page filtered by company
+  const fc = document.getElementById('vFilterCompany');
+  if (fc) fc.value = companyName;
+  nav('vehicles', null);
+  // Highlight correct nav item
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => { if (n.textContent.includes('All Vehicles')) n.classList.add('active'); });
+  renderVehicles();
+}
+
+// ===== DASHBOARD =====
+function renderDashboard() {
+  const vehicles = DB.vehicles;
+  document.getElementById('s-total').textContent = vehicles.length;
+
+  // Expiring
+  const ins = DB.insurance;
+  const permits = DB.permits;
+  let expiring = 0;
+  ins.forEach(i => { if (daysUntil(i.expiry) <= 30) expiring++; });
+  permits.forEach(p => { if (daysUntil(p.mulkiya) <= 30) expiring++; });
+  document.getElementById('s-expiring').textContent = expiring;
+
+  // Fines
+  const openFines = DB.fines.filter(f => !f.paidDate);
+  const fineTotal = openFines.reduce((a,f) => a + Number(f.amount||0), 0);
+  document.getElementById('s-fines').textContent = fmtAED(fineTotal);
+  document.getElementById('s-fines-count').textContent = openFines.length + ' unpaid';
+
+  // Expenses this month
+  const m = thisMonth();
+  const monthExp = DB.expenses.filter(e => (e.date||'').startsWith(m));
+  const expTotal = monthExp.reduce((a,e) => a + Number(e.amount||0), 0);
+  document.getElementById('s-expenses').textContent = fmtAED(expTotal);
+
+  // Alerts
+  const urgentIns = ins.filter(i => daysUntil(i.expiry) <= 7);
+  document.querySelector('#page-dashboard .alert-card.red .alert-title').textContent = `${urgentIns.length} vehicle${urgentIns.length!==1?'s':''} — insurance expiring <7 days`;
+  document.getElementById('alert-ins').textContent = urgentIns.length ? urgentIns.map(i => i.plate).join(' · ') : 'No urgent alerts';
+
+  const duePermits = permits.filter(p => daysUntil(p.mulkiya) <= 30);
+  document.getElementById('alert-mul-title').textContent = `${duePermits.length} Mulkiya renewal${duePermits.length!==1?'s':''} <30 days`;
+  document.getElementById('alert-mul').textContent = duePermits.length ? duePermits.map(p => p.plate).join(' · ') : 'No upcoming renewals';
+
+  // Company table
+  const compRows = DB.companies.map(c => {
+    const cv = vehicles.filter(v => v.company === c.name);
+    const emirates = [...new Set(cv.map(v => v.emirate))].join(', ');
+    const d = c.tfExpiry ? daysUntil(c.tfExpiry) : null;
+    const tfBadge = d === null ? `<span class="badge badge-gray">—</span>`
+      : d < 0 ? `<span class="badge badge-red">TF Expired</span>`
+      : d <= 30 ? `<span class="badge badge-amber">TF: ${d}d</span>`
+      : `<span class="badge badge-green">TF Valid</span>`;
+    return `<tr><td>${c.name}</td><td class="mono" style="font-size:11px;">${c.tfNo||'<span style="color:var(--red);">Not set</span>'}</td><td>${cv.length}</td><td>${emirates||'—'}</td><td>${tfBadge}</td></tr>`;
+  }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:16px;">Add companies in the Companies section</td></tr>';
+  document.getElementById('dashCompanyTable').innerHTML = compRows;
+
+  // Recent activity (last 5 from all modules combined)
+  const acts = [];
+  DB.expenses.slice(-3).forEach(e => acts.push({date:e.date, plate:e.plate, action:`${e.category}: ${fmtAED(e.amount)}`}));
+  DB.fines.slice(-2).forEach(f => acts.push({date:f.date, plate:f.plate, action:`Fine ${fmtAED(f.amount)} recorded`}));
+  acts.sort((a,b) => (b.date||'') > (a.date||'') ? 1 : -1);
+  const actRows = acts.slice(0,6).map(a => `<tr><td>${fmtDate(a.date)}</td><td class="mono">${a.plate}</td><td>${a.action}</td></tr>`).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--text3);padding:16px;">No activity yet</td></tr>';
+  document.getElementById('dashActivity').innerHTML = actRows;
+}
+
+// ===== VEHICLES =====
+function renderVehicles() {
+  populateCompanyDropdowns();
+  const q = (document.getElementById('vehicleSearch').value||'').toLowerCase();
+  const ft = document.getElementById('vFilterType').value;
+  const fc = document.getElementById('vFilterCompany').value;
+  const fe = document.getElementById('vFilterEmirate').value;
+
+  let list = DB.vehicles.filter(v => {
+    if (q && !`${v.plate} ${v.make} ${v.model} ${v.driver}`.toLowerCase().includes(q)) return false;
+    if (ft && v.type !== ft) return false;
+    if (fc && v.company !== fc) return false;
+    if (fe && v.emirate !== fe) return false;
+    return true;
+  });
+
+  if (!list.length) {
+    document.getElementById('vehiclesTable').innerHTML = '<tr><td colspan="14" style="text-align:center;color:var(--text3);padding:24px;">No vehicles found</td></tr>';
+    return;
+  }
+
+  const rows = list.map(v => {
+    const ins = DB.insurance.filter(i => i.plate === v.plate).sort((a,b) => (b.expiry||'') > (a.expiry||'') ? 1 : -1)[0];
+    const perm = DB.permits.filter(p => p.plate === v.plate).sort((a,b) => (b.mulkiya||'') > (a.mulkiya||'') ? 1 : -1)[0];
+    const insBadge = ins ? daysBadge(daysUntil(ins.expiry)) : `<span class="badge badge-gray">No record</span>`;
+    const permBadge = perm ? daysBadge(daysUntil(perm.mulkiya)) : `<span class="badge badge-gray">No record</span>`;
+    const tfNo = v.trafficFileNo || (DB.companies.find(c=>c.name===v.company)||{}).tfNo || '';
+    const isCargoType = ['Van — Cargo','Pickup','Pickup — Double Cab','Truck — Light','Truck — Medium','Truck — Heavy','Chiller Van','Chiller Truck','Flatbed Truck','Tipper Truck','Tanker','Container Truck','Curtain Side','Forklift','Reach Stacker','Crane','Excavator','Loader','Compactor','Bulldozer','Scissor Lift','Boom Lift','Tractor Unit','Trailer'].includes(v.type);
+    return `<tr>
+      <td class="mono" style="font-size:11px;font-weight:500;">${v.assetCode||'—'}</td>
+      <td class="mono">${v.plate}</td>
+      <td><b>${v.make}</b> ${v.model}</td>
+      <td>${v.year||'—'}</td>
+      <td><span class="badge badge-blue" style="font-size:10px;">${v.type||'—'}</span></td>
+      <td>${v.emirate||'—'}</td>
+      <td><span class="badge badge-gray" style="font-size:10px;">${v.company||'—'}</span></td>
+      <td class="mono" style="font-size:11px;">${tfNo||'<span style="color:var(--text3);">—</span>'}</td>
+      <td style="font-size:12px;color:var(--text2);">${v.seating ? v.seating+' seats' : '—'}</td>
+      <td style="font-size:12px;color:var(--text2);">${v.payload ? Number(v.payload).toLocaleString()+' kg' : '—'}</td>
+      <td>${insBadge}</td>
+      <td>${permBadge}</td>
+      <td>${statusBadge(v.status||'Active')}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-sm" onclick="editVehicle('${v.id}')">Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteRecord('vehicles','${v.id}')">Del</button>
+      </td>
+    </tr>`;
+  }).join('');
+  document.getElementById('vehiclesTable').innerHTML = rows;
+}
+
+// ===== INSURANCE =====
+function renderInsurance() {
+  const list = DB.insurance;
+  let t=0, e7=0, e30=0, cost=0;
+  list.forEach(i => {
+    t++; cost += Number(i.premium||0);
+    const d = daysUntil(i.expiry);
+    if (d<=7) e7++; else if (d<=30) e30++;
+  });
+  document.getElementById('ins-total').textContent = t;
+  document.getElementById('ins-7').textContent = e7;
+  document.getElementById('ins-30').textContent = e30;
+  document.getElementById('ins-cost').textContent = fmtAED(cost);
+
+  if (!list.length) { document.getElementById('insuranceTable').innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--text3);padding:24px;">No insurance records yet</td></tr>'; return; }
+  const sorted = [...list].sort((a,b) => (a.expiry||'') < (b.expiry||'') ? -1 : 1);
+  document.getElementById('insuranceTable').innerHTML = sorted.map(i => {
+    const d = daysUntil(i.expiry);
+    const agencyBadge = i.agencyRepair === 'Yes'
+      ? `<span class="badge badge-green">Yes</span>`
+      : i.agencyRepair === 'No'
+        ? `<span class="badge badge-gray">No</span>`
+        : `<span style="color:var(--text3);font-size:11px;">—</span>`;
+    const docCount = (i.documents||[]).length;
+    return `<tr>
+      <td class="mono">${i.plate}</td>
+      <td>${getCompanyName(i.plate)}</td>
+      <td>${i.insurer||'—'}</td>
+      <td class="mono" style="font-size:11px;">${i.policy||'—'}</td>
+      <td><span class="badge badge-${i.type==='Comprehensive'?'badge-purple':'badge-gray'}">${i.type||'—'}</span></td>
+      <td>${fmtDate(i.start)}</td>
+      <td style="font-weight:500;color:${d<=7?'var(--red)':d<=30?'var(--orange)':'var(--text)'}">${fmtDate(i.expiry)}</td>
+      <td>${fmtAED(i.premium)}</td>
+      <td>${agencyBadge}</td>
+      <td>${i.excess ? fmtAED(i.excess) : '—'}</td>
+      <td>${daysBadge(d)}</td>
+      <td>${docCount > 0 ? `<span class="badge badge-blue">${docCount} file${docCount!==1?'s':''}</span>` : '<span style="color:var(--text3);font-size:11px;">—</span>'}</td>
+      <td style="white-space:nowrap;"><button class="btn btn-sm" onclick="editInsurance('${i.id}')">Edit</button> <button class="btn btn-sm btn-danger" onclick="deleteRecord('insurance','${i.id}')">Del</button></td>
+    </tr>`;
+  }).join('');
+}
+
+// ===== PERMITS =====
+function renderPermits() {
+  if (!DB.permits.length) { document.getElementById('permitsTable').innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text3);padding:24px;">No permit records yet</td></tr>'; return; }
+  const sorted = [...DB.permits].sort((a,b) => (a.mulkiya||'') < (b.mulkiya||'') ? -1 : 1);
+  document.getElementById('permitsTable').innerHTML = sorted.map(p => {
+    const d = daysUntil(p.mulkiya);
+    return `<tr>
+      <td class="mono">${p.plate}</td><td>${getCompanyName(p.plate)}</td><td>${getVehicle(p.plate).emirate||p.emirate||'—'}</td>
+      <td style="font-weight:500;color:${d<=7?'var(--red)':d<=30?'var(--orange)':'var(--text)'}">${fmtDate(p.mulkiya)}</td>
+      <td class="mono" style="font-size:11px;">${p.permitNo||'—'}</td>
+      <td>${p.permitType||'—'}</td>
+      <td>${fmtDate(p.expiry)||fmtDate(p.mulkiya)}</td>
+      <td>${p.authority||'—'}</td>
+      <td>${fmtAED(p.fee)}</td>
+      <td>${daysBadge(d)}</td>
+      <td><button class="btn btn-sm" onclick="editPermit('${p.id}')">Edit</button> <button class="btn btn-sm btn-danger" onclick="deleteRecord('permits','${p.id}')">Del</button></td>
+    </tr>`;
+  }).join('');
+}
+
+// ===== FINES =====
+function renderFines() {
+  const list = DB.fines;
+  const open = list.filter(f => !f.paidDate);
+  const paid = list.filter(f => f.paidDate);
+  document.getElementById('fine-outstanding').textContent = fmtAED(open.reduce((a,f)=>a+Number(f.amount||0),0));
+  document.getElementById('fine-paid').textContent = fmtAED(paid.reduce((a,f)=>a+Number(f.amount||0),0));
+  document.getElementById('fine-open').textContent = open.length;
+  document.getElementById('fine-points').textContent = list.reduce((a,f)=>a+Number(f.points||0),0);
+  if (!list.length) { document.getElementById('finesTable').innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text3);padding:24px;">No fines recorded</td></tr>'; return; }
+  const sorted = [...list].sort((a,b) => (b.date||'') > (a.date||'') ? 1 : -1);
+  document.getElementById('finesTable').innerHTML = sorted.map(f => `<tr>
+    <td class="mono">${f.plate}</td><td>${getCompanyName(f.plate)}</td>
+    <td class="mono" style="font-size:11px;">${f.fineNo||'—'}</td>
+    <td>${fmtDate(f.date)}</td><td>${f.violation||'—'}</td><td>${f.authority||'—'}</td>
+    <td style="font-weight:500;">${fmtAED(f.amount)}</td>
+    <td>${f.points||0}</td>
+    <td>${f.paidDate ? fmtDate(f.paidDate) : '—'}</td>
+    <td>${statusBadge(f.paidDate ? 'Paid' : 'Unpaid')}</td>
+    <td><button class="btn btn-sm" onclick="editFine('${f.id}')">Edit</button> <button class="btn btn-sm btn-danger" onclick="deleteRecord('fines','${f.id}')">Del</button></td>
+  </tr>`).join('');
+}
+
+// ===== PURCHASE DOCUMENT HELPERS =====
+let purDocuments = []; // temporary store while modal is open
+
+function onPurPaymentChange() {
+  const v = document.getElementById('pur-payment')?.value || '';
+  const section = document.getElementById('pur-finance-section');
+  if (section) section.style.display = ['Bank Finance','Lease'].includes(v) ? 'block' : 'none';
+}
+
+function setPurDocLabel(label) {
+  const el = document.getElementById('pur-doc-label');
+  if (el) el.value = label;
+}
+
+function handlePurDrop(event) {
+  event.preventDefault();
+  document.getElementById('pur-dropzone').style.borderColor = '';
+  handlePurFiles(event.dataTransfer.files);
+}
+
+function handlePurFiles(files) {
+  const maxSize = 5 * 1024 * 1024; // 5MB
+  const label = document.getElementById('pur-doc-label')?.value?.trim() || '';
+  [...files].forEach(file => {
+    if (file.size > maxSize) { toast(`${file.name} is too large (max 5MB)`, 'error'); return; }
+    const reader = new FileReader();
+    reader.onload = e => {
+      purDocuments.push({
+        uid: uid(),
+        name: file.name,
+        label: label || guessDocLabel(file.name),
+        type: file.type,
+        size: file.size,
+        data: e.target.result // base64 data URL
+      });
+      renderPurAttachments();
+    };
+    reader.readAsDataURL(file);
+  });
+  // Clear label after use
+  const labelEl = document.getElementById('pur-doc-label');
+  if (labelEl) labelEl.value = '';
+  document.getElementById('pur-file-input').value = '';
+}
+
+function guessDocLabel(filename) {
+  const f = filename.toLowerCase();
+  if (f.includes('invoice') || f.includes('bill')) return 'Purchase Invoice';
+  if (f.includes('finance') || f.includes('agreement') || f.includes('loan')) return 'Finance Agreement';
+  if (f.includes('transfer') || f.includes('ownership')) return 'Ownership Transfer';
+  if (f.includes('warranty')) return 'Warranty Card';
+  if (f.includes('cheque') || f.includes('pdc')) return 'PDC Cheque Scan';
+  return 'Document';
+}
+
+function removePurDoc(uid) {
+  purDocuments = purDocuments.filter(d => d.uid !== uid);
+  renderPurAttachments();
+}
+
+function downloadPurDoc(uid) {
+  const doc = purDocuments.find(d => d.uid === uid);
+  if (!doc) return;
+  const a = document.createElement('a');
+  a.href = doc.data;
+  a.download = doc.name;
+  a.click();
+}
+
+function previewPurDoc(uid) {
+  const doc = purDocuments.find(d => d.uid === uid);
+  if (!doc) return;
+  if (doc.type.startsWith('image/') || doc.type === 'application/pdf') {
+    const w = window.open();
+    w.document.write(`<title>${doc.name}</title><body style="margin:0;background:#111;display:flex;justify-content:center;align-items:flex-start;">`);
+    if (doc.type.startsWith('image/')) w.document.write(`<img src="${doc.data}" style="max-width:100%;height:auto;">`);
+    else w.document.write(`<embed src="${doc.data}" type="application/pdf" width="100%" height="100vh" style="min-height:100vh;">`);
+    w.document.write('</body>');
+  } else { downloadPurDoc(uid); }
+}
+
+function getFileIcon(type) {
+  if (!type) return '📄';
+  if (type === 'application/pdf') return '📕';
+  if (type.startsWith('image/')) return '🖼';
+  if (type.includes('word') || type.includes('docx')) return '📝';
+  if (type.includes('sheet') || type.includes('xlsx')) return '📊';
+  return '📎';
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/(1024*1024)).toFixed(1) + ' MB';
+}
+
+function renderPurAttachments() {
+  const el = document.getElementById('pur-attachments-list');
+  if (!el) return;
+  if (!purDocuments.length) {
+    el.innerHTML = '<div style="text-align:center;padding:12px;font-size:12px;color:var(--text3);">No documents attached yet</div>';
+    return;
+  }
+  el.innerHTML = purDocuments.map(d => `
+    <div class="doc-card">
+      <span class="doc-icon">${getFileIcon(d.type)}</span>
+      <div class="doc-info">
+        <div class="doc-name">${d.name}<span class="doc-label-badge">${d.label}</span></div>
+        <div class="doc-meta">${formatFileSize(d.size)}</div>
+      </div>
+      <button type="button" class="btn btn-sm" onclick="previewPurDoc('${d.uid}')" title="Preview">👁</button>
+      <button type="button" class="btn btn-sm" onclick="downloadPurDoc('${d.uid}')" title="Download">⬇</button>
+      <button type="button" class="btn btn-sm btn-danger" onclick="removePurDoc('${d.uid}')" title="Remove">✕</button>
+    </div>`).join('');
+}
+
+// Reset doc list when modal opens for new record
+function openPurchaseModal() {
+  purDocuments = [];
+  document.getElementById('pur-id').value = '';
+  document.getElementById('purchaseModalTitle').textContent = 'Add Purchase Record';
+  ['pur-date','pur-supplier','pur-price','pur-chassis','pur-invoice','pur-vat','pur-bank','pur-financeref','pur-loanamt','pur-downpayment','pur-instalment','pur-tenure','pur-rate','pur-financestart','pur-financeend','pur-balloon','pur-notes'].forEach(id => { const el = document.getElementById(id); if(el) el.value=''; });
+  openModal('purchaseModal');
+  onPurPaymentChange();
+  renderPurAttachments();
+}
+
+// ===== PURCHASES =====
+function renderPurchases() {
+  if (!DB.purchases.length) { document.getElementById('purchaseTable').innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text3);padding:24px;">No purchase records yet</td></tr>'; return; }
+  document.getElementById('purchaseTable').innerHTML = DB.purchases.map(p => {
+    const v = getVehicle(p.plate);
+    const docCount = (p.documents||[]).length;
+    const isFinanced = ['Bank Finance','Lease'].includes(p.payment);
+    return `<tr>
+      <td class="mono">${p.plate}</td><td>${v.make||''} ${v.model||''} ${v.year||''}</td><td>${getCompanyName(p.plate)}</td>
+      <td>${fmtDate(p.date)}</td><td>${p.supplier||'—'}</td><td style="font-weight:500;">${fmtAED(p.price)}</td>
+      <td>${p.payment||'—'}${isFinanced&&p.bank?`<br><span style="font-size:10px;color:var(--text3);">${p.bank}${p.tenure?' · '+p.tenure+'mo':''}</span>`:''}</td>
+      <td class="mono" style="font-size:11px;">${p.chassis||'—'}</td>
+      <td>${docCount > 0 ? `<span class="badge badge-blue">${docCount} file${docCount!==1?'s':''}</span>` : '<span style="color:var(--text3);font-size:11px;">—</span>'}</td>
+      <td style="white-space:nowrap;"><button class="btn btn-sm" onclick="editPurchase('${p.id}')">Edit</button> <button class="btn btn-sm btn-danger" onclick="deleteRecord('purchases','${p.id}')">Del</button></td>
+    </tr>`;
+  }).join('');
+}
+
+// ===== EXPENSES =====
+function renderExpenses() {
+  const m = thisMonth();
+  const list = DB.expenses;
+  const mList = list.filter(e => (e.date||'').startsWith(m));
+  document.getElementById('exp-month').textContent = fmtAED(mList.reduce((a,e)=>a+Number(e.amount||0),0));
+  document.getElementById('exp-fuel').textContent = fmtAED(mList.filter(e=>e.category==='Fuel').reduce((a,e)=>a+Number(e.amount||0),0));
+  document.getElementById('exp-maint').textContent = fmtAED(mList.filter(e=>e.category==='Maintenance').reduce((a,e)=>a+Number(e.amount||0),0));
+  const other = mList.filter(e=>!['Fuel','Maintenance'].includes(e.category)).reduce((a,e)=>a+Number(e.amount||0),0);
+  document.getElementById('exp-other').textContent = fmtAED(other);
+  if (!list.length) { document.getElementById('expensesTable').innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:24px;">No expenses logged</td></tr>'; return; }
+  const sorted = [...list].sort((a,b) => (b.date||'') > (a.date||'') ? 1 : -1);
+  const catColors = {Fuel:'amber',Maintenance:'blue',Insurance:'purple','Traffic Fine':'red',Fuel:'amber','Toll / Salik':'teal'};
+  document.getElementById('expensesTable').innerHTML = sorted.map(e => `<tr>
+    <td>${fmtDate(e.date)}</td><td class="mono">${e.plate}</td><td>${getCompanyName(e.plate)}</td>
+    <td><span class="badge badge-${catColors[e.category]||'gray'}">${e.category||'—'}</span></td>
+    <td>${e.notes||'—'}</td><td style="font-weight:500;">${fmtAED(e.amount)}</td>
+    <td>${e.vendor||'—'}</td><td>${e.receipt||'—'}</td>
+    <td><button class="btn btn-sm" onclick="editExpense('${e.id}')">Edit</button> <button class="btn btn-sm btn-danger" onclick="deleteRecord('expenses','${e.id}')">Del</button></td>
+  </tr>`).join('');
+}
+
+// ===== FUEL =====
+function renderFuel() {
+  const m = thisMonth();
+  const list = DB.fuel;
+  const mList = list.filter(f => (f.date||'').startsWith(m));
+  document.getElementById('fuel-cost').textContent = fmtAED(mList.reduce((a,f)=>a+Number(f.cost||0),0));
+  document.getElementById('fuel-litres').textContent = mList.reduce((a,f)=>a+Number(f.litres||0),0).toFixed(1) + ' L';
+  document.getElementById('fuel-avg').textContent = mList.length ? fmtAED(mList.reduce((a,f)=>a+Number(f.cost||0),0)/mList.length) : 'AED 0';
+  document.getElementById('fuel-fills').textContent = mList.length;
+  if (!list.length) { document.getElementById('fuelTable').innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text3);padding:24px;">No fuel logs yet</td></tr>'; return; }
+  const sorted = [...list].sort((a,b) => (b.date||'') > (a.date||'') ? 1 : -1);
+  document.getElementById('fuelTable').innerHTML = sorted.map(f => `<tr>
+    <td>${fmtDate(f.date)}</td><td class="mono">${f.plate}</td><td>${getCompanyName(f.plate)}</td>
+    <td>${f.station||'—'}</td><td>${f.fuelType||'—'}</td>
+    <td>${f.litres||'—'} L</td><td style="font-weight:500;">${fmtAED(f.cost)}</td>
+    <td>${f.odometer ? Number(f.odometer).toLocaleString() + ' km' : '—'}</td><td>${f.driver||'—'}</td>
+    <td><button class="btn btn-sm btn-danger" onclick="deleteRecord('fuel','${f.id}')">Del</button></td>
+  </tr>`).join('');
+}
+
+// ===== TOLL TRANSACTIONS =====
+function renderToll() {
+  const fc = document.getElementById('tollFilterCompany');
+  if (fc) fc.innerHTML = '<option value="">All companies</option>' + DB.companies.map(c=>`<option>${c.name}</option>`).join('');
+  const typeFilter = document.getElementById('tollFilterType')?.value || '';
+  const compFilter = document.getElementById('tollFilterCompany')?.value || '';
+  const m = thisMonth();
+  let list = DB.toll;
+  if (typeFilter) list = list.filter(t => t.tollType === typeFilter);
+  if (compFilter) list = list.filter(t => getCompanyName(t.plate) === compFilter);
+  const mList = list.filter(t => (t.date||'').startsWith(m));
+  document.getElementById('toll-month').textContent = fmtAED(mList.reduce((a,t)=>a+Number(t.amount||0),0));
+  document.getElementById('toll-salik').textContent = fmtAED(mList.filter(t=>t.tollType==='Salik').reduce((a,t)=>a+Number(t.amount||0),0));
+  document.getElementById('toll-darb').textContent = fmtAED(mList.filter(t=>t.tollType==='Darb').reduce((a,t)=>a+Number(t.amount||0),0));
+  document.getElementById('toll-low').textContent = DB.tollAccounts.filter(a => Number(a.balance||0) < Number(a.minBalance||50)).length;
+  if (!list.length) { document.getElementById('tollTable').innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text3);padding:24px;">No toll records yet</td></tr>'; return; }
+  const sorted = [...list].sort((a,b) => (b.date||'') > (a.date||'') ? 1 : -1);
+  const typeBadge = t => t.tollType === 'Salik' ? `<span class="badge badge-blue">Salik</span>` : `<span class="badge badge-green">Darb</span>`;
+  document.getElementById('tollTable').innerHTML = sorted.map(t => `<tr>
+    <td>${fmtDate(t.date)}</td><td>${typeBadge(t)}</td>
+    <td class="mono">${t.plate}</td><td>${getCompanyName(t.plate)}</td>
+    <td class="mono" style="font-size:11px;">${t.accountNo||'—'}</td><td>${t.gate||'—'}</td>
+    <td style="font-weight:500;">${fmtAED(t.amount)}</td>
+    <td style="color:${Number(t.balance||999)<50?'var(--red)':'var(--text)'}">${t.balance!==undefined&&t.balance!==''?fmtAED(t.balance):'—'}</td>
+    <td>${t.topup&&Number(t.topup)>0?`<span class="badge badge-green">+${fmtAED(t.topup)}</span>`:'—'}</td>
+    <td><button class="btn btn-sm btn-danger" onclick="deleteRecord('toll','${t.id}')">Del</button></td>
+  </tr>`).join('');
+}
+
+// ===== TOLL ACCOUNTS =====
+function renderTollAccounts() {
+  const accounts = DB.tollAccounts;
+  const salik = accounts.filter(a=>a.type==='Salik'), darb = accounts.filter(a=>a.type==='Darb');
+  document.getElementById('ta-total').textContent = accounts.length;
+  document.getElementById('ta-salik').textContent = salik.length;
+  document.getElementById('ta-darb').textContent = darb.length;
+  document.getElementById('ta-low').textContent = accounts.filter(a=>Number(a.balance||0)<Number(a.minBalance||50)).length;
+  const renderRows = (list, tbodyId) => {
+    if (!list.length) { document.getElementById(tbodyId).innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:20px;">No accounts added</td></tr>`; return; }
+    document.getElementById(tbodyId).innerHTML = list.map(a => {
+      const linked = DB.vehicles.filter(v=>(v.salikAccount===a.id)||(v.darbAccount===a.id));
+      const bal=Number(a.balance||0), minBal=Number(a.minBalance||50);
+      return `<tr>
+        <td class="mono" style="font-weight:500;">${a.accountNo}</td><td>${a.company}</td><td>${a.accountName||'—'}</td>
+        <td>${linked.length>0?linked.map(v=>`<span class="mono" style="font-size:10px;background:var(--bg4);padding:1px 6px;border-radius:4px;margin-right:3px;">${v.plate}</span>`).join(''):'<span style="color:var(--text3);font-size:11px;">None linked</span>'}</td>
+        <td style="font-weight:500;color:${bal<minBal?'var(--red)':bal<minBal*2?'var(--orange)':'var(--green)'}">${fmtAED(bal)} ${bal<minBal?'⚠':''}</td>
+        <td>${a.lastTopup?fmtDate(a.lastTopup):'—'}</td>
+        <td>${a.autoRecharge==='Yes'?`<span class="badge badge-green">Yes · ${fmtAED(a.rechargeAmt)}</span>`:`<span class="badge badge-gray">No</span>`}</td>
+        <td>${bal<minBal?`<span class="badge badge-red">Low balance</span>`:`<span class="badge badge-green">Active</span>`}</td>
+        <td style="white-space:nowrap;"><button class="btn btn-sm" onclick="editTollAccount('${a.id}')">Edit</button> <button class="btn btn-sm" onclick="quickTopup('${a.id}')">Top-up</button> <button class="btn btn-sm btn-danger" onclick="deleteRecord('tollAccounts','${a.id}')">Del</button></td>
+      </tr>`;
+    }).join('');
+  };
+  renderRows(salik,'salikAccountsTable'); renderRows(darb,'darbAccountsTable');
+  const vehicles = DB.vehicles;
+  if (!vehicles.length) { document.getElementById('vehicleTollLinkTable').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:20px;">No vehicles yet</td></tr>'; return; }
+  document.getElementById('vehicleTollLinkTable').innerHTML = vehicles.map(v => {
+    const sOpts = DB.tollAccounts.filter(a=>a.type==='Salik').map(a=>`<option value="${a.id}" ${v.salikAccount===a.id?'selected':''}>${a.accountNo} · ${a.company}</option>`).join('');
+    const dOpts = DB.tollAccounts.filter(a=>a.type==='Darb').map(a=>`<option value="${a.id}" ${v.darbAccount===a.id?'selected':''}>${a.accountNo} · ${a.company}</option>`).join('');
+    return `<tr>
+      <td class="mono" style="font-weight:500;">${v.plate}</td><td>${v.company}</td><td>${v.emirate}</td>
+      <td><select class="form-select" style="font-size:11px;padding:4px 8px;" onchange="linkVehicleToll('${v.id}','salik',this.value)"><option value="">— None —</option>${sOpts}</select></td>
+      <td><select class="form-select" style="font-size:11px;padding:4px 8px;" onchange="linkVehicleToll('${v.id}','darb',this.value)"><option value="">— None —</option>${dOpts}</select></td>
+      <td><input class="form-input" style="font-size:11px;padding:4px 8px;width:130px;" placeholder="Tag/sticker no." value="${v.tollTag||''}" onchange="saveVehicleTollTag('${v.id}',this.value)"></td>
+      <td>${v.tollTag?`<span class="badge badge-green">Tagged</span>`:`<span class="badge badge-gray">No tag</span>`}</td>
+      <td><button class="btn btn-sm btn-primary" onclick="saveTollLinks('${v.id}')">Save</button></td>
+    </tr>`;
+  }).join('');
+}
+function linkVehicleToll(vid,type,accId){const v=DB.vehicles.find(x=>x.id===vid);if(!v)return;if(type==='salik')v.salikAccount=accId;else v.darbAccount=accId;}
+function saveVehicleTollTag(vid,tag){const v=DB.vehicles.find(x=>x.id===vid);if(v)v.tollTag=tag;}
+function saveTollLinks(vid){saveDB();toast('Toll links saved');renderTollAccounts();}
+
+function quickTopup(accountId) {
+  const a=DB.tollAccounts.find(x=>x.id===accountId);if(!a)return;
+  const amt=prompt(`Top-up ${a.type} account ${a.accountNo}\nCurrent balance: AED ${a.balance||0}\nEnter top-up amount (AED):`);
+  if(!amt||isNaN(amt))return;
+  a.balance=Number(a.balance||0)+Number(amt);a.lastTopup=todayVal();
+  saveDB();renderTollAccounts();toast(`Account topped up by ${fmtAED(amt)}`);
+}
+
+function openTollTxnModal() {
+  document.getElementById('toll-id').value='';
+  document.getElementById('tollTxnModalTitle').textContent='Add Toll Transaction';
+  document.getElementById('toll-date').value=todayVal();
+  populateTollAccountDropdown();populatePlateDropdowns();openModal('tollModal');
+}
+function populateTollAccountDropdown() {
+  const type=document.getElementById('toll-type')?.value||'Salik';
+  const el=document.getElementById('toll-account');if(!el)return;
+  el.innerHTML='<option value="">— Select account —</option>'+DB.tollAccounts.filter(a=>a.type===type).map(a=>`<option value="${a.id}">${a.accountNo} · ${a.company} (Bal: ${fmtAED(a.balance||0)})</option>`).join('');
+}
+function updateTollTxnGates() {
+  const type=document.getElementById('toll-type').value;
+  const gate=document.getElementById('toll-gate'),amount=document.getElementById('toll-amount');
+  if(type==='Salik'){gate.innerHTML='<option>Garhoud Bridge</option><option>Al Maktoum Bridge</option><option>Al Safa North</option><option>Al Safa South</option><option>Al Barsha</option><option>Al Mamzar North</option><option>Al Mamzar South</option><option>Airport Tunnel</option><option>Business Bay</option><option>Jebel Ali</option>';amount.value=4;}
+  else{gate.innerHTML='<option>Mussafah Zone</option><option>Khalifa City</option><option>Baniyas</option><option>Shahama</option><option>Al Bahia</option><option>Mafraq</option><option>Airport Zone</option><option>Other</option>';amount.value=4;}
+  populateTollAccountDropdown();
+}
+function fillVehiclesForAccount() {
+  const accId=document.getElementById('toll-account').value;
+  const type=document.getElementById('toll-type').value;
+  const plateEl=document.getElementById('toll-plate');
+  const linked=DB.vehicles.filter(v=>type==='Salik'?v.salikAccount===accId:v.darbAccount===accId);
+  const unlinked=DB.vehicles.filter(v=>!linked.find(l=>l.id===v.id));
+  plateEl.innerHTML='<option value="">— Select plate —</option>'+(linked.length?'<optgroup label="Linked to this account">'+linked.map(v=>`<option value="${v.plate}">${v.plate} · ${v.make} ${v.model}</option>`).join('')+'</optgroup>':'')+
+    (unlinked.length?'<optgroup label="Other vehicles">'+unlinked.map(v=>`<option value="${v.plate}">${v.plate} · ${v.make} ${v.model}</option>`).join('')+'</optgroup>':'');
+}
+function updateTollAccountUI() {
+  const cl=document.getElementById('ta-vehiclesChecklist');if(!cl)return;
+  cl.innerHTML=DB.vehicles.map(v=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:6px 8px;background:var(--bg3);border-radius:var(--radius-sm);border:1px solid var(--border);cursor:pointer;"><input type="checkbox" value="${v.id}" style="accent-color:var(--accent);"><span class="mono" style="font-size:11px;">${v.plate}</span> <span style="color:var(--text2);font-size:11px;">${v.make} ${v.model} · ${v.emirate}</span></label>`).join('')||'<span style="color:var(--text3);font-size:12px;">No vehicles yet</span>';
+}
+function saveTollAccount() {
+  const id=document.getElementById('ta-id').value;
+  const checked=[...document.querySelectorAll('#ta-vehiclesChecklist input:checked')].map(cb=>cb.value);
+  const r={id:id||uid(),type:document.getElementById('ta-type').value,company:document.getElementById('ta-company').value,accountNo:document.getElementById('ta-accountno').value.trim(),accountName:document.getElementById('ta-accountname').value,balance:document.getElementById('ta-balance').value,minBalance:document.getElementById('ta-minbalance').value||50,autoRecharge:document.getElementById('ta-autorecharge').value,rechargeAmt:document.getElementById('ta-rechargeamt').value,openDate:document.getElementById('ta-opendate').value,email:document.getElementById('ta-email').value,notes:document.getElementById('ta-notes').value,linkedVehicles:checked};
+  if(!r.accountNo||!r.company){toast('Account number and company required','error');return;}
+  checked.forEach(vid=>{const v=DB.vehicles.find(x=>x.id===vid);if(v){if(r.type==='Salik')v.salikAccount=r.id;else v.darbAccount=r.id;}});
+  if(id){const i=DB.tollAccounts.findIndex(x=>x.id===id);if(i>=0)DB.tollAccounts[i]=r;}else DB.tollAccounts.push(r);
+  saveDB();closeModal('tollAccountModal');renderTollAccounts();toast('Toll account saved');
+}
+function editTollAccount(id) {
+  const a=DB.tollAccounts.find(x=>x.id===id);if(!a)return;
+  document.getElementById('ta-id').value=a.id;document.getElementById('ta-type').value=a.type;
+  document.getElementById('ta-company').value=a.company;document.getElementById('ta-accountno').value=a.accountNo;
+  document.getElementById('ta-accountname').value=a.accountName||'';document.getElementById('ta-balance').value=a.balance||'';
+  document.getElementById('ta-minbalance').value=a.minBalance||50;document.getElementById('ta-autorecharge').value=a.autoRecharge||'No';
+  document.getElementById('ta-rechargeamt').value=a.rechargeAmt||'';document.getElementById('ta-opendate').value=a.openDate||'';
+  document.getElementById('ta-email').value=a.email||'';document.getElementById('ta-notes').value=a.notes||'';
+  openModal('tollAccountModal');updateTollAccountUI();
+  setTimeout(()=>{const linked=a.linkedVehicles||[];document.querySelectorAll('#ta-vehiclesChecklist input').forEach(cb=>{cb.checked=linked.includes(cb.value);});},60);
+}
+function saveToll() {
+  const id=document.getElementById('toll-id').value;
+  const accId=document.getElementById('toll-account').value;
+  const acc=DB.tollAccounts.find(a=>a.id===accId);
+  const r={id:id||uid(),tollType:document.getElementById('toll-type').value,accountId:accId,accountNo:acc?acc.accountNo:'',plate:document.getElementById('toll-plate').value,date:document.getElementById('toll-date').value,gate:document.getElementById('toll-gate').value,amount:document.getElementById('toll-amount').value,balance:document.getElementById('toll-balance').value,topup:document.getElementById('toll-topup').value,notes:document.getElementById('toll-notes').value};
+  if(!r.plate||!r.date){toast('Plate and date required','error');return;}
+  if(id){const i=DB.toll.findIndex(x=>x.id===id);if(i>=0)DB.toll[i]=r;}else DB.toll.push(r);
+  if(acc&&r.balance!==''){acc.balance=Number(r.balance);if(r.topup&&Number(r.topup)>0)acc.lastTopup=r.date;}
+  saveDB();closeModal('tollModal');renderToll();toast('Toll transaction saved');
+  pushToSheet('Toll',[r.id,r.tollType,r.plate,r.accountNo,r.date,r.gate,r.amount,r.balance,r.topup,r.notes]);
+}
+
+// ===== MAINTENANCE =====
+function renderMaint() {
+  const m = thisMonth();
+  const list = DB.maintenance;
+  const mList = list.filter(m => (m.date||'').startsWith(thisMonth()));
+  document.getElementById('maint-cost').textContent = fmtAED(mList.reduce((a,m)=>a+Number(m.cost||0),0));
+  document.getElementById('maint-jobs').textContent = list.length;
+  document.getElementById('maint-avg').textContent = list.length ? fmtAED(list.reduce((a,m)=>a+Number(m.cost||0),0)/list.length) : 'AED 0';
+  document.getElementById('maint-due').textContent = list.filter(m => m.nextDate && daysUntil(m.nextDate)<=30).length;
+  if (!list.length) { document.getElementById('maintTable').innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text3);padding:24px;">No maintenance records yet</td></tr>'; return; }
+  const sorted = [...list].sort((a,b) => (b.date||'') > (a.date||'') ? 1 : -1);
+  document.getElementById('maintTable').innerHTML = sorted.map(m => `<tr>
+    <td>${fmtDate(m.date)}</td><td class="mono">${m.plate}</td><td>${getCompanyName(m.plate)}</td>
+    <td><span class="badge badge-blue">${m.serviceType||'—'}</span></td>
+    <td>${m.workshop||'—'}</td><td style="font-weight:500;">${fmtAED(m.cost)}</td>
+    <td>${m.odometer ? Number(m.odometer).toLocaleString()+' km' : '—'}</td>
+    <td>${m.nextOdo ? Number(m.nextOdo).toLocaleString()+' km' : '—'}</td>
+    <td>${fmtDate(m.nextDate)}</td>
+    <td style="color:var(--text2);font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;">${m.notes||'—'}</td>
+    <td><button class="btn btn-sm" onclick="editMaint('${m.id}')">Edit</button> <button class="btn btn-sm btn-danger" onclick="deleteRecord('maintenance','${m.id}')">Del</button></td>
+  </tr>`).join('');
+}
+
+// ===== RENEWALS =====
+function renderRenewals() {
+  const days = parseInt(document.getElementById('renewFilter').value);
+  const typeFilter = document.getElementById('renewTypeFilter').value;
+  const items = [];
+
+  DB.insurance.forEach(i => {
+    const d = daysUntil(i.expiry);
+    if (d <= days) items.push({type:'Insurance', plate:i.plate, expiry:i.expiry, days:d, provider:i.insurer, cost:i.premium});
+  });
+  DB.permits.forEach(p => {
+    const d = daysUntil(p.mulkiya);
+    if (d <= days) items.push({type:'Mulkiya', plate:p.plate, expiry:p.mulkiya, days:d, provider:p.authority, cost:p.fee});
+    if (p.expiry && p.expiry !== p.mulkiya) {
+      const d2 = daysUntil(p.expiry);
+      if (d2 <= days) items.push({type:'Permit', plate:p.plate, expiry:p.expiry, days:d2, provider:p.authority, cost:p.fee});
+    }
+  });
+  // Traffic File renewals
+  DB.companies.forEach(c => {
+    if (c.tfExpiry) {
+      const d = daysUntil(c.tfExpiry);
+      if (d <= days) items.push({type:'Traffic File', plate:'—', expiry:c.tfExpiry, days:d, provider:c.tfAuthority||'Traffic Dept.', cost:c.tfFee||0, company:c.name});
+    }
+    (c.extraTFs||[]).forEach(tf => {
+      if (tf.exp) {
+        const d = daysUntil(tf.exp);
+        if (d <= days) items.push({type:'Traffic File', plate:'—', expiry:tf.exp, days:d, provider:tf.auth||'Traffic Dept.', cost:0, company:c.name + ' ('+tf.no+')'});
+      }
+    });
+  });
+
+  const filtered = typeFilter ? items.filter(i => i.type === typeFilter) : items;
+  filtered.sort((a,b) => a.days - b.days);
+
+  if (!filtered.length) { document.getElementById('renewalsTable').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text3);padding:24px;">No renewals in selected period</td></tr>'; return; }
+  document.getElementById('renewalsTable').innerHTML = filtered.map(r => {
+    const cls = r.days <= 7 ? 'renew-urgent' : r.days <= 30 ? 'renew-soon' : '';
+    return `<tr class="${cls}">
+      <td style="font-weight:500;">${fmtDate(r.expiry)}</td>
+      <td>${daysBadge(r.days)}</td>
+      <td class="mono">${r.type === 'Traffic File' ? '—' : r.plate}</td>
+      <td>${r.company || getCompanyName(r.plate)}</td>
+      <td><span class="badge ${r.type==='Insurance'?'badge-purple':r.type==='Mulkiya'?'badge-blue':r.type==='Traffic File'?'badge-red':'badge-amber'}">${r.type}</span></td>
+      <td>${r.provider||'—'}</td>
+      <td>${fmtAED(r.cost)}</td>
+      <td><button class="btn btn-sm">Mark renewed</button></td>
+    </tr>`;
+  }).join('');
+}
+
+// ===== REPORTS =====
+function renderReports() {
+  const cats = {};
+  DB.expenses.forEach(e => { cats[e.category] = (cats[e.category]||0) + Number(e.amount||0); });
+  const catEl = document.getElementById('reportExpenseBreakdown');
+  const total = Object.values(cats).reduce((a,b)=>a+b,0);
+  if (!total) { catEl.innerHTML = '<p style="color:var(--text3);font-size:12px;">No expense data yet</p>'; }
+  else {
+    catEl.innerHTML = Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([k,v]) => {
+      const pct = Math.round(v/total*100);
+      return `<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;"><span>${k}</span><span style="color:var(--text2);">${fmtAED(v)} · ${pct}%</span></div><div style="background:var(--bg4);border-radius:3px;height:5px;"><div style="width:${pct}%;height:5px;background:var(--accent);border-radius:3px;"></div></div></div>`;
+    }).join('');
+  }
+
+  // Cost per vehicle
+  const perV = {};
+  DB.expenses.forEach(e => { perV[e.plate] = (perV[e.plate]||0) + Number(e.amount||0); });
+  const perVEl = document.getElementById('reportCostPerVehicle');
+  const maxV = Math.max(...Object.values(perV), 1);
+  perVEl.innerHTML = Object.entries(perV).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v]) => {
+    const pct = Math.round(v/maxV*100);
+    return `<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;"><span class="mono">${k}</span><span style="color:var(--text2);">${fmtAED(v)}</span></div><div style="background:var(--bg4);border-radius:3px;height:5px;"><div style="width:${pct}%;height:5px;background:var(--orange);border-radius:3px;"></div></div></div>`;
+  }).join('') || '<p style="color:var(--text3);font-size:12px;">No data yet</p>';
+
+  // Cost per company
+  const perC = {};
+  DB.expenses.forEach(e => { const c = getCompanyName(e.plate); perC[c] = (perC[c]||0) + Number(e.amount||0); });
+  const maxC = Math.max(...Object.values(perC), 1);
+  document.getElementById('reportCostPerCompany').innerHTML = Object.entries(perC).sort((a,b)=>b[1]-a[1]).map(([k,v]) => {
+    const pct = Math.round(v/maxC*100);
+    return `<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;"><span>${k}</span><span style="color:var(--text2);">${fmtAED(v)}</span></div><div style="background:var(--bg4);border-radius:3px;height:5px;"><div style="width:${pct}%;height:5px;background:var(--green);border-radius:3px;"></div></div></div>`;
+  }).join('') || '<p style="color:var(--text3);font-size:12px;">No data yet</p>';
+}
+
+// ===== SETTINGS =====
+function renderSettings() {
+  document.getElementById('cfg-sheetId').value = DB.settings.sheetId || '';
+  document.getElementById('cfg-webAppUrl').value = DB.settings.webAppUrl || '';
+  document.getElementById('cfg-apiKey').value = DB.settings.apiKey || '';
+  document.getElementById('cfg-syncInterval').value = DB.settings.syncInterval || 0;
+}
+
+function saveSheetConfig() {
+  DB.settings.sheetId = document.getElementById('cfg-sheetId').value.trim();
+  DB.settings.webAppUrl = document.getElementById('cfg-webAppUrl').value.trim();
+  DB.settings.apiKey = document.getElementById('cfg-apiKey').value.trim();
+  DB.settings.syncInterval = parseInt(document.getElementById('cfg-syncInterval').value);
+  saveDB();
+  toast('Configuration saved');
+  updateConnStatus();
+}
+
+async function testSheetConnection() {
+  const res = document.getElementById('connResult');
+  if (!DB.settings.sheetId) { res.textContent = '⚠ Enter a Sheet ID first.'; return; }
+  res.innerHTML = '<span class="spinner"></span> Testing...';
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${DB.settings.sheetId}?key=${DB.settings.apiKey}`;
+    const r = await fetch(url);
+    if (r.ok) {
+      const d = await r.json();
+      res.innerHTML = `<span style="color:var(--green);">✓ Connected to: ${d.properties?.title||'Google Sheet'}</span>`;
+      updateConnStatus(true);
+    } else {
+      res.innerHTML = `<span style="color:var(--red);">✕ Error ${r.status}: Check Sheet ID / API key or make sure the sheet is publicly readable.</span>`;
+    }
+  } catch(e) {
+    res.innerHTML = `<span style="color:var(--orange);">⚠ Network error. Check your credentials and try again.</span>`;
+  }
+}
+
+async function initSheetStructure() {
+  if (!DB.settings.webAppUrl) { toast('Enter Apps Script Web App URL first', 'error'); return; }
+  const tabs = {
+    Vehicles: ['ID','Plate','Emirate','Company','Type','Make','Model','Year','Color','Chassis','Engine','Fuel','Mileage','Driver','DriverPhone','Status','PurchaseDate','Notes'],
+    Insurance: ['ID','Plate','Insurer','PolicyNo','Type','Start','Expiry','Premium','Agent','Notes'],
+    Permits: ['ID','Plate','Mulkiya','PermitNo','PermitType','Expiry','Authority','Fee','Renewed','Notes'],
+    Fines: ['ID','Plate','FineNo','Date','Violation','Authority','Amount','Points','PaidDate','Driver','Notes'],
+    Purchases: ['ID','Plate','Date','Supplier','Price','Payment','Terms','Chassis','Invoice','Notes'],
+    Expenses: ['ID','Plate','Date','Category','Amount','Vendor','Receipt','Notes'],
+    Fuel: ['ID','Plate','Date','Station','FuelType','Litres','Cost','Odometer','Driver'],
+    Toll: ['ID','Plate','Date','Tag','Gate','Amount','Balance','Topup','Notes'],
+    Maintenance: ['ID','Plate','Date','ServiceType','Workshop','Cost','Odometer','NextOdo','NextDate','Notes']
+  };
+  toast('Initializing sheet structure...', 'success');
+  for (const [tab, headers] of Object.entries(tabs)) {
+    try {
+      await fetch(DB.settings.webAppUrl, {
+        method:'POST', mode:'no-cors',
+        body: JSON.stringify({sheetId: DB.settings.sheetId, tab, action:'clear_and_write', rows:[headers]})
+      });
+    } catch(e) {}
+    await new Promise(r => setTimeout(r, 300));
+  }
+  toast('Sheet structure initialized! Check your Google Sheet.');
+}
+
+// ===== SAVE FUNCTIONS =====
+function saveVehicle() {
+  const id = document.getElementById('v-id').value;
+  if (!DB.companies.length) { toast('Add a company with a Traffic File Number first', 'error'); return; }
+  const company = document.getElementById('v-company').value;
+  if (!company) { toast('Select a company', 'error'); return; }
+  const co = DB.companies.find(c => c.name === company);
+  const v = {
+    id: id || uid(),
+    assetCode: document.getElementById('v-assetcode').value.trim() || generateAssetCode(),
+    plate: document.getElementById('v-plate').value.trim().toUpperCase(),
+    emirate: document.getElementById('v-emirate').value, company,
+    trafficFileNo: co ? co.tfNo : '',
+    type: document.getElementById('v-type').value,
+    make: document.getElementById('v-make').value,
+    model: document.getElementById('v-model').value, year: document.getElementById('v-year').value,
+    color: document.getElementById('v-color').value, chassis: document.getElementById('v-chassis').value,
+    engine: document.getElementById('v-engine').value, fuel: document.getElementById('v-fuel').value,
+    seating: document.getElementById('v-seating').value,
+    payload: document.getElementById('v-payload').value,
+    mileage: document.getElementById('v-mileage').value,
+    status: document.getElementById('v-status').value,
+    notes: document.getElementById('v-notes').value
+  };
+  if (!v.plate) { toast('Plate number is required', 'error'); return; }
+  if (id) { const idx = DB.vehicles.findIndex(x=>x.id===id); if(idx>=0) DB.vehicles[idx]=v; }
+  else DB.vehicles.push(v);
+  saveDB(); closeModal('vehicleModal'); renderVehicles(); toast('Vehicle saved');
+  pushToSheet('Vehicles', vehicleRow(v));
+}
+function vehicleRow(v) { return [v.id,v.assetCode||'',v.plate,v.emirate,v.company,v.trafficFileNo||'',v.type,v.make,v.model,v.year,v.color,v.seating||'',v.payload||'',v.chassis,v.engine,v.fuel,v.mileage,v.status,v.notes]; }
+
+// ===== INSURANCE DOCUMENT HELPERS =====
+let insDocuments = [];
+
+function openInsuranceModal() {
+  insDocuments = [];
+  document.getElementById('ins-id').value = '';
+  document.getElementById('insModalTitle').textContent = 'Add Insurance Policy';
+  ['ins-insurer','ins-policy','ins-premium','ins-agent','ins-excess','ins-notes'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  const startEl=document.getElementById('ins-start'); if(startEl) startEl.value='';
+  const expEl=document.getElementById('ins-expiry'); if(expEl) expEl.value='';
+  openModal('insModal');
+  renderInsAttachments();
+}
+
+function setInsDocLabel(label) {
+  const el = document.getElementById('ins-doc-label');
+  if (el) el.value = label;
+}
+
+function handleInsDocDrop(event) {
+  event.preventDefault();
+  document.getElementById('ins-dropzone').style.borderColor = '';
+  handleInsDocFiles(event.dataTransfer.files);
+}
+
+function handleInsDocFiles(files) {
+  const maxSize = 5 * 1024 * 1024;
+  const label = document.getElementById('ins-doc-label')?.value?.trim() || '';
+  [...files].forEach(file => {
+    if (file.size > maxSize) { toast(`${file.name} exceeds 5MB limit`, 'error'); return; }
+    const reader = new FileReader();
+    reader.onload = e => {
+      insDocuments.push({
+        uid: uid(), name: file.name,
+        label: label || guessInsDocLabel(file.name),
+        type: file.type, size: file.size,
+        data: e.target.result
+      });
+      renderInsAttachments();
+    };
+    reader.readAsDataURL(file);
+  });
+  const labelEl = document.getElementById('ins-doc-label');
+  if (labelEl) labelEl.value = '';
+  document.getElementById('ins-file-input').value = '';
+}
+
+function guessInsDocLabel(filename) {
+  const f = filename.toLowerCase();
+  if (f.includes('policy') || f.includes('certificate')) return 'Policy Document';
+  if (f.includes('invoice') || f.includes('receipt') || f.includes('premium')) return 'Premium Invoice';
+  if (f.includes('endorse')) return 'Endorsement';
+  if (f.includes('cover') || f.includes('covernote')) return 'Cover Note';
+  if (f.includes('claim')) return 'Claim Document';
+  return 'Document';
+}
+
+function removeInsDoc(uid) {
+  insDocuments = insDocuments.filter(d => d.uid !== uid);
+  renderInsAttachments();
+}
+
+function downloadInsDoc(uid) {
+  const doc = insDocuments.find(d => d.uid === uid);
+  if (!doc) return;
+  const a = document.createElement('a'); a.href = doc.data; a.download = doc.name; a.click();
+}
+
+function previewInsDoc(uid) {
+  const doc = insDocuments.find(d => d.uid === uid);
+  if (!doc) return;
+  if (doc.type.startsWith('image/') || doc.type === 'application/pdf') {
+    const w = window.open();
+    w.document.write(`<title>${doc.name}</title><body style="margin:0;background:#111;">`);
+    if (doc.type.startsWith('image/')) w.document.write(`<img src="${doc.data}" style="max-width:100%;">`);
+    else w.document.write(`<embed src="${doc.data}" type="application/pdf" width="100%" style="min-height:100vh;">`);
+    w.document.write('</body>');
+  } else { downloadInsDoc(uid); }
+}
+
+function renderInsAttachments() {
+  const el = document.getElementById('ins-attachments-list');
+  if (!el) return;
+  if (!insDocuments.length) {
+    el.innerHTML = '<div style="text-align:center;padding:12px;font-size:12px;color:var(--text3);">No documents attached yet</div>';
+    return;
+  }
+  el.innerHTML = insDocuments.map(d => `
+    <div class="doc-card">
+      <span class="doc-icon">${getFileIcon(d.type)}</span>
+      <div class="doc-info">
+        <div class="doc-name">${d.name}<span class="doc-label-badge">${d.label}</span></div>
+        <div class="doc-meta">${formatFileSize(d.size)}</div>
+      </div>
+      <button type="button" class="btn btn-sm" onclick="previewInsDoc('${d.uid}')" title="Preview">👁</button>
+      <button type="button" class="btn btn-sm" onclick="downloadInsDoc('${d.uid}')" title="Download">⬇</button>
+      <button type="button" class="btn btn-sm btn-danger" onclick="removeInsDoc('${d.uid}')" title="Remove">✕</button>
+    </div>`).join('');
+}
+
+function saveInsurance() {
+  const id = document.getElementById('ins-id').value;
+  const r = {
+    id: id||uid(),
+    plate: document.getElementById('ins-plate').value,
+    insurer: document.getElementById('ins-insurer').value,
+    policy: document.getElementById('ins-policy').value,
+    type: document.getElementById('ins-type').value,
+    start: document.getElementById('ins-start').value,
+    expiry: document.getElementById('ins-expiry').value,
+    premium: document.getElementById('ins-premium').value,
+    agent: document.getElementById('ins-agent').value,
+    agencyRepair: document.getElementById('ins-agencyrepair').value,
+    excess: document.getElementById('ins-excess').value,
+    notes: document.getElementById('ins-notes').value,
+    documents: insDocuments
+  };
+  if (!r.plate||!r.expiry) { toast('Plate and expiry date required','error'); return; }
+  if (id) { const i=DB.insurance.findIndex(x=>x.id===id); if(i>=0) DB.insurance[i]=r; } else DB.insurance.push(r);
+  insDocuments = [];
+  saveDB(); closeModal('insModal'); renderInsurance(); toast('Insurance policy saved');
+  pushToSheet('Insurance',[r.id,r.plate,r.insurer,r.policy,r.type,r.start,r.expiry,r.premium,r.agent,r.agencyRepair,r.excess,r.notes,(r.documents||[]).length+' docs']);
+}
+
+function savePermit() {
+  const id = document.getElementById('permit-id').value;
+  const r = { id:id||uid(), plate:document.getElementById('permit-plate').value, mulkiya:document.getElementById('permit-mulkiya').value, permitNo:document.getElementById('permit-no').value, permitType:document.getElementById('permit-type').value, expiry:document.getElementById('permit-expiry').value, authority:document.getElementById('permit-authority').value, fee:document.getElementById('permit-fee').value, renewed:document.getElementById('permit-renewed').value, notes:document.getElementById('permit-notes').value };
+  if (!r.plate||!r.mulkiya) { toast('Plate and Mulkiya date required','error'); return; }
+  if (id) { const i=DB.permits.findIndex(x=>x.id===id); if(i>=0) DB.permits[i]=r; } else DB.permits.push(r);
+  saveDB(); closeModal('permitModal'); renderPermits(); toast('Permit saved');
+  pushToSheet('Permits',[r.id,r.plate,r.mulkiya,r.permitNo,r.permitType,r.expiry,r.authority,r.fee,r.renewed,r.notes]);
+}
+
+function saveFine() {
+  const id = document.getElementById('fine-id').value;
+  const r = { id:id||uid(), plate:document.getElementById('fine-plate').value, fineNo:document.getElementById('fine-no').value, date:document.getElementById('fine-date').value, violation:document.getElementById('fine-violation').value, authority:document.getElementById('fine-authority').value, amount:document.getElementById('fine-amount').value, points:document.getElementById('fine-points').value, paidDate:document.getElementById('fine-paid-date').value, driver:document.getElementById('fine-driver').value, notes:document.getElementById('fine-notes').value };
+  if (!r.plate||!r.amount) { toast('Plate and amount required','error'); return; }
+  if (id) { const i=DB.fines.findIndex(x=>x.id===id); if(i>=0) DB.fines[i]=r; } else DB.fines.push(r);
+  saveDB(); closeModal('fineModal'); renderFines(); toast('Fine recorded');
+  pushToSheet('Fines',[r.id,r.plate,r.fineNo,r.date,r.violation,r.authority,r.amount,r.points,r.paidDate,r.driver,r.notes]);
+}
+
+function savePurchase() {
+  const id = document.getElementById('pur-id').value;
+  const g = elId => document.getElementById(elId)?.value || '';
+  const r = {
+    id: id||uid(),
+    plate: g('pur-plate'), date: g('pur-date'), supplier: g('pur-supplier'),
+    price: g('pur-price'), payment: g('pur-payment'),
+    chassis: g('pur-chassis'), invoice: g('pur-invoice'), vat: g('pur-vat'),
+    // Finance fields
+    bank: g('pur-bank'), financeRef: g('pur-financeref'), loanAmt: g('pur-loanamt'),
+    downPayment: g('pur-downpayment'), instalment: g('pur-instalment'),
+    tenure: g('pur-tenure'), rate: g('pur-rate'),
+    financeStart: g('pur-financestart'), financeEnd: g('pur-financeend'),
+    balloon: g('pur-balloon'),
+    notes: g('pur-notes'),
+    // Documents — pulled from the in-progress list
+    documents: purDocuments
+  };
+  if (!r.plate) { toast('Plate required','error'); return; }
+  if (id) { const i=DB.purchases.findIndex(x=>x.id===id); if(i>=0) DB.purchases[i]=r; } else DB.purchases.push(r);
+  purDocuments = [];
+  saveDB(); closeModal('purchaseModal'); renderPurchases(); toast('Purchase record saved');
+  pushToSheet('Purchases',[r.id,r.plate,r.date,r.supplier,r.price,r.payment,r.chassis,r.invoice,r.vat,r.bank,r.financeRef,r.tenure,r.instalment,r.notes,(r.documents||[]).length+' docs']);
+}
+
+function saveExpense() {
+  const id = document.getElementById('exp-id').value;
+  const r = { id:id||uid(), plate:document.getElementById('exp-plate').value, date:document.getElementById('exp-date').value, category:document.getElementById('exp-category').value, amount:document.getElementById('exp-amount').value, vendor:document.getElementById('exp-vendor').value, receipt:document.getElementById('exp-receipt').value, notes:document.getElementById('exp-notes').value };
+  if (!r.plate||!r.amount) { toast('Plate and amount required','error'); return; }
+  if (id) { const i=DB.expenses.findIndex(x=>x.id===id); if(i>=0) DB.expenses[i]=r; } else DB.expenses.push(r);
+  saveDB(); closeModal('expenseModal'); renderExpenses(); toast('Expense saved');
+  pushToSheet('Expenses',[r.id,r.plate,r.date,r.category,r.amount,r.vendor,r.receipt,r.notes]);
+}
+
+function saveFuel() {
+  const id = document.getElementById('fuel-id').value;
+  const r = { id:id||uid(), plate:document.getElementById('fuel-plate').value, date:document.getElementById('fuel-date').value, station:document.getElementById('fuel-station').value, fuelType:document.getElementById('fuel-type').value, litres:document.getElementById('fuel-litres').value, cost:document.getElementById('fuel-cost').value, odometer:document.getElementById('fuel-odo').value, driver:document.getElementById('fuel-driver').value };
+  if (!r.plate||!r.cost) { toast('Plate and cost required','error'); return; }
+  if (id) { const i=DB.fuel.findIndex(x=>x.id===id); if(i>=0) DB.fuel[i]=r; } else DB.fuel.push(r);
+  saveDB(); closeModal('fuelModal'); renderFuel(); toast('Fuel log saved');
+  pushToSheet('Fuel',[r.id,r.plate,r.date,r.station,r.fuelType,r.litres,r.cost,r.odometer,r.driver]);
+}
+
+function saveMaint() {
+  const id = document.getElementById('maint-id').value;
+  const r = { id:id||uid(), plate:document.getElementById('maint-plate').value, date:document.getElementById('maint-date').value, serviceType:document.getElementById('maint-type').value, workshop:document.getElementById('maint-workshop').value, cost:document.getElementById('maint-cost').value, odometer:document.getElementById('maint-odo').value, nextOdo:document.getElementById('maint-nextodo').value, nextDate:document.getElementById('maint-nextdate').value, notes:document.getElementById('maint-notes').value };
+  if (!r.plate||!r.cost) { toast('Plate and cost required','error'); return; }
+  if (id) { const i=DB.maintenance.findIndex(x=>x.id===id); if(i>=0) DB.maintenance[i]=r; } else DB.maintenance.push(r);
+  saveDB(); closeModal('maintModal'); renderMaint(); toast('Maintenance saved');
+  pushToSheet('Maintenance',[r.id,r.plate,r.date,r.serviceType,r.workshop,r.cost,r.odometer,r.nextOdo,r.nextDate,r.notes]);
+}
+
+// ===== EDIT FUNCTIONS =====
+function openAddVehicle() {
+  if (!DB.companies.length) {
+    toast('Add a company with a Traffic File Number first', 'error');
+    nav('companies', null);
+    document.querySelectorAll('.nav-item').forEach(n => { if (n.textContent.includes('Companies')) n.classList.add('active'); });
+    return;
+  }
+  document.getElementById('v-id').value = '';
+  document.getElementById('vehicleModalTitle').textContent = 'Add Vehicle';
+  ['v-year','v-color','v-chassis','v-engine','v-mileage','v-seating','v-payload','v-notes'].forEach(id => { const el = document.getElementById(id); if(el) el.value=''; });
+  const acEl = document.getElementById('v-assetcode');
+  if (acEl) acEl.value = generateAssetCode();
+  clearPlateFields();
+  const codeEl = document.getElementById('v-plate-code');
+  if (codeEl) codeEl.textContent = 'DXB';
+  const emirateEl = document.getElementById('v-emirate');
+  if (emirateEl) emirateEl.value = 'Dubai';
+  openModal('vehicleModal');
+  onVehicleCompanyChange();
+  onVehicleTypeChange();
+}
+function editVehicle(id) {
+  const v = DB.vehicles.find(x=>x.id===id); if(!v) return;
+  document.getElementById('v-id').value = v.id;
+  document.getElementById('vehicleModalTitle').textContent = 'Edit Vehicle';
+  document.getElementById('v-assetcode').value = v.assetCode||'';
+  document.getElementById('v-emirate').value = v.emirate||'Dubai';
+  document.getElementById('v-company').value = v.company||'';
+  document.getElementById('v-type').value = v.type||'Sedan';
+  document.getElementById('v-make').value = v.make||'';
+  document.getElementById('v-model').value = v.model||'';
+  document.getElementById('v-year').value = v.year||'';
+  document.getElementById('v-color').value = v.color||'';
+  document.getElementById('v-seating').value = v.seating||'';
+  document.getElementById('v-payload').value = v.payload||'';
+  document.getElementById('v-chassis').value = v.chassis||'';
+  document.getElementById('v-engine').value = v.engine||'';
+  document.getElementById('v-fuel').value = v.fuel||'Petrol';
+  document.getElementById('v-mileage').value = v.mileage||'';
+  document.getElementById('v-status').value = v.status||'Active';
+  document.getElementById('v-notes').value = v.notes||'';
+  openModal('vehicleModal');
+  const code = EMIRATE_CODES[v.emirate] || (v.emirate||'').substring(0,3).toUpperCase();
+  const codeEl = document.getElementById('v-plate-code');
+  if (codeEl) codeEl.textContent = code;
+  parsePlateToFields(v.plate);
+  onVehicleCompanyChange();
+  onVehicleTypeChange();
+}
+function editInsurance(id) {
+  const r = DB.insurance.find(x=>x.id===id); if(!r) return;
+  document.getElementById('ins-id').value = r.id;
+  document.getElementById('insModalTitle').textContent = 'Edit Insurance Policy';
+  const fieldMap = { agencyRepair:'ins-agencyrepair', excess:'ins-excess' };
+  ['plate','insurer','policy','type','start','expiry','premium','agent','agencyRepair','excess','notes'].forEach(f => {
+    const elId = fieldMap[f] || 'ins-' + f.toLowerCase();
+    const el = document.getElementById(elId);
+    if (el) el.value = r[f]||'';
+  });
+  insDocuments = (r.documents||[]).map(d => ({...d}));
+  openModal('insModal');
+  renderInsAttachments();
+}
+function editPermit(id) {
+  const r = DB.permits.find(x=>x.id===id); if(!r) return;
+  document.getElementById('permit-id').value=r.id;
+  document.getElementById('permit-plate').value=r.plate||'';
+  document.getElementById('permit-mulkiya').value=r.mulkiya||'';
+  document.getElementById('permit-no').value=r.permitNo||'';
+  document.getElementById('permit-type').value=r.permitType||'Private';
+  document.getElementById('permit-expiry').value=r.expiry||'';
+  document.getElementById('permit-authority').value=r.authority||'RTA Dubai';
+  document.getElementById('permit-fee').value=r.fee||'';
+  document.getElementById('permit-renewed').value=r.renewed||'';
+  document.getElementById('permit-notes').value=r.notes||'';
+  openModal('permitModal');
+}
+function editFine(id) {
+  const r = DB.fines.find(x=>x.id===id); if(!r) return;
+  document.getElementById('fine-id').value=r.id;
+  ['plate','date','violation','authority','amount','notes'].forEach(f=>{const el=document.getElementById('fine-'+f);if(el)el.value=r[f]||'';});
+  document.getElementById('fine-no').value=r.fineNo||'';
+  document.getElementById('fine-points').value=r.points||'';
+  document.getElementById('fine-paid-date').value=r.paidDate||'';
+  document.getElementById('fine-driver').value=r.driver||'';
+  openModal('fineModal');
+}
+function editPurchase(id) {
+  const r = DB.purchases.find(x=>x.id===id); if(!r) return;
+  document.getElementById('pur-id').value = r.id;
+  const fields = ['plate','date','supplier','price','payment','chassis','invoice','vat','bank','financeRef','loanAmt','downPayment','instalment','tenure','rate','financeStart','financeEnd','balloon','notes'];
+  const idMap = { financeRef:'pur-financeref', loanAmt:'pur-loanamt', downPayment:'pur-downpayment', financeStart:'pur-financestart', financeEnd:'pur-financeend' };
+  fields.forEach(f => {
+    const elId = idMap[f] || 'pur-' + f.toLowerCase();
+    const el = document.getElementById(elId);
+    if (el) el.value = r[f]||'';
+  });
+  // Restore documents
+  purDocuments = (r.documents||[]).map(d => ({...d}));
+  openModal('purchaseModal');
+  onPurPaymentChange();
+  renderPurAttachments();
+}
+function editExpense(id) {
+  const r = DB.expenses.find(x=>x.id===id); if(!r) return;
+  document.getElementById('exp-id').value=r.id;
+  ['plate','date','category','amount','vendor','receipt','notes'].forEach(f=>{const el=document.getElementById('exp-'+f);if(el)el.value=r[f]||'';});
+  openModal('expenseModal');
+}
+function editMaint(id) {
+  const r = DB.maintenance.find(x=>x.id===id); if(!r) return;
+  document.getElementById('maint-id').value=r.id;
+  document.getElementById('maint-plate').value=r.plate||'';
+  document.getElementById('maint-date').value=r.date||'';
+  document.getElementById('maint-type').value=r.serviceType||'Oil change';
+  document.getElementById('maint-workshop').value=r.workshop||'';
+  document.getElementById('maint-cost').value=r.cost||'';
+  document.getElementById('maint-odo').value=r.odometer||'';
+  document.getElementById('maint-nextodo').value=r.nextOdo||'';
+  document.getElementById('maint-nextdate').value=r.nextDate||'';
+  document.getElementById('maint-notes').value=r.notes||'';
+  openModal('maintModal');
+}
+
+// ===== DELETE =====
+function deleteRecord(collection, id) {
+  if (!confirm('Delete this record?')) return;
+  DB[collection] = DB[collection].filter(x=>x.id!==id);
+  saveDB();
+  const page = {vehicles:'vehicles',insurance:'insurance',permits:'permits',fines:'fines',purchases:'purchase',expenses:'expenses',fuel:'fuel',toll:'toll',tollAccounts:'tollaccounts',maintenance:'maintenance'}[collection];
+  if (page) renderPage(page);
+  toast('Record deleted');
+}
+
+// ===== GOOGLE SHEETS PUSH =====
+async function pushToSheet(tab, row) {
+  if (!DB.settings.webAppUrl || !DB.settings.sheetId) return;
+  try {
+    await fetch(DB.settings.webAppUrl, {
+      method: 'POST', mode: 'no-cors',
+      body: JSON.stringify({ sheetId: DB.settings.sheetId, tab, action: 'append', row })
+    });
+    DB.lastSync = new Date().toISOString();
+    saveDB(); updateConnStatus(true);
+  } catch(e) { console.error('Sheet push failed', e); }
+}
+
+async function syncAll() {
+  if (!DB.settings.webAppUrl || !DB.settings.sheetId) { toast('Configure Google Sheets in Settings first', 'error'); return; }
+  toast('Syncing all data to Google Sheets...');
+  const tabs = {
+    Vehicles: [['ID','AssetCode','Plate','Emirate','Company','TrafficFileNo','Type','Make','Model','Year','Color','SeatingCapacity','PayloadKg','Chassis','Engine','Fuel','Mileage','Status','Notes'], DB.vehicles.map(vehicleRow)],
+    Companies: [['ID','Name','Emirate','TradeLicense','Owner','Phone','Email','TrafficFileNo','TFAuthority','TFIssue','TFExpiry','TFType','TFMaxVehicles','TFFee'], DB.companies.map(c=>[c.id,c.name,c.emirate,c.tradeLicense,c.owner,c.phone,c.email,c.tfNo,c.tfAuthority,c.tfIssue,c.tfExpiry,c.tfType,c.tfMaxVehicles,c.tfFee])],
+    Insurance: [['ID','Plate','Insurer','PolicyNo','Type','Start','Expiry','Premium','Agent','Notes'], DB.insurance.map(i=>[i.id,i.plate,i.insurer,i.policy,i.type,i.start,i.expiry,i.premium,i.agent,i.notes])],
+    Permits: [['ID','Plate','Mulkiya','PermitNo','PermitType','Expiry','Authority','Fee','Renewed','Notes'], DB.permits.map(p=>[p.id,p.plate,p.mulkiya,p.permitNo,p.permitType,p.expiry,p.authority,p.fee,p.renewed,p.notes])],
+    Fines: [['ID','Plate','FineNo','Date','Violation','Authority','Amount','Points','PaidDate','Driver','Notes'], DB.fines.map(f=>[f.id,f.plate,f.fineNo,f.date,f.violation,f.authority,f.amount,f.points,f.paidDate,f.driver,f.notes])],
+    Expenses: [['ID','Plate','Date','Category','Amount','Vendor','Receipt','Notes'], DB.expenses.map(e=>[e.id,e.plate,e.date,e.category,e.amount,e.vendor,e.receipt,e.notes])],
+    Fuel: [['ID','Plate','Date','Station','FuelType','Litres','Cost','Odometer','Driver'], DB.fuel.map(f=>[f.id,f.plate,f.date,f.station,f.fuelType,f.litres,f.cost,f.odometer,f.driver])],
+    TollAccounts: [['ID','Type','Company','AccountNo','AccountName','Balance','MinBalance','AutoRecharge','RechargeAmt','OpenDate','Email','Notes'], DB.tollAccounts.map(a=>[a.id,a.type,a.company,a.accountNo,a.accountName,a.balance,a.minBalance,a.autoRecharge,a.rechargeAmt,a.openDate,a.email,a.notes])],
+    Toll: [['ID','TollType','Plate','AccountNo','Date','Gate','Amount','Balance','Topup','Notes'], DB.toll.map(t=>[t.id,t.tollType,t.plate,t.accountNo,t.date,t.gate,t.amount,t.balance,t.topup,t.notes])],
+    Maintenance: [['ID','Plate','Date','ServiceType','Workshop','Cost','Odometer','NextOdo','NextDate','Notes'], DB.maintenance.map(m=>[m.id,m.plate,m.date,m.serviceType,m.workshop,m.cost,m.odometer,m.nextOdo,m.nextDate,m.notes])]
+  };
+  for (const [tab, [header, rows]] of Object.entries(tabs)) {
+    try {
+      await fetch(DB.settings.webAppUrl, {
+        method:'POST', mode:'no-cors',
+        body: JSON.stringify({sheetId:DB.settings.sheetId, tab, action:'clear_and_write', rows:[header,...rows]})
+      });
+    } catch(e) {}
+    await new Promise(r=>setTimeout(r,250));
+  }
+  DB.lastSync = new Date().toISOString();
+  saveDB(); updateConnStatus(true);
+  toast('All data synced to Google Sheets!');
+}
+
+// ===== EXPORT CSV =====
+function exportCSV(type) {
+  const maps = {
+    vehicles: { data: DB.vehicles, headers: ['Plate','Emirate','Company','Type','Make','Model','Year','Color','Driver','Status'], row: v=>[v.plate,v.emirate,v.company,v.type,v.make,v.model,v.year,v.color,v.driver,v.status] },
+    expenses: { data: DB.expenses, headers: ['Date','Plate','Company','Category','Amount','Vendor','Notes'], row: e=>[e.date,e.plate,getCompanyName(e.plate),e.category,e.amount,e.vendor,e.notes] },
+    fines: { data: DB.fines, headers: ['Date','Plate','FineNo','Violation','Authority','Amount','Points','Status'], row: f=>[f.date,f.plate,f.fineNo,f.violation,f.authority,f.amount,f.points,f.paidDate?'Paid':'Unpaid'] },
+    maintenance: { data: DB.maintenance, headers: ['Date','Plate','Company','ServiceType','Workshop','Cost','Odometer','NextOdo'], row: m=>[m.date,m.plate,getCompanyName(m.plate),m.serviceType,m.workshop,m.cost,m.odometer,m.nextOdo] }
+  };
+  const m = maps[type]; if(!m) return;
+  const csv = [m.headers, ...m.data.map(m.row)].map(r=>r.map(c=>`"${(c||'').toString().replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download=`fleetdesk_${type}_${new Date().toISOString().split('T')[0]}.csv`; a.click();
+  toast('CSV exported');
+}
+
+function exportAllJSON() {
+  const a=document.createElement('a'); a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(DB,null,2));
+  a.download=`fleetdesk_backup_${new Date().toISOString().split('T')[0]}.json`; a.click();
+  toast('Full backup exported');
+}
+function importJSON() { document.getElementById('importFile').click(); }
+function loadJSONBackup(e) {
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if (confirm('This will replace all current data. Continue?')) {
+        DB = data; saveDB(); location.reload();
+      }
+    } catch(err) { toast('Invalid backup file','error'); }
+  };
+  reader.readAsText(file);
+}
+function clearAllData() {
+  if (confirm('Delete ALL data? This cannot be undone.')) {
+    localStorage.removeItem('fleetdesk_uae'); location.reload();
+  }
+}
+
+// ===== COMPANY SWITCHER =====
+function renderCompanySwitcher() {
+  const list = document.getElementById('companyList');
+  if (!list) return;
+  const items = [{id:'all', name:'All Companies', tfNo:'', emirate:''},...DB.companies];
+  list.innerHTML = items.map(c => `
+    <div onclick="switchCompany('${c.id}','${c.name}')" style="padding:10px 12px;border-radius:var(--radius-sm);cursor:pointer;background:${DB.activeCompany===c.id?'var(--bg4)':'var(--bg3)'};border:1px solid ${DB.activeCompany===c.id?'var(--accent)':'var(--border)'};margin-bottom:4px;">
+      <div style="font-size:13px;font-weight:${DB.activeCompany===c.id?'500':'400'};color:${DB.activeCompany===c.id?'var(--accent)':'var(--text)'};">${c.name}</div>
+      ${c.tfNo ? `<div style="font-size:10px;color:var(--text3);margin-top:2px;font-family:var(--mono);">TF: ${c.tfNo} · ${c.emirate}</div>` : c.id!=='all'?'<div style="font-size:10px;color:var(--red);">⚠ No Traffic File</div>':''}
+    </div>`).join('');
+}
+function switchCompany(id, name) {
+  DB.activeCompany = id;
+  document.getElementById('activeCompanyName').innerHTML = name + ' <span>▾</span>';
+  closeModal('companyModal');
+  renderDashboard();
+}
+
+// ===== STATUS BAR =====
+function updateConnStatus(connected) {
+  const ind = document.getElementById('connIndicator');
+  const label = document.getElementById('connLabel');
+  const syncLabel = document.getElementById('lastSyncLabel');
+  const statusSpan = document.getElementById('syncStatus');
+  if (connected) {
+    ind.className='conn-indicator connected';
+    label.textContent = `Connected to Google Sheets · Sheet ID: ${DB.settings.sheetId.substring(0,20)}...`;
+    statusSpan.textContent = 'Connected to Google Sheets';
+    statusSpan.style.color = 'var(--green)';
+  } else if (DB.settings.sheetId) {
+    ind.className='conn-indicator'; label.textContent='Google Sheets configured but not verified';
+    statusSpan.textContent = 'Sheets configured';
+  } else {
+    ind.className='conn-indicator'; label.textContent='Not connected to Google Sheets · Data stored locally in browser';
+    statusSpan.textContent='Not connected to Google Sheets'; statusSpan.style.color='';
+  }
+  if (DB.lastSync) syncLabel.textContent = 'Last sync: ' + new Date(DB.lastSync).toLocaleString('en-AE');
+}
+
+// ===== INIT =====
+window.addEventListener('click', e => {
+  if (e.target.classList.contains('modal-overlay')) e.target.classList.remove('open');
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadDB();
+  updateConnStatus(false);
+  renderDashboard();
+  populateCompanyDropdowns();
+  // Set today as default date in date inputs
+  document.querySelectorAll('input[type="date"]').forEach(el => { if(!el.value) el.value = todayVal(); });
+});
+</script>
+</body>
+</html>
