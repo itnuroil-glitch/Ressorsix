@@ -3106,7 +3106,7 @@ export default function DashboardScreen({ user, onSignOut }) {
       if (user && user.companyid) {
         companyMatch = e.companies && e.companies.some(c => Number(c.id) === Number(user.companyid));
       }
-      
+
       const matchSearch = e.full_name && e.full_name.toLowerCase().includes(employeesSearch.toLowerCase());
       return matchSearch && companyMatch;
     });
