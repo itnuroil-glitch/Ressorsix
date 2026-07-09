@@ -196,7 +196,7 @@ const processAndSyncFieldDataFiles = async (fieldData, clientid) => {
 
 exports.saveVehicleDetails = async (req, res) => {
   try {
-    const { vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid } = req.body;
+    const { vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id } = req.body;
     
     // Save any base64 files locally, insert into public.attachment table, and update the paths
     const processedFieldData = await processAndSyncFieldDataFiles(field_data, clientid);
@@ -212,12 +212,12 @@ exports.saveVehicleDetails = async (req, res) => {
     }
     
     const query = `
-      INSERT INTO tbl_vehicle_details (vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      INSERT INTO tbl_vehicle_details (vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *
     `;
     
-    const values = [finalVehicleId, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null];
+    const values = [finalVehicleId, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null, roleid || null, user_id || null, company_id || null];
     
     const result = await db.query(query, values);
     
@@ -231,13 +231,26 @@ exports.saveVehicleDetails = async (req, res) => {
 exports.getVehicleDetails = async (req, res) => {
   try {
     const { clientid } = req.query;
-    let query = 'SELECT * FROM tbl_vehicle_details';
+    let query = `
+      SELECT 
+        v.*, 
+        r.role AS role_name, 
+        COALESCE(
+          e.full_name, 
+          u.email, 
+          (SELECT full_name FROM employee e_fallback WHERE e_fallback.roleid = v.roleid AND e_fallback.clientid = v.clientid LIMIT 1)
+        ) AS employee_name
+      FROM tbl_vehicle_details v
+      LEFT JOIN role r ON v.roleid = r.id
+      LEFT JOIN users u ON v.user_id = u.id
+      LEFT JOIN employee e ON u.email = e.email
+    `;
     const params = [];
     if (clientid) {
-      query += ' WHERE clientid = $1';
+      query += ' WHERE v.clientid = $1';
       params.push(clientid);
     }
-    query += ' ORDER BY id DESC';
+    query += ' ORDER BY v.id DESC';
 
     const result = await db.query(query, params);
     res.status(200).json(result.rows);
@@ -288,7 +301,7 @@ exports.deleteVehicleDetails = async (req, res) => {
 exports.updateVehicleDetails = async (req, res) => {
   try {
     const { id } = req.params;
-    const { vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid } = req.body;
+    const { vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id } = req.body;
 
     // Fetch the existing record to find previously associated files
     const selectQuery = 'SELECT vehicle_id, field_data FROM tbl_vehicle_details WHERE id = $1';
@@ -331,12 +344,12 @@ exports.updateVehicleDetails = async (req, res) => {
     const query = `
       UPDATE tbl_vehicle_details
       SET vehicle_id = $1, custom_field_id = $2, field_data = $3,
-          clientid = $4, country_id = $5, moduleid = $6, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $7
+          clientid = $4, country_id = $5, moduleid = $6, roleid = $7, user_id = $8, company_id = $9, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $10
       RETURNING *
     `;
 
-    const values = [finalVehicleId, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null, id];
+    const values = [finalVehicleId, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null, roleid || null, user_id || null, company_id || null, id];
     const result = await db.query(query, values);
 
     res.status(200).json(result.rows[0]);

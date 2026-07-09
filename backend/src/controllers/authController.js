@@ -175,7 +175,6 @@ exports.changePassword = async (req, res) => {
       return res.status(401).json({ message: 'Invalid current password.' });
     }
 
-    // Hash new password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
 
@@ -187,5 +186,39 @@ exports.changePassword = async (req, res) => {
   } catch (error) {
     console.error('Error changing password:', error);
     res.status(500).json({ message: 'Internal Server Error during password change.' });
+  }
+};
+
+// @desc    Admin change password for an employee user
+// @route   POST /api/auth/admin-change-password
+// @access  Private (Admin/Client Admin)
+exports.adminChangePassword = async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    if (!email || !newPassword) {
+      return res.status(400).json({ message: 'Please provide user email and new password.' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'New password must be at least 6 characters long.' });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    // Update password in users table
+    const updatePasswordQuery = 'UPDATE users SET password = $1 WHERE email = $2';
+    const result = await db.query(updatePasswordQuery, [hashedPassword, email.toLowerCase().trim()]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'User account not found for this email.' });
+    }
+
+    res.status(200).json({ message: 'Password updated successfully.' });
+  } catch (error) {
+    console.error('Error changing employee password:', error);
+    res.status(500).json({ message: 'Internal Server Error during admin password change.' });
   }
 };

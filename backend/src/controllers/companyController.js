@@ -5,6 +5,30 @@ const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
 
+// Helper: recalculate and update is_multi_country for a given client
+const recalculateMultiCountry = async (clientId) => {
+  if (!clientId) return;
+  try {
+    const result = await pool.query(
+      `SELECT COUNT(DISTINCT country) AS country_count
+       FROM company
+       WHERE clientid = $1
+         AND (is_deleted = false OR is_deleted IS NULL)
+         AND country IS NOT NULL AND country <> ''`,
+      [clientId]
+    );
+    const count = parseInt(result.rows[0].country_count, 10);
+    const isMultiCountry = count > 1 ? 1 : 0;
+    await pool.query(
+      'UPDATE client SET is_multi_country = $1 WHERE id = $2',
+      [isMultiCountry, clientId]
+    );
+    console.log(`[MultiCountry] client ${clientId} => is_multi_country = ${isMultiCountry}`);
+  } catch (err) {
+    console.error('[MultiCountry] Error recalculating:', err.message);
+  }
+};
+
 const saveAttachmentLocally = (base64String, fileName) => {
   if (!base64String) return null;
   const matches = base64String.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
@@ -146,47 +170,20 @@ exports.createCompany = async (req, res) => {
         `;
         await pool.query(insertUserQuery, [contact_email.trim().toLowerCase(), hashedPassword, finalClientId, newCompany.id]);
 
-        // Find the client's user record to get their user ID
-        const clientUserRes = await pool.query('SELECT id FROM users WHERE clientid = $1 ORDER BY id ASC LIMIT 1', [finalClientId]);
-        if (clientUserRes.rows.length > 0) {
-          const clientUserId = clientUserRes.rows[0].id;
-
-          // Fetch the active SMTP configuration for this client's user ID
-          const smtpRes = await pool.query(
-            'SELECT * FROM smtp_configuration WHERE userid = $1 AND is_deleted = false AND status = 1 LIMIT 1',
-            [clientUserId]
-          );
-
-          if (smtpRes.rows.length > 0) {
-            const smtpConfig = smtpRes.rows[0];
-
-            const transporter = nodemailer.createTransport({
-              host: smtpConfig.smtp_host,
-              port: smtpConfig.smtp_port,
-              secure: smtpConfig.smtp_port === 465,
-              auth: {
-                user: smtpConfig.smtp_usename,
-                pass: smtpConfig.smtp_password,
-              },
-            });
-
-            const mailOptions = {
-              from: `"${smtpConfig.from_name || 'System'}" <${smtpConfig.from_email || smtpConfig.smtp_usename}>`,
-              to: contact_email,
-              subject: 'Your Company Account Credentials',
-              text: `Hello ${contact_person || 'there'},\n\nYour company profile for "${company_name}" has been created successfully.\n\nYour temporary login credentials are:\nEmail: ${contact_email}\nPassword: ${generatedPassword}\n\nPlease log in and update your password.\n\nBest regards,\nSystem Administrator`,
-            };
-
-            await transporter.sendMail(mailOptions);
-            console.log('Password email sent to company:', contact_email);
-          } else {
-            console.log('No active SMTP config found for client user ID:', clientUserId);
-          }
-        }
+        const { sendEmail } = require('../config/mailer');
+        await sendEmail({
+          to: contact_email,
+          subject: 'Your Company Account Credentials',
+          text: `Hello ${contact_person || 'there'},\n\nYour company profile for "${company_name}" has been created successfully.\n\nYour temporary login credentials are:\nEmail: ${contact_email}\nPassword: ${generatedPassword}\n\nPlease log in and update your password.\n\nBest regards,\nSystem Administrator`,
+          clientid: finalClientId
+        });
       } catch (err) {
         console.error('Error in user creation / emailing during company setup:', err);
       }
     }
+
+    // Auto-calculate is_multi_country for the linked client
+    await recalculateMultiCountry(finalClientId);
 
     res.status(201).json({ message: 'Company created successfully', company: newCompany });
   } catch (error) {
@@ -272,6 +269,9 @@ exports.updateCompany = async (req, res) => {
       }
     }
 
+    // Auto-calculate is_multi_country for the linked client
+    await recalculateMultiCountry(updatedCompany.clientid);
+
     res.status(200).json({ message: 'Company updated successfully', company: updatedCompany });
   } catch (error) {
     console.error('Error updating company:', error);
@@ -312,19 +312,57 @@ exports.getCompaniesByClient = async (req, res) => {
       return res.status(400).json({ message: 'Client ID is required and no active client found' });
     }
 
-    const query = `
-      SELECT id, company_name 
+    const email = req.query.email;
+    let assignedCompanyIds = null;
+
+    if (email && email.trim() !== '') {
+      // 1. Look up employee by email
+      const empRes = await pool.query(
+        'SELECT id, roleid FROM employee WHERE email = $1 AND is_deleted = false',
+        [email.trim().toLowerCase()]
+      );
+      if (empRes.rows.length > 0) {
+        const employeeId = empRes.rows[0].id;
+        const roleId = empRes.rows[0].roleid;
+        
+        // Only restrict if they are not superadmin/client admin
+        if (String(roleId) !== '1' && String(roleId) !== '2') {
+          // 2. Fetch assigned companies for this employee
+          const compRes = await pool.query(
+            'SELECT company_id FROM employee_company WHERE employee_id = $1',
+            [employeeId]
+          );
+          assignedCompanyIds = compRes.rows.map(r => r.company_id);
+        }
+      }
+    }
+
+    let query = `
+      SELECT id, company_name, country 
       FROM company 
       WHERE clientid = $1 AND (is_deleted = false OR is_deleted IS NULL)
-      ORDER BY id DESC
     `;
-    const { rows } = await pool.query(query, [clientId]);
+    const params = [clientId];
+
+    if (assignedCompanyIds !== null) {
+      if (assignedCompanyIds.length > 0) {
+        query += ` AND id = ANY($2)`;
+        params.push(assignedCompanyIds);
+      } else {
+        query += ` AND id = -1`;
+      }
+    }
+
+    query += ` ORDER BY id DESC`;
+
+    const { rows } = await pool.query(query, params);
 
     const formattedCompanies = rows.map(row => ({
       id: row.id,
       Id: row.id,
       company_name: row.company_name,
-      Companyname: row.company_name
+      Companyname: row.company_name,
+      country: row.country
     }));
 
     res.status(200).json(formattedCompanies);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, TouchableOpacity, Modal, Switch, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as XLSX from 'xlsx';
 import { CustomDropdown, SearchableDropdown } from './CustomFieldsTab';
 import { API_URL } from '../config';
 
@@ -18,10 +19,10 @@ const COLORS = {
   white: '#FFFFFF',
 };
 
-export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed }) {
+export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed }) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width > 768;
-  const isEmployee = user && String(user.roleId) !== '1' && String(user.roleId) !== '2' && String(user.roleId) !== '5' && String(user.roleId) !== '8';
+  const isEmployee = false;
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fieldsLayout, setFieldsLayout] = useState(null);
@@ -30,7 +31,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
   const [formData, setFormData] = useState({});
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isViewOnly, setIsViewOnly] = useState(false);
-  const [vehicleDetailsRecords, setVehicleDetailsRecords] = useState([]);
+  const [PurchaseDetailsRecords, setPurchaseDetailsRecords] = useState([]);
 
   // Table state
   const [searchQuery, setSearchQuery] = useState('');
@@ -44,8 +45,11 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [recordToDelete, setRecordToDelete] = useState(null);
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
+  const [barcodeModalVisible, setBarcodeModalVisible] = useState(false);
+  const [activeBarcodeRowId, setActiveBarcodeRowId] = useState(null);
+  const [sNoModalVisible, setSNoModalVisible] = useState(false);
+  const [activeSNoRowId, setActiveSNoRowId] = useState(null);
 
-  // Wizard state
   const [wizardStep, setWizardStep] = useState(1);
   const [clients, setClients] = useState([]);
   const [countries, setCountries] = useState([]);
@@ -55,10 +59,302 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
   const [selectedCountry, setSelectedCountry] = useState('');
   const [selectedModule, setSelectedModule] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
+  const [assignedQuantities, setAssignedQuantities] = useState([]);
+
+  // Line Items state
+  const [lineItems, setLineItems] = useState([{ id: Date.now(), barcode: '', barcodes: [], serial_numbers: [], item_name: '', qty: 1, uom: '', unit_price: 0, vat: 0, subtotal: 0 }]);
+  const [uomList, setUomList] = useState([]);
+  const [assetsList, setAssetsList] = useState([]);
+  const [vatList, setVatList] = useState([]);
 
   useEffect(() => {
     fetchInitialData();
+    fetchUomList();
+    fetchAssetsList(user?.clientid || user?.client_id);
+    fetchVatList();
   }, []);
+
+  const fetchUomList = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/uom`);
+      if (res.ok) {
+        const data = await res.json();
+        setUomList(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      console.warn('Could not fetch UOM list', e);
+    }
+  };
+
+  const fetchAssetsList = async (clientId) => {
+    try {
+      const url = clientId
+        ? `${API_URL}/api/asset-details/dropdown?clientid=${clientId}`
+        : `${API_URL}/api/asset-details/dropdown`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setAssetsList(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      console.warn('Could not fetch Assets list', e);
+    }
+  };
+
+  const fetchVatList = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/vat`);
+      if (res.ok) {
+        const data = await res.json();
+        setVatList(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      console.warn('Could not fetch VAT list', e);
+    }
+  };
+
+  const addLineItem = () => {
+    setLineItems(prev => [...prev, { id: Date.now(), barcode: '', barcodes: [], serial_numbers: [], item_name: '', qty: 1, uom: '', unit_price: 0, vat: 0, subtotal: 0 }]);
+  };
+
+  const removeLineItem = (id) => {
+    setLineItems(prev => prev.filter(item => item.id !== id));
+  };
+
+  const isSNoHeader = (val) => {
+    const s = String(val).toLowerCase().trim();
+    return s === 'serial number' || s === 'serial' || s === 'sn' || s === 's/n' || s === 'sno' || s === 'serial_number';
+  };
+
+  const extractSerialsFromSheet = (sheetsData) => {
+    if (!Array.isArray(sheetsData) || sheetsData.length === 0) return [];
+
+    let targetColIdx = 0;
+    const firstRow = sheetsData[0];
+    if (Array.isArray(firstRow)) {
+      for (let i = 0; i < firstRow.length; i++) {
+        const val = String(firstRow[i] || '').toLowerCase().trim();
+        if (val.includes('serial') || val === 'sn' || val === 'sno' || val === 's/n') {
+          targetColIdx = i;
+          break;
+        }
+      }
+    }
+
+    const results = [];
+    for (let rIdx = 0; rIdx < sheetsData.length; rIdx++) {
+      const row = sheetsData[rIdx];
+      if (!Array.isArray(row)) continue;
+      const cellVal = row[targetColIdx];
+      if (cellVal !== undefined && cellVal !== null && String(cellVal).trim() !== '') {
+        const strVal = String(cellVal).trim();
+        if (!isSNoHeader(strVal)) {
+          results.push(strVal);
+        }
+      }
+    }
+
+    if (results.length === 0 && targetColIdx !== 0) {
+      for (let rIdx = 0; rIdx < sheetsData.length; rIdx++) {
+        const row = sheetsData[rIdx];
+        if (!Array.isArray(row)) continue;
+        const cellVal = row[0];
+        if (cellVal !== undefined && cellVal !== null && String(cellVal).trim() !== '') {
+          const strVal = String(cellVal).trim();
+          if (!isSNoHeader(strVal)) {
+            results.push(strVal);
+          }
+        }
+      }
+    }
+    return results;
+  };
+
+  const handleSNoFileUpload = () => {
+    if (typeof document !== 'undefined') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.xlsx,.xls,.csv,.txt';
+      input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        const fileExt = file.name.split('.').pop().toLowerCase();
+
+        if (fileExt === 'xlsx' || fileExt === 'xls') {
+          reader.onload = (evt) => {
+            try {
+              const data = new Uint8Array(evt.target.result);
+              const workbook = XLSX.read(data, { type: 'array' });
+              const sheetName = workbook.SheetNames[0];
+              const worksheet = workbook.Sheets[sheetName];
+              const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+              const serials = extractSerialsFromSheet(jsonData);
+              if (serials.length > 0) {
+                updateLineItem(activeSNoRowId, {
+                  qty: serials.length,
+                  serial_numbers: serials
+                });
+                showToast(`Successfully imported ${serials.length} serial numbers`, 'success');
+              } else {
+                showToast('No serial numbers found in the Excel file', 'error');
+              }
+            } catch (err) {
+              console.error(err);
+              showToast('Failed to parse Excel file', 'error');
+            }
+          };
+          reader.readAsArrayBuffer(file);
+        } else if (fileExt === 'csv' || fileExt === 'txt') {
+          reader.onload = (evt) => {
+            try {
+              const text = evt.target.result;
+              const lines = text.split(/\r?\n/);
+              const serials = [];
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                if (fileExt === 'csv') {
+                  const firstCol = trimmed.split(',')[0].trim();
+                  if (firstCol && !isSNoHeader(firstCol)) {
+                    serials.push(firstCol);
+                  }
+                } else {
+                  if (!isSNoHeader(trimmed)) {
+                    serials.push(trimmed);
+                  }
+                }
+              }
+              if (serials.length > 0) {
+                updateLineItem(activeSNoRowId, {
+                  qty: serials.length,
+                  serial_numbers: serials
+                });
+                showToast(`Successfully imported ${serials.length} serial numbers`, 'success');
+              } else {
+                showToast('No serial numbers found in the file', 'error');
+              }
+            } catch (err) {
+              console.error(err);
+              showToast('Failed to parse file', 'error');
+            }
+          };
+          reader.readAsText(file);
+        }
+      };
+      input.click();
+    }
+  };
+
+  const updateLineItem = (id, fieldOrObj, value) => {
+    setLineItems(prev => {
+      const globalSelected = prev.flatMap(i => {
+        if (i.id === id) return [];
+        return i.barcodes || (i.barcode ? [i.barcode] : []);
+      });
+
+      return prev.map(item => {
+        if (item.id !== id) return item;
+        let updated = typeof fieldOrObj === 'object'
+          ? { ...item, ...fieldOrObj }
+          : { ...item, [fieldOrObj]: value };
+
+        const isQtyChanged = fieldOrObj === 'qty' || (typeof fieldOrObj === 'object' && 'qty' in fieldOrObj);
+        if (isQtyChanged) {
+          const newQty = parseInt(typeof fieldOrObj === 'object' ? fieldOrObj.qty : value) || 0;
+          let currentBarcodes = [...(item.barcodes || (item.barcode ? [item.barcode] : []))];
+          if (newQty < currentBarcodes.length) {
+            currentBarcodes = currentBarcodes.slice(0, newQty);
+          } else if (newQty > currentBarcodes.length) {
+            const selectedAsset = assetsList.find(a => String(a.name) === String(item.item_name));
+            if (selectedAsset && Array.isArray(selectedAsset.barcodes)) {
+              const available = selectedAsset.barcodes.filter(b =>
+                !globalSelected.includes(b) && !currentBarcodes.includes(b)
+              );
+              const needed = newQty - currentBarcodes.length;
+              const toAdd = available.slice(0, needed);
+              currentBarcodes = [...currentBarcodes, ...toAdd];
+            }
+          }
+          updated.barcodes = currentBarcodes;
+          updated.barcode = currentBarcodes.length > 0 ? currentBarcodes[0] : '';
+
+          let currentSNo = [...(updated.serial_numbers || [])];
+          if (newQty < currentSNo.length) {
+            currentSNo = currentSNo.slice(0, newQty);
+          } else if (newQty > currentSNo.length) {
+            const diff = newQty - currentSNo.length;
+            for (let i = 0; i < diff; i++) {
+              currentSNo.push('');
+            }
+          }
+          updated.serial_numbers = currentSNo;
+        }
+
+        const isItemNameChanged = fieldOrObj === 'item_name' || (typeof fieldOrObj === 'object' && 'item_name' in fieldOrObj);
+        if (isItemNameChanged) {
+          const itemNameValue = typeof fieldOrObj === 'object' ? fieldOrObj.item_name : value;
+          const selectedAsset = assetsList.find(a => String(a.name) === String(itemNameValue));
+          if (selectedAsset) {
+            // Set default UOM from asset details if present
+            if (selectedAsset.details) {
+              const assetUom = selectedAsset.details.UOM || selectedAsset.details.uom;
+              if (assetUom) {
+                const matchedUom = uomList.find(u =>
+                  String(u.id) === String(assetUom) ||
+                  String(u.uom_name).toLowerCase() === String(assetUom).toLowerCase()
+                );
+                if (matchedUom) {
+                  updated.uom = matchedUom.uom_name;
+                } else {
+                  updated.uom = assetUom;
+                }
+              }
+            }
+
+            if (Array.isArray(selectedAsset.barcodes)) {
+              const available = selectedAsset.barcodes.filter(b => !globalSelected.includes(b));
+              const numToAssign = parseInt(updated.qty) || 1;
+              const toAdd = available.slice(0, numToAssign);
+              updated.barcodes = toAdd;
+              updated.barcode = toAdd.length > 0 ? toAdd[0] : '';
+            } else {
+              updated.barcodes = [];
+              updated.barcode = '';
+            }
+          } else {
+            updated.barcodes = [];
+            updated.barcode = '';
+          }
+        }
+
+        const qty = parseFloat(updated.qty) || 0;
+        const price = parseFloat(updated.unit_price) || 0;
+        const vat = parseFloat(updated.vat) || 0;
+        updated.subtotal = (qty * price * (1 + vat / 100)).toFixed(2);
+        return updated;
+      });
+    });
+  };
+
+  const grandTotal = lineItems.reduce((sum, item) => sum + parseFloat(item.subtotal || 0), 0).toFixed(2);
+  const assetOptions = [{ label: '-- Item --', value: '', rawData: null }, ...assetsList.map(asset => ({ label: asset.name, value: asset.name, rawData: asset }))];
+  const uomOptions = [{ label: '-- UOM --', value: '' }, ...uomList.map(u => ({ label: u.uom_name, value: u.uom_name }))];
+  const vatOptions = (() => {
+    const options = [{ label: '0%', value: 0 }];
+    const seen = new Set(['0%']);
+    vatList.forEach(v => {
+      const isNum = !isNaN(parseFloat(v.vat));
+      const labelText = isNum ? `${parseFloat(v.vat)}%` : v.vat;
+      if (!seen.has(labelText)) {
+        seen.add(labelText);
+        options.push({ label: labelText, value: v.vat });
+      }
+    });
+    return options;
+  })();
 
   const fetchInitialData = async () => {
     try {
@@ -66,7 +362,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
         fetch(`${API_URL}/api/clients`),
         fetch(`${API_URL}/api/countries`),
         fetch(`${API_URL}/api/modules`),
-        fetch(`${API_URL}/api/vehicle-details${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`)
+        fetch(`${API_URL}/api/purchases${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`)
       ]);
       const [clientsData, countriesData, modulesData, recordsData] = await Promise.all([
         clientsRes.json(),
@@ -77,7 +373,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
       setClients(clientsData || []);
       setCountries(countriesData || []);
       setModules(modulesData || []);
-      setVehicleDetailsRecords(Array.isArray(recordsData) ? recordsData : []);
+      setPurchaseDetailsRecords(Array.isArray(recordsData) ? recordsData : []);
 
       // Try to set defaults if available
       const clientVal = user?.client_id || user?.clientid;
@@ -87,7 +383,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
       }
       if (user?.country_id || user?.countryid) setSelectedCountry(String(user?.country_id || user?.countryid));
       if (user?.company_id || user?.companyid) setSelectedCompany(String(user?.company_id || user?.companyid));
-      const viModule = (modulesData || []).find(m => m.module_name && m.module_name.toLowerCase().includes('vehicle details'));
+      const viModule = (modulesData || []).find(m => m.module_name && m.module_name.toLowerCase().includes('purchase') && m.module_name.toLowerCase().includes('detail'));
       if (viModule) setSelectedModule(String(viModule.id));
     } catch (err) {
       console.error(err);
@@ -117,6 +413,8 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
     setIsViewOnly(false);
     setEditingRecord(null);
     setFormData({});
+    setLineItems([{ id: Date.now(), barcode: '', barcodes: [], serial_numbers: [], item_name: '', qty: 1, uom: '', unit_price: 0, vat: 0, subtotal: 0 }]);
+    setAssignedQuantities([]);
     if (companies.length === 1 && user && String(user.roleId) !== '1') {
       const singleComp = companies[0];
       setSelectedCompany(String(singleComp.id));
@@ -137,6 +435,9 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
     setLoading(true);
     setWizardStep(2);
     try {
+      // Load assets scoped to this client ID
+      await fetchAssetsList(clientId);
+
       // 3. Fetch custom fields for this configuration
       const cfRes = await fetch(`${API_URL}/api/custom-fields`);
       const customFields = await cfRes.json();
@@ -257,19 +558,31 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
             return data.map(item => {
               if (typeof item === 'string') return item;
               if (item && typeof item === 'object') {
-                const nameKey = Object.keys(item).find(key =>
-                  key.toLowerCase().includes('name') ||
-                  key.toLowerCase().includes('label') ||
-                  key.toLowerCase() === 'title' ||
-                  key.toLowerCase().includes('plate') ||
-                  key.toLowerCase().includes('chassis') ||
-                  key.toLowerCase().includes('chasis') ||
-                  key.toLowerCase().includes('policy') ||
-                  key.toLowerCase().includes('department')
-                );
-                if (nameKey) return String(item[nameKey]);
-                const firstKey = Object.keys(item)[0];
-                return firstKey ? String(item[firstKey]) : '';
+                let displayName = '';
+                // If item has field_data (e.g. suppliers, assets), extract first value from it as the display name
+                if (item.field_data && typeof item.field_data === 'object') {
+                  const firstVal = Object.values(item.field_data)[0];
+                  if (firstVal && typeof firstVal === 'string') displayName = firstVal;
+                }
+                if (!displayName) {
+                  const nameKey = Object.keys(item).find(key =>
+                    key.toLowerCase().includes('name') ||
+                    key.toLowerCase().includes('label') ||
+                    key.toLowerCase() === 'title' ||
+                    key.toLowerCase().includes('plate') ||
+                    key.toLowerCase().includes('chassis') ||
+                    key.toLowerCase().includes('chasis') ||
+                    key.toLowerCase().includes('policy') ||
+                    key.toLowerCase().includes('department')
+                  );
+                  if (nameKey) displayName = String(item[nameKey]);
+                }
+                if (!displayName) {
+                  const firstKey = Object.keys(item)[0];
+                  displayName = firstKey ? String(item[firstKey]) : '';
+                }
+
+                return displayName;
               }
               return String(item);
             }).filter(Boolean);
@@ -340,6 +653,20 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
   const handleEdit = async (record) => {
     setIsViewOnly(false);
     setEditingRecord(record);
+    
+    // Fetch assigned quantities
+    try {
+      const assignedRes = await fetch(`${API_URL}/api/purchases/${record.id}/assigned-quantities`);
+      if (assignedRes.ok) {
+        const assignedData = await assignedRes.json();
+        setAssignedQuantities(assignedData || []);
+      } else {
+        setAssignedQuantities([]);
+      }
+    } catch (err) {
+      console.warn('Could not fetch assigned quantities', err);
+      setAssignedQuantities([]);
+    }
     // Pre-populate form data from the record
     let parsed = {};
     if (record.field_data) {
@@ -348,6 +675,20 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
       } catch (e) { }
     }
     setFormData(parsed);
+    // Restore line items if any
+    if (record.line_items) {
+      try {
+        const items = typeof record.line_items === 'string' ? JSON.parse(record.line_items) : record.line_items;
+        setLineItems(Array.isArray(items) && items.length > 0 ? items.map(item => ({
+          ...item,
+          barcodes: item.barcodes || (item.barcode ? [item.barcode] : []),
+          originalBarcodes: item.barcodes || (item.barcode ? [item.barcode] : []),
+          serial_numbers: item.serial_numbers || []
+        })) : [{ id: Date.now(), barcode: '', barcodes: [], originalBarcodes: [], serial_numbers: [], item_name: '', qty: 1, uom: '', unit_price: 0, vat: 0, subtotal: 0 }]);
+      } catch (e) { setLineItems([{ id: Date.now(), barcode: '', barcodes: [], originalBarcodes: [], serial_numbers: [], item_name: '', qty: 1, uom: '', unit_price: 0, vat: 0, subtotal: 0 }]); }
+    } else {
+      setLineItems([{ id: Date.now(), barcode: '', barcodes: [], originalBarcodes: [], serial_numbers: [], item_name: '', qty: 1, uom: '', unit_price: 0, vat: 0, subtotal: 0 }]);
+    }
     // Set wizard selectors to match the record
     setSelectedClient(String(record.clientid || ''));
     setSelectedCountry(String(record.country_id || ''));
@@ -366,6 +707,20 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
   const handleView = async (record) => {
     setIsViewOnly(true);
     setEditingRecord(record);
+    
+    // Fetch assigned quantities
+    try {
+      const assignedRes = await fetch(`${API_URL}/api/purchases/${record.id}/assigned-quantities`);
+      if (assignedRes.ok) {
+        const assignedData = await assignedRes.json();
+        setAssignedQuantities(assignedData || []);
+      } else {
+        setAssignedQuantities([]);
+      }
+    } catch (err) {
+      console.warn('Could not fetch assigned quantities', err);
+      setAssignedQuantities([]);
+    }
     // Pre-populate form data from the record
     let parsed = {};
     if (record.field_data) {
@@ -374,6 +729,20 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
       } catch (e) { }
     }
     setFormData(parsed);
+    // Restore line items if any
+    if (record.line_items) {
+      try {
+        const items = typeof record.line_items === 'string' ? JSON.parse(record.line_items) : record.line_items;
+        setLineItems(Array.isArray(items) && items.length > 0 ? items.map(item => ({
+          ...item,
+          barcodes: item.barcodes || (item.barcode ? [item.barcode] : []),
+          originalBarcodes: item.barcodes || (item.barcode ? [item.barcode] : []),
+          serial_numbers: item.serial_numbers || []
+        })) : [{ id: Date.now(), barcode: '', barcodes: [], originalBarcodes: [], serial_numbers: [], item_name: '', qty: 1, uom: '', unit_price: 0, vat: 0, subtotal: 0 }]);
+      } catch (e) { setLineItems([{ id: Date.now(), barcode: '', barcodes: [], originalBarcodes: [], serial_numbers: [], item_name: '', qty: 1, uom: '', unit_price: 0, vat: 0, subtotal: 0 }]); }
+    } else {
+      setLineItems([{ id: Date.now(), barcode: '', barcodes: [], originalBarcodes: [], serial_numbers: [], item_name: '', qty: 1, uom: '', unit_price: 0, vat: 0, subtotal: 0 }]);
+    }
     // Set wizard selectors to match the record
     setSelectedClient(String(record.clientid || ''));
     setSelectedCountry(String(record.country_id || ''));
@@ -401,41 +770,60 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
     }
 
     try {
-      const res = await fetch(`${API_URL}/api/vehicle-details/${recordToDelete.id}`, {
+      const res = await fetch(`${API_URL}/api/purchases/${recordToDelete.id}`, {
         method: 'DELETE',
       });
 
-      if (!res.ok) throw new Error('Failed to delete vehicle details record');
+      if (!res.ok) throw new Error('Failed to delete Purchase details record');
 
-      showToast('Vehicle details record deleted successfully', 'success');
+      showToast('Purchase details record deleted successfully', 'success');
       setDeleteModalVisible(false);
       setRecordToDelete(null);
       fetchInitialData(); // Refresh the list
     } catch (error) {
       console.error(error);
-      showToast('Error deleting vehicle details record', 'error');
+      showToast('Error deleting Purchase details record', 'error');
     }
   };
 
   const handleSave = async () => {
     setSaving(true);
     try {
+      // Validation against already assigned quantities
+      if (editingRecord) {
+        for (const aq of assignedQuantities) {
+          const matchedItem = lineItems.find(item => 
+            item.item_name && String(item.item_name).trim().toLowerCase() === String(aq.item_name).trim().toLowerCase()
+          );
+          if (!matchedItem) {
+            showToast(`Cannot remove item "${aq.item_name}" because it has ${aq.assigned_qty} already assigned assets.`, 'error');
+            setSaving(false);
+            return;
+          }
+          const itemQty = parseInt(matchedItem.qty, 10) || 0;
+          if (itemQty < aq.assigned_qty) {
+            showToast(`Quantity for "${aq.item_name}" cannot be less than already assigned assets (${aq.assigned_qty}).`, 'error');
+            setSaving(false);
+            return;
+          }
+        }
+      }
       const payload = {
-        vehicle_id: null,
         custom_field_id: customFieldId,
         field_data: formData,
+        line_items: lineItems,
         clientid: configParams.clientid,
         country_id: configParams.country_id,
         moduleid: configParams.moduleid,
+        company_id: selectedCompany || null,
         roleid: user ? user.roleId : null,
-        user_id: user ? user.id : null,
-        company_id: selectedCompany || null
+        user_id: user ? user.id : null
       };
 
       const isEditing = !!editingRecord;
       const url = isEditing
-        ? `${API_URL}/api/vehicle-details/${editingRecord.id}`
-        : `${API_URL}/api/vehicle-details`;
+        ? `${API_URL}/api/purchases/${editingRecord.id}`
+        : `${API_URL}/api/purchases`;
       const method = isEditing ? 'PUT' : 'POST';
 
       const res = await fetch(url, {
@@ -444,16 +832,17 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
         body: JSON.stringify(payload)
       });
 
-      if (!res.ok) throw new Error(`Failed to ${isEditing ? 'update' : 'save'} vehicle details`);
+      if (!res.ok) throw new Error(`Failed to ${isEditing ? 'update' : 'save'} Purchase details`);
 
-      showToast(isEditing ? 'Vehicle details record updated successfully!' : 'Form submitted successfully!', 'success');
+      showToast(isEditing ? 'Purchase details record updated successfully!' : 'Form submitted successfully!', 'success');
       setIsFormOpen(false);
       setEditingRecord(null);
       setFormData({});
+      setLineItems([{ id: Date.now(), barcode: '', barcodes: [], item_name: '', qty: 1, uom: '', unit_price: 0, vat: 0, subtotal: 0 }]);
       fetchInitialData();
     } catch (error) {
       console.error(error);
-      showToast('Error saving vehicle details', 'error');
+      showToast('Error saving Purchase details', 'error');
     } finally {
       setSaving(false);
     }
@@ -543,6 +932,34 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
               <Ionicons name="time-outline" size={18} color="#64748B" />
             </View>
           </View>
+        );
+      }
+      case 'Single Checkbox': {
+        const val = !!formData[field.id];
+        return (
+          <TouchableOpacity
+            style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44, gap: 10 }}
+            onPress={() => !isViewOnly && handleInputChange(field.id, !val)}
+            activeOpacity={isViewOnly ? 1 : 0.8}
+          >
+            <View style={{
+              width: 20,
+              height: 20,
+              borderRadius: 4,
+              borderWidth: 2,
+              borderColor: val ? (isViewOnly ? '#94A3B8' : COLORS.primary) : '#CBD5E1',
+              justifyContent: 'center',
+              alignItems: 'center',
+              backgroundColor: '#FFFFFF'
+            }}>
+              {val && (
+                <Ionicons name="checkmark" size={14} color={isViewOnly ? '#94A3B8' : COLORS.primary} />
+              )}
+            </View>
+            <Text style={{ fontSize: 13, color: '#334155', fontWeight: '600' }}>
+              {field.name} {field.isRequired && <Text style={{ color: COLORS.error }}>*</Text>}
+            </Text>
+          </TouchableOpacity>
         );
       }
       case 'Toggle/Switch': {
@@ -850,8 +1267,8 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
       {/* MAIN HEADER */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Vehicle Details</Text>
-          <Text style={styles.headerSubtitle}>Manage your vehicle details records.</Text>
+          <Text style={styles.headerTitle}>Purchase Details</Text>
+          <Text style={styles.headerSubtitle}>Manage your Purchase details records.</Text>
         </View>
         {!isEmployee && (
           <TouchableOpacity
@@ -859,7 +1276,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
             onPress={handleAddNewRecord}
           >
             <Ionicons name="add-circle" size={20} color="#FFFFFF" />
-            <Text style={styles.addButtonText}>Add Vehicle Details</Text>
+            <Text style={styles.addButtonText}>Add Purchase Details</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -895,10 +1312,10 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                 <Ionicons name="car-sport" size={40} color={COLORS.primary} />
               </View>
               <Text style={{ fontSize: 24, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 12, textAlign: 'center' }}>
-                Vehicle Registration Entry
+                Purchase Registration Entry
               </Text>
               <Text style={{ fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 32, lineHeight: 22, maxWidth: 440 }}>
-                Please register the vehicle specifications and details. All records are processed securely.
+                Please register the Purchase specifications and details. All records are processed securely.
               </Text>
               <TouchableOpacity
                 style={{
@@ -920,16 +1337,16 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                 onPress={handleAddNewRecord}
               >
                 <Ionicons name="add-circle" size={22} color="#FFFFFF" style={{ marginRight: 8 }} />
-                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>Add Vehicle Details</Text>
+                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>Add Purchase Details</Text>
               </TouchableOpacity>
             </View>
           </View>
         ) : (
-          vehicleDetailsRecords.length === 0 && !searchQuery ? (
+          PurchaseDetailsRecords.length === 0 && !searchQuery ? (
             <View style={styles.emptyState}>
               <Ionicons name="document-text-outline" size={48} color={COLORS.textMuted} />
-              <Text style={styles.emptyStateText}>No vehicle details records found.</Text>
-              <Text style={styles.emptyStateSubtext}>Click 'Add Vehicle Details' to create a new record.</Text>
+              <Text style={styles.emptyStateText}>No Purchase details records found.</Text>
+              <Text style={styles.emptyStateSubtext}>Click 'Add Purchase Details' to create a new record.</Text>
             </View>
           ) : (
             <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#F1F5F9', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1, overflow: 'hidden' }}>
@@ -951,8 +1368,9 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
               <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20 }}>
                 <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>ID</Text>
                 <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
+                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Company</Text>
                 <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Module Info</Text>
-                <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Data Preview</Text>
+                <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Supplier Name</Text>
                 <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Employee</Text>
                 <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
                 <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>View</Text>
@@ -962,7 +1380,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
 
               <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true}>
                 {(() => {
-                  const filtered = vehicleDetailsRecords.filter(r => {
+                  const filtered = PurchaseDetailsRecords.filter(r => {
                     if (user && String(user.roleId) !== '1' && user.clientid) {
                       if (String(r.clientid) !== String(user.clientid)) return false;
                     }
@@ -1021,13 +1439,34 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                             </View>
 
                             <View style={{ flex: 1.5, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '500' }} numberOfLines={1}>{record.company_name || 'N/A'}</Text>
+                            </View>
+
+                            <View style={{ flex: 1.5, paddingRight: 10 }}>
                               <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{moduleName}</Text>
                               <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Created: {new Date(record.created_at).toLocaleDateString()}</Text>
                             </View>
-
                             <View style={{ flex: 2, paddingRight: 10 }}>
                               <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500', marginBottom: 4 }} numberOfLines={1}>{String(firstValue)}</Text>
                               <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Field: {firstKey}</Text>
+                              {(() => {
+                                let parsedLineItems = [];
+                                if (record.line_items) {
+                                  try {
+                                    parsedLineItems = typeof record.line_items === 'string' ? JSON.parse(record.line_items) : record.line_items;
+                                  } catch (e) { }
+                                }
+                                const serialsList = (parsedLineItems || [])
+                                  .flatMap(item => item.serial_numbers || (item.serial_number ? [item.serial_number] : []))
+                                  .filter(s => s && String(s).trim() !== '');
+
+                                if (serialsList.length === 0) return null;
+                                return (
+                                  <Text style={{ fontSize: 11, color: COLORS.primary, fontWeight: '600', marginTop: 2 }} numberOfLines={1}>
+                                    S/Ns: {serialsList.join(', ')}
+                                  </Text>
+                                );
+                              })()}
                             </View>
 
                             <View style={{ flex: 1.5, paddingRight: 10 }}>
@@ -1062,7 +1501,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
 
               {/* Pagination Footer */}
               {(() => {
-                const filtered = vehicleDetailsRecords.filter(r => {
+                const filtered = PurchaseDetailsRecords.filter(r => {
                   if (user && String(user.roleId) !== '1' && user.clientid) {
                     if (String(r.clientid) !== String(user.clientid)) return false;
                   }
@@ -1134,7 +1573,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
             </Text>
 
             <Text style={{ fontSize: 14, color: '#64748B', marginBottom: 24, lineHeight: 20 }}>
-              This will permanently delete the selected vehicle details record. This action cannot be undone and will be completely removed from the database.
+              This will permanently delete the selected Purchase details record. This action cannot be undone and will be completely removed from the database.
             </Text>
 
             <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 8, textTransform: 'uppercase' }}>
@@ -1179,7 +1618,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <Ionicons name="document-text" size={24} color={COLORS.primary} />
-                <Text style={styles.modalTitle}>{isViewOnly ? `View Vehicle Details Record #${editingRecord?.id}` : (editingRecord ? `Edit Vehicle Details Record #${editingRecord.id}` : 'Add Vehicle Details')}</Text>
+                <Text style={styles.modalTitle}>{isViewOnly ? `View Purchase Details Record #${editingRecord?.id}` : (editingRecord ? `Edit Purchase Details Record #${editingRecord.id}` : 'Add Purchase Details')}</Text>
               </View>
               <TouchableOpacity onPress={() => { setIsFormOpen(false); setEditingRecord(null); setFormData({}); setIsViewOnly(false); }} style={styles.closeButton}>
                 <Ionicons name="close" size={22} color={COLORS.textSecondary} />
@@ -1311,7 +1750,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
               </View>
             ) : (
               <>
-                <ScrollView style={styles.formScroll} contentContainerStyle={{ padding: 24, paddingBottom: 20 }}>
+                <ScrollView style={styles.formScroll} contentContainerStyle={{ padding: 24, paddingBottom: 8 }}>
                   {fieldsLayout.map((section, index) => (
                     <View key={section.id} style={[styles.sectionCard, { zIndex: fieldsLayout.length - index }]}>
                       <View style={styles.sectionHeader}>
@@ -1330,12 +1769,15 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                             return parentValue && String(parentValue).trim().toLowerCase() === String(sub.triggerValue).trim().toLowerCase();
                           });
                           const hasSubsections = visibleSubsections.length > 0;
+                          const isFullWidthField = hasSubsections || field.name?.toLowerCase().includes('remarks') || field.type?.toLowerCase().includes('textarea');
 
                           return (
-                            <View key={field.id} style={[hasSubsections ? styles.fieldContainerFull : styles.fieldContainer, { zIndex: section.fields.length - fieldIndex }]}>
-                              <Text style={styles.fieldLabel}>
-                                {field.name} {field.isRequired && <Text style={{ color: COLORS.error }}>*</Text>}
-                              </Text>
+                            <View key={field.id} style={[isFullWidthField ? styles.fieldContainerFull : styles.fieldContainer, { zIndex: section.fields.length - fieldIndex }]}>
+                              {field.type !== 'Single Checkbox' && (
+                                <Text style={styles.fieldLabel}>
+                                  {field.name} {field.isRequired && <Text style={{ color: COLORS.error }}>*</Text>}
+                                </Text>
+                              )}
                               {renderField(field)}
 
                               {/* Render subsections if any are visible */}
@@ -1345,14 +1787,19 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                                     <View key={sub.id} style={[styles.subsectionCard, { zIndex: visibleSubsections.length - subIndex, position: 'relative' }]}>
                                       <Text style={styles.subsectionTitle}>{sub.name}</Text>
                                       <View style={styles.subsectionBody}>
-                                        {sub.fields.map((sf, sfIndex) => (
-                                          <View key={sf.id} style={[styles.fieldContainer, { zIndex: sub.fields.length - sfIndex }]}>
-                                            <Text style={styles.fieldLabel}>
-                                              {sf.name} {sf.isRequired && <Text style={{ color: COLORS.error }}>*</Text>}
-                                            </Text>
-                                            {renderField(sf)}
-                                          </View>
-                                        ))}
+                                        {sub.fields.map((sf, sfIndex) => {
+                                          const isSubFullWidth = sf.name?.toLowerCase().includes('remarks') || sf.type?.toLowerCase().includes('textarea');
+                                          return (
+                                            <View key={sf.id} style={[isSubFullWidth ? styles.fieldContainerFull : styles.fieldContainer, { zIndex: sub.fields.length - sfIndex }]}>
+                                              {sf.type !== 'Single Checkbox' && (
+                                                <Text style={styles.fieldLabel}>
+                                                  {sf.name} {sf.isRequired && <Text style={{ color: COLORS.error }}>*</Text>}
+                                                </Text>
+                                              )}
+                                              {renderField(sf)}
+                                            </View>
+                                          );
+                                        })}
                                       </View>
                                     </View>
                                   ))}
@@ -1364,13 +1811,209 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                       </View>
                     </View>
                   ))}
+                  {/* LINE ITEMS TABLE */}
+                  {/* LINE ITEMS TABLE */}
+                  <View style={{ marginHorizontal: 24, marginBottom: 24, borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, overflow: 'visible', zIndex: 50 }}>
+                    {/* Section Header */}
+                    <View style={{ backgroundColor: '#F8FAFC', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#E2E8F0', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopLeftRadius: 12, borderTopRightRadius: 12 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.primary, textTransform: 'uppercase', letterSpacing: 0.5 }}>Line Items</Text>
+                      {!isViewOnly && (
+                        <TouchableOpacity
+                          onPress={addLineItem}
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 }}
+                        >
+                          <Ionicons name="add" size={14} color="#FFFFFF" />
+                          <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '600' }}>Add Item</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    {/* Table Header */}
+                    <View style={{ flexDirection: 'row', backgroundColor: '#F1F5F9', paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' }}>
+                      <Text style={{ flex: 0.4, fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase' }}>No.</Text>
+                      <Text style={{ flex: 2.4, fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase' }}>Asset Name</Text>
+                      <Text style={{ flex: 0.7, fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase' }}>Qty</Text>
+                      <Text style={{ flex: 0.9, fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase' }}>UOM</Text>
+                      <Text style={{ flex: 1.1, fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase' }}>Unit Price</Text>
+                      <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase' }}>VAT (%)</Text>
+                      <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase' }}>Subtotal</Text>
+                      <Text style={{ flex: 0.8, fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', textAlign: 'center' }}>SNo</Text>
+                      {!isViewOnly && <Text style={{ flex: 0.6, fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', textAlign: 'center' }}>Action</Text>}
+                    </View>
+
+                    {/* Table Rows */}
+                    {lineItems.map((item, index) => {
+                      const match = editingRecord && assignedQuantities.find(aq => 
+                        aq.item_name && String(aq.item_name).trim().toLowerCase() === String(item.item_name).trim().toLowerCase()
+                      );
+                      const isQtyInvalid = match && (parseInt(item.qty, 10) || 0) < match.assigned_qty;
+
+                      return (
+                        <View key={item.id} style={{ borderBottomWidth: index < lineItems.length - 1 ? 1 : 0, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF', zIndex: lineItems.length - index, position: 'relative', paddingVertical: 8 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 }}>
+                            {/* No. */}
+                            <Text style={{ flex: 0.4, fontSize: 13, fontWeight: '700', color: '#94A3B8' }}>{index + 1}</Text>
+
+                            {/* Item Name */}
+                            <View style={{ flex: 2.4, paddingRight: 8 }}>
+                              <View style={{ borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 6, backgroundColor: isViewOnly ? '#F1F5F9' : '#FAFAFA', height: 35, justifyContent: 'center' }}>
+                                <CustomDropdown
+                                  selectedValue={item.item_name}
+                                  onValueChange={(val) => updateLineItem(item.id, 'item_name', val)}
+                                  options={assetOptions.filter(opt => {
+                                    if (opt.value === '' || opt.value === item.item_name) return true;
+                                    const otherChosen = lineItems
+                                      .filter(li => li.id !== item.id)
+                                      .map(li => li.item_name);
+                                    return !otherChosen.includes(opt.value);
+                                  })}
+                                  disabled={isViewOnly}
+                                />
+                              </View>
+                            </View>
+
+                            {/* Qty */}
+                            <View style={{ flex: 0.7, paddingRight: 8 }}>
+                              <View>
+                                <TextInput
+                                  style={{ borderWidth: 1, borderColor: isQtyInvalid ? COLORS.error : '#E2E8F0', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 7, fontSize: 13, color: isViewOnly ? '#64748B' : '#1E293B', backgroundColor: isViewOnly ? '#F1F5F9' : '#FAFAFA', textAlign: 'center', outlineStyle: 'none' }}
+                                  placeholder="1"
+                                  placeholderTextColor="#94A3B8"
+                                  value={String(item.qty)}
+                                  onChangeText={(val) => updateLineItem(item.id, 'qty', val)}
+                                  onBlur={() => {
+                                    const minAllowed = match ? match.assigned_qty : 1; 
+                                    const enteredQty = parseInt(item.qty, 10) || 0;
+                                    
+                                    if (enteredQty < minAllowed) {
+                                      updateLineItem(item.id, 'qty', minAllowed);
+                                      showToast(`Quantity cannot be less than already assigned quantity. Reset to minimum: ${minAllowed}.`, 'warning');
+                                    }
+                                  }}
+                                  keyboardType="numeric"
+                                  editable={!isViewOnly}
+                                />
+                                {match && match.assigned_qty > 0 && (
+                                  <Text style={{ fontSize: 9, color: isQtyInvalid ? COLORS.error : '#64748B', marginTop: 2, textAlign: 'center', fontWeight: '600' }}>
+                                    Assigned: {match.assigned_qty}
+                                  </Text>
+                                )}
+                              </View>
+                            </View>
+
+                            {/* UOM Dropdown */}
+                            <View style={{ flex: 0.9, paddingRight: 8 }}>
+                              <View style={{ borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 6, backgroundColor: isViewOnly ? '#F1F5F9' : '#FAFAFA', height: 35, justifyContent: 'center' }}>
+                                <CustomDropdown
+                                  selectedValue={item.uom}
+                                  onValueChange={(val) => updateLineItem(item.id, 'uom', val)}
+                                  options={uomOptions}
+                                  disabled={isViewOnly}
+                                />
+                              </View>
+                            </View>
+
+                            {/* Unit Price */}
+                            <View style={{ flex: 1.1, paddingRight: 8 }}>
+                              <TextInput
+                                style={{ borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 7, fontSize: 13, color: isViewOnly ? '#64748B' : '#1E293B', backgroundColor: isViewOnly ? '#F1F5F9' : '#FAFAFA', textAlign: 'right', outlineStyle: 'none' }}
+                                placeholder="0.00"
+                                placeholderTextColor="#94A3B8"
+                                value={String(item.unit_price)}
+                                onChangeText={(val) => updateLineItem(item.id, 'unit_price', val)}
+                                keyboardType="numeric"
+                                editable={!isViewOnly}
+                              />
+                            </View>
+
+                            {/* VAT (%) */}
+                            <View style={{ flex: 1.2, paddingRight: 8 }}>
+                              <View style={{ borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 6, backgroundColor: isViewOnly ? '#F1F5F9' : '#FAFAFA', height: 35, justifyContent: 'center' }}>
+                                <CustomDropdown
+                                  selectedValue={item.vat}
+                                  onValueChange={(val) => updateLineItem(item.id, 'vat', val)}
+                                  options={vatOptions}
+                                  disabled={isViewOnly}
+                                />
+                              </View>
+                            </View>
+
+                            {/* Subtotal (Read Only) */}
+                            <View style={{ flex: 1.2, paddingRight: 8 }}>
+                              <View style={{ borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#F8FAFC' }}>
+                                <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.primary, textAlign: 'right' }}>{parseFloat(item.subtotal || 0).toFixed(2)}</Text>
+                              </View>
+                            </View>
+
+                            {/* SNo Column Button */}
+                            <View style={{ flex: 0.8, paddingRight: 8, alignItems: 'center' }}>
+                              <TouchableOpacity
+                                onPress={() => {
+                                  setActiveSNoRowId(item.id);
+                                  setSNoModalVisible(true);
+                                }}
+                                style={{
+                                  backgroundColor: '#E2E8F0',
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 8,
+                                  borderRadius: 6,
+                                  height: 35,
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                  width: '100%'
+                                }}
+                              >
+                                <Text style={{ fontSize: 9, fontWeight: '800', color: '#1E293B' }}>{isViewOnly ? 'View SNo' : 'Add SNo'}</Text>
+                              </TouchableOpacity>
+                            </View>
+
+                            {/* Delete Button */}
+                            {!isViewOnly && (
+                              <View style={{ flex: 0.6, alignItems: 'center' }}>
+                                <TouchableOpacity
+                                  onPress={() => removeLineItem(item.id)}
+                                  disabled={lineItems.length === 1}
+                                  style={{ opacity: lineItems.length === 1 ? 0.3 : 1 }}
+                                >
+                                  <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                                </TouchableOpacity>
+                              </View>
+                            )}
+                          </View>
+
+                          {/* Row-Level Validation Warning */}
+                          {isQtyInvalid && (
+                            <View style={{ backgroundColor: '#FEF2F2', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, marginTop: 6, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: '#FEE2E2', marginHorizontal: 12 }}>
+                              <Ionicons name="alert-circle" size={14} color={COLORS.error} />
+                              <Text style={{ fontSize: 11, color: '#991B1B', fontWeight: '600' }}>
+                                Quantity for "{item.item_name || 'Asset'}" cannot be less than already assigned assets ({match.assigned_qty}).
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+
+                    {/* Grand Total Footer */}
+                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 12, backgroundColor: '#F8FAFC', borderTopWidth: 1, borderTopColor: '#E2E8F0', gap: 12 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#64748B', textTransform: 'uppercase' }}>Grand Total:</Text>
+                      <Text style={{ fontSize: 15, fontWeight: '800', color: COLORS.primary, minWidth: 80, textAlign: 'right' }}>{grandTotal}</Text>
+                    </View>
+                  </View>
+
                 </ScrollView>
 
                 <View style={{ flexDirection: 'row', justifyContent: isViewOnly ? 'flex-end' : 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#FFFFFF' }}>
-                  {isViewOnly ? (
+                   {isViewOnly ? (
                     <TouchableOpacity
                       style={{ paddingVertical: 12, paddingHorizontal: 24, backgroundColor: COLORS.primary, borderRadius: 8 }}
-                      onPress={() => { setIsFormOpen(false); setEditingRecord(null); setFormData({}); setIsViewOnly(false); }}
+                      onPress={() => { 
+                        setIsFormOpen(false); 
+                        setEditingRecord(null); 
+                        setFormData({}); 
+                        setLineItems([{ id: Date.now(), barcode: '', barcodes: [], serial_numbers: [], item_name: '', qty: 1, uom: '', unit_price: 0, vat: 0, subtotal: 0 }]);
+                        setIsViewOnly(false); 
+                      }}
                     >
                       <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Close</Text>
                     </TouchableOpacity>
@@ -1383,6 +2026,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                             setIsFormOpen(false);
                             setEditingRecord(null);
                             setFormData({});
+                            setLineItems([{ id: Date.now(), barcode: '', barcodes: [], serial_numbers: [], item_name: '', qty: 1, uom: '', unit_price: 0, vat: 0, subtotal: 0 }]);
                             setIsViewOnly(false);
                           } else {
                             setWizardStep(1);
@@ -1405,6 +2049,221 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                 </View>
               </>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Barcode Manager Modal */}
+      <Modal
+        visible={barcodeModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setBarcodeModalVisible(false);
+          setActiveBarcodeRowId(null);
+        }}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.4)', justifyContent: 'center', alignItems: 'center', zIndex: 10000 }}>
+          <View style={{ width: 450, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 5 }}>
+            {(() => {
+              const activeItem = lineItems.find(i => i.id === activeBarcodeRowId);
+              if (!activeItem) return null;
+
+              const selectedAsset = assetsList.find(a => String(a.name) === String(activeItem.item_name));
+              const rawBarcodes = selectedAsset?.barcodes || [];
+              let barcodeData = rawBarcodes.map(b => ({ label: b, value: b }));
+
+              const currentBarcodes = activeItem.barcodes || (activeItem.barcode ? [activeItem.barcode] : []);
+              const originalBarcodes = activeItem.originalBarcodes || [];
+              const barcodesToInject = new Set([...currentBarcodes, ...originalBarcodes]);
+
+              barcodesToInject.forEach(b => {
+                if (b && !barcodeData.find(opt => opt.value === b)) {
+                  barcodeData.push({ label: b, value: b });
+                }
+              });
+
+              const numDropdowns = parseInt(activeItem.qty) || 1;
+              const filledBarcodes = currentBarcodes.filter(b => b);
+              const globalSelectedBarcodes = lineItems.flatMap(i => i.barcodes || (i.barcode ? [i.barcode] : []));
+
+              return (
+                <>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Ionicons name="barcode-outline" size={22} color={COLORS.primary} />
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: '#0F172A' }}>Manage Barcodes</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => { setBarcodeModalVisible(false); setActiveBarcodeRowId(null); }}>
+                      <Ionicons name="close" size={22} color="#64748B" />
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={{ marginBottom: 16 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Asset Name</Text>
+                    <Text style={{ fontSize: 14, color: '#0F172A', fontWeight: '500' }}>{activeItem.item_name || '--'}</Text>
+                  </View>
+
+                  <View style={{ marginBottom: 20 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 8 }}>
+                      Assigned Barcodes ({filledBarcodes.length} / {numDropdowns})
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+                      {filledBarcodes.map((bVal, bIdx) => (
+                        <View key={bIdx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#EFF6FF', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#BFDBFE' }}>
+                          <Text style={{ fontSize: 12, color: '#1D4ED8', fontWeight: '600' }}>{bVal}</Text>
+                          {!isViewOnly && (
+                            <TouchableOpacity onPress={() => {
+                              const updated = currentBarcodes.filter((_, i) => i !== bIdx);
+                              updateLineItem(activeItem.id, {
+                                barcodes: updated,
+                                barcode: updated.length > 0 ? updated[0] : ''
+                              });
+                            }} style={{ marginLeft: 6 }}>
+                              <Ionicons name="close" size={14} color="#1D4ED8" />
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      ))}
+                      {filledBarcodes.length === 0 && (
+                        <Text style={{ fontSize: 13, color: '#94A3B8', fontStyle: 'italic' }}>No barcodes assigned.</Text>
+                      )}
+                    </View>
+
+                    {!isViewOnly && filledBarcodes.length < numDropdowns && (
+                      <View style={{ marginTop: 8 }}>
+                        <SearchableDropdown
+                          data={barcodeData.filter(opt => !globalSelectedBarcodes.includes(opt.value))}
+                          value=""
+                          onChange={(val) => {
+                            if (!val) return;
+                            const updated = [...filledBarcodes, val];
+                            updateLineItem(activeItem.id, {
+                              barcodes: updated,
+                              barcode: updated[0]
+                            });
+                          }}
+                          placeholder="+ Add Barcode"
+                          searchPlaceholder="Search barcode..."
+                          displayKey="label"
+                          valueKey="value"
+                          disabled={barcodeData.length === 0}
+                        />
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={{ borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 16, alignItems: 'flex-end' }}>
+                    <TouchableOpacity
+                      style={{ backgroundColor: COLORS.primary, paddingVertical: 10, paddingHorizontal: 20, borderRadius: 6 }}
+                      onPress={() => { setBarcodeModalVisible(false); setActiveBarcodeRowId(null); }}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '600' }}>Done</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              );
+            })()}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Serial Number Manager Modal */}
+      <Modal
+        visible={sNoModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setSNoModalVisible(false);
+          setActiveSNoRowId(null);
+        }}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.4)', justifyContent: 'center', alignItems: 'center', zIndex: 10000 }}>
+          <View style={{ width: 400, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 5 }}>
+            {(() => {
+              const activeItem = lineItems.find(i => i.id === activeSNoRowId);
+              if (!activeItem) return null;
+
+              const numDropdowns = parseInt(activeItem.qty) || 1;
+
+              return (
+                <>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Ionicons name="list-outline" size={22} color={COLORS.primary} />
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: '#0F172A' }}>Manage Serial Numbers</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => { setSNoModalVisible(false); setActiveSNoRowId(null); }}>
+                      <Ionicons name="close" size={22} color="#64748B" />
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={{ marginBottom: 16 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Asset Name</Text>
+                    <Text style={{ fontSize: 14, color: '#0F172A', fontWeight: '500' }}>{activeItem.item_name || '--'}</Text>
+                  </View>
+
+                  {!isViewOnly && (
+                    <TouchableOpacity
+                      onPress={handleSNoFileUpload}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: '#FAFAFA',
+                        padding: 10,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: COLORS.primary,
+                        borderStyle: 'dashed',
+                        marginBottom: 16,
+                        gap: 8,
+                      }}
+                    >
+                      <Ionicons name="cloud-upload-outline" size={18} color={COLORS.primary} />
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: COLORS.primary }}>
+                        Import from Excel / CSV / TXT
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  <ScrollView style={{ maxHeight: 300, marginBottom: 20 }}>
+                    {Array.from({ length: numDropdowns }).map((_, idx) => {
+                      const currentSNoList = activeItem.serial_numbers || [];
+                      const val = currentSNoList[idx] || '';
+                      return (
+                        <View key={idx} style={{ marginBottom: 12 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748B', marginBottom: 4 }}>Unit #{idx + 1} Serial Number</Text>
+                          <TextInput
+                            style={{ borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: '#0F172A', backgroundColor: isViewOnly ? '#F1F5F9' : '#FFFFFF', outlineStyle: 'none' }}
+                            value={val}
+                            editable={!isViewOnly}
+                            onChangeText={(text) => {
+                              const updatedSNo = [...currentSNoList];
+                              while (updatedSNo.length <= idx) {
+                                updatedSNo.push('');
+                              }
+                              updatedSNo[idx] = text;
+                              updateLineItem(activeItem.id, 'serial_numbers', updatedSNo);
+                            }}
+                            placeholder="Enter serial number..."
+                          />
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+
+                  <View style={{ borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 16, alignItems: 'flex-end' }}>
+                    <TouchableOpacity
+                      style={{ backgroundColor: COLORS.primary, paddingVertical: 10, paddingHorizontal: 20, borderRadius: 6 }}
+                      onPress={() => { setSNoModalVisible(false); setActiveSNoRowId(null); }}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '600' }}>Done</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              );
+            })()}
           </View>
         </View>
       </Modal>
@@ -1630,7 +2489,7 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     width: '100%',
-    maxWidth: 1100,
+    maxWidth: 1400,
     maxHeight: '90%',
     minHeight: '61%',
     backgroundColor: COLORS.surface,

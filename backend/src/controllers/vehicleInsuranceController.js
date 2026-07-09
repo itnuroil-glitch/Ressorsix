@@ -228,7 +228,7 @@ const processAndSyncFieldDataFiles = async (fieldData, clientid) => {
 
 exports.saveVehicleInsurance = async (req, res) => {
   try {
-    const { vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid } = req.body;
+    const { vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id } = req.body;
     
     // Save any base64 files locally, insert into public.attachment table, and update the paths
     const processedFieldData = await processAndSyncFieldDataFiles(field_data, clientid);
@@ -243,12 +243,12 @@ exports.saveVehicleInsurance = async (req, res) => {
     const jsonData = JSON.stringify(processedFieldData);
     
     const query = `
-      INSERT INTO tbl_vehicle_insurance (vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      INSERT INTO tbl_vehicle_insurance (vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *
     `;
     
-    const values = [resolvedVehicleId || null, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null];
+    const values = [resolvedVehicleId || null, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null, roleid || null, user_id || null, company_id || null];
     
     const result = await db.query(query, values);
     
@@ -262,13 +262,26 @@ exports.saveVehicleInsurance = async (req, res) => {
 exports.getVehicleInsurance = async (req, res) => {
   try {
     const { clientid } = req.query;
-    let query = 'SELECT * FROM tbl_vehicle_insurance';
+    let query = `
+      SELECT 
+        v.*, 
+        r.role AS role_name, 
+        COALESCE(
+          e.full_name, 
+          u.email, 
+          (SELECT full_name FROM employee e_fallback WHERE e_fallback.roleid = v.roleid AND e_fallback.clientid = v.clientid LIMIT 1)
+        ) AS employee_name
+      FROM tbl_vehicle_insurance v
+      LEFT JOIN role r ON v.roleid = r.id
+      LEFT JOIN users u ON v.user_id = u.id
+      LEFT JOIN employee e ON u.email = e.email
+    `;
     const params = [];
     if (clientid) {
-      query += ' WHERE clientid = $1';
+      query += ' WHERE v.clientid = $1';
       params.push(clientid);
     }
-    query += ' ORDER BY id DESC';
+    query += ' ORDER BY v.id DESC';
 
     const result = await db.query(query, params);
     res.status(200).json(result.rows);
@@ -319,7 +332,7 @@ exports.deleteVehicleInsurance = async (req, res) => {
 exports.updateVehicleInsurance = async (req, res) => {
   try {
     const { id } = req.params;
-    const { vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid } = req.body;
+    const { vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id } = req.body;
 
     // Fetch the existing record to find previously associated files
     const selectQuery = 'SELECT field_data FROM tbl_vehicle_insurance WHERE id = $1';
@@ -360,12 +373,12 @@ exports.updateVehicleInsurance = async (req, res) => {
     const query = `
       UPDATE tbl_vehicle_insurance
       SET vehicle_id = $1, custom_field_id = $2, field_data = $3,
-          clientid = $4, country_id = $5, moduleid = $6, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $7
+          clientid = $4, country_id = $5, moduleid = $6, roleid = $7, user_id = $8, company_id = $9, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $10
       RETURNING *
     `;
 
-    const values = [resolvedVehicleId || null, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null, id];
+    const values = [resolvedVehicleId || null, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null, roleid || null, user_id || null, company_id || null, id];
     const result = await db.query(query, values);
 
     res.status(200).json(result.rows[0]);
@@ -374,4 +387,95 @@ exports.updateVehicleInsurance = async (req, res) => {
     res.status(500).json({ message: 'Error updating vehicle insurance' });
   }
 };
+
+// Get vehicle policy numbers by client ID
+exports.getVehiclePoliciesByClient = async (req, res) => {
+  try {
+    let clientId = req.params.clientId || req.params.clientid || req.query.clientId || req.query.clientid;
+    if (!clientId || clientId.trim() === '') {
+      const clientRes = await db.query('SELECT id FROM client WHERE isdelete = false ORDER BY id ASC LIMIT 1');
+      if (clientRes.rows.length > 0) {
+        clientId = clientRes.rows[0].id;
+      }
+    }
+
+    if (!clientId) {
+      return res.status(400).json({ message: 'Client ID is required and no active client found' });
+    }
+
+    // 1. Fetch matching custom field IDs for policy numbers
+    const fieldsRes = await db.query(`
+      SELECT field_id, field_name 
+      FROM tbl_customfield_details 
+      WHERE LOWER(field_name) LIKE '%policy%' 
+         OR LOWER(field_name) LIKE '%policyno%' 
+         OR LOWER(field_name) LIKE '%policy_no%'
+    `);
+    
+    // Sort so fields containing 'number' or 'no' get highest priority
+    const sortedFields = fieldsRes.rows.sort((a, b) => {
+      const aName = a.field_name.toLowerCase();
+      const bName = b.field_name.toLowerCase();
+      
+      const getPriority = (name) => {
+        if (name.includes('number') || name.includes('no')) return 2;
+        if (name.includes('policy')) return 1;
+        return 0;
+      };
+
+      return getPriority(bName) - getPriority(aName);
+    });
+    const fieldIds = sortedFields.map(f => f.field_id);
+
+    // 2. Fetch vehicle insurance details for this client
+    const query = `
+      SELECT id, vehicle_id, field_data 
+      FROM tbl_vehicle_insurance 
+      WHERE clientid = $1
+      ORDER BY id DESC
+    `;
+    const { rows } = await db.query(query, [clientId]);
+
+    const formattedPolicies = rows.map(v => {
+      let policyNo = '';
+      if (v.field_data) {
+        for (const fid of fieldIds) {
+          if (v.field_data[fid]) {
+            policyNo = v.field_data[fid];
+            break;
+          }
+        }
+        // Fallback: if not found, check any key in field_data that matches fieldsRes
+        if (!policyNo) {
+          for (const f of fieldsRes.rows) {
+            if (v.field_data[f.field_id]) {
+              policyNo = v.field_data[f.field_id];
+              break;
+            }
+          }
+        }
+        // Fallback 2: first field
+        if (!policyNo) {
+          const keys = Object.keys(v.field_data);
+          if (keys.length > 0) {
+            policyNo = v.field_data[keys[0]];
+          }
+        }
+      }
+      return {
+        Policyno: policyNo,
+        policyno: policyNo,
+        id: v.id,
+        Id: v.id,
+        vehicle_id: v.vehicle_id
+      };
+    });
+
+    res.status(200).json(formattedPolicies);
+  } catch (error) {
+    console.error('Error fetching vehicle policies by client:', error);
+    res.status(500).json({ message: 'Server error while fetching vehicle policies' });
+  }
+};
+
 

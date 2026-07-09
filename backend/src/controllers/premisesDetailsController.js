@@ -2,42 +2,9 @@ const db = require('../config/db');
 const fs = require('fs');
 const path = require('path');
 
-const resolveVehicleId = async (fieldData, clientId) => {
-  if (!fieldData || !clientId) return null;
-  try {
-    const purchaseValues = Object.values(fieldData)
-      .map(v => String(v).trim().toLowerCase())
-      .filter(v => v.length > 0 && v !== 'true' && v !== 'false');
-
-    if (purchaseValues.length === 0) return null;
-
-    const vehiclesRes = await db.query(
-      'SELECT vehicle_id, field_data FROM tbl_vehicle_details WHERE clientid = $1',
-      [clientId]
-    );
-
-    for (const row of vehiclesRes.rows) {
-      if (row.field_data) {
-        const vehicleValues = Object.values(row.field_data)
-          .map(v => String(v).trim().toLowerCase())
-          .filter(v => v.length > 0);
-
-        const hasMatch = purchaseValues.some(val => vehicleValues.includes(val));
-        if (hasMatch) {
-          return row.vehicle_id;
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Error resolving vehicle_id:', err);
-  }
-  return null;
-};
-
 const resolveExpireDate = async (currentFieldId, fieldData) => {
   if (!currentFieldId || !fieldData) return null;
   try {
-    // 1. Fetch details of the file field
     const fileFieldRes = await db.query(
       'SELECT custom_fieldsid, section_id, parent_fieldid FROM tbl_customfield_details WHERE field_id = $1 LIMIT 1',
       [currentFieldId]
@@ -45,16 +12,13 @@ const resolveExpireDate = async (currentFieldId, fieldData) => {
     if (fileFieldRes.rows.length === 0) return null;
     const { custom_fieldsid, section_id, parent_fieldid } = fileFieldRes.rows[0];
 
-    // 2. Fetch all date/datetime fields in the same custom fields configuration
     let dateFieldsRes;
     if (parent_fieldid) {
-      // If nested in a subsection, look for date fields in the same parent_fieldid
       dateFieldsRes = await db.query(
         "SELECT field_id, field_name FROM tbl_customfield_details WHERE custom_fieldsid = $1 AND parent_fieldid = $2 AND field_type IN ('Date', 'DateTime') AND is_active = true AND isdelete = false",
         [custom_fieldsid, parent_fieldid]
       );
     } else {
-      // Otherwise, look for date fields in the same section that have no parent_fieldid
       dateFieldsRes = await db.query(
         "SELECT field_id, field_name FROM tbl_customfield_details WHERE custom_fieldsid = $1 AND section_id = $2 AND parent_fieldid IS NULL AND field_type IN ('Date', 'DateTime') AND is_active = true AND isdelete = false",
         [custom_fieldsid, section_id]
@@ -62,7 +26,6 @@ const resolveExpireDate = async (currentFieldId, fieldData) => {
     }
 
     if (dateFieldsRes.rows.length === 0) {
-      // Fallback: look for ANY date fields in the same section regardless of parent
       dateFieldsRes = await db.query(
         "SELECT field_id, field_name FROM tbl_customfield_details WHERE custom_fieldsid = $1 AND section_id = $2 AND field_type IN ('Date', 'DateTime') AND is_active = true AND isdelete = false",
         [custom_fieldsid, section_id]
@@ -71,19 +34,15 @@ const resolveExpireDate = async (currentFieldId, fieldData) => {
 
     if (dateFieldsRes.rows.length === 0) return null;
 
-    // 3. Find the best date field candidate
-    // Priority 1: Field name contains "expire" or "expiry" or "end"
     let bestCandidate = dateFieldsRes.rows.find(row => {
       const name = row.field_name.toLowerCase();
       return name.includes('expire') || name.includes('expiry') || name.includes('end');
     });
 
-    // Priority 2: Any date field
     if (!bestCandidate) {
       bestCandidate = dateFieldsRes.rows[0];
     }
 
-    // 4. Extract value from fieldData
     if (bestCandidate && fieldData[bestCandidate.field_id]) {
       const dateStr = String(fieldData[bestCandidate.field_id]).split('T')[0];
       if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
@@ -95,6 +54,31 @@ const resolveExpireDate = async (currentFieldId, fieldData) => {
   }
   return null;
 };
+
+const resolveTypeAndCompany = async (custom_field_id, fieldData) => {
+  let typeVal = null;
+  let companyVal = null;
+  if (!custom_field_id || !fieldData) return { typeVal, companyVal };
+  try {
+    const fieldsRes = await db.query(
+      'SELECT field_id, field_name FROM tbl_customfield_details WHERE custom_fieldsid = $1',
+      [custom_field_id]
+    );
+    for (const row of fieldsRes.rows) {
+      const name = (row.field_name || '').toLowerCase().trim();
+      const val = fieldData[row.field_id];
+      if (name === 'type') {
+        typeVal = val;
+      } else if (name.includes('company') || name.includes('business')) {
+        companyVal = val;
+      }
+    }
+  } catch (err) {
+    console.error('Error resolving type and company:', err);
+  }
+  return { typeVal, companyVal };
+};
+
 
 const saveAttachmentLocally = (base64String, fileName) => {
   if (!base64String) return null;
@@ -113,7 +97,7 @@ const saveAttachmentLocally = (base64String, fileName) => {
 
   const uniqueName = Date.now() + '-' + (fileName ? fileName.replace(/\s+/g, '_') : 'attachment.file');
   const filePath = path.join(attachmentDir, uniqueName);
-  
+
   fs.writeFileSync(filePath, buffer);
   return `/backend/Attachment/${uniqueName}`;
 };
@@ -140,7 +124,6 @@ const processAndSyncFieldDataFiles = async (fieldData, clientid) => {
     return fieldData;
   }
 
-  // Find company id associated with this client
   let companyid = null;
   if (clientid) {
     try {
@@ -156,7 +139,6 @@ const processAndSyncFieldDataFiles = async (fieldData, clientid) => {
     }
   }
 
-  // Helper to recursively traverse and process files
   const traverse = async (val, currentFieldId = null) => {
     if (!val || typeof val !== 'object') {
       return val;
@@ -170,12 +152,10 @@ const processAndSyncFieldDataFiles = async (fieldData, clientid) => {
       return results;
     }
 
-    // Check if it's a file object with base64 data
     if (val.data && typeof val.data === 'string' && val.data.startsWith('data:')) {
       const savedPath = saveAttachmentLocally(val.data, val.name);
       if (savedPath) {
-        // Query the field_name to use as the attachment type
-        let attachmentType = 'Vehicle Purchase';
+        let attachmentType = 'Premises Details';
         if (currentFieldId) {
           try {
             const fieldRes = await db.query(
@@ -190,13 +170,11 @@ const processAndSyncFieldDataFiles = async (fieldData, clientid) => {
           }
         }
 
-        // Resolve corresponding expire_date
         let expireDate = null;
         if (currentFieldId) {
           expireDate = await resolveExpireDate(currentFieldId, fieldData);
         }
 
-        // Insert into attachment table
         try {
           const insertQuery = `
             INSERT INTO attachment (clientid, companyid, attachment, type, expire_date, status, is_deleted, created_at, updated_at)
@@ -214,10 +192,8 @@ const processAndSyncFieldDataFiles = async (fieldData, clientid) => {
       }
     }
 
-    // Otherwise, traverse keys
     const processed = {};
     for (const key of Object.keys(val)) {
-      // Pass the key as the field ID when descending into the field value
       processed[key] = await traverse(val[key], currentFieldId || key);
     }
     return processed;
@@ -226,91 +202,72 @@ const processAndSyncFieldDataFiles = async (fieldData, clientid) => {
   return await traverse(fieldData);
 };
 
-exports.saveVehiclePurchase = async (req, res) => {
+exports.savePremisesDetails = async (req, res) => {
   try {
-    const { vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id } = req.body;
-    
-    // Save any base64 files locally, insert into public.attachment table, and update the paths
+    const { premise_id, custom_field_id, field_data, clientid, country_id, moduleid, company_id } = req.body;
     const processedFieldData = await processAndSyncFieldDataFiles(field_data, clientid);
-    
-    // Resolve vehicle_id automatically from field_data if not provided
-    let resolvedVehicleId = vehicle_id;
-    if (!resolvedVehicleId && processedFieldData) {
-      resolvedVehicleId = await resolveVehicleId(processedFieldData, clientid);
-    }
-    
-    // Convert field_data to JSON string
     const jsonData = JSON.stringify(processedFieldData);
-    
+
+    let finalPremiseId = premise_id;
+    if (!finalPremiseId) {
+      const seqRes = await db.query("SELECT nextval('tbl_premises_details_premise_id_seq') AS next_id");
+      finalPremiseId = seqRes.rows[0].next_id;
+    }
+
+    const { typeVal, companyVal } = await resolveTypeAndCompany(custom_field_id, field_data);
+
     const query = `
-      INSERT INTO tbl_vehicle_purchase (vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id, created_at, updated_at)
+      INSERT INTO tbl_premises_details (premise_id, custom_field_id, field_data, clientid, country_id, moduleid, type, company, company_id, created_at, updated_at)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *
     `;
-    
-    const values = [resolvedVehicleId || null, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null, roleid || null, user_id || null, company_id || null];
-    
+
+    const values = [finalPremiseId, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null, typeVal, companyVal, company_id || null];
     const result = await db.query(query, values);
-    
+
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    console.error('Error saving vehicle purchase:', error);
-    res.status(500).json({ message: 'Error saving vehicle purchase' });
+    console.error('Error saving premises details:', error);
+    res.status(500).json({ message: 'Error saving premises details' });
   }
 };
 
-exports.getVehiclePurchase = async (req, res) => {
+exports.getPremisesDetails = async (req, res) => {
   try {
     const { clientid } = req.query;
-    let query = `
-      SELECT 
-        v.*, 
-        r.role AS role_name, 
-        COALESCE(
-          e.full_name, 
-          u.email, 
-          (SELECT full_name FROM employee e_fallback WHERE e_fallback.roleid = v.roleid AND e_fallback.clientid = v.clientid LIMIT 1)
-        ) AS employee_name
-      FROM tbl_vehicle_purchase v
-      LEFT JOIN role r ON v.roleid = r.id
-      LEFT JOIN users u ON v.user_id = u.id
-      LEFT JOIN employee e ON u.email = e.email
-    `;
+    let query = 'SELECT * FROM tbl_premises_details';
     const params = [];
     if (clientid) {
-      query += ' WHERE v.clientid = $1';
+      query += ' WHERE clientid = $1';
       params.push(clientid);
     }
-    query += ' ORDER BY v.id DESC';
+    query += ' ORDER BY id DESC';
 
     const result = await db.query(query, params);
     res.status(200).json(result.rows);
   } catch (error) {
-    console.error('Error fetching vehicle purchase:', error);
-    res.status(500).json({ message: 'Error fetching vehicle purchase' });
+    console.error('Error fetching premises details:', error);
+    res.status(500).json({ message: 'Error fetching premises details' });
   }
 };
 
-exports.deleteVehiclePurchase = async (req, res) => {
+exports.deletePremisesDetails = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Fetch the existing record to find associated files
-    const selectQuery = 'SELECT field_data FROM tbl_vehicle_purchase WHERE id = $1';
+    const selectQuery = 'SELECT field_data FROM tbl_premises_details WHERE id = $1';
     const selectResult = await db.query(selectQuery, [id]);
-    
+
     if (selectResult.rowCount === 0) {
-      return res.status(404).json({ message: 'Purchase record not found' });
+      return res.status(404).json({ message: 'Premises details record not found' });
     }
 
     const oldFieldData = selectResult.rows[0].field_data;
     const oldPaths = extractFilePaths(oldFieldData);
 
-    // Delete the vehicle purchase record
-    const query = 'DELETE FROM tbl_vehicle_purchase WHERE id = $1 RETURNING *';
-    const result = await db.query(query, [id]);
-    
-    // Mark files as deleted in the attachment table
+    const query = 'DELETE FROM tbl_premises_details WHERE id = $1 RETURNING *';
+    await db.query(query, [id]);
+
     for (const path of oldPaths) {
       try {
         await db.query(
@@ -321,35 +278,33 @@ exports.deleteVehiclePurchase = async (req, res) => {
         console.error('Error updating attachment table on deletion:', e);
       }
     }
-    
-    res.status(200).json({ message: 'Purchase record deleted successfully' });
+
+    res.status(200).json({ message: 'Premises details record deleted successfully' });
   } catch (error) {
-    console.error('Error deleting vehicle purchase:', error);
-    res.status(500).json({ message: 'Error deleting vehicle purchase' });
+    console.error('Error deleting premises details:', error);
+    res.status(500).json({ message: 'Error deleting premises details' });
   }
 };
 
-exports.updateVehiclePurchase = async (req, res) => {
+exports.updatePremisesDetails = async (req, res) => {
   try {
     const { id } = req.params;
-    const { vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id } = req.body;
+    const { premise_id, custom_field_id, field_data, clientid, country_id, moduleid, company_id } = req.body;
 
-    // Fetch the existing record to find previously associated files
-    const selectQuery = 'SELECT field_data FROM tbl_vehicle_purchase WHERE id = $1';
+    const selectQuery = 'SELECT premise_id, field_data FROM tbl_premises_details WHERE id = $1';
     const selectResult = await db.query(selectQuery, [id]);
-    
+
     if (selectResult.rowCount === 0) {
-      return res.status(404).json({ message: 'Purchase record not found' });
+      return res.status(404).json({ message: 'Premises details record not found' });
     }
 
     const oldFieldData = selectResult.rows[0].field_data;
     const oldPaths = extractFilePaths(oldFieldData);
+    const existingPremiseId = selectResult.rows[0].premise_id;
 
-    // Save any new base64 files locally, insert new attachments, and replace their data with local paths
     const processedFieldData = await processAndSyncFieldDataFiles(field_data, clientid);
     const newPaths = extractFilePaths(processedFieldData);
 
-    // Identify files that were removed
     const removedPaths = oldPaths.filter(path => !newPaths.includes(path));
     for (const path of removedPaths) {
       try {
@@ -362,28 +317,55 @@ exports.updateVehiclePurchase = async (req, res) => {
       }
     }
 
-    // Resolve vehicle_id automatically from field_data if not provided
-    let resolvedVehicleId = vehicle_id;
-    if (!resolvedVehicleId && processedFieldData) {
-      resolvedVehicleId = await resolveVehicleId(processedFieldData, clientid);
+    let finalPremiseId = premise_id || existingPremiseId;
+    if (!finalPremiseId) {
+      const seqRes = await db.query("SELECT nextval('tbl_premises_details_premise_id_seq') AS next_id");
+      finalPremiseId = seqRes.rows[0].next_id;
     }
 
     const jsonData = JSON.stringify(processedFieldData);
+    const { typeVal, companyVal } = await resolveTypeAndCompany(custom_field_id, field_data);
 
     const query = `
-      UPDATE tbl_vehicle_purchase
-      SET vehicle_id = $1, custom_field_id = $2, field_data = $3,
-          clientid = $4, country_id = $5, moduleid = $6, roleid = $7, user_id = $8, company_id = $9, updated_at = CURRENT_TIMESTAMP
+      UPDATE tbl_premises_details
+      SET premise_id = $1, custom_field_id = $2, field_data = $3,
+          clientid = $4, country_id = $5, moduleid = $6, type = $7, company = $8, company_id = $9, updated_at = CURRENT_TIMESTAMP
       WHERE id = $10
       RETURNING *
     `;
 
-    const values = [resolvedVehicleId || null, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null, roleid || null, user_id || null, company_id || null, id];
+    const values = [finalPremiseId, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null, typeVal, companyVal, company_id || null, id];
     const result = await db.query(query, values);
 
     res.status(200).json(result.rows[0]);
   } catch (error) {
-    console.error('Error updating vehicle purchase:', error);
-    res.status(500).json({ message: 'Error updating vehicle purchase' });
+    console.error('Error updating premises details:', error);
+    res.status(500).json({ message: 'Error updating premises details' });
   }
 };
+
+// Get premises departments by client ID
+exports.getPremisesDepartmentsByClient = async (req, res) => {
+  try {
+    const queryText = `
+      SELECT * FROM department 
+      WHERE is_delete = false 
+      ORDER BY id ASC
+    `;
+    const result = await db.query(queryText);
+    
+    const formattedDepartments = result.rows.map(r => ({
+      id: r.id,
+      Id: r.id,
+      department: r.department_name,
+      Department: r.department_name,
+      department_name: r.department_name
+    }));
+
+    res.status(200).json(formattedDepartments);
+  } catch (error) {
+    console.error('Error fetching departments from master table:', error);
+    res.status(500).json({ message: 'Server error while fetching departments' });
+  }
+};
+

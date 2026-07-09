@@ -4,98 +4,176 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS } from '../theme';
 import { API_URL } from '../config';
 
-export const SearchableDropdown = ({ value, onChange, data, placeholder, searchPlaceholder, displayKey, valueKey, disabled }) => {
+export const SearchableDropdown = ({ value, onChange, data, placeholder, searchPlaceholder, displayKey, valueKey, disabled, renderOption, isMultiSelect, getIsOptionDisabled }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const containerRef = React.useRef(null);
+  const [coords, setCoords] = useState({ x: 0, y: 0, width: 0, height: 0 });
+  const { height: windowHeight } = useWindowDimensions();
 
-  const filteredData = data.filter(item =>
-    item[displayKey]?.toLowerCase().includes(searchTerm.toLowerCase())
+  const selectedValues = isMultiSelect 
+    ? (Array.isArray(value) ? value.map(String) : (value ? String(value).split(',').map(s => s.trim()) : []))
+    : (value !== undefined && value !== null ? [String(value)] : []);
+
+  const filteredData = data.filter(item => {
+    // If the item has rawData and details, let's also search within details!
+    const searchString = item[displayKey]?.toLowerCase() || '';
+    let detailsString = '';
+    if (item.rawData && item.rawData.details) {
+       detailsString = Object.values(item.rawData.details).join(' ').toLowerCase();
+    }
+    return searchString.includes(searchTerm.toLowerCase()) || detailsString.includes(searchTerm.toLowerCase());
+  });
+
+  const selectedItems = data.filter(item => 
+    item[valueKey] !== undefined && item[valueKey] !== null && selectedValues.includes(String(item[valueKey]))
   );
 
-  const selectedItem = data.find(item => item[valueKey] !== undefined && item[valueKey] !== null && value !== undefined && value !== null && String(item[valueKey]) === String(value));
+  const displayText = selectedItems.length > 0 
+    ? selectedItems.map(item => item[displayKey]).join(', ')
+    : placeholder;
+
+  const spaceBelow = windowHeight - (coords.y + coords.height);
+  const useBottomAlignment = false; // Always open downwards
 
   return (
-    <View style={{ position: 'relative', zIndex: isOpen ? 50 : 1, width: '100%' }}>
+    <View 
+      ref={containerRef}
+      style={{ position: 'relative', zIndex: isOpen ? 50 : 1, width: '100%' }}
+    >
       <TouchableOpacity
         style={[styles.dropdownSelector, disabled && { opacity: 0.7, backgroundColor: '#F1F5F9' }]}
-        onPress={() => !disabled && setIsOpen(!isOpen)}
+        onPress={() => {
+          if (disabled) return;
+          if (isOpen) {
+            setIsOpen(false);
+          } else {
+            containerRef.current?.measure((x, y, width, height, pageX, pageY) => {
+              setCoords({ x: pageX, y: pageY, width, height });
+              setIsOpen(true);
+            });
+          }
+        }}
         activeOpacity={disabled ? 1 : 0.8}
       >
-        <Text style={{ color: selectedItem ? COLORS.textPrimary : COLORS.textMuted, fontSize: 14 }}>
-          {selectedItem ? selectedItem[displayKey] : placeholder}
+        <Text style={{ color: selectedItems.length > 0 ? COLORS.textPrimary : COLORS.textMuted, fontSize: 14 }}>
+          {displayText}
         </Text>
         <Ionicons name={isOpen ? "chevron-up" : "chevron-down"} size={16} color={COLORS.textSecondary} />
       </TouchableOpacity>
  
       {isOpen && (
-        <View style={{
-          position: 'absolute',
-          top: 48,
-          left: 0,
-          right: 0,
-          backgroundColor: '#FFFFFF',
-          borderRadius: 8,
-          borderWidth: 1,
-          borderColor: '#E2E8F0',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.15,
-          shadowRadius: 12,
-          elevation: 5,
-          zIndex: 100,
-          maxHeight: 250,
-          overflow: 'hidden'
-        }}>
-          <View style={{ padding: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 6, paddingHorizontal: 10, borderWidth: 1, borderColor: '#E2E8F0' }}>
-              <Ionicons name="search" size={16} color="#94A3B8" />
-              <TextInput
-                style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 8, fontSize: 13, color: '#334155', outlineStyle: 'none', outlineWidth: 0 }}
-                placeholder={searchPlaceholder}
-                placeholderTextColor="#94A3B8"
-                value={searchTerm}
-                onChangeText={setSearchTerm}
-                autoFocus={true}
-              />
-            </View>
-          </View>
-          <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 180 }} keyboardShouldPersistTaps="handled">
-            {filteredData.length > 0 ? (
-              filteredData.map((item, index) => {
-                const isSelected = item[valueKey] !== undefined && item[valueKey] !== null && value !== undefined && value !== null && String(item[valueKey]) === String(value);
-                return (
-                  <TouchableOpacity
-                    key={item[valueKey]}
-                    style={{
-                      paddingVertical: 12,
-                      paddingHorizontal: 16,
-                      borderBottomWidth: index === filteredData.length - 1 ? 0 : 1,
-                      borderBottomColor: '#F1F5F9',
-                      backgroundColor: isSelected ? '#F8FAFC' : '#FFFFFF'
-                    }}
-                    onPress={() => {
-                      onChange(item[valueKey]);
-                      setIsOpen(false);
-                      setSearchTerm('');
-                    }}
-                  >
-                    <Text style={{
-                      fontSize: 13,
-                      color: isSelected ? COLORS.primary : '#334155',
-                      fontWeight: isSelected ? '600' : '400'
-                    }}>
-                      {item[displayKey]}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })
-            ) : (
-              <View style={{ padding: 16, alignItems: 'center' }}>
-                <Text style={{ color: '#94A3B8', fontSize: 13 }}>No results found</Text>
+        <Modal
+          transparent={true}
+          visible={isOpen}
+          animationType="none"
+          onRequestClose={() => setIsOpen(false)}
+        >
+          {/* Full-screen overlay to close the dropdown when clicking outside */}
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => {
+              setIsOpen(false);
+              setSearchTerm('');
+            }}
+          />
+
+          <View style={{
+            position: 'absolute',
+            ...(useBottomAlignment ? { bottom: windowHeight - coords.y + 2 } : { top: coords.y + coords.height + 2 }),
+            left: coords.x,
+            width: coords.width,
+            backgroundColor: '#FFFFFF',
+            borderRadius: 8,
+            borderWidth: 1,
+            borderColor: '#E2E8F0',
+            shadowColor: '#000',
+            shadowOffset: useBottomAlignment ? { width: 0, height: -4 } : { width: 0, height: 4 },
+            shadowOpacity: 0.15,
+            shadowRadius: 12,
+            elevation: 5,
+            zIndex: 10000,
+            maxHeight: 200,
+            overflow: 'hidden'
+          }}>
+            <View style={{ padding: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 6, paddingHorizontal: 10, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                <Ionicons name="search" size={16} color="#94A3B8" />
+                <TextInput
+                  style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 8, fontSize: 13, color: '#334155', outlineStyle: 'none', outlineWidth: 0 }}
+                  placeholder={searchPlaceholder}
+                  placeholderTextColor="#94A3B8"
+                  value={searchTerm}
+                  onChangeText={setSearchTerm}
+                  autoFocus={true}
+                />
               </View>
-            )}
-          </ScrollView>
-        </View>
+            </View>
+            <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 130 }} keyboardShouldPersistTaps="handled">
+              {filteredData.length > 0 ? (
+                filteredData.map((item, index) => {
+                  const isSelected = item[valueKey] !== undefined && item[valueKey] !== null && selectedValues.includes(String(item[valueKey]));
+                  const isOptionDisabled = getIsOptionDisabled ? getIsOptionDisabled(item) : false;
+                  return (
+                    <TouchableOpacity
+                      key={item[valueKey]}
+                      disabled={isOptionDisabled}
+                      style={{
+                        paddingVertical: 12,
+                        paddingHorizontal: 16,
+                        borderBottomWidth: index === filteredData.length - 1 ? 0 : 1,
+                        borderBottomColor: '#F1F5F9',
+                        backgroundColor: isSelected ? '#F8FAFC' : '#FFFFFF',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        opacity: isOptionDisabled ? 0.4 : 1
+                      }}
+                      onPress={() => {
+                        if (isOptionDisabled) return;
+                        if (isMultiSelect) {
+                          let newValues;
+                          if (isSelected) {
+                            newValues = selectedValues.filter(v => v !== String(item[valueKey]));
+                          } else {
+                            newValues = [...selectedValues, String(item[valueKey])];
+                          }
+                          onChange(newValues.join(','));
+                        } else {
+                          onChange(item[valueKey]);
+                          setIsOpen(false);
+                          setSearchTerm('');
+                        }
+                      }}
+                    >
+                      {isMultiSelect && (
+                        <Ionicons 
+                          name={isSelected ? "checkbox" : "square-outline"} 
+                          size={18} 
+                          color={isSelected ? COLORS.primary : '#94A3B8'} 
+                          style={{ marginRight: 8 }} 
+                        />
+                      )}
+                      {renderOption ? renderOption(item, isSelected) : (
+                        <Text style={{
+                          fontSize: 13,
+                          color: isSelected ? COLORS.primary : '#334155',
+                          fontWeight: isSelected ? '600' : '400'
+                        }}>
+                          {item[displayKey]}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })
+              ) : (
+                <View style={{ padding: 16, alignItems: 'center' }}>
+                  <Text style={{ color: '#94A3B8', fontSize: 13 }}>No results found</Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </Modal>
       )}
     </View>
   );
@@ -110,9 +188,11 @@ const FIELD_OPTIONS = [
   { label: 'Time', value: 'Time' },
   { label: 'DateTime', value: 'DateTime' },
   { label: 'Dropdown', value: 'Dropdown' },
+  { label: 'Searchable Dropdown', value: 'Searchable Dropdown' },
   { label: 'Radio Button', value: 'Radio Button' },
   { label: 'Checkbox', value: 'Checkbox' },
   { label: 'Toggle/Switch', value: 'Toggle/Switch' },
+  { label: 'Single Checkbox', value: 'Single Checkbox' },
   { label: 'Email', value: 'Email' },
   { label: 'URL', value: 'URL' },
   { label: 'Phone', value: 'Phone' },
@@ -125,57 +205,114 @@ const FIELD_OPTIONS = [
   { label: 'Hidden Field', value: 'Hidden Field' }
 ];
 
-export const CustomDropdown = ({ selectedValue, onValueChange, options }) => {
+export const CustomDropdown = ({ selectedValue, onValueChange, options, disabled }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const containerRef = React.useRef(null);
+  const [coords, setCoords] = useState({ x: 0, y: 0, width: 0, height: 0 });
+  const { height: windowHeight } = useWindowDimensions();
+  
   const selectedLabel = options.find(o => o.value === selectedValue)?.label || 'Select...';
 
+  const filteredOptions = options.filter(opt => 
+    opt.label.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const useBottomAlignment = false; // Always open downwards
+
   return (
-    <View style={{ flex: 1, zIndex: isOpen ? 9999 : 1, position: 'relative' }}>
+    <View 
+      ref={containerRef}
+      style={{ flex: 1, zIndex: isOpen ? 9999 : 1, position: 'relative' }}
+    >
       <TouchableOpacity
         style={{ flex: 1, paddingVertical: 6, paddingHorizontal: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
-        onPress={() => setIsOpen(!isOpen)}
-        activeOpacity={0.8}
+        onPress={() => {
+          if (disabled) return;
+          if (isOpen) {
+            setIsOpen(false);
+          } else {
+            containerRef.current?.measure((x, y, width, height, pageX, pageY) => {
+              setCoords({ x: pageX, y: pageY, width, height });
+              setIsOpen(true);
+            });
+          }
+        }}
+        activeOpacity={disabled ? 1 : 0.8}
       >
         <Text style={{ fontSize: 12, color: '#334155', fontWeight: '500' }}>{selectedLabel}</Text>
         <Ionicons name={isOpen ? "chevron-up" : "chevron-down"} size={14} color="#64748B" />
       </TouchableOpacity>
 
       {isOpen && (
-        <View style={{
-          position: 'absolute',
-          top: '100%',
-          left: -1,
-          right: -1,
-          backgroundColor: '#FFFFFF',
-          borderWidth: 1,
-          borderColor: '#CBD5E1',
-          borderRadius: 6,
-          maxHeight: 220,
-          zIndex: 10000,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.15,
-          shadowRadius: 12,
-          elevation: 10,
-          marginTop: 2
-        }}>
-          <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 220 }}>
-            {options.map((opt, i) => (
-              <TouchableOpacity
-                key={opt.value}
-                style={{ paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: i === options.length - 1 ? 0 : 1, borderBottomColor: '#F1F5F9', backgroundColor: selectedValue === opt.value ? '#F0F9FF' : '#FFFFFF' }}
-                onPress={() => {
-                  onValueChange(opt.value);
-                  setIsOpen(false);
-                }}
-              >
-                <Text style={{ fontSize: 12, color: selectedValue === opt.value ? '#0284C7' : '#334155', fontWeight: selectedValue === opt.value ? '600' : '400' }}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
+        <Modal
+          transparent={true}
+          visible={isOpen}
+          animationType="none"
+          onRequestClose={() => setIsOpen(false)}
+        >
+          {/* Full-screen overlay to close the dropdown when clicking outside */}
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => {
+              setIsOpen(false);
+              setSearchTerm('');
+            }}
+          />
+
+          <View style={{
+            position: 'absolute',
+            ...(useBottomAlignment ? { bottom: windowHeight - coords.y + 2 } : { top: coords.y + coords.height + 2 }),
+            left: coords.x,
+            width: coords.width,
+            backgroundColor: '#FFFFFF',
+            borderWidth: 1,
+            borderColor: '#CBD5E1',
+            borderRadius: 6,
+            maxHeight: 210,
+            zIndex: 10000,
+            shadowColor: '#000',
+            shadowOffset: useBottomAlignment ? { width: 0, height: -4 } : { width: 0, height: 4 },
+            shadowOpacity: 0.15,
+            shadowRadius: 12,
+            elevation: 10,
+          }}>
+            <View style={{ padding: 6, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
+              <TextInput
+                style={{ paddingVertical: 6, paddingHorizontal: 8, fontSize: 12, color: '#334155', backgroundColor: '#F8FAFC', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0', outlineWidth: 0 }}
+                placeholder="Search..."
+                placeholderTextColor="#94A3B8"
+                value={searchTerm}
+                onChangeText={setSearchTerm}
+                autoFocus={true}
+              />
+            </View>
+            <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 170 }} keyboardShouldPersistTaps="handled">
+              {filteredOptions.length > 0 ? (
+                filteredOptions.map((opt, i) => (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={{ paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: i === filteredOptions.length - 1 ? 0 : 1, borderBottomColor: '#F1F5F9', backgroundColor: selectedValue === opt.value ? '#F0F9FF' : '#FFFFFF' }}
+                    onPress={() => {
+                      onValueChange(opt.value);
+                      setIsOpen(false);
+                      setSearchTerm('');
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, color: selectedValue === opt.value ? '#0284C7' : '#334155', fontWeight: selectedValue === opt.value ? '600' : '400' }}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <View style={{ padding: 12, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 12, color: '#94A3B8' }}>No options found</Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </Modal>
       )}
     </View>
   );
@@ -229,7 +366,7 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
   const addFieldToSection = (sectionId) => {
     setSections(sections.map(s => {
       if (s.id === sectionId) {
-        return { ...s, fields: [...s.fields, { id: Date.now().toString(), name: '', type: 'Textbox', isRequired: false, isActive: true, sort: '0' }] };
+        return { ...s, fields: [...s.fields, { id: Date.now().toString(), name: '', type: 'Textbox', isRequired: false, isActive: true, isSearchable: false, sort: '0' }] };
       }
       return s;
     }));
@@ -338,7 +475,7 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
                 ...f,
                 subsections: (f.subsections || []).map(sub => {
                   if (sub.id === subId) {
-                    return { ...sub, fields: [...(sub.fields || []), { id: Date.now().toString(), name: '', type: 'Textbox', isRequired: false, isActive: true, sort: '0', optionsArr: [] }] };
+                    return { ...sub, fields: [...(sub.fields || []), { id: Date.now().toString(), name: '', type: 'Textbox', isRequired: false, isActive: true, isSearchable: false, sort: '0', optionsArr: [] }] };
                   }
                   return sub;
                 })
@@ -449,8 +586,8 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
   const paginatedFields = filteredFields.slice((displayPage - 1) * ITEMS_PER_PAGE, displayPage * ITEMS_PER_PAGE);
 
   const handleSave = async () => {
-    if (!formClientId || !formModuleId || !formCountryId) {
-      showToast('Client, Module and Country are required', 'error');
+    if (!formModuleId || !formCountryId) {
+      showToast('Module and Country are required', 'error');
       return;
     }
     setSaving(true);
@@ -469,7 +606,7 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
           }))
         }))
       }));
-      const payload = { clientid: formClientId, moduleid: formModuleId, countryid: formCountryId, status: formStatus, field_data: payloadSections };
+      const payload = { clientid: formClientId || null, moduleid: formModuleId, countryid: formCountryId, status: formStatus, field_data: payloadSections };
       const url = editingId ? `${API_URL}/api/custom-fields/${editingId}` : `${API_URL}/api/custom-fields`;
       const method = editingId ? 'PUT' : 'POST';
 
@@ -733,12 +870,12 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
               {wizardStep === 1 && (
                 <View style={{ flex: 1 }}>
                   <View style={[styles.modalInputGroup, { zIndex: 30 }]}>
-                    <Text style={styles.modalLabel}>Client *</Text>
+                    <Text style={styles.modalLabel}>Client (Optional)</Text>
                     <SearchableDropdown
                       data={clients}
                       value={formClientId}
                       onChange={setFormClientId}
-                      placeholder="-- Select Client --"
+                      placeholder="-- Select Client (Optional) --"
                       searchPlaceholder="Search Client..."
                       displayKey="client_name"
                       valueKey="id"
@@ -894,7 +1031,7 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
 
 
 
-                                  {(['Dropdown', 'Radio Button', 'Checkbox'].includes(field.type)) && (
+                                  {(['Dropdown', 'Searchable Dropdown', 'Radio Button', 'Checkbox'].includes(field.type)) && (
                                     <View style={{ width: '100%', marginTop: 8, paddingLeft: 4 }}>
                                       {/* Source Type Selector */}
                                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 8 }}>
@@ -1160,7 +1297,7 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
                                   style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
                                 />
                               </View>
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, width: 70 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, width: 100 }}>
                                 <Text style={{ fontSize: 11, color: COLORS.textSecondary }}>Sort</Text>
                                 <TextInput
                                   style={[styles.searchBarInputInline, { marginBottom: 0, backgroundColor: '#FFFFFF', flex: 1, paddingVertical: 0, height: 38, textAlign: 'center', fontSize: 12, paddingHorizontal: 4, minWidth: 0 }]}
@@ -1177,7 +1314,7 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
 
 
 
-                            {(['Dropdown', 'Radio Button', 'Checkbox'].includes(sf.type)) && (
+                            {(['Dropdown', 'Searchable Dropdown', 'Radio Button', 'Checkbox'].includes(sf.type)) && (
                               <View style={{ width: '100%', marginTop: 8, paddingLeft: 4 }}>
                                 {/* Source Type Selector */}
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 8 }}>

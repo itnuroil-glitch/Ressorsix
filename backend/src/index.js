@@ -16,6 +16,17 @@ const fieldPermissionRoutes = require('./routes/fieldPermissionRoutes');
 const vehicleInsuranceRoutes = require('./routes/vehicleInsuranceRoutes');
 const vehicleDetailsRoutes = require('./routes/vehicleDetailsRoutes');
 const vehiclePurchaseRoutes = require('./routes/vehiclePurchaseRoutes');
+const premisesDetailsRoutes = require('./routes/premisesDetailsRoutes');
+const premisesTypeRoutes = require('./routes/premisesTypeRoutes');
+const assetDetailsRoutes = require('./routes/assetDetailsRoutes');
+const assetCategoryRoutes = require('./routes/assetCategoryRoutes');
+const assetBrandRoutes = require('./routes/assetBrandRoutes');
+const supplierRoutes = require('./routes/supplierRoutes');
+const purchaseRoutes = require('./routes/purchaseRoutes');
+const paymentMethodRoutes = require('./routes/paymentMethodRoutes');
+const uomRoutes = require('./routes/uomRoutes');
+const vatRoutes = require('./routes/vatRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
 require('dotenv').config();
 
 const app = express();
@@ -80,11 +91,25 @@ app.use('/api/custom-fields', customFieldRoutes);
 // Mounting field permissions CRUD routes
 app.use('/api/field-permissions', fieldPermissionRoutes);
 app.use('/api/vehicle-insurance', vehicleInsuranceRoutes);
+app.use('/api/vehicleInsurance', vehicleInsuranceRoutes);
 app.use('/api/vehicle-details', vehicleDetailsRoutes);
 app.use('/api/vehicle-purchase', vehiclePurchaseRoutes);
 app.use('/api/vehile-purchase', vehiclePurchaseRoutes);
-
-
+app.use('/api/premises-details', premisesDetailsRoutes);
+app.use('/api/premises-types', premisesTypeRoutes);
+app.use('/api/asset-details', assetDetailsRoutes);
+app.use('/api/asset-categories', assetCategoryRoutes);
+app.use('/api/asset-brands', assetBrandRoutes);
+const assetOpeningRoutes = require('./routes/assetOpeningRoutes');
+app.use('/api/asset-opening', assetOpeningRoutes);
+const assetAssignmentRoutes = require('./routes/assetAssignmentRoutes');
+app.use('/api/asset-assignment', assetAssignmentRoutes);
+app.use('/api/suppliers', supplierRoutes);
+app.use('/api/purchases', purchaseRoutes);
+app.use('/api/payment-methods', paymentMethodRoutes);
+app.use('/api/uom', uomRoutes);
+app.use('/api/vat', vatRoutes);
+app.use('/api/inventory', inventoryRoutes);
 // Global Error Handler
 app.use((err, req, res, next) => {
   console.error('Unhandled Error:', err.stack);

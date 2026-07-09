@@ -7,6 +7,9 @@ import { API_URL } from '../config';
 const SearchableDropdown = ({ value, onChange, data, placeholder, searchPlaceholder, displayKey, valueKey }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const containerRef = React.useRef(null);
+  const [coords, setCoords] = useState({ x: 0, y: 0, width: 0, height: 0 });
+  const { height: windowHeight } = useWindowDimensions();
 
   const filteredData = data.filter(item =>
     item[displayKey]?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -14,11 +17,26 @@ const SearchableDropdown = ({ value, onChange, data, placeholder, searchPlacehol
 
   const selectedItem = data.find(item => item[valueKey] === value);
 
+  const spaceBelow = windowHeight - (coords.y + coords.height);
+  const useBottomAlignment = spaceBelow < 280;
+
   return (
-    <View style={{ position: 'relative', zIndex: isOpen ? 50 : 1 }}>
+    <View 
+      ref={containerRef}
+      style={{ position: 'relative', zIndex: isOpen ? 50 : 1, width: '100%' }}
+    >
       <TouchableOpacity
         style={styles.dropdownSelector}
-        onPress={() => setIsOpen(!isOpen)}
+        onPress={() => {
+          if (isOpen) {
+            setIsOpen(false);
+          } else {
+            containerRef.current?.measure((x, y, width, height, pageX, pageY) => {
+              setCoords({ x: pageX, y: pageY, width, height });
+              setIsOpen(true);
+            });
+          }
+        }}
         activeOpacity={0.8}
       >
         <Text style={{ color: selectedItem ? COLORS.textPrimary : COLORS.textMuted, fontSize: 14 }}>
@@ -28,71 +46,88 @@ const SearchableDropdown = ({ value, onChange, data, placeholder, searchPlacehol
       </TouchableOpacity>
 
       {isOpen && (
-        <View style={{
-          position: 'absolute',
-          top: 48,
-          left: 0,
-          right: 0,
-          backgroundColor: '#FFFFFF',
-          borderRadius: 8,
-          borderWidth: 1,
-          borderColor: '#E2E8F0',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.15,
-          shadowRadius: 12,
-          elevation: 5,
-          zIndex: 100,
-          maxHeight: 250,
-          overflow: 'hidden'
-        }}>
-          <View style={{ padding: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 6, paddingHorizontal: 10, borderWidth: 1, borderColor: '#E2E8F0' }}>
-              <Ionicons name="search" size={16} color="#94A3B8" />
-              <TextInput
-                style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 8, fontSize: 13, color: '#334155', outlineStyle: 'none', outlineWidth: 0 }}
-                placeholder={searchPlaceholder}
-                placeholderTextColor="#94A3B8"
-                value={searchTerm}
-                onChangeText={setSearchTerm}
-                autoFocus={true}
-              />
-            </View>
-          </View>
-          <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 180 }} keyboardShouldPersistTaps="handled">
-            {filteredData.length > 0 ? (
-              filteredData.map((item, index) => (
-                <TouchableOpacity
-                  key={item[valueKey]}
-                  style={{
-                    paddingVertical: 12,
-                    paddingHorizontal: 16,
-                    borderBottomWidth: index === filteredData.length - 1 ? 0 : 1,
-                    borderBottomColor: '#F1F5F9',
-                    backgroundColor: value === item[valueKey] ? '#F8FAFC' : '#FFFFFF'
-                  }}
-                  onPress={() => {
-                    onChange(item[valueKey]);
-                    setIsOpen(false);
-                    setSearchTerm('');
-                  }}
-                >
-                  <Text style={{
-                    fontSize: 13,
-                    color: value === item[valueKey] ? COLORS.primary : '#334155',
-                    fontWeight: value === item[valueKey] ? '600' : '400'
-                  }}>
-                    {item[displayKey]}
-                  </Text>
-                </TouchableOpacity>
-              ))
-            ) : (
-              <View style={{ padding: 16, alignItems: 'center' }}>
-                <Text style={{ color: '#94A3B8', fontSize: 13 }}>No results found</Text>
+        <Modal
+          transparent={true}
+          visible={isOpen}
+          animationType="none"
+          onRequestClose={() => setIsOpen(false)}
+        >
+          {/* Full-screen overlay to close the dropdown when clicking outside */}
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => {
+              setIsOpen(false);
+              setSearchTerm('');
+            }}
+          />
+
+          <View style={{
+            position: 'absolute',
+            ...(useBottomAlignment ? { bottom: 29 } : { top: coords.y + coords.height + 2 }),
+            left: coords.x,
+            width: coords.width,
+            backgroundColor: '#FFFFFF',
+            borderRadius: 8,
+            borderWidth: 1,
+            borderColor: '#E2E8F0',
+            shadowColor: '#000',
+            shadowOffset: useBottomAlignment ? { width: 0, height: -4 } : { width: 0, height: 4 },
+            shadowOpacity: 0.15,
+            shadowRadius: 12,
+            elevation: 5,
+            zIndex: 10000,
+            maxHeight: 200,
+            overflow: 'hidden'
+          }}>
+            <View style={{ padding: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 6, paddingHorizontal: 10, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                <Ionicons name="search" size={16} color="#94A3B8" />
+                <TextInput
+                  style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 8, fontSize: 13, color: '#334155', outlineStyle: 'none', outlineWidth: 0 }}
+                  placeholder={searchPlaceholder}
+                  placeholderTextColor="#94A3B8"
+                  value={searchTerm}
+                  onChangeText={setSearchTerm}
+                  autoFocus={true}
+                />
               </View>
-            )}
-          </ScrollView>
-        </View>
+            </View>
+            <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 130 }} keyboardShouldPersistTaps="handled">
+              {filteredData.length > 0 ? (
+                filteredData.map((item, index) => (
+                  <TouchableOpacity
+                    key={item[valueKey]}
+                    style={{
+                      paddingVertical: 12,
+                      paddingHorizontal: 16,
+                      borderBottomWidth: index === filteredData.length - 1 ? 0 : 1,
+                      borderBottomColor: '#F1F5F9',
+                      backgroundColor: value === item[valueKey] ? '#F8FAFC' : '#FFFFFF'
+                    }}
+                    onPress={() => {
+                      onChange(item[valueKey]);
+                      setIsOpen(false);
+                      setSearchTerm('');
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 13,
+                      color: value === item[valueKey] ? COLORS.primary : '#334155',
+                      fontWeight: value === item[valueKey] ? '600' : '400'
+                    }}>
+                      {item[displayKey]}
+                    </Text>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <View style={{ padding: 16, alignItems: 'center' }}>
+                  <Text style={{ color: '#94A3B8', fontSize: 13 }}>No results found</Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </Modal>
       )}
     </View>
   );
@@ -107,6 +142,7 @@ const FIELD_OPTIONS = [
   { label: 'Time', value: 'Time' },
   { label: 'DateTime', value: 'DateTime' },
   { label: 'Dropdown', value: 'Dropdown' },
+  { label: 'Searchable Dropdown', value: 'Searchable Dropdown' },
   { label: 'Radio Button', value: 'Radio Button' },
   { label: 'Checkbox', value: 'Checkbox' },
   { label: 'Toggle/Switch', value: 'Toggle/Switch' },
@@ -124,13 +160,31 @@ const FIELD_OPTIONS = [
 
 const CustomDropdown = ({ selectedValue, onValueChange, options }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const containerRef = React.useRef(null);
+  const [coords, setCoords] = useState({ x: 0, y: 0, width: 0, height: 0 });
+  const { height: windowHeight } = useWindowDimensions();
   const selectedLabel = options.find(o => o.value === selectedValue)?.label || 'Select...';
 
+  const spaceBelow = windowHeight - (coords.y + coords.height);
+  const useBottomAlignment = spaceBelow < 280;
+
   return (
-    <View style={{ flex: 1, zIndex: isOpen ? 9999 : 1, position: 'relative' }}>
+    <View 
+      ref={containerRef}
+      style={{ flex: 1, zIndex: isOpen ? 9999 : 1, position: 'relative' }}
+    >
       <TouchableOpacity
         style={{ flex: 1, paddingVertical: 6, paddingHorizontal: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
-        onPress={() => setIsOpen(!isOpen)}
+        onPress={() => {
+          if (isOpen) {
+            setIsOpen(false);
+          } else {
+            containerRef.current?.measure((x, y, width, height, pageX, pageY) => {
+              setCoords({ x: pageX, y: pageY, width, height });
+              setIsOpen(true);
+            });
+          }
+        }}
         activeOpacity={0.8}
       >
         <Text style={{ fontSize: 12, color: '#334155', fontWeight: '500' }}>{selectedLabel}</Text>
@@ -138,41 +192,54 @@ const CustomDropdown = ({ selectedValue, onValueChange, options }) => {
       </TouchableOpacity>
 
       {isOpen && (
-        <View style={{
-          position: 'absolute',
-          top: '100%',
-          left: -1,
-          right: -1,
-          backgroundColor: '#FFFFFF',
-          borderWidth: 1,
-          borderColor: '#CBD5E1',
-          borderRadius: 6,
-          maxHeight: 220,
-          zIndex: 10000,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.15,
-          shadowRadius: 12,
-          elevation: 10,
-          marginTop: 2
-        }}>
-          <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 220 }}>
-            {options.map((opt, i) => (
-              <TouchableOpacity
-                key={opt.value}
-                style={{ paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: i === options.length - 1 ? 0 : 1, borderBottomColor: '#F1F5F9', backgroundColor: selectedValue === opt.value ? '#F0F9FF' : '#FFFFFF' }}
-                onPress={() => {
-                  onValueChange(opt.value);
-                  setIsOpen(false);
-                }}
-              >
-                <Text style={{ fontSize: 12, color: selectedValue === opt.value ? '#0284C7' : '#334155', fontWeight: selectedValue === opt.value ? '600' : '400' }}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
+        <Modal
+          transparent={true}
+          visible={isOpen}
+          animationType="none"
+          onRequestClose={() => setIsOpen(false)}
+        >
+          {/* Full-screen overlay to close the dropdown when clicking outside */}
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setIsOpen(false)}
+          />
+
+          <View style={{
+            position: 'absolute',
+            ...(useBottomAlignment ? { bottom: 29 } : { top: coords.y + coords.height + 2 }),
+            left: coords.x,
+            width: coords.width,
+            backgroundColor: '#FFFFFF',
+            borderWidth: 1,
+            borderColor: '#CBD5E1',
+            borderRadius: 6,
+            maxHeight: 170,
+            zIndex: 10000,
+            shadowColor: '#000',
+            shadowOffset: useBottomAlignment ? { width: 0, height: -4 } : { width: 0, height: 4 },
+            shadowOpacity: 0.15,
+            shadowRadius: 12,
+            elevation: 10,
+          }}>
+            <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 170 }} keyboardShouldPersistTaps="handled">
+              {options.map((opt, i) => (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={{ paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: i === options.length - 1 ? 0 : 1, borderBottomColor: '#F1F5F9', backgroundColor: selectedValue === opt.value ? '#F0F9FF' : '#FFFFFF' }}
+                  onPress={() => {
+                    onValueChange(opt.value);
+                    setIsOpen(false);
+                  }}
+                >
+                  <Text style={{ fontSize: 12, color: selectedValue === opt.value ? '#0284C7' : '#334155', fontWeight: selectedValue === opt.value ? '600' : '400' }}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </Modal>
       )}
     </View>
   );
@@ -745,11 +812,30 @@ export default function FieldPermissionsTab({ user, showToast, renderTableToolba
               )}
 
               {wizardStep === 2 && (() => {
-                const targetCF = customFields.find(cf =>
+                let targetCF = customFields.find(cf =>
                   String(cf.clientid) === String(formClientId) &&
                   String(cf.moduleid) === String(formModuleId) &&
-                  String(cf.countryid) === String(formCountryId)
+                  String(cf.countryid || cf.country_id) === String(formCountryId)
                 );
+
+                if (!targetCF) {
+                  targetCF = customFields.find(cf =>
+                    (!cf.clientid && !cf.client_id) &&
+                    String(cf.moduleid) === String(formModuleId) &&
+                    String(cf.countryid || cf.country_id) === String(formCountryId)
+                  );
+                }
+                if (!targetCF) {
+                  targetCF = customFields.find(cf =>
+                    String(cf.moduleid) === String(formModuleId) &&
+                    String(cf.countryid || cf.country_id) === '1'
+                  );
+                }
+                if (!targetCF) {
+                  targetCF = customFields.find(cf =>
+                    String(cf.moduleid) === String(formModuleId)
+                  );
+                }
 
                 let parsedSections = [];
                 if (targetCF && targetCF.field_data) {
@@ -990,7 +1076,7 @@ export default function FieldPermissionsTab({ user, showToast, renderTableToolba
 
 
 
-                            {(['Dropdown', 'Radio Button', 'Checkbox'].includes(sf.type)) && (
+                            {(['Dropdown', 'Searchable Dropdown', 'Radio Button', 'Checkbox'].includes(sf.type)) && (
                               <View style={{ width: '100%', marginTop: 8, paddingLeft: 4 }}>
                                 <Text style={{ fontSize: 12, color: COLORS.textSecondary, fontWeight: '600', marginBottom: 6 }}>Options</Text>
                                 {(sf.optionsArr || []).map((opt, optIndex) => (

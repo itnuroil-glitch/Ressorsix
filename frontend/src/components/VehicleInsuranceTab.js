@@ -21,6 +21,7 @@ const COLORS = {
 export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapsed }) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width > 768;
+  const isEmployee = user && String(user.roleId) !== '1' && String(user.roleId) !== '2' && String(user.roleId) !== '5' && String(user.roleId) !== '8';
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fieldsLayout, setFieldsLayout] = useState(null);
@@ -49,9 +50,11 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
   const [clients, setClients] = useState([]);
   const [countries, setCountries] = useState([]);
   const [modules, setModules] = useState([]);
+  const [companies, setCompanies] = useState([]);
   const [selectedClient, setSelectedClient] = useState('');
   const [selectedCountry, setSelectedCountry] = useState('');
   const [selectedModule, setSelectedModule] = useState('');
+  const [selectedCompany, setSelectedCompany] = useState('');
 
   useEffect(() => {
     fetchInitialData();
@@ -77,13 +80,57 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
       setInsuranceRecords(Array.isArray(recordsData) ? recordsData : []);
 
       // Try to set defaults if available
-      if (user?.client_id || user?.clientid) setSelectedClient(String(user?.client_id || user?.clientid));
+      const clientVal = user?.client_id || user?.clientid;
+      if (clientVal) {
+        setSelectedClient(String(clientVal));
+        await fetchCompaniesForClient(String(clientVal));
+      }
       if (user?.country_id || user?.countryid) setSelectedCountry(String(user?.country_id || user?.countryid));
+      if (user?.company_id || user?.companyid) setSelectedCompany(String(user?.company_id || user?.companyid));
       const viModule = (modulesData || []).find(m => m.module_name && m.module_name.toLowerCase().includes('vehicle insurance'));
       if (viModule) setSelectedModule(String(viModule.id));
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const fetchCompaniesForClient = async (clientId) => {
+    if (!clientId) {
+      setCompanies([]);
+      return [];
+    }
+    try {
+      const emailParam = user?.email ? `?email=${encodeURIComponent(user.email)}` : '';
+      const res = await fetch(`${API_URL}/api/companies/client/${clientId}${emailParam}`);
+      if (res.ok) {
+        const data = await res.json();
+        setCompanies(data || []);
+        return data || [];
+      }
+    } catch (e) {
+      console.error('Error fetching companies for client:', e);
+    }
+    return [];
+  };
+
+  const handleAddNewRecord = async () => {
+    setIsViewOnly(false);
+    setEditingRecord(null);
+    setFormData({});
+    if (companies.length === 1 && user && String(user.roleId) !== '1') {
+      const singleComp = companies[0];
+      setSelectedCompany(String(singleComp.id));
+      const targetCountry = singleComp.country ? String(singleComp.country) : selectedCountry;
+      if (singleComp.country) setSelectedCountry(String(singleComp.country));
+      await fetchFormConfiguration(
+        selectedClient,
+        targetCountry,
+        selectedModule
+      );
+    } else {
+      setWizardStep(1);
+    }
+    setIsFormOpen(true);
   };
 
   const fetchFormConfiguration = async (clientId, countryId, moduleId) => {
@@ -94,11 +141,29 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
       const cfRes = await fetch(`${API_URL}/api/custom-fields`);
       const customFields = await cfRes.json();
 
-      const matchingFieldDef = customFields.find(cf =>
+      let matchingFieldDef = customFields.find(cf =>
         String(cf.client_id || cf.clientid) === String(clientId) &&
         String(cf.module_id || cf.moduleid) === String(moduleId) &&
         String(cf.country_id || cf.countryid) === String(countryId)
       );
+      if (!matchingFieldDef) {
+        matchingFieldDef = customFields.find(cf =>
+          (!cf.clientid && !cf.client_id) &&
+          String(cf.module_id || cf.moduleid) === String(moduleId) &&
+          String(cf.country_id || cf.countryid) === String(countryId)
+        );
+      }
+      if (!matchingFieldDef) {
+        matchingFieldDef = customFields.find(cf =>
+          String(cf.module_id || cf.moduleid) === String(moduleId) &&
+          String(cf.country_id || cf.countryid) === '1'
+        );
+      }
+      if (!matchingFieldDef) {
+        matchingFieldDef = customFields.find(cf =>
+          String(cf.module_id || cf.moduleid) === String(moduleId)
+        );
+      }
 
       // 4. Fetch permissions
       const permRes = await fetch(`${API_URL}/api/field-permissions`);
@@ -115,6 +180,28 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
         permittedFields = typeof activePerm.permitted_fields === 'string'
           ? JSON.parse(activePerm.permitted_fields)
           : activePerm.permitted_fields;
+      } else {
+        // Fallback: permit all fields in layout if no permission is defined
+        if (matchingFieldDef) {
+          const parsed = typeof matchingFieldDef.field_data === 'string'
+            ? JSON.parse(matchingFieldDef.field_data)
+            : matchingFieldDef.field_data;
+          const enableAll = (fields) => {
+            fields.forEach(f => {
+              permittedFields[f.id] = true;
+              if (f.subsections) {
+                f.subsections.forEach(sub => {
+                  if (sub.fields) enableAll(sub.fields);
+                });
+              }
+            });
+          };
+          if (Array.isArray(parsed)) {
+            parsed.forEach(sec => {
+              if (sec.fields) enableAll(sec.fields);
+            });
+          }
+        }
       }
 
       if (matchingFieldDef) {
@@ -141,12 +228,19 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
 
         const fetchDynamicOptions = async (path) => {
           try {
-            let processedPath = path || '';
+            let processedPath = (path || '').trim();
             // Automatically append clientId if the path is designed for client lookup
             if (processedPath.includes('client') && clientId) {
               if (processedPath.endsWith('/client') || processedPath.endsWith('/client/')) {
                 const separator = processedPath.endsWith('/') ? '' : '/';
                 processedPath = `${processedPath}${separator}${clientId}`;
+              }
+            }
+            // Automatically append countryId if the path is designed for country lookup
+            if (processedPath.includes('country') && countryId) {
+              if (processedPath.endsWith('/country') || processedPath.endsWith('/country/')) {
+                const separator = processedPath.endsWith('/') ? '' : '/';
+                processedPath = `${processedPath}${separator}${countryId}`;
               }
             }
 
@@ -163,13 +257,15 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
             return data.map(item => {
               if (typeof item === 'string') return item;
               if (item && typeof item === 'object') {
-                const nameKey = Object.keys(item).find(key => 
-                  key.toLowerCase().includes('name') || 
+                const nameKey = Object.keys(item).find(key =>
+                  key.toLowerCase().includes('name') ||
                   key.toLowerCase().includes('label') ||
                   key.toLowerCase() === 'title' ||
                   key.toLowerCase().includes('plate') ||
                   key.toLowerCase().includes('chassis') ||
-                  key.toLowerCase().includes('chasis')
+                  key.toLowerCase().includes('chasis') ||
+                  key.toLowerCase().includes('policy') ||
+                  key.toLowerCase().includes('department')
                 );
                 if (nameKey) return String(item[nameKey]);
                 const firstKey = Object.keys(item)[0];
@@ -185,7 +281,7 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
 
         const processField = async (f) => {
           let updatedField = { ...f };
-          if (['Dropdown', 'Radio Button', 'Checkbox'].includes(f.type)) {
+          if (['Dropdown', 'Searchable Dropdown', 'Radio Button', 'Checkbox'].includes(f.type)) {
             if (f.optionSource === 'dynamic' && f.dynamicPath) {
               const dynOptions = await fetchDynamicOptions(f.dynamicPath);
               updatedField.allowedOptions = dynOptions;
@@ -256,6 +352,8 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
     setSelectedClient(String(record.clientid || ''));
     setSelectedCountry(String(record.country_id || ''));
     setSelectedModule(String(record.moduleid || ''));
+    await fetchCompaniesForClient(String(record.clientid || ''));
+    setSelectedCompany(record.company_id ? String(record.company_id) : '');
     // Load the form configuration then open the modal
     await fetchFormConfiguration(
       String(record.clientid || ''),
@@ -280,6 +378,8 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
     setSelectedClient(String(record.clientid || ''));
     setSelectedCountry(String(record.country_id || ''));
     setSelectedModule(String(record.moduleid || ''));
+    await fetchCompaniesForClient(String(record.clientid || ''));
+    setSelectedCompany(record.company_id ? String(record.company_id) : '');
     // Load the form configuration then open the modal
     await fetchFormConfiguration(
       String(record.clientid || ''),
@@ -321,7 +421,7 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
     setSaving(true);
     try {
       const finalFormData = { ...formData };
-      
+
       const setDefaults = (fields) => {
         fields.forEach(f => {
           if (f.type === 'Date' && !finalFormData[f.id]) {
@@ -355,7 +455,10 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
         field_data: finalFormData,
         clientid: configParams.clientid,
         country_id: configParams.country_id,
-        moduleid: configParams.moduleid
+        moduleid: configParams.moduleid,
+        company_id: selectedCompany || null,
+        roleid: user ? user.roleId : null,
+        user_id: user ? user.id : null
       };
 
       const isEditing = !!editingRecord;
@@ -391,7 +494,8 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
 
   const renderField = (field) => {
     switch (field.type) {
-      case 'Dropdown': {
+      case 'Dropdown':
+      case 'Searchable Dropdown': {
         const options = (field.allowedOptions && field.allowedOptions.length > 0)
           ? field.allowedOptions
           : (field.options || '').split(',').map(o => o.trim()).filter(Boolean);
@@ -436,7 +540,7 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
       case 'File Upload':
       case 'Image Upload': {
         const fileData = formData[field.id];
-        
+
         const handleFileSelect = () => {
           if (typeof document !== 'undefined') {
             const input = document.createElement('input');
@@ -490,16 +594,16 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
           if (!file) return null;
           const name = file.name || (typeof file === 'string' ? file : 'Uploaded File');
           const isUploaded = file.data && (file.data.startsWith('http') || file.data.startsWith('/'));
-          
+
           return (
             <View key={index} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F1F5F9', padding: 8, borderRadius: 6, gap: 8, marginTop: 4 }}>
-              <Ionicons 
-                name={field.type === 'Image Upload' ? 'image-outline' : 'document-outline'} 
-                size={16} 
-                color="#64748B" 
+              <Ionicons
+                name={field.type === 'Image Upload' ? 'image-outline' : 'document-outline'}
+                size={16}
+                color="#64748B"
               />
               {isUploaded ? (
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={() => {
                     const fileUrl = file.data.startsWith('/') ? `${API_URL}${file.data}` : file.data;
                     if (typeof window !== 'undefined') {
@@ -644,7 +748,7 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
         const options = (field.allowedOptions && field.allowedOptions.length > 0)
           ? field.allowedOptions
           : (field.options || '').split(',').map(o => o.trim()).filter(Boolean);
-        
+
         // If there are no options, render it as a single toggle switch
         if (options.length === 0) {
           const val = !!formData[field.id];
@@ -778,58 +882,224 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
           <Text style={styles.headerTitle}>Vehicle Insurance</Text>
           <Text style={styles.headerSubtitle}>Manage your vehicle insurance records.</Text>
         </View>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => {
-            setIsViewOnly(false);
-            setEditingRecord(null);
-            setFormData({});
-            setWizardStep(1);
-            setIsFormOpen(true);
-          }}
-        >
-          <Ionicons name="add-circle" size={20} color="#FFFFFF" />
-          <Text style={styles.addButtonText}>Add Insurance</Text>
-        </TouchableOpacity>
+        {!isEmployee && (
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={handleAddNewRecord}
+          >
+            <Ionicons name="add-circle" size={20} color="#FFFFFF" />
+            <Text style={styles.addButtonText}>Add Insurance</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* MAIN CONTENT */}
       <View style={styles.mainContent}>
-        {insuranceRecords.length === 0 && !searchQuery ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="document-text-outline" size={48} color={COLORS.textMuted} />
-            <Text style={styles.emptyStateText}>No insurance records found.</Text>
-            <Text style={styles.emptyStateSubtext}>Click 'Add Insurance' to create a new record.</Text>
+        {isEmployee ? (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, minHeight: 400 }}>
+            <View style={{
+              width: '100%',
+              maxWidth: 600,
+              backgroundColor: '#FFFFFF',
+              borderRadius: 16,
+              padding: 40,
+              alignItems: 'center',
+              borderWidth: 1,
+              borderColor: '#E2E8F0',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 10 },
+              shadowOpacity: 0.05,
+              shadowRadius: 15,
+              elevation: 4
+            }}>
+              <View style={{
+                width: 80,
+                height: 80,
+                borderRadius: 40,
+                backgroundColor: '#EBF4F0',
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginBottom: 24
+              }}>
+                <Ionicons name="shield-checkmark" size={40} color={COLORS.primary} />
+              </View>
+              <Text style={{ fontSize: 24, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 12, textAlign: 'center' }}>
+                Vehicle Insurance Registration
+              </Text>
+              <Text style={{ fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 32, lineHeight: 22, maxWidth: 440 }}>
+                Please register the vehicle insurance policy details. All records are processed securely.
+              </Text>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: COLORS.primary,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingVertical: 16,
+                  paddingHorizontal: 32,
+                  borderRadius: 12,
+                  width: '100%',
+                  maxWidth: 320,
+                  shadowColor: COLORS.primary,
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 6,
+                  elevation: 2
+                }}
+                onPress={handleAddNewRecord}
+              >
+                <Ionicons name="add-circle" size={22} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>Add Vehicle Insurance</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         ) : (
-          <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#F1F5F9', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1, overflow: 'hidden' }}>
-            {/* Top Toolbar */}
-            <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: '#E2E8F0', width: 300 }}>
-                <Ionicons name="search" size={16} color="#94A3B8" />
-                <TextInput
-                  style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 8, fontSize: 13, color: '#334155', outlineStyle: 'none', outlineWidth: 0 }}
-                  placeholder="Search by ID or Client..."
-                  placeholderTextColor="#94A3B8"
-                  value={searchQuery}
-                  onChangeText={(text) => { setSearchQuery(text); setCurrentPage(1); }}
-                />
+          insuranceRecords.length === 0 && !searchQuery ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="document-text-outline" size={48} color={COLORS.textMuted} />
+              <Text style={styles.emptyStateText}>No insurance records found.</Text>
+              <Text style={styles.emptyStateSubtext}>Click 'Add Insurance' to create a new record.</Text>
+            </View>
+          ) : (
+            <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#F1F5F9', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1, overflow: 'hidden' }}>
+              {/* Top Toolbar */}
+              <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: '#E2E8F0', width: 300 }}>
+                  <Ionicons name="search" size={16} color="#94A3B8" />
+                  <TextInput
+                    style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 8, fontSize: 13, color: '#334155', outlineStyle: 'none', outlineWidth: 0 }}
+                    placeholder="Search by ID or Client..."
+                    placeholderTextColor="#94A3B8"
+                    value={searchQuery}
+                    onChangeText={(text) => { setSearchQuery(text); setCurrentPage(1); }}
+                  />
+                </View>
               </View>
-            </View>
 
-            {/* Table Header */}
-            <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20 }}>
-              <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>ID</Text>
-              <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
-              <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Module Info</Text>
-              <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Data Preview</Text>
-              <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
-              <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>View</Text>
-              <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>Edit</Text>
-              <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>Delete</Text>
-            </View>
+              {/* Table Header */}
+              <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20 }}>
+                <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>ID</Text>
+                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
+                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Module Info</Text>
+                <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Data Preview</Text>
+                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Employee</Text>
+                <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
+                <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>View</Text>
+                <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>Edit</Text>
+                <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>Delete</Text>
+              </View>
 
-            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true}>
+              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true}>
+                {(() => {
+                  const filtered = insuranceRecords.filter(r => {
+                    if (user && String(user.roleId) !== '1' && user.clientid) {
+                      if (String(r.clientid) !== String(user.clientid)) return false;
+                    }
+                    if (!searchQuery) return true;
+                    const cObj = clients.find(c => String(c.id) === String(r.clientid));
+                    const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
+                    return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
+                  });
+                  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+                  const paginated = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
+                  if (filtered.length === 0) {
+                    return (
+                      <View style={{ padding: 40, alignItems: 'center' }}>
+                        <Text style={{ color: '#94A3B8', fontSize: 14 }}>No matches found</Text>
+                      </View>
+                    );
+                  }
+
+                  return (
+                    <View style={{ flex: 1 }}>
+                      {paginated.map((record) => {
+                        let parsedData = {};
+                        if (record.field_data) {
+                          try {
+                            parsedData = typeof record.field_data === 'string' ? JSON.parse(record.field_data) : record.field_data;
+                          } catch (e) { }
+                        }
+                        const clientObj = clients.find(c => String(c.id) === String(record.clientid));
+                        const clientName = clientObj ? (clientObj.client_name || clientObj.name) : `Client ${record.clientid}`;
+                        const countryObj = countries.find(c => String(c.id) === String(record.country_id));
+                        const countryName = countryObj ? countryObj.name : `Country ${record.country_id}`;
+                        const moduleObj = modules.find(m => String(m.id) === String(record.moduleid));
+                        const moduleName = moduleObj ? moduleObj.module_name : `Module ${record.moduleid}`;
+
+                        const rawFirstValue = Object.values(parsedData)[0];
+                        let firstValue = '-';
+                        if (rawFirstValue && typeof rawFirstValue === 'object') {
+                          if (Array.isArray(rawFirstValue)) {
+                            firstValue = rawFirstValue.map(f => f.name || 'File').join(', ');
+                          } else {
+                            firstValue = rawFirstValue.name || 'File';
+                          }
+                        } else if (rawFirstValue !== undefined && rawFirstValue !== null) {
+                          const valStr = String(rawFirstValue);
+                          if (/^\d{4}-\d{2}-\d{2}$/.test(valStr)) {
+                            const [year, month, day] = valStr.split('-');
+                            firstValue = `${day}/${month}/${year}`;
+                          } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(valStr)) {
+                            const [datePart, timePart] = valStr.split('T');
+                            const [year, month, day] = datePart.split('-');
+                            firstValue = `${day}/${month}/${year} ${timePart}`;
+                          } else {
+                            firstValue = valStr;
+                          }
+                        }
+                        const firstKey = Object.keys(parsedData)[0] ? Object.keys(parsedData)[0].replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()) : 'No Data';
+
+                        return (
+                          <View key={record.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
+                            <Text style={{ flex: 0.5, fontSize: 12, color: '#334155', fontWeight: '700' }}>#{record.id}</Text>
+
+                            <View style={{ flex: 1.5, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{clientName}</Text>
+                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Country: {countryName}</Text>
+                            </View>
+
+                            <View style={{ flex: 1.5, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{moduleName}</Text>
+                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Created: {new Date(record.created_at).toLocaleDateString()}</Text>
+                            </View>
+
+                            <View style={{ flex: 2, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500', marginBottom: 4 }} numberOfLines={1}>{String(firstValue)}</Text>
+                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Field: {firstKey}</Text>
+                            </View>
+
+                            <View style={{ flex: 1.5, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{record.role_name || (record.roleid ? `Role: ${record.roleid}` : 'N/A')}</Text>
+                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>{record.employee_name || 'N/A'}</Text>
+                            </View>
+
+                            <View style={{ flex: 1, alignItems: 'flex-start' }}>
+                              <View style={{ backgroundColor: '#F0FDF4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: '#166534' }}>Active</Text>
+                              </View>
+                            </View>
+
+                            <TouchableOpacity style={{ flex: 0.5, alignItems: 'center' }} onPress={() => handleView(record)}>
+                              <Ionicons name="eye-outline" size={18} color="#0F172A" />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity style={{ flex: 0.5, alignItems: 'center' }} onPress={() => handleEdit(record)}>
+                              <Ionicons name="pencil" size={18} color="#166534" />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity style={{ flex: 0.5, alignItems: 'center' }} onPress={() => handleDelete(record)}>
+                              <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  );
+                })()}
+              </ScrollView>
+
+              {/* Pagination Footer */}
               {(() => {
                 const filtered = insuranceRecords.filter(r => {
                   if (user && String(user.roleId) !== '1' && user.clientid) {
@@ -841,145 +1111,41 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
                   return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
                 });
                 const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-                const paginated = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
-
-                if (filtered.length === 0) {
-                  return (
-                    <View style={{ padding: 40, alignItems: 'center' }}>
-                      <Text style={{ color: '#94A3B8', fontSize: 14 }}>No matches found</Text>
-                    </View>
-                  );
-                }
+                const startEntry = filtered.length === 0 ? 0 : ((currentPage - 1) * ITEMS_PER_PAGE) + 1;
+                const endEntry = Math.min(currentPage * ITEMS_PER_PAGE, filtered.length);
 
                 return (
-                  <View style={{ flex: 1 }}>
-                    {paginated.map((record) => {
-                      let parsedData = {};
-                      if (record.field_data) {
-                        try {
-                          parsedData = typeof record.field_data === 'string' ? JSON.parse(record.field_data) : record.field_data;
-                        } catch (e) { }
-                      }
-                      const clientObj = clients.find(c => String(c.id) === String(record.clientid));
-                      const clientName = clientObj ? (clientObj.client_name || clientObj.name) : `Client ${record.clientid}`;
-                      const countryObj = countries.find(c => String(c.id) === String(record.country_id));
-                      const countryName = countryObj ? countryObj.name : `Country ${record.country_id}`;
-                      const moduleObj = modules.find(m => String(m.id) === String(record.moduleid));
-                      const moduleName = moduleObj ? moduleObj.module_name : `Module ${record.moduleid}`;
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC' }}>
+                    <Text style={{ fontSize: 12, color: '#64748B' }}>
+                      Showing <Text style={{ fontWeight: '600', color: '#334155' }}>{startEntry}</Text> to <Text style={{ fontWeight: '600', color: '#334155' }}>{endEntry}</Text> of <Text style={{ fontWeight: '600', color: '#334155' }}>{filtered.length}</Text> entries
+                    </Text>
 
-                      const rawFirstValue = Object.values(parsedData)[0];
-                      let firstValue = '-';
-                      if (rawFirstValue && typeof rawFirstValue === 'object') {
-                        if (Array.isArray(rawFirstValue)) {
-                          firstValue = rawFirstValue.map(f => f.name || 'File').join(', ');
-                        } else {
-                          firstValue = rawFirstValue.name || 'File';
-                        }
-                      } else if (rawFirstValue !== undefined && rawFirstValue !== null) {
-                        const valStr = String(rawFirstValue);
-                        if (/^\d{4}-\d{2}-\d{2}$/.test(valStr)) {
-                          const [year, month, day] = valStr.split('-');
-                          firstValue = `${day}/${month}/${year}`;
-                        } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(valStr)) {
-                          const [datePart, timePart] = valStr.split('T');
-                          const [year, month, day] = datePart.split('-');
-                          firstValue = `${day}/${month}/${year} ${timePart}`;
-                        } else {
-                          firstValue = valStr;
-                        }
-                      }
-                      const firstKey = Object.keys(parsedData)[0] ? Object.keys(parsedData)[0].replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()) : 'No Data';
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <TouchableOpacity
+                        style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: currentPage > 1 ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
+                        disabled={currentPage === 1}
+                        onPress={() => setCurrentPage(p => p - 1)}
+                      >
+                        <Text style={{ fontSize: 12, color: currentPage > 1 ? '#475569' : '#94A3B8', fontWeight: '500' }}>{'< Prev'}</Text>
+                      </TouchableOpacity>
 
-                      return (
-                        <View key={record.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
-                          <Text style={{ flex: 0.5, fontSize: 12, color: '#334155', fontWeight: '700' }}>#{record.id}</Text>
+                      <Text style={{ fontSize: 12, color: '#64748B' }}>
+                        Page <Text style={{ fontWeight: '600', color: '#334155' }}>{currentPage}</Text> of {totalPages}
+                      </Text>
 
-                          <View style={{ flex: 1.5, paddingRight: 10 }}>
-                            <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{clientName}</Text>
-                            <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Country: {countryName}</Text>
-                          </View>
-
-                          <View style={{ flex: 1.5, paddingRight: 10 }}>
-                            <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{moduleName}</Text>
-                            <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Created: {new Date(record.created_at).toLocaleDateString()}</Text>
-                          </View>
-
-                          <View style={{ flex: 2, paddingRight: 10 }}>
-                            <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500', marginBottom: 4 }} numberOfLines={1}>{String(firstValue)}</Text>
-                            <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Field: {firstKey}</Text>
-                          </View>
-
-                          <View style={{ flex: 1, alignItems: 'flex-start' }}>
-                            <View style={{ backgroundColor: '#F0FDF4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
-                              <Text style={{ fontSize: 11, fontWeight: '700', color: '#166534' }}>Active</Text>
-                            </View>
-                          </View>
-
-                          <TouchableOpacity style={{ flex: 0.5, alignItems: 'center' }} onPress={() => handleView(record)}>
-                            <Ionicons name="eye-outline" size={18} color="#0F172A" />
-                          </TouchableOpacity>
-
-                          <TouchableOpacity style={{ flex: 0.5, alignItems: 'center' }} onPress={() => handleEdit(record)}>
-                            <Ionicons name="pencil" size={18} color="#166534" />
-                          </TouchableOpacity>
-
-                          <TouchableOpacity style={{ flex: 0.5, alignItems: 'center' }} onPress={() => handleDelete(record)}>
-                            <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                          </TouchableOpacity>
-                        </View>
-                      );
-                    })}
+                      <TouchableOpacity
+                        style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: currentPage < totalPages ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
+                        disabled={currentPage === totalPages}
+                        onPress={() => setCurrentPage(p => p + 1)}
+                      >
+                        <Text style={{ fontSize: 12, color: currentPage < totalPages ? '#475569' : '#94A3B8', fontWeight: '500' }}>{'Next >'}</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 );
               })()}
-            </ScrollView>
-
-            {/* Pagination Footer */}
-            {(() => {
-              const filtered = insuranceRecords.filter(r => {
-                if (user && String(user.roleId) !== '1' && user.clientid) {
-                  if (String(r.clientid) !== String(user.clientid)) return false;
-                }
-                if (!searchQuery) return true;
-                const cObj = clients.find(c => String(c.id) === String(r.clientid));
-                const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
-                return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
-              });
-              const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-              const startEntry = filtered.length === 0 ? 0 : ((currentPage - 1) * ITEMS_PER_PAGE) + 1;
-              const endEntry = Math.min(currentPage * ITEMS_PER_PAGE, filtered.length);
-
-              return (
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC' }}>
-                  <Text style={{ fontSize: 12, color: '#64748B' }}>
-                    Showing <Text style={{ fontWeight: '600', color: '#334155' }}>{startEntry}</Text> to <Text style={{ fontWeight: '600', color: '#334155' }}>{endEntry}</Text> of <Text style={{ fontWeight: '600', color: '#334155' }}>{filtered.length}</Text> entries
-                  </Text>
-
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                    <TouchableOpacity
-                      style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: currentPage > 1 ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
-                      disabled={currentPage === 1}
-                      onPress={() => setCurrentPage(p => p - 1)}
-                    >
-                      <Text style={{ fontSize: 12, color: currentPage > 1 ? '#475569' : '#94A3B8', fontWeight: '500' }}>{'< Prev'}</Text>
-                    </TouchableOpacity>
-
-                    <Text style={{ fontSize: 12, color: '#64748B' }}>
-                      Page <Text style={{ fontWeight: '600', color: '#334155' }}>{currentPage}</Text> of {totalPages}
-                    </Text>
-
-                    <TouchableOpacity
-                      style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: currentPage < totalPages ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
-                      disabled={currentPage === totalPages}
-                      onPress={() => setCurrentPage(p => p + 1)}
-                    >
-                      <Text style={{ fontSize: 12, color: currentPage < totalPages ? '#475569' : '#94A3B8', fontWeight: '500' }}>{'Next >'}</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
-            })()}
-          </View>
+            </View>
+          )
         )}
       </View>
 
@@ -1088,54 +1254,62 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
             {wizardStep === 1 ? (
               <ScrollView style={{ flex: 1, backgroundColor: '#FFFFFF', padding: 24 }}>
                 <View style={{ flex: 1 }}>
-                  <View style={{ marginBottom: 20, zIndex: 30 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8, textTransform: 'uppercase' }}>Client *</Text>
-                    <SearchableDropdown
-                      data={clients}
-                      value={selectedClient}
-                      onChange={(val) => {
-                        setSelectedClient(val);
-                      }}
-                      placeholder="-- Select Client --"
-                      searchPlaceholder="Search Client..."
-                      displayKey="client_name"
-                      valueKey="id"
-                    />
-                  </View>
- 
+                  {(!user || String(user.roleId) === '1') && (
+                    <View style={{ marginBottom: 20, zIndex: 30 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8, textTransform: 'uppercase' }}>Client *</Text>
+                      <SearchableDropdown
+                        data={clients}
+                        value={selectedClient}
+                        onChange={(val) => {
+                          setSelectedClient(val);
+                          setSelectedCompany('');
+                          fetchCompaniesForClient(val);
+                        }}
+                        placeholder="-- Select Client --"
+                        searchPlaceholder="Search Client..."
+                        displayKey="client_name"
+                        valueKey="id"
+                      />
+                    </View>
+                  )}
+
                   <View style={{ marginBottom: 20, zIndex: 20 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8, textTransform: 'uppercase' }}>Country *</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8, textTransform: 'uppercase' }}>Company *</Text>
                     <SearchableDropdown
-                      data={countries}
-                      value={selectedCountry}
+                      data={companies}
+                      value={selectedCompany}
                       onChange={(val) => {
-                        setSelectedCountry(val);
+                        setSelectedCompany(val);
+                        const selectedIds = val ? String(val).split(',').map(s => s.trim()).filter(Boolean) : [];
+                        if (selectedIds.length > 0) {
+                          const firstSelected = companies.find(c => String(c.id) === selectedIds[0]);
+                          if (firstSelected && firstSelected.country) {
+                            setSelectedCountry(String(firstSelected.country));
+                          }
+                        } else {
+                          setSelectedCountry('');
+                        }
                       }}
-                      placeholder="-- Select Country --"
-                      searchPlaceholder="Search Country..."
-                      displayKey="name"
+                      placeholder="-- Select Company --"
+                      searchPlaceholder="Search Company..."
+                      displayKey="company_name"
                       valueKey="id"
-                    />
-                  </View>
- 
-                  <View style={{ marginBottom: 20, zIndex: 10 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8, textTransform: 'uppercase' }}>Module *</Text>
-                    <SearchableDropdown
-                      data={modules}
-                      value={selectedModule}
-                      onChange={(val) => {
-                        setSelectedModule(val);
+                      isMultiSelect={true}
+                      getIsOptionDisabled={(item) => {
+                        const selectedIds = selectedCompany ? String(selectedCompany).split(',').map(s => s.trim()).filter(Boolean) : [];
+                        if (selectedIds.length === 0) return false;
+                        const firstSelected = companies.find(c => String(c.id) === selectedIds[0]);
+                        if (!firstSelected) return false;
+                        return item.country !== firstSelected.country;
                       }}
-                      placeholder="-- Select Module --"
-                      searchPlaceholder="Search Module..."
-                      displayKey="module_name"
-                      valueKey="id"
                     />
                   </View>
 
+                  {/* Module is auto-detected in the background */}
+
                   <TouchableOpacity
-                    style={[styles.submitBtn, { opacity: (selectedClient && selectedCountry && selectedModule) ? 1 : 0.5, marginTop: 16 }]}
-                    disabled={!selectedClient || !selectedCountry || !selectedModule}
+                    style={[styles.submitBtn, { opacity: selectedClient ? 1 : 0.5, marginTop: 16 }]}
+                    disabled={!selectedClient}
                     onPress={() => fetchFormConfiguration(selectedClient, selectedCountry, selectedModule)}
                   >
                     <Text style={styles.submitBtnText}>Next</Text>
@@ -1160,14 +1334,23 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
                 </Text>
                 <TouchableOpacity
                   style={{ marginTop: 24, paddingVertical: 10, paddingHorizontal: 20, backgroundColor: '#E2E8F0', borderRadius: 8 }}
-                  onPress={() => setWizardStep(1)}
+                  onPress={() => {
+                    if (companies.length === 1 && user && String(user.roleId) !== '1') {
+                      setIsFormOpen(false);
+                      setEditingRecord(null);
+                      setFormData({});
+                      setIsViewOnly(false);
+                    } else {
+                      setWizardStep(1);
+                    }
+                  }}
                 >
-                  <Text style={{ color: '#0F172A', fontWeight: '600' }}>Go Back</Text>
+                  <Text style={{ color: '#0F172A', fontWeight: '600' }}>{companies.length === 1 && user && String(user.roleId) !== '1' ? 'Close' : 'Go Back'}</Text>
                 </TouchableOpacity>
               </View>
             ) : (
               <>
-                <ScrollView style={styles.formScroll} contentContainerStyle={{ padding: 24, paddingBottom: 8 }}>
+                <ScrollView style={styles.formScroll} contentContainerStyle={{ padding: 24, paddingBottom: 20 }}>
                   {fieldsLayout.map((section, index) => (
                     <View key={section.id} style={[styles.sectionCard, { zIndex: fieldsLayout.length - index }]}>
                       <View style={styles.sectionHeader}>
@@ -1197,8 +1380,8 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
                               {/* Render subsections if any are visible */}
                               {hasSubsections && (
                                 <View style={styles.subsectionsContainer}>
-                                  {visibleSubsections.map(sub => (
-                                    <View key={sub.id} style={styles.subsectionCard}>
+                                  {visibleSubsections.map((sub, subIndex) => (
+                                    <View key={sub.id} style={[styles.subsectionCard, { zIndex: visibleSubsections.length - subIndex, position: 'relative' }]}>
                                       <Text style={styles.subsectionTitle}>{sub.name}</Text>
                                       <View style={styles.subsectionBody}>
                                         {sub.fields.map((sf, sfIndex) => (
@@ -1234,9 +1417,18 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
                     <>
                       <TouchableOpacity
                         style={{ paddingVertical: 12, paddingHorizontal: 20, backgroundColor: '#E2E8F0', borderRadius: 8 }}
-                        onPress={() => setWizardStep(1)}
+                        onPress={() => {
+                          if (companies.length === 1 && user && String(user.roleId) !== '1') {
+                            setIsFormOpen(false);
+                            setEditingRecord(null);
+                            setFormData({});
+                            setIsViewOnly(false);
+                          } else {
+                            setWizardStep(1);
+                          }
+                        }}
                       >
-                        <Text style={{ color: '#0F172A', fontWeight: '600' }}>Back</Text>
+                        <Text style={{ color: '#0F172A', fontWeight: '600' }}>{companies.length === 1 && user && String(user.roleId) !== '1' ? 'Cancel' : 'Back'}</Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
@@ -1352,7 +1544,7 @@ const styles = StyleSheet.create({
     color: '#1E293B',
     fontSize: 14,
     fontFamily: 'Inter_400Regular, Roboto, sans-serif',
-    outline: 'none',
+    outlineStyle: 'none', outlineWidth: 0,
     width: '100%',
     boxSizing: 'border-box'
   },

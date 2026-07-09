@@ -1,6 +1,29 @@
 const db = require('../config/db');
 const bcrypt = require('bcryptjs');
 
+// Helper: recalculate and update is_multi_country for a given client
+const recalculateMultiCountry = async (clientId) => {
+  try {
+    const result = await db.query(
+      `SELECT COUNT(DISTINCT country) AS country_count
+       FROM company
+       WHERE clientid = $1
+         AND (is_deleted = false OR is_deleted IS NULL)
+         AND country IS NOT NULL AND country <> ''`,
+      [clientId]
+    );
+    const count = parseInt(result.rows[0].country_count, 10);
+    const isMultiCountry = count > 1 ? 1 : 0;
+    await db.query(
+      'UPDATE client SET is_multi_country = $1 WHERE id = $2',
+      [isMultiCountry, clientId]
+    );
+    console.log(`[MultiCountry] client ${clientId} => is_multi_country = ${isMultiCountry}`);
+  } catch (err) {
+    console.error('[MultiCountry] Error recalculating:', err.message);
+  }
+};
+
 // @desc    Get all active clients
 // @route   GET /api/clients
 // @access  Public
@@ -182,29 +205,9 @@ exports.createClient = async (req, res) => {
 
         await db.query(userInsertQuery, userValues);
 
-        // Fetch superadmin SMTP config and send the welcome email
-        const smtpQuery = 'SELECT * FROM smtp_configuration WHERE is_deleted = false AND status = 1 LIMIT 1';
-        const smtpResult = await db.query(smtpQuery);
-
-        if (smtpResult.rows.length > 0) {
-          const smtp = smtpResult.rows[0];
-          const nodemailer = require('nodemailer');
-
-          const transporter = nodemailer.createTransport({
-            host: smtp.smtp_host,
-            port: parseInt(smtp.smtp_port, 10) || 587,
-            secure: smtp.security_protocol === 'SSL' || smtp.smtp_port === 465,
-            auth: {
-              user: smtp.smtp_usename,
-              pass: smtp.smtp_password
-            },
-            tls: {
-              rejectUnauthorized: false
-            }
-          });
-
-          const mailOptions = {
-            from: `"${smtp.from_name || 'Trakio Support'}" <${smtp.from_email || smtp.smtp_usename}>`,
+        const { sendEmail } = require('../config/mailer');
+        try {
+          await sendEmail({
             to: email.toLowerCase().trim(),
             subject: 'Welcome to Trakio - Your Client Account is Ready!',
             html: `
@@ -224,19 +227,15 @@ exports.createClient = async (req, res) => {
                 <p style="margin-top: 30px;">Best regards,<br><strong>Trakio Support Team</strong></p>
               </div>
             `
-          };
-
-          try {
-            await transporter.sendMail(mailOptions);
-            console.log('Successfully sent welcome email to client:', email);
-          } catch (mailErr) {
-            console.error('Failed to send welcome email:', mailErr);
-          }
-        } else {
-          console.warn('No active SMTP configurations found. Welcome email was not sent.');
+          });
+        } catch (mailErr) {
+          console.error('Failed to send welcome email:', mailErr);
         }
       }
     }
+
+    // Auto-calculate is_multi_country based on companies linked to this client
+    await recalculateMultiCountry(newClient.id);
 
     // Convert BigInt columns to String/Number so JSON serialization works without error
     const formattedClient = { ...newClient };
@@ -338,6 +337,9 @@ exports.updateClient = async (req, res) => {
       enabled_module ? enabled_module.trim() : null,
       id
     ]);
+
+    // Auto-calculate is_multi_country based on companies linked to this client
+    await recalculateMultiCountry(id);
 
     // Format BigInt column fields for correct JSON representation
     const formattedClient = { ...result.rows[0] };

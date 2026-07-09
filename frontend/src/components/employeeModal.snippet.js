@@ -118,7 +118,7 @@
                   </Picker>
                 </View>
 
-                {!editingEmployee && (
+                {true && (
                   <View style={{ backgroundColor: '#F8FAFC', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -137,7 +137,7 @@
                     </Text>
                     {empAutoGeneratePassword && (
                       <Text style={{ fontSize: 12, color: COLORS.primary, marginTop: 8, fontStyle: 'italic' }}>
-                        Temporary Password will be displayed upon creation.
+                        Temporary Password will be displayed upon saving.
                       </Text>
                     )}
                   </View>

@@ -22,6 +22,18 @@ import FieldPermissionsTab from './FieldPermissionsTab';
 import VehicleInsuranceTab from './VehicleInsuranceTab';
 import VehicleDetailsTab from './VehicleDetailsTab';
 import VehiclePurchaseTab from './VehiclePurchaseTab';
+import PremisesDetailsTab from './PremisesDetailsTab';
+import AssetDetailsTab from './AssetDetailsTab';
+import AssetCategoryTab from './AssetCategoryTab';
+import AssetBrandTab from './AssetBrandTab';
+import AssetTab from './AssetTab';
+import InventoryTab from './InventoryTab';
+import AssetAssignmentTab from './AssetAssignmentTab';
+import SupplierDetailsTab from './SupplierDetailsTab';
+import PurchaseDetailsTab from './PurchaseDetailsTab';
+import PaymentMethodTab from './PaymentMethodTab';
+import UOMTab from './UOMTab';
+import VATTab from './VATTab';
 
 export default function DashboardScreen({ user, onSignOut }) {
   const { width, height } = useWindowDimensions();
@@ -279,11 +291,14 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [empStatus, setEmpStatus] = useState(1);
   const [empDepartmentId, setEmpDepartmentId] = useState('');
   const [empAssociatedCompanies, setEmpAssociatedCompanies] = useState([]);
+  const [empCompanyDropdownOpen, setEmpCompanyDropdownOpen] = useState(false);
   const [empAutoGeneratePassword, setEmpAutoGeneratePassword] = useState(false);
   const [employeesSearch, setEmployeesSearch] = useState('');
   const [employeesPage, setEmployeesPage] = useState(1);
   const [employeeFormSaving, setEmployeeFormSaving] = useState(false);
   const [employeeFormError, setEmployeeFormError] = useState('');
+  const [empRoleError, setEmpRoleError] = useState('');
+  const [empCompanyError, setEmpCompanyError] = useState('');
 
 
   // Client state variables
@@ -499,6 +514,9 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [pwdNew, setPwdNew] = useState('');
   const [pwdConfirm, setPwdConfirm] = useState('');
   const [pwdLoading, setPwdLoading] = useState(false);
+  const [showPwdCurrent, setShowPwdCurrent] = useState(false);
+  const [showPwdNew, setShowPwdNew] = useState(false);
+  const [showPwdConfirm, setShowPwdConfirm] = useState(false);
 
   const handleChangePassword = async () => {
     if (!pwdCurrent || !pwdNew || !pwdConfirm) {
@@ -534,6 +552,9 @@ export default function DashboardScreen({ user, onSignOut }) {
         setPwdCurrent('');
         setPwdNew('');
         setPwdConfirm('');
+        setShowPwdCurrent(false);
+        setShowPwdNew(false);
+        setShowPwdConfirm(false);
       } else {
         showToast(data.message || 'Failed to update password.', 'error');
       }
@@ -542,6 +563,59 @@ export default function DashboardScreen({ user, onSignOut }) {
       showToast('Could not reach the server.', 'error');
     } finally {
       setPwdLoading(false);
+    }
+  };
+
+  // Admin password reset for other employees
+  const [adminPasswordResetEmployee, setAdminPasswordResetEmployee] = useState(null);
+  const [adminNewPassword, setAdminNewPassword] = useState('');
+  const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
+  const [adminPwdLoading, setAdminPwdLoading] = useState(false);
+  const [showAdminNewPassword, setShowAdminNewPassword] = useState(false);
+  const [showAdminConfirmPassword, setShowAdminConfirmPassword] = useState(false);
+
+  const handleAdminChangePassword = async () => {
+    if (!adminNewPassword || !adminConfirmPassword) {
+      showToast('Please fill all password fields.', 'warning');
+      return;
+    }
+    if (adminNewPassword !== adminConfirmPassword) {
+      showToast('Passwords do not match.', 'error');
+      return;
+    }
+    if (adminNewPassword.length < 6) {
+      showToast('Password must be at least 6 characters.', 'warning');
+      return;
+    }
+
+    setAdminPwdLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/auth/admin-change-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email: adminPasswordResetEmployee.email,
+          newPassword: adminNewPassword
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`Password for ${adminPasswordResetEmployee.full_name} updated successfully!`, 'success');
+        setAdminPasswordResetEmployee(null);
+        setAdminNewPassword('');
+        setAdminConfirmPassword('');
+        setShowAdminNewPassword(false);
+        setShowAdminConfirmPassword(false);
+      } else {
+        showToast(data.message || 'Failed to update password.', 'error');
+      }
+    } catch (err) {
+      console.error('Admin password change error:', err);
+      showToast('An error occurred during password update.', 'error');
+    } finally {
+      setAdminPwdLoading(false);
     }
   };
 
@@ -730,27 +804,29 @@ export default function DashboardScreen({ user, onSignOut }) {
   };
 
   const handleSaveEmployee = () => {
+    // Reset all field errors
+    setEmpRoleError('');
+    setEmpCompanyError('');
+    setEmployeeFormError('');
+
+    let hasError = false;
     if (!empFullName.trim() || !empEmail.trim()) {
       setEmployeeFormError('Full Name and Email are required.');
-      return;
+      hasError = true;
     }
-    setEmployeeFormError('');
+    if (!empRoleId) {
+      setEmpRoleError('Please select a role.');
+      hasError = true;
+    }
+    if (!empAssociatedCompanies || empAssociatedCompanies.length === 0) {
+      setEmpCompanyError('Please select at least one company.');
+      hasError = true;
+    }
+    if (hasError) return;
+
     setEmployeeFormSaving(true);
-    let finalCompanies = empAssociatedCompanies;
-    if (user) {
-      if (user.companyid) {
-        finalCompanies = [user.companyid];
-      } else if (user.clientid) {
-        // Fallback: Try to find by email first (if session is old)
-        const emailPrefix = user.email ? user.email.split('@')[0].toLowerCase() : null;
-        const matchedByEmail = companies.find(c => c.contact_email && emailPrefix && c.contact_email.toLowerCase().startsWith(emailPrefix));
-        if (matchedByEmail) {
-          finalCompanies = [matchedByEmail.id];
-        } else {
-          finalCompanies = companies.filter(c => Number(c.clientid) === Number(user.clientid)).map(c => c.id);
-        }
-      }
-    }
+    // Use exactly what was selected in the form — no overrides
+    const finalCompanies = empAssociatedCompanies;
 
     const payload = {
       full_name: empFullName.trim(),
@@ -761,7 +837,7 @@ export default function DashboardScreen({ user, onSignOut }) {
       clientid: user && user.clientid ? user.clientid : null,
       department_id: empDepartmentId,
       companies: finalCompanies,
-      auto_generate_password: empAutoGeneratePassword
+      auto_generate_password: editingEmployee ? empAutoGeneratePassword : true
     };
 
     const method = editingEmployee ? 'PUT' : 'POST';
@@ -803,9 +879,11 @@ export default function DashboardScreen({ user, onSignOut }) {
     setEmpRoleId(emp.roleid || '');
     setEmpStatus(emp.status !== undefined ? emp.status : 1);
     setEmpDepartmentId(emp.department_id || '');
+    // Always load the employee's saved companies when editing
     setEmpAssociatedCompanies(emp.companies ? emp.companies.map(c => c.id) : []);
     setEmpAutoGeneratePassword(false);
     setEmployeeFormError('');
+    setEmpCompanyDropdownOpen(false);
     setIsEmployeeModalOpen(true);
   };
 
@@ -1024,8 +1102,35 @@ export default function DashboardScreen({ user, onSignOut }) {
     setCompanyShortname(item.company_shortname || '');
     setIndustry(item.industry || '');
     setAddress(item.address || '');
-    setCountry(item.country || '');
-    setStateName(item.state || '');
+    
+    // Resolve country to ID if it's stored as name
+    let resolvedCountryId = '';
+    if (item.country) {
+      if (/^\d+$/.test(String(item.country))) {
+        resolvedCountryId = String(item.country);
+      } else {
+        const found = countries.find(
+          c => c.name && c.name.trim().toLowerCase() === String(item.country).trim().toLowerCase()
+        );
+        if (found) resolvedCountryId = String(found.id);
+      }
+    }
+    setCountry(resolvedCountryId);
+
+    // Resolve state to ID if it's stored as name
+    let resolvedStateId = '';
+    if (item.state) {
+      if (/^\d+$/.test(String(item.state))) {
+        resolvedStateId = String(item.state);
+      } else {
+        const found = states.find(
+          s => s.name && s.name.trim().toLowerCase() === String(item.state).trim().toLowerCase()
+        );
+        if (found) resolvedStateId = String(found.id);
+      }
+    }
+    setStateName(resolvedStateId);
+
     setCity(item.city || '');
     setClientEmail(item.email || '');
     setTrnNo(item.trn_no ? item.trn_no.toString() : '');
@@ -1784,6 +1889,17 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (r.includes('vehicle') && r.includes('insurance') || n.includes('vehicle') && n.includes('insurance')) return 'vehicle_insurance';
     if (r.includes('vehicle') && r.includes('detail') || n.includes('vehicle') && n.includes('detail')) return 'vehicle_details';
     if (r.includes('vehicle') && r.includes('purchase') || n.includes('vehicle') && n.includes('purchase') || r.includes('vehile') && r.includes('purchase') || n.includes('vehile') && n.includes('purchase')) return 'vehicle_purchase';
+    if (r.includes('primise') && r.includes('detail') || n.includes('primise') && n.includes('detail') || r.includes('premise') && r.includes('detail') || n.includes('premise') && n.includes('detail')) return 'premises_details';
+    if (r.includes('asset') && r.includes('detail') || n.includes('asset') && n.includes('detail')) return 'asset_details';
+    if (r.includes('asset') && r.includes('category') || n.includes('asset') && n.includes('category')) return 'asset_category';
+    if (r.includes('asset') && r.includes('brand') || n.includes('asset') && n.includes('brand')) return 'asset_brand';
+    if (r.includes('asset') && r.includes('assignment') || n.includes('asset') && n.includes('assignment')) return 'asset_assignment';
+    if (r === '/asset' || r === '/assets' || n === 'asset' || n === 'assets' || n === 'asset inventory' || n === 'asset stock report' || n === 'asset inventory report') return 'asset_inventory';
+    if (r.includes('supplier') || n.includes('supplier')) return 'supplier_details';
+    if ((r.includes('payment') && r.includes('method')) || (n.includes('payment') && n.includes('method'))) return 'payment_method';
+    if ((r.includes('purchase') && r.includes('detail')) || (n.includes('purchase') && n.includes('detail'))) return 'purchase_details';
+    if (r.includes('uom') || n.includes('uom')) return 'uom';
+    if (r.includes('vat') || n.includes('vat')) return 'vat';
     return null; // unknown route — don't switch tab
   };
 
@@ -1806,6 +1922,11 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (n.includes('custom') && n.includes('field') || r.includes('custom') && r.includes('field')) return 'list-outline';
     if (n.includes('field') && n.includes('permission') || r.includes('field') && r.includes('permission')) return 'lock-closed-outline';
     if (n.includes('feild') && n.includes('permision') || r.includes('feild') && r.includes('permision')) return 'lock-closed-outline';
+    if (n.includes('primise') || n.includes('premise') || r.includes('primise') || r.includes('premise')) return 'business-outline';
+    if (n.includes('report') || r.includes('report')) return 'document-text-outline';
+    if (n.includes('asset') || r.includes('asset')) return 'wallet-outline';
+    if (n.includes('uom') || r.includes('uom')) return 'options-outline';
+    if (n.includes('vat') || r.includes('vat')) return 'calculator-outline';
     return 'document-text-outline'; // fallback standard icon
   };
 
@@ -1831,23 +1952,32 @@ export default function DashboardScreen({ user, onSignOut }) {
     { id: 'permissions', label: 'Permissions', icon: 'shield-checkmark-outline' },
   ];
 
+  // Helper to check view permissions for a given module ID
+  const hasViewPermission = (moduleId) => {
+    if (!user) return false;
+    // Rely on Role-based userPermissions
+    const perm = userPermissions.find(p => p.module_id === moduleId);
+    return perm ? perm.can_view : false;
+  };
+
+  // Helper to check if user has access to a specific tab
+  const hasTabPermission = (tabId) => {
+    if (!user) return false;
+    if (tabId === 'dashboard' || tabId === 'profile' || tabId === 'shipments' || tabId === 'analytics') {
+      return true;
+    }
+    const tabModules = modules.filter(m => getTabIdByRoute(m.module_name, m.route) === tabId);
+    if (tabModules.length === 0) return true;
+    return tabModules.some(m => hasViewPermission(m.id));
+  };
+
   // Render Sidebar Menu Links
   const renderSidebarContent = () => {
-    // Helper to check view permissions for a given module ID
-    const hasViewPermission = (moduleId) => {
-      if (!user) return false;
-      // if (String(user.roleId) === '1') return true; // Superadmin bypass removed to enforce role permissions grid
-
-      // Rely on Role-based userPermissions
-      const perm = userPermissions.find(p => p.module_id === moduleId);
-      return perm ? perm.can_view : false;
-    };
-
     const isSidebarLoading = userPermissionsLoading;
 
     // Filter modules array based on view permission, showing parent if any child is allowed.
     const visibleModules = isSidebarLoading
-      ? modules
+      ? []
       : modules.filter(m => {
         if (hasViewPermission(m.id)) return true;
         // If it's a parent module, show it if any of its children are visible
@@ -1861,7 +1991,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     const parentModules = effectiveModules.filter(m => m.parent_id === null || m.parent_id === undefined || !activeModuleIds.has(m.parent_id));
 
     return (
-      <View style={[styles.sidebarInner, isSidebarCollapsed && { paddingHorizontal: 6 }]}>
+      <ScrollView contentContainerStyle={[styles.sidebarInner, isSidebarCollapsed && { paddingHorizontal: 6 }]} showsVerticalScrollIndicator={false}>
         <View style={{ width: '100%' }}>
           {/* Brand Header */}
           <View style={[styles.sidebarLogoContainer, isSidebarCollapsed && { paddingHorizontal: 0, justifyContent: 'center' }]}>
@@ -1984,7 +2114,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                 }
 
                 // Expanded mode parent and children list
-                const isExpanded = expandedParentIds[parent.id] !== false;
+                const isExpanded = expandedParentIds[parent.id] === true;
 
                 return (
                   <View key={parent.id} style={styles.sidebarMenuSection}>
@@ -1998,7 +2128,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                         if (hasChildren) {
                           setExpandedParentIds(prev => ({
                             ...prev,
-                            [parent.id]: prev[parent.id] === false ? true : false
+                            [parent.id]: !prev[parent.id]
                           }));
                         }
                         const targetTab = getTabIdByRoute(parent.module_name, parent.route);
@@ -2191,7 +2321,7 @@ export default function DashboardScreen({ user, onSignOut }) {
             </View>
           )}
         </View>
-      </View>
+      </ScrollView>
     );
   };
 
@@ -3107,7 +3237,8 @@ export default function DashboardScreen({ user, onSignOut }) {
         companyMatch = e.companies && e.companies.some(c => Number(c.id) === Number(user.companyid));
       }
 
-      const matchSearch = e.full_name && e.full_name.toLowerCase().includes(employeesSearch.toLowerCase());
+      const matchSearch = (e.full_name && e.full_name.toLowerCase().includes(employeesSearch.toLowerCase())) ||
+        (e.email && e.email.toLowerCase().includes(employeesSearch.toLowerCase()));
       return matchSearch && companyMatch;
     });
     const displayPage = Math.min(employeesPage, Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE)));
@@ -3137,7 +3268,7 @@ export default function DashboardScreen({ user, onSignOut }) {
               setEmpStatus(1);
               setEmpDepartmentId('');
               setEmpAssociatedCompanies([]);
-              setEmpAutoGeneratePassword(false);
+              setEmpAutoGeneratePassword(true);
               setEmployeeFormError('');
               setIsEmployeeModalOpen(true);
             }}
@@ -3164,9 +3295,9 @@ export default function DashboardScreen({ user, onSignOut }) {
                     <Text style={[styles.thCell, { flex: 1.5 }]}>ROLE</Text>
                     <Text style={[styles.thCell, { flex: 1.5 }]}>DEPARTMENT</Text>
                     <Text style={[styles.thCell, { flex: 1, textAlign: 'center' }]}>STATUS</Text>
-                    <Text style={[styles.thCell, { flex: 0.8, textAlign: 'center' }]}>ACTIONS</Text>
+                    <Text style={[styles.thCell, { flex: 1.2, textAlign: 'center' }]}>ACTIONS</Text>
                   </View>
-
+ 
                   {paginated.map((item) => (
                     <View key={"employee-" + item.id} style={styles.modulesTableRow}>
                       <Text style={[styles.tdCell, { flex: 2, fontWeight: '500', color: COLORS.textPrimary }]} numberOfLines={1}>
@@ -3192,9 +3323,12 @@ export default function DashboardScreen({ user, onSignOut }) {
                           </Text>
                         </View>
                       </View>
-                      <View style={[styles.tdCell, { flex: 0.8, flexDirection: 'row', justifyContent: 'center', gap: 12 }]}>
+                      <View style={[styles.tdCell, { flex: 1.2, flexDirection: 'row', justifyContent: 'center', gap: 12 }]}>
                         <TouchableOpacity onPress={() => startEditEmployee(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                           <Ionicons name="pencil" size={18} color={COLORS.primary} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setAdminPasswordResetEmployee(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                          <Ionicons name="key-outline" size={18} color="#f59e0b" />
                         </TouchableOpacity>
                         <TouchableOpacity onPress={() => handleDeleteEmployee(item.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                           <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
@@ -3475,10 +3609,15 @@ export default function DashboardScreen({ user, onSignOut }) {
                         </View>
                         <View style={[styles.tdCell, { flex: 1.8 }]}>
                           <Text style={{ fontSize: 12, color: COLORS.textPrimary }}>
-                            {[item.city, item.state].filter(Boolean).join(', ')}
+                            {[
+                              item.city,
+                              states.find(s => String(s.id) === String(item.state))?.name || item.state
+                            ].filter(Boolean).join(', ')}
                           </Text>
                           {item.country ? (
-                            <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>{item.country}</Text>
+                            <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+                              {countries.find(c => String(c.id) === String(item.country))?.name || item.country}
+                            </Text>
                           ) : null}
                         </View>
                         <View style={[styles.tdCell, { flex: 1.2 }]}>
@@ -3862,7 +4001,7 @@ export default function DashboardScreen({ user, onSignOut }) {
               fontSize: 14,
               fontFamily: 'Roboto',
               fontWeight: '600',
-              outline: 'none',
+              outlineStyle: 'none', outlineWidth: 0,
               width: '100%',
               cursor: 'pointer',
             }}
@@ -4275,6 +4414,25 @@ export default function DashboardScreen({ user, onSignOut }) {
   };
 
   const renderTabContent = () => {
+    // Permission guard: check that the user has explicit view permissions for this module
+    if (!userPermissionsLoading && !hasTabPermission(activeTab)) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <MaterialCommunityIcons name="shield-lock-outline" size={64} color="#EF4444" />
+          <Text style={{ fontSize: 20, fontWeight: '700', color: COLORS.textPrimary, marginTop: 16 }}>Access Denied</Text>
+          <Text style={{ color: COLORS.textSecondary, marginTop: 8, textAlign: 'center', maxWidth: 400 }}>
+            You do not have permission to view this section. Please contact your system administrator.
+          </Text>
+          <TouchableOpacity
+            style={{ marginTop: 24, backgroundColor: COLORS.primary, paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8 }}
+            onPress={() => setActiveTab('dashboard')}
+          >
+            <Text style={{ color: COLORS.white, fontWeight: '700' }}>Return to Dashboard</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
     switch (activeTab) {
       case 'dashboard':
         return renderDashboardTab();
@@ -4306,6 +4464,28 @@ export default function DashboardScreen({ user, onSignOut }) {
         return <VehicleDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'vehicle_purchase':
         return <VehiclePurchaseTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
+      case 'premises_details':
+        return <PremisesDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
+      case 'asset_details':
+        return <AssetDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
+      case 'asset_category':
+        return <AssetCategoryTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
+      case 'asset_brand':
+        return <AssetBrandTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
+      case 'asset_inventory':
+        return <InventoryTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
+      case 'asset_assignment':
+        return <AssetAssignmentTab user={user} showToast={showToast} />;
+      case 'supplier_details':
+        return <SupplierDetailsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
+      case 'purchase_details':
+        return <PurchaseDetailsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
+      case 'payment_method':
+        return <PaymentMethodTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
+      case 'uom':
+        return <UOMTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
+      case 'vat':
+        return <VATTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'state':
         return renderStateTab();
       case 'employees':
@@ -4367,7 +4547,7 @@ export default function DashboardScreen({ user, onSignOut }) {
             size={20}
             color="#FFFFFF"
           />
-          <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13, fontFamily: 'Roboto' }}>
+          <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 14, fontFamily: 'System, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}>
             {toast.message}
           </Text>
           <TouchableOpacity onPress={() => setToast(prev => ({ ...prev, visible: false }))}>
@@ -4381,9 +4561,25 @@ export default function DashboardScreen({ user, onSignOut }) {
         visible={changePasswordVisible}
         animationType="fade"
         transparent={true}
-        onRequestClose={() => setChangePasswordVisible(false)}
+        onRequestClose={() => {
+          setChangePasswordVisible(false);
+          setPwdCurrent('');
+          setPwdNew('');
+          setPwdConfirm('');
+          setShowPwdCurrent(false);
+          setShowPwdNew(false);
+          setShowPwdConfirm(false);
+        }}
       >
-        <TouchableOpacity style={dynamicModalOverlayStyle} activeOpacity={1} onPress={() => setChangePasswordVisible(false)}>
+        <TouchableOpacity style={dynamicModalOverlayStyle} activeOpacity={1} onPress={() => {
+          setChangePasswordVisible(false);
+          setPwdCurrent('');
+          setPwdNew('');
+          setPwdConfirm('');
+          setShowPwdCurrent(false);
+          setShowPwdNew(false);
+          setShowPwdConfirm(false);
+        }}>
           <TouchableOpacity
             activeOpacity={1}
             onPress={() => { }}
@@ -4400,11 +4596,19 @@ export default function DashboardScreen({ user, onSignOut }) {
                   <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>Secure your account</Text>
                 </View>
               </View>
-              <TouchableOpacity onPress={() => setChangePasswordVisible(false)} activeOpacity={0.7} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}>
+              <TouchableOpacity onPress={() => {
+                setChangePasswordVisible(false);
+                setPwdCurrent('');
+                setPwdNew('');
+                setPwdConfirm('');
+                setShowPwdCurrent(false);
+                setShowPwdNew(false);
+                setShowPwdConfirm(false);
+              }} activeOpacity={0.7} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}>
                 <Ionicons name="close" size={18} color="#64748B" />
               </TouchableOpacity>
             </View>
-
+ 
             {/* Body */}
             <View style={{ padding: 24, gap: 20 }}>
               <View>
@@ -4417,11 +4621,22 @@ export default function DashboardScreen({ user, onSignOut }) {
                     placeholderTextColor="#94A3B8"
                     value={pwdCurrent}
                     onChangeText={setPwdCurrent}
-                    secureTextEntry
+                    secureTextEntry={!showPwdCurrent}
+                    autoComplete="current-password"
                   />
+                  <TouchableOpacity
+                    onPress={() => setShowPwdCurrent(!showPwdCurrent)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons
+                      name={showPwdCurrent ? 'eye-outline' : 'eye-off-outline'}
+                      size={18}
+                      color="#94A3B8"
+                    />
+                  </TouchableOpacity>
                 </View>
               </View>
-
+ 
               <View>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B', marginBottom: 8 }}>New Password</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, backgroundColor: '#F8FAFC', paddingHorizontal: 14 }}>
@@ -4432,11 +4647,22 @@ export default function DashboardScreen({ user, onSignOut }) {
                     placeholderTextColor="#94A3B8"
                     value={pwdNew}
                     onChangeText={setPwdNew}
-                    secureTextEntry
+                    secureTextEntry={!showPwdNew}
+                    autoComplete="new-password"
                   />
+                  <TouchableOpacity
+                    onPress={() => setShowPwdNew(!showPwdNew)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons
+                      name={showPwdNew ? 'eye-outline' : 'eye-off-outline'}
+                      size={18}
+                      color="#94A3B8"
+                    />
+                  </TouchableOpacity>
                 </View>
               </View>
-
+ 
               <View>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B', marginBottom: 8 }}>Confirm New Password</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, backgroundColor: '#F8FAFC', paddingHorizontal: 14 }}>
@@ -4447,17 +4673,36 @@ export default function DashboardScreen({ user, onSignOut }) {
                     placeholderTextColor="#94A3B8"
                     value={pwdConfirm}
                     onChangeText={setPwdConfirm}
-                    secureTextEntry
+                    secureTextEntry={!showPwdConfirm}
+                    autoComplete="new-password"
                   />
+                  <TouchableOpacity
+                    onPress={() => setShowPwdConfirm(!showPwdConfirm)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons
+                      name={showPwdConfirm ? 'eye-outline' : 'eye-off-outline'}
+                      size={18}
+                      color="#94A3B8"
+                    />
+                  </TouchableOpacity>
                 </View>
               </View>
             </View>
-
+ 
             {/* Footer */}
             <View style={{ paddingHorizontal: 24, paddingVertical: 20, borderTopWidth: 1, borderTopColor: '#F1F5F9', backgroundColor: '#F8FAFC', flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
               <TouchableOpacity
                 style={{ paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0' }}
-                onPress={() => setChangePasswordVisible(false)}
+                onPress={() => {
+                  setChangePasswordVisible(false);
+                  setPwdCurrent('');
+                  setPwdNew('');
+                  setPwdConfirm('');
+                  setShowPwdCurrent(false);
+                  setShowPwdNew(false);
+                  setShowPwdConfirm(false);
+                }}
               >
                 <Text style={{ color: '#475569', fontWeight: '700', fontSize: 14 }}>Cancel</Text>
               </TouchableOpacity>
@@ -4467,6 +4712,143 @@ export default function DashboardScreen({ user, onSignOut }) {
                 disabled={pwdLoading}
               >
                 {pwdLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Save Password</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ADMIN CHANGE PASSWORD MODAL */}
+      <Modal
+        visible={!!adminPasswordResetEmployee}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => {
+          setAdminPasswordResetEmployee(null);
+          setAdminNewPassword('');
+          setAdminConfirmPassword('');
+          setShowAdminNewPassword(false);
+          setShowAdminConfirmPassword(false);
+        }}
+      >
+        <TouchableOpacity style={dynamicModalOverlayStyle} activeOpacity={1} onPress={() => {
+          setAdminPasswordResetEmployee(null);
+          setAdminNewPassword('');
+          setAdminConfirmPassword('');
+          setShowAdminNewPassword(false);
+          setShowAdminConfirmPassword(false);
+        }}>
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={() => { }}
+            style={[styles.modalCard, { width: width > 768 ? 440 : '95%', maxWidth: 440, padding: 0, overflow: 'hidden' }]}
+          >
+            {/* Header */}
+            <View style={{ backgroundColor: '#F8FAFC', paddingHorizontal: 24, paddingVertical: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: '#FEF3C7', justifyContent: 'center', alignItems: 'center' }}>
+                  <Ionicons name="key" size={20} color="#D97706" />
+                </View>
+                <View>
+                  <Text style={{ fontSize: 16, fontWeight: '800', color: '#0F172A' }}>Reset Password</Text>
+                  <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }} numberOfLines={1}>
+                    {adminPasswordResetEmployee?.full_name ? `For: ${adminPasswordResetEmployee.full_name}` : 'Change employee password'}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => {
+                setAdminPasswordResetEmployee(null);
+                setAdminNewPassword('');
+                setAdminConfirmPassword('');
+                setShowAdminNewPassword(false);
+                setShowAdminConfirmPassword(false);
+              }} activeOpacity={0.7} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}>
+                <Ionicons name="close" size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+ 
+            {/* Body */}
+            <View style={{ padding: 24, gap: 20 }}>
+              <View>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B', marginBottom: 8 }}>New Password</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, backgroundColor: '#F8FAFC', paddingHorizontal: 14 }}>
+                  <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" />
+                  <TextInput
+                    style={{ flex: 1, paddingVertical: 14, paddingHorizontal: 10, fontSize: 14, color: '#0F172A', outlineStyle: 'none' }}
+                    placeholder="Enter new password (min 6 chars)"
+                    placeholderTextColor="#94A3B8"
+                    value={adminNewPassword}
+                    onChangeText={setAdminNewPassword}
+                    secureTextEntry={!showAdminNewPassword}
+                    autoComplete="new-password"
+                  />
+                  <TouchableOpacity
+                    onPress={() => setShowAdminNewPassword(!showAdminNewPassword)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons
+                      name={showAdminNewPassword ? 'eye-outline' : 'eye-off-outline'}
+                      size={18}
+                      color="#94A3B8"
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+ 
+              <View>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B', marginBottom: 8 }}>Confirm New Password</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, backgroundColor: '#F8FAFC', paddingHorizontal: 14 }}>
+                  <Ionicons name="shield-checkmark-outline" size={18} color="#94A3B8" />
+                  <TextInput
+                    style={{ flex: 1, paddingVertical: 14, paddingHorizontal: 10, fontSize: 14, color: '#0F172A', outlineStyle: 'none' }}
+                    placeholder="Re-enter new password"
+                    placeholderTextColor="#94A3B8"
+                    value={adminConfirmPassword}
+                    onChangeText={setAdminConfirmPassword}
+                    secureTextEntry={!showAdminConfirmPassword}
+                    autoComplete="new-password"
+                  />
+                  <TouchableOpacity
+                    onPress={() => setShowAdminConfirmPassword(!showAdminConfirmPassword)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons
+                      name={showAdminConfirmPassword ? 'eye-outline' : 'eye-off-outline'}
+                      size={18}
+                      color="#94A3B8"
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+ 
+            {/* Footer */}
+            <View style={{ paddingHorizontal: 24, paddingVertical: 20, borderTopWidth: 1, borderTopColor: '#F1F5F9', backgroundColor: '#F8FAFC', flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
+              <TouchableOpacity
+                style={{ paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0' }}
+                onPress={() => {
+                  setAdminPasswordResetEmployee(null);
+                  setAdminNewPassword('');
+                  setAdminConfirmPassword('');
+                  setShowAdminNewPassword(false);
+                  setShowAdminConfirmPassword(false);
+                }}
+              >
+                <Text style={{ color: '#475569', fontWeight: '700', fontSize: 14 }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[{ paddingVertical: 12, paddingHorizontal: 24, borderRadius: 10, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', gap: 8 }, adminPwdLoading && { opacity: 0.7 }]}
+                onPress={handleAdminChangePassword}
+                disabled={adminPwdLoading}
+              >
+                {adminPwdLoading ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <>
@@ -4919,7 +5301,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                       color: '#1E293B',
                       fontSize: 14,
                       fontFamily: 'Roboto',
-                      outline: 'none',
+                      outlineStyle: 'none', outlineWidth: 0,
                       width: '100%',
                     }}
                   >
@@ -5298,7 +5680,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                             color: '#1E293B',
                             fontSize: 14,
                             fontFamily: 'Roboto',
-                            outline: 'none',
+                            outlineStyle: 'none', outlineWidth: 0,
                             width: '100%',
                           }}
                         >
@@ -5306,7 +5688,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                           {countries
                             .filter(c => c.is_deleted !== 1)
                             .map(c => (
-                              <option key={c.id} value={c.name}>
+                              <option key={c.id} value={c.id}>
                                 {c.name}
                               </option>
                             ))}
@@ -5328,7 +5710,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                             color: !country ? '#94A3B8' : '#1E293B',
                             fontSize: 14,
                             fontFamily: 'Roboto',
-                            outline: 'none',
+                            outlineStyle: 'none', outlineWidth: 0,
                             width: '100%',
                           }}
                         >
@@ -5338,14 +5720,9 @@ export default function DashboardScreen({ user, onSignOut }) {
                             <>
                               <option value="">-- Select State --</option>
                               {states
-                                .filter(s => {
-                                  const selectedCountryObj = countries.find(
-                                    c => c.name && c.name.trim().toLowerCase() === country.trim().toLowerCase()
-                                  );
-                                  return selectedCountryObj && Number(s.country_id) === Number(selectedCountryObj.id);
-                                })
+                                .filter(s => Number(s.country_id) === Number(country) && s.is_deleted !== 1)
                                 .map(s => (
-                                  <option key={s.id} value={s.name}>
+                                  <option key={s.id} value={s.id}>
                                     {s.name}
                                   </option>
                                 ))}
@@ -6596,7 +6973,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                                 style={{
                                   height: 44, borderColor: '#CBD5E1', borderWidth: 1, borderRadius: 8,
                                   paddingHorizontal: 14, backgroundColor: '#FAFAFA', color: '#1E293B',
-                                  fontSize: 14, fontFamily: 'Inter_400Regular, Roboto, sans-serif', outline: 'none', width: '100%',
+                                  fontSize: 14, fontFamily: 'Inter_400Regular, Roboto, sans-serif', outlineStyle: 'none', outlineWidth: 0, width: '100%',
                                   boxSizing: 'border-box'
                                 }}
                               />
@@ -6616,7 +6993,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                                 style={{
                                   height: 44, borderColor: '#CBD5E1', borderWidth: 1, borderRadius: 8,
                                   paddingHorizontal: 14, backgroundColor: '#FAFAFA', color: '#1E293B',
-                                  fontSize: 14, fontFamily: 'Inter_400Regular, Roboto, sans-serif', outline: 'none', width: '100%',
+                                  fontSize: 14, fontFamily: 'Inter_400Regular, Roboto, sans-serif', outlineStyle: 'none', outlineWidth: 0, width: '100%',
                                   boxSizing: 'border-box'
                                 }}
                               />
@@ -6640,7 +7017,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                                 setCompanyCountry(e.target.value);
                                 setCompanyEmirate('');
                               }}
-                              style={{ height: 44, borderColor: '#CBD5E1', borderWidth: 1, borderRadius: 8, paddingHorizontal: 14, backgroundColor: '#FAFAFA', color: '#1E293B', fontSize: 14, fontFamily: 'Inter_400Regular, Roboto, sans-serif', outline: 'none', width: '100%', boxSizing: 'border-box', marginBottom: 24 }}
+                              style={{ height: 44, borderColor: '#CBD5E1', borderWidth: 1, borderRadius: 8, paddingHorizontal: 14, backgroundColor: '#FAFAFA', color: '#1E293B', fontSize: 14, fontFamily: 'Inter_400Regular, Roboto, sans-serif', outlineStyle: 'none', outlineWidth: 0, width: '100%', boxSizing: 'border-box', marginBottom: 24 }}
                             >
                               <option value="">-- Select Country --</option>
                               {countries.filter(c => c.is_deleted !== 1).map(c => (
@@ -6655,7 +7032,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                               value={companyEmirate}
                               onChange={(e) => setCompanyEmirate(e.target.value)}
                               disabled={!companyCountry}
-                              style={{ height: 44, borderColor: '#CBD5E1', borderWidth: 1, borderRadius: 8, paddingHorizontal: 14, backgroundColor: !companyCountry ? '#F1F5F9' : '#FAFAFA', color: !companyCountry ? '#94A3B8' : '#1E293B', fontSize: 14, fontFamily: 'Inter_400Regular, Roboto, sans-serif', outline: 'none', width: '100%', boxSizing: 'border-box', marginBottom: 24 }}
+                              style={{ height: 44, borderColor: '#CBD5E1', borderWidth: 1, borderRadius: 8, paddingHorizontal: 14, backgroundColor: !companyCountry ? '#F1F5F9' : '#FAFAFA', color: !companyCountry ? '#94A3B8' : '#1E293B', fontSize: 14, fontFamily: 'Inter_400Regular, Roboto, sans-serif', outlineStyle: 'none', outlineWidth: 0, width: '100%', boxSizing: 'border-box', marginBottom: 24 }}
                             >
                               {!companyCountry ? (
                                 <option value="">-- Select Country First --</option>
@@ -6741,7 +7118,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                                 style={{
                                   height: 44, borderColor: '#CBD5E1', borderWidth: 1, borderRadius: 8,
                                   paddingHorizontal: 14, backgroundColor: '#FAFAFA', color: '#1E293B',
-                                  fontSize: 14, fontFamily: 'Inter_400Regular, Roboto, sans-serif', outline: 'none', width: '100%',
+                                  fontSize: 14, fontFamily: 'Inter_400Regular, Roboto, sans-serif', outlineStyle: 'none', outlineWidth: 0, width: '100%',
                                   boxSizing: 'border-box'
                                 }}
                               />
@@ -7029,14 +7406,19 @@ export default function DashboardScreen({ user, onSignOut }) {
                             <View>
                               <Picker
                                 selectedValue={empRoleId}
-                                onValueChange={(itemValue) => setEmpRoleId(itemValue)}
-                                style={[styles.modalInput, { width: '100%', height: 42, appearance: 'none', outlineStyle: 'none', cursor: 'pointer' }]}
+                                onValueChange={(itemValue) => { setEmpRoleId(itemValue); setEmpRoleError(''); }}
+                                style={[styles.modalInput, { width: '100%', height: 42, appearance: 'none', outlineStyle: 'none', cursor: 'pointer', borderColor: empRoleError ? '#EF4444' : undefined }]}
                               >
                                 <Picker.Item label="Select Role" value="" color={COLORS.textMuted} />
                                 {roles.map(r => (
                                   <Picker.Item key={r.id} label={r.role} value={r.id} />
                                 ))}
                               </Picker>
+                              {empRoleError ? (
+                                <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4, marginLeft: 2 }}>
+                                  ⚠ {empRoleError}
+                                </Text>
+                              ) : null}
                             </View>
                           </View>
                           <View style={{ width: 16 }} />
@@ -7056,50 +7438,115 @@ export default function DashboardScreen({ user, onSignOut }) {
                           </View>
                         </View>
 
-                        {(!user || !user.clientid) ? (
-                          <View style={{ marginBottom: 16 }}>
-                            <Text style={styles.modalLabel}>Associated Companies</Text>
-                            {/* For simplicity we use a multi-select simulation or basic picker. Since standard picker is single select, we can use a custom multi-select UI. */}
-                            <View style={[styles.modalInput, { height: 'auto', minHeight: 44, paddingVertical: 8, paddingHorizontal: 8 }]}>
-                              <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 150 }} showsVerticalScrollIndicator={true}>
-                                {companies.map(c => {
-                                  const isSelected = empAssociatedCompanies.includes(c.id);
-                                  return (
-                                    <TouchableOpacity
-                                      key={c.id}
-                                      style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 6, backgroundColor: isSelected ? '#F8FAFC' : 'transparent', marginBottom: 2 }}
-                                      onPress={() => {
-                                        setEmpAssociatedCompanies(prev =>
-                                          prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id]
+                        {(() => {
+                          const clientCompanies = (!user || !user.clientid)
+                            ? companies
+                            : companies.filter(c => Number(c.clientid) === Number(user.clientid));
+                          const selectedNames = empAssociatedCompanies.length > 0
+                            ? clientCompanies.filter(c => empAssociatedCompanies.includes(c.id)).map(c => c.company_name).join(', ')
+                            : '';
+                          return (
+                            <View style={{ marginBottom: 16, zIndex: 10 }}>
+                              {/* Label row */}
+                              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                                <Text style={styles.modalLabel}>Company</Text>
+                                {empAssociatedCompanies.length > 0 && (
+                                  <TouchableOpacity onPress={() => setEmpAssociatedCompanies([])} style={{ marginLeft: 'auto' }}>
+                                    <Text style={{ fontSize: 12, color: '#EF4444', fontWeight: '600' }}>Clear</Text>
+                                  </TouchableOpacity>
+                                )}
+                              </View>
+
+                              {/* Dropdown trigger button */}
+                              <TouchableOpacity
+                                onPress={() => { setEmpCompanyDropdownOpen(prev => !prev); setEmpCompanyError(''); }}
+                                style={[styles.modalInput, {
+                                  flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                                  height: 42, paddingHorizontal: 12, cursor: 'pointer', marginBottom: 0,
+                                  borderColor: empCompanyError ? '#EF4444' : undefined,
+                                }]}
+                              >
+                                <Text style={{ color: selectedNames ? COLORS.textPrimary : '#94A3B8', fontSize: 14, flex: 1 }} numberOfLines={1}>
+                                  {selectedNames || 'Select Company'}
+                                </Text>
+                                {empAssociatedCompanies.length > 0 && (
+                                  <View style={{ backgroundColor: COLORS.primary, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2, marginRight: 8 }}>
+                                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{empAssociatedCompanies.length}</Text>
+                                  </View>
+                                )}
+                                <Ionicons name={empCompanyDropdownOpen ? 'chevron-up' : 'chevron-down'} size={16} color={empCompanyDropdownOpen ? COLORS.primary : '#94A3B8'} />
+                              </TouchableOpacity>
+                              {empCompanyError ? (
+                                <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4, marginLeft: 2 }}>
+                                  ⚠ {empCompanyError}
+                                </Text>
+                              ) : null}
+
+
+                              {/* Dropdown checklist panel */}
+                              {empCompanyDropdownOpen && (
+                                <View style={{
+                                  borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10,
+                                  backgroundColor: '#FFFFFF', marginTop: 0,
+                                  shadowColor: '#64748B', shadowOffset: { width: 0, height: 4 },
+                                  shadowOpacity: 0.12, shadowRadius: 8, elevation: 8,
+                                  overflow: 'hidden'
+                                }}>
+                                  <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 200 }} showsVerticalScrollIndicator={false}>
+                                    {clientCompanies.length === 0 ? (
+                                      <View style={{ padding: 16, alignItems: 'center' }}>
+                                        <Ionicons name="business-outline" size={24} color="#CBD5E1" />
+                                        <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 6 }}>No companies found</Text>
+                                      </View>
+                                    ) : (
+                                      clientCompanies.map((c, index) => {
+                                        const isSelected = empAssociatedCompanies.includes(c.id);
+                                        return (
+                                          <TouchableOpacity
+                                            key={c.id}
+                                            style={{
+                                              flexDirection: 'row', alignItems: 'center',
+                                              paddingVertical: 11, paddingHorizontal: 14,
+                                              backgroundColor: isSelected ? '#F0FDF4' : '#FFFFFF',
+                                              borderBottomWidth: index < clientCompanies.length - 1 ? 1 : 0,
+                                              borderBottomColor: '#F1F5F9',
+                                            }}
+                                            onPress={() => {
+                                              setEmpAssociatedCompanies(prev =>
+                                                prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id]
+                                              );
+                                            }}
+                                          >
+                                            {/* Custom checkbox */}
+                                            <View style={{
+                                              width: 20, height: 20, borderRadius: 5,
+                                              borderWidth: 2,
+                                              borderColor: isSelected ? '#10B981' : '#CBD5E1',
+                                              backgroundColor: isSelected ? '#10B981' : '#FFFFFF',
+                                              alignItems: 'center', justifyContent: 'center',
+                                              marginRight: 12, flexShrink: 0
+                                            }}>
+                                              {isSelected && <Ionicons name="checkmark" size={13} color="#FFFFFF" />}
+                                            </View>
+                                            <Text style={{
+                                              fontSize: 14, flex: 1,
+                                              color: isSelected ? '#065F46' : '#475569',
+                                              fontWeight: isSelected ? '600' : '400'
+                                            }}>{c.company_name}</Text>
+                                            {isSelected && (
+                                              <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: '#10B981' }} />
+                                            )}
+                                          </TouchableOpacity>
                                         );
-                                      }}
-                                    >
-                                      <Ionicons
-                                        name={isSelected ? "checkbox" : "square-outline"}
-                                        size={22}
-                                        color={isSelected ? COLORS.primary : '#94A3B8'}
-                                      />
-                                      <Text style={{ marginLeft: 12, color: isSelected ? COLORS.textPrimary : COLORS.textSecondary, fontWeight: isSelected ? '600' : '400', fontSize: 14 }}>{c.company_name}</Text>
-                                    </TouchableOpacity>
-                                  );
-                                })}
-                              </ScrollView>
+                                      })
+                                    )}
+                                  </ScrollView>
+                                </View>
+                              )}
                             </View>
-                          </View>
-                        ) : (
-                          <View style={{ marginBottom: 16 }}>
-                            <Text style={styles.modalLabel}>Company</Text>
-                            <View style={[styles.modalInput, { height: 'auto', minHeight: 42, paddingVertical: 10, paddingHorizontal: 12, backgroundColor: '#F8FAFC', justifyContent: 'center' }]}>
-                              <Text style={{ color: COLORS.textPrimary, fontWeight: '600', fontSize: 14 }}>
-                                {empAssociatedCompanies.length > 0
-                                  ? companies.filter(c => empAssociatedCompanies.includes(c.id)).map(c => c.company_name).join(', ')
-                                  : (user.companyid
-                                    ? companies.find(c => Number(c.id) === Number(user.companyid))?.company_name
-                                    : (companies.find(c => c.contact_email && user?.email && c.contact_email.toLowerCase().startsWith(user.email.split('@')[0].toLowerCase()))?.company_name || companies.find(c => Number(c.clientid) === Number(user.clientid))?.company_name)) || ''}
-                              </Text>
-                            </View>
-                          </View>
-                        )}
+                          );
+                        })()}
+
 
                         <View style={{ marginBottom: 16 }}>
                           <Text style={styles.modalLabel}>Department</Text>
@@ -7117,7 +7564,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                           </View>
                         </View>
 
-                        {!editingEmployee && (
+                        {true && (
                           <View style={{ backgroundColor: '#F8FAFC', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 }}>
                             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -7136,7 +7583,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                             </Text>
                             {empAutoGeneratePassword && (
                               <Text style={{ fontSize: 12, color: COLORS.primary, marginTop: 8, fontStyle: 'italic' }}>
-                                Temporary Password will be displayed upon creation.
+                                Temporary Password will be displayed upon saving.
                               </Text>
                             )}
                           </View>
@@ -7340,7 +7787,7 @@ const styles = StyleSheet.create({
     zIndex: 90,
   },
   sidebarInner: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: 'space-between',
     paddingVertical: SPACING.lg,
   },

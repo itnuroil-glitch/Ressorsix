@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, TouchableOpacity, Modal, Switch, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, TouchableOpacity, Modal, Switch, useWindowDimensions, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CustomDropdown, SearchableDropdown } from './CustomFieldsTab';
 import { API_URL } from '../config';
@@ -18,7 +18,7 @@ const COLORS = {
   white: '#FFFFFF',
 };
 
-export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed }) {
+export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed }) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width > 768;
   const isEmployee = user && String(user.roleId) !== '1' && String(user.roleId) !== '2' && String(user.roleId) !== '5' && String(user.roleId) !== '8';
@@ -30,7 +30,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
   const [formData, setFormData] = useState({});
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isViewOnly, setIsViewOnly] = useState(false);
-  const [vehicleDetailsRecords, setVehicleDetailsRecords] = useState([]);
+  const [assetDetailsRecords, setAssetDetailsRecords] = useState([]);
 
   // Table state
   const [searchQuery, setSearchQuery] = useState('');
@@ -50,11 +50,103 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
   const [clients, setClients] = useState([]);
   const [countries, setCountries] = useState([]);
   const [modules, setModules] = useState([]);
-  const [companies, setCompanies] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [selectedClient, setSelectedClient] = useState('');
   const [selectedCountry, setSelectedCountry] = useState('');
   const [selectedModule, setSelectedModule] = useState('');
+  const [companies, setCompanies] = useState([]);
   const [selectedCompany, setSelectedCompany] = useState('');
+  const [assetItems, setAssetItems] = useState([{ id: Date.now(), asset_id: '', barcode: '', qty: 1 }]);
+  const [assetOptions, setAssetOptions] = useState([]);
+  const [validationError, setValidationError] = useState('');
+
+  // Custom renderer for the Dropdown items
+  const renderAssetOption = (item, isSelected) => {
+    const details = item.rawData?.details;
+    if (!details) {
+      return (
+        <Text style={{ fontSize: 13, color: isSelected ? '#0284C7' : '#334155', fontWeight: isSelected ? '600' : '400' }}>
+          {item.label}
+        </Text>
+      );
+    }
+
+    const getDetail = (keyNames) => {
+      const entry = Object.entries(details).find(([k]) => keyNames.some(kn => k.toLowerCase().includes(kn)));
+      return entry ? entry[1] : null;
+    };
+
+    const brand = getDetail(['brand']) || 'Unknown Brand';
+    const model = getDetail(['model']) || item.label;
+    const totalActiveBarcodes = item.rawData?.barcodes ? item.rawData.barcodes.length : 0;
+
+    // The total "pool" of barcodes available for this specific edit session
+    // is the Active ones from the DB PLUS any barcodes that were originally saved to this record.
+    const originalBarcodesCount = assetItems.reduce((total, row) => {
+      if (String(row.asset_id) === String(item.value)) {
+        return total + (row.originalBarcodes ? row.originalBarcodes.length : 0);
+      }
+      return total;
+    }, 0);
+
+    const totalSessionPool = totalActiveBarcodes + originalBarcodesCount;
+
+    // Now count how many blue chips are currently sitting in the table
+    const currentClaimedCount = assetItems.reduce((total, row) => {
+      if (String(row.asset_id) === String(item.value)) {
+        const currentBarcodes = row.barcodes || (row.barcode ? [row.barcode] : []);
+        const filledBarcodes = currentBarcodes.filter(b => b && b.trim() !== '');
+        return total + filledBarcodes.length;
+      }
+      return total;
+    }, 0);
+
+    // Subtract the current claims from the total session pool
+    const available = Math.max(0, totalSessionPool - currentClaimedCount);
+
+    return (
+      <View style={{ 
+        flexDirection: 'row', 
+        backgroundColor: isSelected ? '#F8FAFC' : '#FFFFFF', 
+        padding: 12, 
+        marginVertical: 4,
+        marginHorizontal: 6,
+        borderRadius: 6,
+        borderWidth: 1, 
+        borderColor: isSelected ? '#BAE6FD' : '#E2E8F0',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+        elevation: 1,
+        alignItems: 'center'
+      }}>
+        <View style={{ width: 40, height: 40, borderRadius: 4, backgroundColor: '#E2E8F0', marginRight: 12, overflow: 'hidden' }}>
+          <Image 
+            source={{ uri: 'https://dummyimage.com/100x100/e2e8f0/0f172a.png&text=IT' }} 
+            style={{ width: 40, height: 40 }}
+            resizeMode="cover"
+          />
+        </View>
+        <View style={{ flex: 1, flexDirection: 'column' }}>
+          <Text style={{ fontSize: 14, fontWeight: '700', color: '#0F172A', marginBottom: 2 }}>
+            {item.label}
+          </Text>
+          <Text style={{ fontSize: 12, color: '#64748B', marginBottom: 6 }}>
+            {model}
+          </Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={{ fontSize: 12, color: '#475569' }}>
+              Brand: {brand}
+            </Text>
+            <Text style={{ fontSize: 12, color: available > 0 ? '#16A34A' : '#EF4444', fontWeight: '600' }}>
+              Qty: {available}
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
 
   useEffect(() => {
     fetchInitialData();
@@ -62,22 +154,32 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
 
   const fetchInitialData = async () => {
     try {
-      const [clientsRes, countriesRes, modulesRes, recordsRes] = await Promise.all([
+      const [clientsRes, countriesRes, modulesRes, recordsRes, assetsRes, employeesRes] = await Promise.all([
         fetch(`${API_URL}/api/clients`),
         fetch(`${API_URL}/api/countries`),
         fetch(`${API_URL}/api/modules`),
-        fetch(`${API_URL}/api/vehicle-details${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`)
+        fetch(`${API_URL}/api/asset-assignment${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`),
+        fetch(`${API_URL}/api/asset-details/dropdown`),
+        fetch(`${API_URL}/api/employees${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`)
       ]);
-      const [clientsData, countriesData, modulesData, recordsData] = await Promise.all([
+      const [clientsData, countriesData, modulesData, recordsData, assetsData, employeesData] = await Promise.all([
         clientsRes.json(),
         countriesRes.json(),
         modulesRes.json(),
-        recordsRes.ok ? recordsRes.json() : []
+        recordsRes.ok ? recordsRes.json() : [],
+        assetsRes.ok ? assetsRes.json() : [],
+        employeesRes.ok ? employeesRes.json() : []
       ]);
       setClients(clientsData || []);
       setCountries(countriesData || []);
       setModules(modulesData || []);
-      setVehicleDetailsRecords(Array.isArray(recordsData) ? recordsData : []);
+      setAssetDetailsRecords(Array.isArray(recordsData) ? recordsData : []);
+      setEmployees(employeesData || []);
+
+      const formattedAssets = (assetsData || []).map(item => {
+        return { label: item.name, value: String(item.id), rawData: item };
+      });
+      setAssetOptions(formattedAssets);
 
       // Try to set defaults if available
       const clientVal = user?.client_id || user?.clientid;
@@ -87,7 +189,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
       }
       if (user?.country_id || user?.countryid) setSelectedCountry(String(user?.country_id || user?.countryid));
       if (user?.company_id || user?.companyid) setSelectedCompany(String(user?.company_id || user?.companyid));
-      const viModule = (modulesData || []).find(m => m.module_name && m.module_name.toLowerCase().includes('vehicle details'));
+      const viModule = (modulesData || []).find(m => m.module_name && (m.module_name.toLowerCase().includes('asset assignment') || m.module_name.toLowerCase().includes('asset assignment')));
       if (viModule) setSelectedModule(String(viModule.id));
     } catch (err) {
       console.error(err);
@@ -117,6 +219,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
     setIsViewOnly(false);
     setEditingRecord(null);
     setFormData({});
+    setAssetItems([{ id: Date.now(), asset_id: '', barcode: '', qty: 1 }]);
     if (companies.length === 1 && user && String(user.roleId) !== '1') {
       const singleComp = companies[0];
       setSelectedCompany(String(singleComp.id));
@@ -137,7 +240,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
     setLoading(true);
     setWizardStep(2);
     try {
-      // 3. Fetch custom fields for this configuration
+      // Fetch custom fields for this configuration
       const cfRes = await fetch(`${API_URL}/api/custom-fields`);
       const customFields = await cfRes.json();
 
@@ -165,7 +268,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
         );
       }
 
-      // 4. Fetch permissions
+      // Fetch permissions
       const permRes = await fetch(`${API_URL}/api/field-permissions`);
       const permissionsList = await permRes.json();
 
@@ -215,7 +318,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
           ? JSON.parse(matchingFieldDef.field_data)
           : matchingFieldDef.field_data;
 
-        // 5. Fetch dropdown option values from tbl_customfieldsvalues
+        // Fetch dropdown option values from tbl_customfieldsvalues
         let fieldValuesMap = {};
         try {
           const fvRes = await fetch(`${API_URL}/api/custom-fields/${matchingFieldDef.id}/field-values`);
@@ -236,6 +339,16 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                 processedPath = `${processedPath}${separator}${clientId}`;
               }
             }
+            // Automatically append client_id to asset-brands dynamic path
+            if (processedPath.includes('asset-brands') && clientId) {
+              const separator = processedPath.includes('?') ? '&' : '?';
+              processedPath = `${processedPath}${separator}client_id=${clientId}`;
+            }
+            // Automatically append clientid to employees dynamic path
+            if (processedPath.includes('employees') && clientId) {
+              const separator = processedPath.includes('?') ? '&' : '?';
+              processedPath = `${processedPath}${separator}clientid=${clientId}`;
+            }
             // Automatically append countryId if the path is designed for country lookup
             if (processedPath.includes('country') && countryId) {
               if (processedPath.endsWith('/country') || processedPath.endsWith('/country/')) {
@@ -255,7 +368,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
             const data = await res.json();
             if (!Array.isArray(data)) return [];
             return data.map(item => {
-              if (typeof item === 'string') return item;
+              if (typeof item === 'string') return { label: item, value: item };
               if (item && typeof item === 'object') {
                 const nameKey = Object.keys(item).find(key =>
                   key.toLowerCase().includes('name') ||
@@ -267,12 +380,19 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                   key.toLowerCase().includes('policy') ||
                   key.toLowerCase().includes('department')
                 );
-                if (nameKey) return String(item[nameKey]);
-                const firstKey = Object.keys(item)[0];
-                return firstKey ? String(item[firstKey]) : '';
+                const idKey = Object.keys(item).find(key =>
+                  key.toLowerCase() === 'id' ||
+                  key.toLowerCase().endsWith('id') ||
+                  key.toLowerCase() === 'cid' ||
+                  key.toLowerCase() === 'bid'
+                );
+
+                const label = nameKey ? String(item[nameKey]) : (Object.keys(item)[0] ? String(item[Object.keys(item)[0]]) : '');
+                const value = idKey ? item[idKey] : label;
+                return { label, value: String(value), rawData: item };
               }
-              return String(item);
-            }).filter(Boolean);
+              return { label: String(item), value: String(item) };
+            }).filter(opt => opt && opt.label);
           } catch (e) {
             console.warn(`Error fetching dynamic options from ${path}:`, e);
             return [];
@@ -340,7 +460,6 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
   const handleEdit = async (record) => {
     setIsViewOnly(false);
     setEditingRecord(record);
-    // Pre-populate form data from the record
     let parsed = {};
     if (record.field_data) {
       try {
@@ -348,13 +467,24 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
       } catch (e) { }
     }
     setFormData(parsed);
-    // Set wizard selectors to match the record
+    
+    if (parsed.assetItems && Array.isArray(parsed.assetItems) && parsed.assetItems.length > 0) {
+      const initializedItems = parsed.assetItems.map(item => ({
+        ...item,
+        originalBarcodes: item.barcodes || (item.barcode ? [item.barcode] : [])
+      }));
+      setAssetItems(initializedItems);
+    } else if (record.asset_id) {
+      setAssetItems([{ id: Date.now(), asset_id: String(record.asset_id), barcode: record.barcode || '', qty: 1 }]);
+    } else {
+      setAssetItems([{ id: Date.now(), asset_id: '', barcode: '', qty: 1 }]);
+    }
+
     setSelectedClient(String(record.clientid || ''));
     setSelectedCountry(String(record.country_id || ''));
     setSelectedModule(String(record.moduleid || ''));
     await fetchCompaniesForClient(String(record.clientid || ''));
     setSelectedCompany(record.company_id ? String(record.company_id) : '');
-    // Load the form configuration then open the modal
     await fetchFormConfiguration(
       String(record.clientid || ''),
       String(record.country_id || ''),
@@ -366,7 +496,6 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
   const handleView = async (record) => {
     setIsViewOnly(true);
     setEditingRecord(record);
-    // Pre-populate form data from the record
     let parsed = {};
     if (record.field_data) {
       try {
@@ -374,13 +503,23 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
       } catch (e) { }
     }
     setFormData(parsed);
-    // Set wizard selectors to match the record
+
+    if (parsed.assetItems && Array.isArray(parsed.assetItems) && parsed.assetItems.length > 0) {
+      const initializedItems = parsed.assetItems.map(item => ({
+        ...item,
+        originalBarcodes: item.barcodes || (item.barcode ? [item.barcode] : [])
+      }));
+      setAssetItems(initializedItems);
+    } else if (record.asset_id) {
+      setAssetItems([{ id: Date.now(), asset_id: String(record.asset_id), barcode: record.barcode || '', qty: 1, originalBarcodes: record.barcode ? [record.barcode] : [] }]);
+    } else {
+      setAssetItems([{ id: Date.now(), asset_id: '', barcode: '', qty: 1, originalBarcodes: [] }]);
+    }
     setSelectedClient(String(record.clientid || ''));
     setSelectedCountry(String(record.country_id || ''));
     setSelectedModule(String(record.moduleid || ''));
     await fetchCompaniesForClient(String(record.clientid || ''));
     setSelectedCompany(record.company_id ? String(record.company_id) : '');
-    // Load the form configuration then open the modal
     await fetchFormConfiguration(
       String(record.clientid || ''),
       String(record.country_id || ''),
@@ -401,41 +540,89 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
     }
 
     try {
-      const res = await fetch(`${API_URL}/api/vehicle-details/${recordToDelete.id}`, {
+      const res = await fetch(`${API_URL}/api/asset-assignment/${recordToDelete.id}`, {
         method: 'DELETE',
       });
 
-      if (!res.ok) throw new Error('Failed to delete vehicle details record');
+      if (!res.ok) throw new Error('Failed to delete asset assignment record');
 
-      showToast('Vehicle details record deleted successfully', 'success');
+      showToast('Premises details record deleted successfully', 'success');
       setDeleteModalVisible(false);
       setRecordToDelete(null);
-      fetchInitialData(); // Refresh the list
+      fetchInitialData();
     } catch (error) {
       console.error(error);
-      showToast('Error deleting vehicle details record', 'error');
+      showToast('Error deleting asset assignment record', 'error');
     }
   };
 
   const handleSave = async () => {
+    // Validation for barcodes
+    for (const item of assetItems) {
+      if (!item.asset_id) continue;
+      const numQty = parseInt(item.qty) || 1;
+      const currentBarcodes = item.barcodes || (item.barcode ? [item.barcode] : []);
+      const filledBarcodes = currentBarcodes.filter(b => b && b.trim() !== '');
+
+      if (filledBarcodes.length !== numQty) {
+        setValidationError('Quantity and selected barcode count must match.');
+        return;
+      }
+
+      const uniqueBarcodes = new Set(filledBarcodes);
+      if (uniqueBarcodes.size !== filledBarcodes.length) {
+        setValidationError('Validation Error: You cannot select the same barcode twice in one row.');
+        return;
+      }
+    }
+
     setSaving(true);
     try {
+      const finalFormData = { ...formData };
+
+      const setDefaults = (fields) => {
+        fields.forEach(f => {
+          if (f.type === 'Date' && !finalFormData[f.id]) {
+            finalFormData[f.id] = new Date().toISOString().split('T')[0];
+          } else if (f.type === 'DateTime' && !finalFormData[f.id]) {
+            const d = new Date();
+            const date = d.toISOString().split('T')[0];
+            const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            finalFormData[f.id] = `${date}T${time}`;
+          } else if (f.type === 'Time' && !finalFormData[f.id]) {
+            const d = new Date();
+            finalFormData[f.id] = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+          }
+          if (f.subsections && f.subsections.length > 0) {
+            f.subsections.forEach(sub => {
+              if (sub.fields) setDefaults(sub.fields);
+            });
+          }
+        });
+      };
+
+      if (fieldsLayout) {
+        fieldsLayout.forEach(section => {
+          if (section.fields) setDefaults(section.fields);
+        });
+      }
+
+      finalFormData.assetItems = assetItems;
+
       const payload = {
-        vehicle_id: null,
+        asset_id: assetItems.length > 0 ? assetItems[0].asset_id : (editingRecord?.asset_id || null),
         custom_field_id: customFieldId,
-        field_data: formData,
+        field_data: finalFormData,
         clientid: configParams.clientid,
         country_id: configParams.country_id,
         moduleid: configParams.moduleid,
-        roleid: user ? user.roleId : null,
-        user_id: user ? user.id : null,
         company_id: selectedCompany || null
       };
 
       const isEditing = !!editingRecord;
       const url = isEditing
-        ? `${API_URL}/api/vehicle-details/${editingRecord.id}`
-        : `${API_URL}/api/vehicle-details`;
+        ? `${API_URL}/api/asset-assignment/${editingRecord.id}`
+        : `${API_URL}/api/asset-assignment`;
       const method = isEditing ? 'PUT' : 'POST';
 
       const res = await fetch(url, {
@@ -444,16 +631,17 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
         body: JSON.stringify(payload)
       });
 
-      if (!res.ok) throw new Error(`Failed to ${isEditing ? 'update' : 'save'} vehicle details`);
+      if (!res.ok) throw new Error(`Failed to ${isEditing ? 'update' : 'save'} asset assignment`);
 
-      showToast(isEditing ? 'Vehicle details record updated successfully!' : 'Form submitted successfully!', 'success');
+      showToast(isEditing ? 'Premises details record updated successfully!' : 'Form submitted successfully!', 'success');
       setIsFormOpen(false);
       setEditingRecord(null);
       setFormData({});
+      setAssetItems([{ id: Date.now(), asset_id: '', barcode: '', qty: 1 }]);
       fetchInitialData();
     } catch (error) {
       console.error(error);
-      showToast('Error saving vehicle details', 'error');
+      showToast('Error saving asset assignment', 'error');
     } finally {
       setSaving(false);
     }
@@ -470,18 +658,94 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
         const options = (field.allowedOptions && field.allowedOptions.length > 0)
           ? field.allowedOptions
           : (field.options || '').split(',').map(o => o.trim()).filter(Boolean);
-        const dropdownData = options.map(opt => ({ label: opt, value: opt }));
+        const dropdownData = options.map(opt => {
+          if (typeof opt === 'object' && opt.value !== undefined) return opt;
+          return { label: String(opt), value: String(opt) };
+        });
+
+        const selectedValue = formData[field.id];
+
+        // Custom renderer for the Dropdown items if this is the Asset Name field
+        const renderAssetOption = (item, isSelected) => {
+          const details = item.rawData?.details;
+          if (!details) {
+            return (
+              <Text style={{ fontSize: 13, color: isSelected ? '#0284C7' : '#334155', fontWeight: isSelected ? '600' : '400' }}>
+                {item.label}
+              </Text>
+            );
+          }
+
+          // Case-insensitive lookup for specific details
+          const getDetail = (keyNames) => {
+            const entry = Object.entries(details).find(([k]) => keyNames.some(kn => k.toLowerCase().includes(kn)));
+            return entry ? entry[1] : null;
+          };
+
+          const brand = getDetail(['brand']) || 'Unknown Brand';
+          const category = getDetail(['category']) || 'Unknown Category';
+          const model = getDetail(['model']) || item.label;
+          const available = getDetail(['opening quantity', 'available', 'stock']) || '0';
+
+          return (
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{ width: 36, height: 36, borderRadius: 4, backgroundColor: '#E2E8F0', marginRight: 10, overflow: 'hidden' }}>
+                <Image 
+                  source={{ uri: 'https://dummyimage.com/100x100/e2e8f0/0f172a.png&text=IT' }} 
+                  style={{ width: 36, height: 36 }}
+                  resizeMode="cover"
+                />
+              </View>
+              <View style={{ flexDirection: 'column', flex: 1 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B', marginBottom: 4 }}>
+                  Model: {model}
+                </Text>
+                <Text style={{ fontSize: 11, color: '#64748B', marginBottom: 4 }}>
+                  Brand: {brand}  •  Category: {category}
+                </Text>
+                <Text style={{ fontSize: 11, color: '#16A34A', fontWeight: '600' }}>
+                  Available: {available} {parseInt(available, 10) === 1 ? 'Unit' : 'Units'}
+                </Text>
+              </View>
+            </View>
+          );
+        };
+
         return (
-          <SearchableDropdown
-            data={dropdownData}
-            value={formData[field.id] || ''}
-            onChange={(val) => handleInputChange(field.id, val)}
-            placeholder={`-- Select ${field.name} --`}
-            searchPlaceholder={`Search ${field.name}...`}
-            displayKey="label"
-            valueKey="value"
-            disabled={isViewOnly}
-          />
+          <View style={{ width: '100%' }}>
+            <SearchableDropdown
+              data={dropdownData}
+              value={selectedValue || ''}
+              onChange={(val) => handleInputChange(field.id, val)}
+              placeholder={`-- Select ${field.name} --`}
+              searchPlaceholder={`Search ${field.name}...`}
+              displayKey="label"
+              valueKey="value"
+              disabled={isViewOnly}
+              renderOption={field.name && field.name.toLowerCase().includes('asset') ? renderAssetOption : undefined}
+            />
+
+            {field.name && field.name.toLowerCase().includes('asset') && selectedValue && dropdownData.find(opt => String(opt.value) === String(selectedValue))?.rawData?.details && (
+              <View style={{ backgroundColor: '#F8FAFC', padding: 12, borderRadius: 8, marginTop: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                <Text style={{ fontSize: 13, color: '#475569', fontWeight: '700', marginBottom: 6, textTransform: 'uppercase' }}>
+                  Asset Specifications
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {Object.entries(dropdownData.find(opt => String(opt.value) === String(selectedValue)).rawData.details).map(([k, v]) => {
+                    if (k.length > 25 || String(v).length > 40 || k.match(/^\d+$/)) return null;
+                    const keyLower = k.toLowerCase();
+                    if (!keyLower.includes('name') && !keyLower.includes('model') && !keyLower.includes('brand')) return null;
+                    return (
+                      <View key={k} style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, borderWidth: 1, borderColor: '#F1F5F9' }}>
+                        <Text style={{ fontSize: 11, color: '#94A3B8', fontWeight: '600', textTransform: 'uppercase' }}>{k}</Text>
+                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '500', marginTop: 2 }}>{v}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+          </View>
         );
       }
       case 'Date': {
@@ -567,7 +831,6 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
           ? field.allowedOptions
           : (field.options || '').split(',').map(o => o.trim()).filter(Boolean);
 
-        // If there are no options, render it as a single toggle switch
         if (options.length === 0) {
           const val = !!formData[field.id];
           return (
@@ -586,7 +849,6 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
           );
         }
 
-        // Multi-select checkbox
         const rawValue = formData[field.id];
         const selectedValues = Array.isArray(rawValue)
           ? rawValue
@@ -604,13 +866,15 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
 
         return (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 8 }}>
-            {options.map((opt) => {
-              const isSelected = selectedValues.includes(opt);
+            {options.map((optItem) => {
+              const optLabel = typeof optItem === 'object' ? optItem.label : optItem;
+              const optValue = typeof optItem === 'object' ? optItem.value : optItem;
+              const isSelected = selectedValues.includes(optValue);
               return (
                 <TouchableOpacity
-                  key={opt}
+                  key={optValue}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 }}
-                  onPress={() => !isViewOnly && toggleOption(opt)}
+                  onPress={() => !isViewOnly && toggleOption(optValue)}
                   activeOpacity={isViewOnly ? 1 : 0.8}
                 >
                   <View style={{
@@ -627,7 +891,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                       <Ionicons name="checkmark" size={14} color={isViewOnly ? '#94A3B8' : COLORS.primary} />
                     )}
                   </View>
-                  <Text style={{ fontSize: 14, color: COLORS.textPrimary }}>{opt}</Text>
+                  <Text style={{ fontSize: 14, color: COLORS.textPrimary }}>{optLabel}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -642,13 +906,15 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
 
         return (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 8 }}>
-            {options.map((opt) => {
-              const isSelected = selectedValue === opt;
+            {options.map((optItem) => {
+              const optLabel = typeof optItem === 'object' ? optItem.label : optItem;
+              const optValue = typeof optItem === 'object' ? optItem.value : optItem;
+              const isSelected = selectedValue === optValue;
               return (
                 <TouchableOpacity
-                  key={opt}
+                  key={optValue}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 }}
-                  onPress={() => !isViewOnly && handleInputChange(field.id, opt)}
+                  onPress={() => !isViewOnly && handleInputChange(field.id, optValue)}
                   activeOpacity={isViewOnly ? 1 : 0.8}
                 >
                   <View style={{
@@ -670,7 +936,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                       }} />
                     )}
                   </View>
-                  <Text style={{ fontSize: 14, color: COLORS.textPrimary }}>{opt}</Text>
+                  <Text style={{ fontSize: 14, color: COLORS.textPrimary }}>{optLabel}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -831,7 +1097,6 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
         );
       }
       default:
-        // Default text input
         return (
           <TextInput
             style={[styles.input, isViewOnly && { backgroundColor: '#F1F5F9', color: '#64748B' }]}
@@ -850,8 +1115,8 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
       {/* MAIN HEADER */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Vehicle Details</Text>
-          <Text style={styles.headerSubtitle}>Manage your vehicle details records.</Text>
+          <Text style={styles.headerTitle}>Asset Assignment</Text>
+          <Text style={styles.headerSubtitle}>Manage your asset assignment records.</Text>
         </View>
         {!isEmployee && (
           <TouchableOpacity
@@ -859,7 +1124,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
             onPress={handleAddNewRecord}
           >
             <Ionicons name="add-circle" size={20} color="#FFFFFF" />
-            <Text style={styles.addButtonText}>Add Vehicle Details</Text>
+            <Text style={styles.addButtonText}>Add Asset</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -892,13 +1157,13 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                 alignItems: 'center',
                 marginBottom: 24
               }}>
-                <Ionicons name="car-sport" size={40} color={COLORS.primary} />
+                <Ionicons name="construct-outline" size={40} color={COLORS.primary} />
               </View>
               <Text style={{ fontSize: 24, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 12, textAlign: 'center' }}>
-                Vehicle Registration Entry
+                Asset Registration Entry
               </Text>
               <Text style={{ fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 32, lineHeight: 22, maxWidth: 440 }}>
-                Please register the vehicle specifications and details. All records are processed securely.
+                Please register the asset hardware and specification details. All records are processed securely.
               </Text>
               <TouchableOpacity
                 style={{
@@ -920,16 +1185,16 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                 onPress={handleAddNewRecord}
               >
                 <Ionicons name="add-circle" size={22} color="#FFFFFF" style={{ marginRight: 8 }} />
-                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>Add Vehicle Details</Text>
+                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>Add Asset</Text>
               </TouchableOpacity>
             </View>
           </View>
         ) : (
-          vehicleDetailsRecords.length === 0 && !searchQuery ? (
+          assetDetailsRecords.length === 0 && !searchQuery ? (
             <View style={styles.emptyState}>
               <Ionicons name="document-text-outline" size={48} color={COLORS.textMuted} />
-              <Text style={styles.emptyStateText}>No vehicle details records found.</Text>
-              <Text style={styles.emptyStateSubtext}>Click 'Add Vehicle Details' to create a new record.</Text>
+              <Text style={styles.emptyStateText}>No asset assignment records found.</Text>
+              <Text style={styles.emptyStateSubtext}>Click 'Add Asset' to create a new record.</Text>
             </View>
           ) : (
             <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#F1F5F9', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1, overflow: 'hidden' }}>
@@ -951,9 +1216,9 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
               <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20 }}>
                 <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>ID</Text>
                 <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
+                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Employee Name</Text>
                 <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Module Info</Text>
                 <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Data Preview</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Employee</Text>
                 <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
                 <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>View</Text>
                 <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>Edit</Text>
@@ -962,7 +1227,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
 
               <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true}>
                 {(() => {
-                  const filtered = vehicleDetailsRecords.filter(r => {
+                  const filtered = assetDetailsRecords.filter(r => {
                     if (user && String(user.roleId) !== '1' && user.clientid) {
                       if (String(r.clientid) !== String(user.clientid)) return false;
                     }
@@ -998,18 +1263,20 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                         const moduleObj = modules.find(m => String(m.id) === String(record.moduleid));
                         const moduleName = moduleObj ? moduleObj.module_name : `Module ${record.moduleid}`;
 
-                        const rawFirstValue = Object.values(parsedData)[0];
-                        let firstValue = '-';
-                        if (rawFirstValue && typeof rawFirstValue === 'object') {
-                          if (Array.isArray(rawFirstValue)) {
-                            firstValue = rawFirstValue.map(f => f.name || 'File').join(', ');
-                          } else {
-                            firstValue = rawFirstValue.name || 'File';
+                        let assetDisplay = 'No Asset Assigned';
+                        let barcodeDisplay = '-';
+                        if (parsedData.assetItems && parsedData.assetItems.length > 0) {
+                          const item = parsedData.assetItems[0];
+                          const assetObj = assetOptions.find(opt => String(opt.value) === String(item.asset_id));
+                          assetDisplay = assetObj ? assetObj.label : `Asset ID: ${item.asset_id}`;
+                          barcodeDisplay = item.barcode || 'No Barcode';
+
+                          if (parsedData.assetItems.length > 1) {
+                            const extraCount = parsedData.assetItems.length - 1;
+                            assetDisplay += ` (+ ${extraCount} more)`;
+                            barcodeDisplay += ` (+ ${extraCount} more)`;
                           }
-                        } else if (rawFirstValue !== undefined && rawFirstValue !== null) {
-                          firstValue = String(rawFirstValue);
                         }
-                        const firstKey = Object.keys(parsedData)[0] ? Object.keys(parsedData)[0].replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()) : 'No Data';
 
                         return (
                           <View key={record.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
@@ -1021,18 +1288,33 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                             </View>
 
                             <View style={{ flex: 1.5, paddingRight: 10 }}>
+                              {(() => {
+                                let empNameDisplay = record.employee_name || 'N/A';
+                                if (empNameDisplay === 'N/A' && parsedData) {
+                                  for (const [key, value] of Object.entries(parsedData)) {
+                                    if (key !== 'assetItems' && typeof value === 'string' && value.length > 0 && value.length < 50 && !key.includes('date') && !value.includes('-')) {
+                                       const matchedEmployee = employees.find(e => String(e.id) === String(value));
+                                       if (matchedEmployee) {
+                                          empNameDisplay = matchedEmployee.full_name || matchedEmployee.name;
+                                          break;
+                                       }
+                                    }
+                                  }
+                                }
+                                return (
+                                  <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{empNameDisplay}</Text>
+                                );
+                              })()}
+                            </View>
+
+                            <View style={{ flex: 1.5, paddingRight: 10 }}>
                               <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{moduleName}</Text>
                               <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Created: {new Date(record.created_at).toLocaleDateString()}</Text>
                             </View>
 
                             <View style={{ flex: 2, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500', marginBottom: 4 }} numberOfLines={1}>{String(firstValue)}</Text>
-                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Field: {firstKey}</Text>
-                            </View>
-
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{record.role_name || `Role: ${record.roleid || 'N/A'}`}</Text>
-                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>{record.employee_name || 'N/A'}</Text>
+                              <Text style={{ fontSize: 13, color: '#475569', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{assetDisplay}</Text>
+                              <Text style={{ fontSize: 11, color: '#0284C7', fontWeight: '500' }} numberOfLines={1}>Barcode: {barcodeDisplay}</Text>
                             </View>
 
                             <View style={{ flex: 1, alignItems: 'flex-start' }}>
@@ -1062,7 +1344,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
 
               {/* Pagination Footer */}
               {(() => {
-                const filtered = vehicleDetailsRecords.filter(r => {
+                const filtered = assetDetailsRecords.filter(r => {
                   if (user && String(user.roleId) !== '1' && user.clientid) {
                     if (String(r.clientid) !== String(user.clientid)) return false;
                   }
@@ -1134,7 +1416,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
             </Text>
 
             <Text style={{ fontSize: 14, color: '#64748B', marginBottom: 24, lineHeight: 20 }}>
-              This will permanently delete the selected vehicle details record. This action cannot be undone and will be completely removed from the database.
+              This will permanently delete the selected asset assignment record. This action cannot be undone and will be completely removed from the database.
             </Text>
 
             <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 8, textTransform: 'uppercase' }}>
@@ -1179,13 +1461,13 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <Ionicons name="document-text" size={24} color={COLORS.primary} />
-                <Text style={styles.modalTitle}>{isViewOnly ? `View Vehicle Details Record #${editingRecord?.id}` : (editingRecord ? `Edit Vehicle Details Record #${editingRecord.id}` : 'Add Vehicle Details')}</Text>
+                <Text style={styles.modalTitle}>{isViewOnly ? `View Asset Assignment Record #${editingRecord?.id}` : (editingRecord ? `Edit Asset Assignment Record #${editingRecord.id}` : 'Add Asset')}</Text>
               </View>
               <TouchableOpacity onPress={() => { setIsFormOpen(false); setEditingRecord(null); setFormData({}); setIsViewOnly(false); }} style={styles.closeButton}>
                 <Ionicons name="close" size={22} color={COLORS.textSecondary} />
               </TouchableOpacity>
             </View>
-            {/* WIZARD PROGRESS BAR */}
+
             {!isViewOnly && (
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, backgroundColor: '#F8FAFC', borderBottomWidth: 1, borderBottomColor: '#E2E8F0' }}>
                 {[
@@ -1321,13 +1603,36 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                       <View style={styles.sectionBody}>
                         {section.fields.map((field, fieldIndex) => {
                           const visibleSubsections = (field.subsections || []).filter(sub => {
-                            // If triggerValue is not set or is empty, show it by default
-                            if (!sub.triggerValue || sub.triggerValue.trim() === '') {
-                              return true;
-                            }
-                            // Otherwise, only show if it matches the parent field value
                             const parentValue = formData[field.id];
-                            return parentValue && String(parentValue).trim().toLowerCase() === String(sub.triggerValue).trim().toLowerCase();
+
+                            // If the parent field has no value yet, hide the subsection
+                            if (!parentValue || String(parentValue).trim() === '') {
+                              return false;
+                            }
+
+                            // If there is a specific trigger value set
+                            if (sub.triggerValue && sub.triggerValue.trim() !== '') {
+                              // If they accidentally put an API path in the trigger value, ignore it and just show the subsection
+                              if (sub.triggerValue.includes('/api/')) {
+                                return true;
+                              }
+
+                              // Find the label corresponding to this parent value
+                              let parentLabel = '';
+                              if (field.allowedOptions) {
+                                const opt = field.allowedOptions.find(o => String(o.value) === String(parentValue));
+                                if (opt) parentLabel = opt.label;
+                              }
+
+                              const trigger = String(sub.triggerValue).trim().toLowerCase();
+
+                              // Check if either the ID or the Label matches the trigger value
+                              return String(parentValue).trim().toLowerCase() === trigger ||
+                                (parentLabel && parentLabel.trim().toLowerCase() === trigger);
+                            }
+
+                            // If no trigger value is set, show it as long as the parent has ANY value
+                            return true;
                           });
                           const hasSubsections = visibleSubsections.length > 0;
 
@@ -1338,7 +1643,6 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                               </Text>
                               {renderField(field)}
 
-                              {/* Render subsections if any are visible */}
                               {hasSubsections && (
                                 <View style={styles.subsectionsContainer}>
                                   {visibleSubsections.map((sub, subIndex) => (
@@ -1361,6 +1665,156 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                             </View>
                           )
                         })}
+
+                        {index === 0 && (
+                          <View style={[styles.fieldContainerFull, { zIndex: 0, marginTop: 16 }]}>
+                            <Text style={{ fontSize: 16, fontWeight: '700', color: '#1E293B', marginBottom: 16 }}>Item Table</Text>
+                            
+                            <View style={{ borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, overflow: 'visible', zIndex: 100 }}>
+                              {/* Table Header */}
+                              <View style={{ flexDirection: 'row', backgroundColor: '#F8FAFC', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#E2E8F0', borderTopLeftRadius: 8, borderTopRightRadius: 8 }}>
+                                <Text style={{ width: 60, textAlign: 'center', fontWeight: '600', color: '#475569', fontSize: 13 }}>No.</Text>
+                                <Text style={{ flex: 1, fontWeight: '600', color: '#475569', fontSize: 13, paddingLeft: 8 }}>Asset Name</Text>
+                                <Text style={{ flex: 1.5, fontWeight: '600', color: '#475569', fontSize: 13, paddingLeft: 8 }}>Assigned Barcodes</Text>
+                                <Text style={{ width: 100, textAlign: 'center', fontWeight: '600', color: '#475569', fontSize: 13 }}>Qty</Text>
+                                <Text style={{ width: 60, textAlign: 'center', fontWeight: '600', color: '#475569', fontSize: 13 }}></Text>
+                              </View>
+
+                              {/* Table Rows */}
+                              {assetItems.map((item, idx) => (
+                                <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: idx === assetItems.length - 1 ? 0 : 1, borderBottomColor: '#F1F5F9', zIndex: assetItems.length - idx }}>
+                                  <Text style={{ width: 60, textAlign: 'center', color: '#0F172A', fontSize: 14, fontWeight: '500' }}>{idx + 1}</Text>
+                                  
+                                  <View style={{ flex: 1, paddingHorizontal: 8, zIndex: 50 }}>
+                                    <SearchableDropdown
+                                      data={assetOptions.filter(opt => {
+                                        const isSelectedElsewhere = assetItems.some((otherRow, otherIdx) => 
+                                          otherIdx !== idx && String(otherRow.asset_id) === String(opt.value)
+                                        );
+                                        return !isSelectedElsewhere;
+                                      })}
+                                      value={item.asset_id}
+                                      onChange={(val) => {
+                                        const newItems = [...assetItems];
+                                        newItems[idx].asset_id = val;
+                                        newItems[idx].barcode = ''; // reset barcode
+                                        setAssetItems(newItems);
+                                      }}
+                                      placeholder="Search asset name..."
+                                      searchPlaceholder="Search asset name..."
+                                      displayKey="label"
+                                      valueKey="value"
+                                      disabled={isViewOnly}
+                                      renderOption={renderAssetOption}
+                                    />
+                                  </View>
+
+                                  <View style={{ flex: 1.5, paddingHorizontal: 8, zIndex: 40, flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                                    {(() => {
+                                      const selectedAsset = assetOptions.find(opt => String(opt.value) === String(item.asset_id));
+                                      const rawBarcodes = selectedAsset?.rawData?.barcodes || [];
+                                      let barcodeData = rawBarcodes.map(b => ({ label: b, value: b }));
+                                      
+                                      const currentBarcodes = item.barcodes || (item.barcode ? [item.barcode] : []);
+                                      const originalBarcodes = item.originalBarcodes || [];
+                                      const barcodesToInject = new Set([...currentBarcodes, ...originalBarcodes]);
+
+                                      barcodesToInject.forEach(b => {
+                                        if (b && !barcodeData.find(opt => opt.value === b)) {
+                                          barcodeData.push({ label: b, value: b });
+                                        }
+                                      });
+                                      
+                                      const numDropdowns = parseInt(item.qty) || 1;
+                                      const filledBarcodes = currentBarcodes.filter(b => b);
+                                      const globalSelectedBarcodes = assetItems.flatMap(i => i.barcodes || (i.barcode ? [i.barcode] : []));
+
+                                      return (
+                                        <>
+                                          {filledBarcodes.map((bVal, bIdx) => (
+                                            <View key={bIdx} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#EFF6FF', paddingVertical: 6, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: '#BFDBFE' }}>
+                                              <Text style={{ fontSize: 12, color: '#1D4ED8', fontWeight: '600' }}>{bVal}</Text>
+                                              {!isViewOnly && (
+                                                <TouchableOpacity onPress={() => {
+                                                  const newItems = [...assetItems];
+                                                  const updated = currentBarcodes.filter((_, i) => i !== bIdx);
+                                                  newItems[idx].barcodes = updated;
+                                                  if (updated.length > 0) newItems[idx].barcode = updated[0];
+                                                  else newItems[idx].barcode = '';
+                                                  setAssetItems(newItems);
+                                                }} style={{ marginLeft: 6 }}>
+                                                  <Ionicons name="close" size={14} color="#1D4ED8" />
+                                                </TouchableOpacity>
+                                              )}
+                                            </View>
+                                          ))}
+
+                                          {!isViewOnly && filledBarcodes.length < numDropdowns && (
+                                            <View style={{ minWidth: 180, flex: 1, maxWidth: 250 }}>
+                                              <SearchableDropdown
+                                                data={barcodeData.filter(opt => !globalSelectedBarcodes.includes(opt.value))}
+                                                value=""
+                                                onChange={(val) => {
+                                                  if (!val) return;
+                                                  const newItems = [...assetItems];
+                                                  const updated = [...filledBarcodes, val];
+                                                  newItems[idx].barcodes = updated;
+                                                  if (updated.length > 0) newItems[idx].barcode = updated[0];
+                                                  setAssetItems(newItems);
+                                                }}
+                                                placeholder="+ Add Barcode"
+                                                searchPlaceholder="Search..."
+                                                displayKey="label"
+                                                valueKey="value"
+                                                disabled={barcodeData.length === 0}
+                                              />
+                                            </View>
+                                          )}
+                                        </>
+                                      );
+                                    })()}
+                                  </View>
+
+                                  <View style={{ width: 100, paddingHorizontal: 8 }}>
+                                    <TextInput
+                                      style={{ height: 42, borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 6, textAlign: 'center', backgroundColor: isViewOnly ? '#F8FAFC' : '#FFFFFF', color: '#0F172A' }}
+                                      value={String(item.qty)}
+                                      onChangeText={(val) => {
+                                        const newItems = [...assetItems];
+                                        newItems[idx].qty = val.replace(/[^0-9]/g, '');
+                                        setAssetItems(newItems);
+                                      }}
+                                      keyboardType="numeric"
+                                      editable={!isViewOnly}
+                                    />
+                                  </View>
+
+                                  <View style={{ width: 60, alignItems: 'center' }}>
+                                    {!isViewOnly && (
+                                      <TouchableOpacity onPress={() => {
+                                        if (assetItems.length > 1) {
+                                          setAssetItems(assetItems.filter(i => i.id !== item.id));
+                                        }
+                                      }}>
+                                        <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                                      </TouchableOpacity>
+                                    )}
+                                  </View>
+                                </View>
+                              ))}
+                            </View>
+
+                            {!isViewOnly && (
+                              <TouchableOpacity 
+                                style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingVertical: 8, paddingHorizontal: 12, backgroundColor: '#F1F5F9', alignSelf: 'flex-start', borderRadius: 6 }}
+                                onPress={() => setAssetItems([...assetItems, { id: Date.now(), asset_id: '', barcode: '', qty: 1 }])}
+                              >
+                                <Ionicons name="add" size={18} color="#0284C7" />
+                                <Text style={{ marginLeft: 6, color: '#0284C7', fontWeight: '600', fontSize: 13 }}>Add New Row</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        )}
                       </View>
                     </View>
                   ))}
@@ -1408,6 +1862,28 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
           </View>
         </View>
       </Modal>
+
+      {/* Validation Error Modal */}
+      <Modal visible={!!validationError} transparent={true} animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
+          <View style={{ width: 340, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 24, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 5 }}>
+            <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: '#FEE2E2', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+              <Ionicons name="warning" size={32} color="#EF4444" />
+            </View>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: '#0F172A', marginBottom: 8 }}>Validation Error</Text>
+            <Text style={{ fontSize: 14, color: '#475569', textAlign: 'center', marginBottom: 24, lineHeight: 20 }}>
+              {validationError}
+            </Text>
+            <TouchableOpacity
+              style={{ width: '100%', backgroundColor: '#EF4444', paddingVertical: 12, borderRadius: 8, alignItems: 'center' }}
+              onPress={() => setValidationError('')}
+            >
+              <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '600' }}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -1553,14 +2029,24 @@ const styles = StyleSheet.create({
   submitBtn: {
     backgroundColor: COLORS.primary,
     borderRadius: 8,
-    paddingVertical: 16,
+    paddingVertical: 13,
+    paddingHorizontal: 24,
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
+    marginTop: 16,
+    marginBottom: 8,
+    alignSelf: 'flex-end',
+    minWidth: 120,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   submitBtnText: {
     color: COLORS.white,
     fontWeight: '700',
-    fontSize: 16,
+    fontSize: 14,
   },
   header: {
     flexDirection: 'row',
@@ -1669,26 +2155,4 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
-  submitBtn: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 8,
-    paddingVertical: 13,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 16,
-    marginBottom: 8,
-    alignSelf: 'flex-end',
-    minWidth: 120,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  submitBtnText: {
-    color: COLORS.white,
-    fontWeight: '700',
-    fontSize: 14,
-  }
 });

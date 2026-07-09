@@ -109,46 +109,52 @@ exports.createEmployee = async (req, res) => {
     if (auto_generate_password) {
       // Check if user exists
       const userCheck = await client.query('SELECT id FROM users WHERE email = $1', [email]);
-      if (userCheck.rows.length === 0) {
-        // Generate a random temporary password
-        const tempPassword = Math.random().toString(36).slice(-8);
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(tempPassword, salt);
+      
+      // Generate a random temporary password
+      const tempPassword = Math.random().toString(36).slice(-8);
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(tempPassword, salt);
 
+      if (userCheck.rows.length === 0) {
         await client.query(
           'INSERT INTO users (email, password, roleid, clientid) VALUES ($1, $2, $3, $4)',
           [email, hashedPassword, roleid ? parseInt(roleid) : null, clientid ? parseInt(clientid) : null]
         );
-        newEmployee.tempPassword = tempPassword; // Return it so admin can give it to the user
+      } else {
+        await client.query(
+          'UPDATE users SET password = $1, roleid = $2, clientid = $3 WHERE email = $4',
+          [hashedPassword, roleid ? parseInt(roleid) : null, clientid ? parseInt(clientid) : null, email]
+        );
+      }
+      newEmployee.tempPassword = tempPassword; // Return it so admin can give it to the user
 
-        // Send email with the generated password if clientid is present
-        if (clientid) {
-          try {
-            const clientUserRes = await client.query('SELECT id FROM users WHERE clientid = $1 ORDER BY id ASC LIMIT 1', [clientid]);
-            if (clientUserRes.rows.length > 0) {
-              const clientUserId = clientUserRes.rows[0].id;
-              const smtpRes = await client.query('SELECT * FROM smtp_configuration WHERE userid = $1 AND is_deleted = false AND status = 1 LIMIT 1', [clientUserId]);
-              if (smtpRes.rows.length > 0) {
-                const smtpConfig = smtpRes.rows[0];
-                const transporter = nodemailer.createTransport({
-                  host: smtpConfig.smtp_host,
-                  port: smtpConfig.smtp_port,
-                  secure: smtpConfig.smtp_port === 465,
-                  auth: { user: smtpConfig.smtp_usename, pass: smtpConfig.smtp_password }
-                });
-                const mailOptions = {
-                  from: `"${smtpConfig.from_name || 'System'}" <${smtpConfig.from_email || smtpConfig.smtp_usename}>`,
-                  to: email,
-                  subject: 'Your New Employee Account Credentials',
-                  text: `Hello ${full_name},\n\nYour employee account has been created successfully.\n\nYour temporary login credentials are:\nEmail: ${email}\nPassword: ${tempPassword}\n\nPlease log in and update your password.\n\nBest regards,\nSystem Administrator`
-                };
-                await transporter.sendMail(mailOptions);
-                console.log('Password email sent to employee:', email);
-              }
-            }
-          } catch (err) {
-            console.error('Error sending password email to employee:', err);
-          }
+      // Send email with the generated password if clientid is present
+      if (clientid) {
+        try {
+          const { sendEmail } = require('../config/mailer');
+          await sendEmail({
+            to: email,
+            subject: `Welcome to the team, ${full_name}!`,
+            text: `Hello ${full_name},\n\nWelcome to our team portal. Your user account has been successfully initialized.\n\nTo log in, please use the details below:\nPortal Login Email: ${email}\nSecurity Key: ${tempPassword}\n\nPlease remember to change your password upon your first login.\n\nWarm regards,\nSystem Administrator`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                <h2 style="color: #0f172a;">Welcome to the team, ${full_name}!</h2>
+                <p>Your user portal account has been successfully set up.</p>
+                <div style="background-color: #f8fafc; padding: 15px; border-radius: 6px; margin: 20px 0;">
+                  <p style="margin: 0; font-weight: bold; color: #475569;">Login Information:</p>
+                  <p style="margin: 5px 0 0 0;"><strong>Email:</strong> ${email}</p>
+                  <p style="margin: 5px 0 0 0;"><strong>One-time Passkey:</strong> <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 14px;">${tempPassword}</code></p>
+                </div>
+                <p style="color: #64748b; font-size: 13px;">For security reasons, you will be prompted to update this password upon your first sign-in.</p>
+                <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+                <p style="font-size: 12px; color: #94a3b8; text-align: center;">This is an automated security notification.</p>
+              </div>
+            `,
+            clientid: clientid
+          });
+        } catch (err) {
+          console.error('Error sending password email to employee:', err);
+          try { require('fs').writeFileSync('smtp_error.log', 'CREATE ERROR: ' + (err.stack || err.message || String(err))); } catch(e){}
         }
       }
     }
@@ -175,7 +181,8 @@ exports.updateEmployee = async (req, res) => {
       roleid,
       status,
       department_id,
-      companies
+      companies,
+      auto_generate_password
     } = req.body;
 
     await client.query('BEGIN');
@@ -206,6 +213,8 @@ exports.updateEmployee = async (req, res) => {
       return res.status(404).json({ message: 'Employee not found.' });
     }
 
+    const updatedEmployee = empResult.rows[0];
+
     // Update associated companies
     if (companies && Array.isArray(companies)) {
       await client.query('DELETE FROM employee_company WHERE employee_id = $1', [id]);
@@ -217,8 +226,80 @@ exports.updateEmployee = async (req, res) => {
       }
     }
 
+    // Check if a user account exists for this email
+    const userCheck = await client.query('SELECT id FROM users WHERE email = $1', [updatedEmployee.email]);
+    if (userCheck.rows.length === 0 || auto_generate_password) {
+      // Generate a random temporary password
+      const tempPassword = Math.random().toString(36).slice(-8);
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(tempPassword, salt);
+
+      if (userCheck.rows.length === 0) {
+        await client.query(
+          'INSERT INTO users (email, password, roleid, clientid) VALUES ($1, $2, $3, $4)',
+          [
+            updatedEmployee.email,
+            hashedPassword,
+            updatedEmployee.roleid ? parseInt(updatedEmployee.roleid) : null,
+            updatedEmployee.clientid ? parseInt(updatedEmployee.clientid) : null
+          ]
+        );
+      } else {
+        await client.query(
+          'UPDATE users SET password = $1, roleid = $2, clientid = $3 WHERE email = $4',
+          [
+            hashedPassword,
+            updatedEmployee.roleid ? parseInt(updatedEmployee.roleid) : null,
+            updatedEmployee.clientid ? parseInt(updatedEmployee.clientid) : null,
+            updatedEmployee.email
+          ]
+        );
+      }
+      updatedEmployee.tempPassword = tempPassword;
+
+      // Send email with the generated password if clientid is present
+      if (updatedEmployee.clientid) {
+        try {
+          const { sendEmail } = require('../config/mailer');
+          await sendEmail({
+            to: updatedEmployee.email,
+            subject: `Welcome to the team, ${updatedEmployee.full_name}!`,
+            text: `Hello ${updatedEmployee.full_name},\n\nWelcome to our team portal. Your user account has been successfully initialized.\n\nTo log in, please use the details below:\nPortal Login Email: ${updatedEmployee.email}\nSecurity Key: ${tempPassword}\n\nPlease remember to change your password upon your first login.\n\nWarm regards,\nSystem Administrator`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                <h2 style="color: #0f172a;">Welcome to the team, ${updatedEmployee.full_name}!</h2>
+                <p>Your user portal account has been successfully set up.</p>
+                <div style="background-color: #f8fafc; padding: 15px; border-radius: 6px; margin: 20px 0;">
+                  <p style="margin: 0; font-weight: bold; color: #475569;">Login Information:</p>
+                  <p style="margin: 5px 0 0 0;"><strong>Email:</strong> ${updatedEmployee.email}</p>
+                  <p style="margin: 5px 0 0 0;"><strong>One-time Passkey:</strong> <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-size: 14px;">${tempPassword}</code></p>
+                </div>
+                <p style="color: #64748b; font-size: 13px;">For security reasons, you will be prompted to update this password upon your first sign-in.</p>
+                <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+                <p style="font-size: 12px; color: #94a3b8; text-align: center;">This is an automated security notification.</p>
+              </div>
+            `,
+            clientid: updatedEmployee.clientid
+          });
+        } catch (err) {
+          console.error('Error sending password email to employee on update:', err);
+          try { require('fs').writeFileSync('smtp_error.log', 'UPDATE ERROR: ' + (err.stack || err.message || String(err))); } catch(e){}
+        }
+      }
+    } else {
+      // ALWAYS sync the roleid and clientid in users table when employee is updated
+      await client.query(
+        'UPDATE users SET roleid = $1, clientid = $2 WHERE email = $3',
+        [
+          updatedEmployee.roleid ? parseInt(updatedEmployee.roleid) : null,
+          updatedEmployee.clientid ? parseInt(updatedEmployee.clientid) : null,
+          updatedEmployee.email
+        ]
+      );
+    }
+
     await client.query('COMMIT');
-    res.status(200).json(empResult.rows[0]);
+    res.status(200).json(updatedEmployee);
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Error updating employee:', error);

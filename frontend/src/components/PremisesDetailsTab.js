@@ -18,7 +18,7 @@ const COLORS = {
   white: '#FFFFFF',
 };
 
-export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed }) {
+export default function PremisesDetailsTab({ user, showToast, isSidebarCollapsed }) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width > 768;
   const isEmployee = user && String(user.roleId) !== '1' && String(user.roleId) !== '2' && String(user.roleId) !== '5' && String(user.roleId) !== '8';
@@ -30,7 +30,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
   const [formData, setFormData] = useState({});
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isViewOnly, setIsViewOnly] = useState(false);
-  const [vehicleDetailsRecords, setVehicleDetailsRecords] = useState([]);
+  const [premisesDetailsRecords, setPremisesDetailsRecords] = useState([]);
 
   // Table state
   const [searchQuery, setSearchQuery] = useState('');
@@ -66,7 +66,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
         fetch(`${API_URL}/api/clients`),
         fetch(`${API_URL}/api/countries`),
         fetch(`${API_URL}/api/modules`),
-        fetch(`${API_URL}/api/vehicle-details${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`)
+        fetch(`${API_URL}/api/premises-details${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`)
       ]);
       const [clientsData, countriesData, modulesData, recordsData] = await Promise.all([
         clientsRes.json(),
@@ -77,7 +77,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
       setClients(clientsData || []);
       setCountries(countriesData || []);
       setModules(modulesData || []);
-      setVehicleDetailsRecords(Array.isArray(recordsData) ? recordsData : []);
+      setPremisesDetailsRecords(Array.isArray(recordsData) ? recordsData : []);
 
       // Try to set defaults if available
       const clientVal = user?.client_id || user?.clientid;
@@ -87,7 +87,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
       }
       if (user?.country_id || user?.countryid) setSelectedCountry(String(user?.country_id || user?.countryid));
       if (user?.company_id || user?.companyid) setSelectedCompany(String(user?.company_id || user?.companyid));
-      const viModule = (modulesData || []).find(m => m.module_name && m.module_name.toLowerCase().includes('vehicle details'));
+      const viModule = (modulesData || []).find(m => m.module_name && (m.module_name.toLowerCase().includes('primises details') || m.module_name.toLowerCase().includes('premises details')));
       if (viModule) setSelectedModule(String(viModule.id));
     } catch (err) {
       console.error(err);
@@ -137,7 +137,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
     setLoading(true);
     setWizardStep(2);
     try {
-      // 3. Fetch custom fields for this configuration
+      // Fetch custom fields for this configuration
       const cfRes = await fetch(`${API_URL}/api/custom-fields`);
       const customFields = await cfRes.json();
 
@@ -165,7 +165,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
         );
       }
 
-      // 4. Fetch permissions
+      // Fetch permissions
       const permRes = await fetch(`${API_URL}/api/field-permissions`);
       const permissionsList = await permRes.json();
 
@@ -215,7 +215,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
           ? JSON.parse(matchingFieldDef.field_data)
           : matchingFieldDef.field_data;
 
-        // 5. Fetch dropdown option values from tbl_customfieldsvalues
+        // Fetch dropdown option values from tbl_customfieldsvalues
         let fieldValuesMap = {};
         try {
           const fvRes = await fetch(`${API_URL}/api/custom-fields/${matchingFieldDef.id}/field-values`);
@@ -340,7 +340,6 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
   const handleEdit = async (record) => {
     setIsViewOnly(false);
     setEditingRecord(record);
-    // Pre-populate form data from the record
     let parsed = {};
     if (record.field_data) {
       try {
@@ -348,13 +347,11 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
       } catch (e) { }
     }
     setFormData(parsed);
-    // Set wizard selectors to match the record
     setSelectedClient(String(record.clientid || ''));
     setSelectedCountry(String(record.country_id || ''));
     setSelectedModule(String(record.moduleid || ''));
     await fetchCompaniesForClient(String(record.clientid || ''));
     setSelectedCompany(record.company_id ? String(record.company_id) : '');
-    // Load the form configuration then open the modal
     await fetchFormConfiguration(
       String(record.clientid || ''),
       String(record.country_id || ''),
@@ -366,7 +363,6 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
   const handleView = async (record) => {
     setIsViewOnly(true);
     setEditingRecord(record);
-    // Pre-populate form data from the record
     let parsed = {};
     if (record.field_data) {
       try {
@@ -374,13 +370,11 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
       } catch (e) { }
     }
     setFormData(parsed);
-    // Set wizard selectors to match the record
     setSelectedClient(String(record.clientid || ''));
     setSelectedCountry(String(record.country_id || ''));
     setSelectedModule(String(record.moduleid || ''));
     await fetchCompaniesForClient(String(record.clientid || ''));
     setSelectedCompany(record.company_id ? String(record.company_id) : '');
-    // Load the form configuration then open the modal
     await fetchFormConfiguration(
       String(record.clientid || ''),
       String(record.country_id || ''),
@@ -401,41 +395,68 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
     }
 
     try {
-      const res = await fetch(`${API_URL}/api/vehicle-details/${recordToDelete.id}`, {
+      const res = await fetch(`${API_URL}/api/premises-details/${recordToDelete.id}`, {
         method: 'DELETE',
       });
 
-      if (!res.ok) throw new Error('Failed to delete vehicle details record');
+      if (!res.ok) throw new Error('Failed to delete premises details record');
 
-      showToast('Vehicle details record deleted successfully', 'success');
+      showToast('Premises details record deleted successfully', 'success');
       setDeleteModalVisible(false);
       setRecordToDelete(null);
-      fetchInitialData(); // Refresh the list
+      fetchInitialData();
     } catch (error) {
       console.error(error);
-      showToast('Error deleting vehicle details record', 'error');
+      showToast('Error deleting premises details record', 'error');
     }
   };
 
   const handleSave = async () => {
     setSaving(true);
     try {
+      const finalFormData = { ...formData };
+
+      const setDefaults = (fields) => {
+        fields.forEach(f => {
+          if (f.type === 'Date' && !finalFormData[f.id]) {
+            finalFormData[f.id] = new Date().toISOString().split('T')[0];
+          } else if (f.type === 'DateTime' && !finalFormData[f.id]) {
+            const d = new Date();
+            const date = d.toISOString().split('T')[0];
+            const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            finalFormData[f.id] = `${date}T${time}`;
+          } else if (f.type === 'Time' && !finalFormData[f.id]) {
+            const d = new Date();
+            finalFormData[f.id] = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+          }
+          if (f.subsections && f.subsections.length > 0) {
+            f.subsections.forEach(sub => {
+              if (sub.fields) setDefaults(sub.fields);
+            });
+          }
+        });
+      };
+
+      if (fieldsLayout) {
+        fieldsLayout.forEach(section => {
+          if (section.fields) setDefaults(section.fields);
+        });
+      }
+
       const payload = {
-        vehicle_id: null,
+        premise_id: editingRecord?.premise_id || null,
         custom_field_id: customFieldId,
-        field_data: formData,
+        field_data: finalFormData,
         clientid: configParams.clientid,
         country_id: configParams.country_id,
         moduleid: configParams.moduleid,
-        roleid: user ? user.roleId : null,
-        user_id: user ? user.id : null,
         company_id: selectedCompany || null
       };
 
       const isEditing = !!editingRecord;
       const url = isEditing
-        ? `${API_URL}/api/vehicle-details/${editingRecord.id}`
-        : `${API_URL}/api/vehicle-details`;
+        ? `${API_URL}/api/premises-details/${editingRecord.id}`
+        : `${API_URL}/api/premises-details`;
       const method = isEditing ? 'PUT' : 'POST';
 
       const res = await fetch(url, {
@@ -444,16 +465,16 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
         body: JSON.stringify(payload)
       });
 
-      if (!res.ok) throw new Error(`Failed to ${isEditing ? 'update' : 'save'} vehicle details`);
+      if (!res.ok) throw new Error(`Failed to ${isEditing ? 'update' : 'save'} premises details`);
 
-      showToast(isEditing ? 'Vehicle details record updated successfully!' : 'Form submitted successfully!', 'success');
+      showToast(isEditing ? 'Premises details record updated successfully!' : 'Form submitted successfully!', 'success');
       setIsFormOpen(false);
       setEditingRecord(null);
       setFormData({});
       fetchInitialData();
     } catch (error) {
       console.error(error);
-      showToast('Error saving vehicle details', 'error');
+      showToast('Error saving premises details', 'error');
     } finally {
       setSaving(false);
     }
@@ -567,7 +588,6 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
           ? field.allowedOptions
           : (field.options || '').split(',').map(o => o.trim()).filter(Boolean);
 
-        // If there are no options, render it as a single toggle switch
         if (options.length === 0) {
           const val = !!formData[field.id];
           return (
@@ -586,7 +606,6 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
           );
         }
 
-        // Multi-select checkbox
         const rawValue = formData[field.id];
         const selectedValues = Array.isArray(rawValue)
           ? rawValue
@@ -831,7 +850,6 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
         );
       }
       default:
-        // Default text input
         return (
           <TextInput
             style={[styles.input, isViewOnly && { backgroundColor: '#F1F5F9', color: '#64748B' }]}
@@ -850,8 +868,8 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
       {/* MAIN HEADER */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Vehicle Details</Text>
-          <Text style={styles.headerSubtitle}>Manage your vehicle details records.</Text>
+          <Text style={styles.headerTitle}>Premises Details</Text>
+          <Text style={styles.headerSubtitle}>Manage your premises details records.</Text>
         </View>
         {!isEmployee && (
           <TouchableOpacity
@@ -859,7 +877,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
             onPress={handleAddNewRecord}
           >
             <Ionicons name="add-circle" size={20} color="#FFFFFF" />
-            <Text style={styles.addButtonText}>Add Vehicle Details</Text>
+            <Text style={styles.addButtonText}>Add Premise</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -892,13 +910,13 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                 alignItems: 'center',
                 marginBottom: 24
               }}>
-                <Ionicons name="car-sport" size={40} color={COLORS.primary} />
+                <Ionicons name="business-outline" size={40} color={COLORS.primary} />
               </View>
               <Text style={{ fontSize: 24, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 12, textAlign: 'center' }}>
-                Vehicle Registration Entry
+                Premises Registration Entry
               </Text>
               <Text style={{ fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 32, lineHeight: 22, maxWidth: 440 }}>
-                Please register the vehicle specifications and details. All records are processed securely.
+                Please register the premises location and site details. All records are processed securely.
               </Text>
               <TouchableOpacity
                 style={{
@@ -920,16 +938,16 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                 onPress={handleAddNewRecord}
               >
                 <Ionicons name="add-circle" size={22} color="#FFFFFF" style={{ marginRight: 8 }} />
-                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>Add Vehicle Details</Text>
+                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>Add Premise</Text>
               </TouchableOpacity>
             </View>
           </View>
         ) : (
-          vehicleDetailsRecords.length === 0 && !searchQuery ? (
+          premisesDetailsRecords.length === 0 && !searchQuery ? (
             <View style={styles.emptyState}>
               <Ionicons name="document-text-outline" size={48} color={COLORS.textMuted} />
-              <Text style={styles.emptyStateText}>No vehicle details records found.</Text>
-              <Text style={styles.emptyStateSubtext}>Click 'Add Vehicle Details' to create a new record.</Text>
+              <Text style={styles.emptyStateText}>No premises details records found.</Text>
+              <Text style={styles.emptyStateSubtext}>Click 'Add Premise' to create a new record.</Text>
             </View>
           ) : (
             <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#F1F5F9', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1, overflow: 'hidden' }}>
@@ -953,7 +971,6 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                 <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
                 <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Module Info</Text>
                 <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Data Preview</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Employee</Text>
                 <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
                 <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>View</Text>
                 <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>Edit</Text>
@@ -962,7 +979,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
 
               <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true}>
                 {(() => {
-                  const filtered = vehicleDetailsRecords.filter(r => {
+                  const filtered = premisesDetailsRecords.filter(r => {
                     if (user && String(user.roleId) !== '1' && user.clientid) {
                       if (String(r.clientid) !== String(user.clientid)) return false;
                     }
@@ -1030,11 +1047,6 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                               <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Field: {firstKey}</Text>
                             </View>
 
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{record.role_name || `Role: ${record.roleid || 'N/A'}`}</Text>
-                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>{record.employee_name || 'N/A'}</Text>
-                            </View>
-
                             <View style={{ flex: 1, alignItems: 'flex-start' }}>
                               <View style={{ backgroundColor: '#F0FDF4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
                                 <Text style={{ fontSize: 11, fontWeight: '700', color: '#166534' }}>Active</Text>
@@ -1062,7 +1074,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
 
               {/* Pagination Footer */}
               {(() => {
-                const filtered = vehicleDetailsRecords.filter(r => {
+                const filtered = premisesDetailsRecords.filter(r => {
                   if (user && String(user.roleId) !== '1' && user.clientid) {
                     if (String(r.clientid) !== String(user.clientid)) return false;
                   }
@@ -1134,7 +1146,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
             </Text>
 
             <Text style={{ fontSize: 14, color: '#64748B', marginBottom: 24, lineHeight: 20 }}>
-              This will permanently delete the selected vehicle details record. This action cannot be undone and will be completely removed from the database.
+              This will permanently delete the selected premises details record. This action cannot be undone and will be completely removed from the database.
             </Text>
 
             <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 8, textTransform: 'uppercase' }}>
@@ -1179,13 +1191,13 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <Ionicons name="document-text" size={24} color={COLORS.primary} />
-                <Text style={styles.modalTitle}>{isViewOnly ? `View Vehicle Details Record #${editingRecord?.id}` : (editingRecord ? `Edit Vehicle Details Record #${editingRecord.id}` : 'Add Vehicle Details')}</Text>
+                <Text style={styles.modalTitle}>{isViewOnly ? `View Premises Details Record #${editingRecord?.id}` : (editingRecord ? `Edit Premises Details Record #${editingRecord.id}` : 'Add Premise')}</Text>
               </View>
               <TouchableOpacity onPress={() => { setIsFormOpen(false); setEditingRecord(null); setFormData({}); setIsViewOnly(false); }} style={styles.closeButton}>
                 <Ionicons name="close" size={22} color={COLORS.textSecondary} />
               </TouchableOpacity>
             </View>
-            {/* WIZARD PROGRESS BAR */}
+
             {!isViewOnly && (
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, backgroundColor: '#F8FAFC', borderBottomWidth: 1, borderBottomColor: '#E2E8F0' }}>
                 {[
@@ -1321,11 +1333,9 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                       <View style={styles.sectionBody}>
                         {section.fields.map((field, fieldIndex) => {
                           const visibleSubsections = (field.subsections || []).filter(sub => {
-                            // If triggerValue is not set or is empty, show it by default
                             if (!sub.triggerValue || sub.triggerValue.trim() === '') {
                               return true;
                             }
-                            // Otherwise, only show if it matches the parent field value
                             const parentValue = formData[field.id];
                             return parentValue && String(parentValue).trim().toLowerCase() === String(sub.triggerValue).trim().toLowerCase();
                           });
@@ -1338,7 +1348,6 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                               </Text>
                               {renderField(field)}
 
-                              {/* Render subsections if any are visible */}
                               {hasSubsections && (
                                 <View style={styles.subsectionsContainer}>
                                   {visibleSubsections.map((sub, subIndex) => (
@@ -1553,14 +1562,24 @@ const styles = StyleSheet.create({
   submitBtn: {
     backgroundColor: COLORS.primary,
     borderRadius: 8,
-    paddingVertical: 16,
+    paddingVertical: 13,
+    paddingHorizontal: 24,
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
+    marginTop: 16,
+    marginBottom: 8,
+    alignSelf: 'flex-end',
+    minWidth: 120,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   submitBtnText: {
     color: COLORS.white,
     fontWeight: '700',
-    fontSize: 16,
+    fontSize: 14,
   },
   header: {
     flexDirection: 'row',
@@ -1669,26 +1688,4 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
-  submitBtn: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 8,
-    paddingVertical: 13,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 16,
-    marginBottom: 8,
-    alignSelf: 'flex-end',
-    minWidth: 120,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  submitBtnText: {
-    color: COLORS.white,
-    fontWeight: '700',
-    fontSize: 14,
-  }
 });

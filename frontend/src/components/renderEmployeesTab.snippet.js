@@ -1,6 +1,7 @@
   const renderEmployeesTab = () => {
     const filtered = employees.filter(e => {
-      const matchSearch = e.full_name && e.full_name.toLowerCase().includes(employeesSearch.toLowerCase());
+      const matchSearch = (e.full_name && e.full_name.toLowerCase().includes(employeesSearch.toLowerCase())) ||
+        (e.email && e.email.toLowerCase().includes(employeesSearch.toLowerCase()));
       return matchSearch;
     });
     const displayPage = Math.min(employeesPage, Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE)));
