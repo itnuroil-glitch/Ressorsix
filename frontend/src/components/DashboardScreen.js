@@ -3644,17 +3644,12 @@ export default function DashboardScreen({ user, onSignOut }) {
                         <TouchableOpacity
                           style={[styles.tdCell, { flex: 0.8, alignItems: 'center' }]}
                           onPress={() => {
+                            const clientCompanies = companies.filter(c => String(c.clientid || c.client_id) === String(item.id));
+                            const companyListStr = clientCompanies.length > 0
+                              ? clientCompanies.map(c => `• ${c.company_name}`).join('\n')
+                              : 'No companies associated with this client.';
                             alert(
-                              `Client Details:\n\n` +
-                              `Name: ${item.client_name}\n` +
-                              `Company: ${item.companyname || '-'}\n` +
-                              `Email: ${item.email || '-'}\n` +
-                              `Phone: ${item.phone_no || item.contact_no || '-'}\n` +
-                              `Location: ${item.city || ''}, ${item.state || ''}, ${item.country || ''}\n\n` +
-                              `Capacity Limits:\n` +
-                              `- Max Companies: ${item.max_companies || '—'}\n` +
-                              `- Max Staff: ${item.max_employess || '—'}\n` +
-                              `- Max Assets: ${item.max_asset || '—'}`
+                              `Companies registered under ${item.client_name}:\n\n${companyListStr}`
                             );
                           }}
                         >
