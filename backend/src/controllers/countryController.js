@@ -5,7 +5,7 @@ const db = require('../config/db');
 // @access  Public
 exports.getAllCountries = async (req, res) => {
   try {
-    const queryText = 'SELECT * FROM country ORDER BY id ASC';
+    const queryText = 'SELECT * FROM country WHERE is_deleted = 0 ORDER BY id ASC';
     const result = await db.query(queryText);
     res.status(200).json(result.rows);
   } catch (error) {
