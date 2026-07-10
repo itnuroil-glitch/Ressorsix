@@ -32,8 +32,23 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Enable CORS for frontend local development (React Native Web, iOS, Android)
-app.use(cors());
+// Enable CORS for frontend
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (!process.env.FRONTEND_URL) {
+      // In local dev, echo the origin dynamically to support credentials
+      return callback(null, true);
+    }
+    const allowedOrigins = process.env.FRONTEND_URL.split(',').map(url => url.trim());
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
 
 // Serve static attachment files
 app.use('/backend/Attachment', express.static(path.join(__dirname, '../Attachment')));
