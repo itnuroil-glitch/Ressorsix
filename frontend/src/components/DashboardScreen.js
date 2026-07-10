@@ -3576,6 +3576,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                     <Text style={[styles.thCell, { flex: 1.8 }]}>Location</Text>
                     <Text style={[styles.thCell, { flex: 1.2 }]}>Capacities</Text>
                     <Text style={[styles.thCell, { flex: 1.0 }]}>Status</Text>
+                    <Text style={[styles.thCell, { flex: 0.8, textAlign: 'center' }]}>View</Text>
                     <Text style={[styles.thCell, { flex: 0.8, textAlign: 'center' }]}>Edit</Text>
                     <Text style={[styles.thCell, { flex: 0.8, textAlign: 'center' }]}>Delete</Text>
                   </View>
@@ -3638,6 +3639,27 @@ export default function DashboardScreen({ user, onSignOut }) {
                             </Text>
                           </View>
                         </View>
+
+                        {/* View details trigger */}
+                        <TouchableOpacity
+                          style={[styles.tdCell, { flex: 0.8, alignItems: 'center' }]}
+                          onPress={() => {
+                            alert(
+                              `Client Details:\n\n` +
+                              `Name: ${item.client_name}\n` +
+                              `Company: ${item.companyname || '-'}\n` +
+                              `Email: ${item.email || '-'}\n` +
+                              `Phone: ${item.phone_no || item.contact_no || '-'}\n` +
+                              `Location: ${item.city || ''}, ${item.state || ''}, ${item.country || ''}\n\n` +
+                              `Capacity Limits:\n` +
+                              `- Max Companies: ${item.max_companies || '—'}\n` +
+                              `- Max Staff: ${item.max_employess || '—'}\n` +
+                              `- Max Assets: ${item.max_asset || '—'}`
+                            );
+                          }}
+                        >
+                          <Ionicons name="eye-outline" size={18} color={COLORS.primary} />
+                        </TouchableOpacity>
 
                         {/* Edit trigger */}
                         <TouchableOpacity
