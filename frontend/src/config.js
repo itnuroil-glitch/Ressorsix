@@ -6,7 +6,7 @@ export const API_URL = (() => {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     // If accessed via a local network IP (not localhost), dynamically point to port 5000 on that IP
     if (window.location.hostname !== 'localhost') {
-      return `${window.location.protocol}//${window.location.hostname}:5000`;
+       return 'https://ressorsix-backend.onrender.com';
     }
   }
   return Platform.OS === 'web'
