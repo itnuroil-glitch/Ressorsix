@@ -6439,26 +6439,54 @@ export default function DashboardScreen({ user, onSignOut }) {
                       c => String(c.clientid || c.client_id) === String(selectedClientForView.id)
                     );
                     if (clientCompanies.length > 0) {
-                      return clientCompanies.map((c) => (
-                        <View
-                          key={c.id}
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            backgroundColor: '#F8FAFC',
-                            padding: 14,
-                            borderRadius: 8,
-                            borderWidth: 1,
-                            borderColor: '#E2E8F0',
-                            marginBottom: 10
-                          }}
-                        >
-                          <Ionicons name="business-outline" size={18} color={COLORS.primary} style={{ marginRight: 10 }} />
-                          <Text style={{ fontSize: 14, fontWeight: '600', color: '#1E293B' }}>
-                            {c.company_name} {c.short_code ? `(${c.short_code})` : ''}
-                          </Text>
-                        </View>
-                      ));
+                      return clientCompanies.map((c) => {
+                        const companyEmployees = employees.filter(emp =>
+                          emp.companies && emp.companies.some(comp => String(comp.id) === String(c.id))
+                        );
+
+                        return (
+                          <View
+                            key={c.id}
+                            style={{
+                              backgroundColor: '#F8FAFC',
+                              padding: 14,
+                              borderRadius: 8,
+                              borderWidth: 1,
+                              borderColor: '#E2E8F0',
+                              marginBottom: 10
+                            }}
+                          >
+                            {/* Company Header Row */}
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                              <Ionicons name="business-outline" size={18} color={COLORS.primary} style={{ marginRight: 10 }} />
+                              <Text style={{ fontSize: 14, fontWeight: '600', color: '#1E293B' }}>
+                                {c.company_name} {c.short_code ? `(${c.short_code})` : ''}
+                              </Text>
+                            </View>
+
+                            {/* Employees Under Company */}
+                            <View style={{ marginTop: 10, paddingLeft: 28, borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 8 }}>
+                              <Text style={{ fontSize: 11, fontWeight: '700', color: COLORS.textSecondary, textTransform: 'uppercase', marginBottom: 6 }}>
+                                Employees ({companyEmployees.length})
+                              </Text>
+                              {companyEmployees.length > 0 ? (
+                                companyEmployees.map(emp => (
+                                  <View key={emp.id} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                                    <Ionicons name="person-outline" size={13} color={COLORS.textSecondary} style={{ marginRight: 6 }} />
+                                    <Text style={{ fontSize: 13, color: COLORS.textPrimary }}>
+                                      {emp.full_name} <Text style={{ fontSize: 11, color: COLORS.textMuted }}>({emp.role_name || 'Staff'})</Text>
+                                    </Text>
+                                  </View>
+                                ))
+                              ) : (
+                                <Text style={{ color: COLORS.textMuted, fontSize: 12, fontStyle: 'italic' }}>
+                                  No employees registered under this company.
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+                        );
+                      });
                     } else {
                       return (
                         <Text style={{ color: COLORS.textMuted, fontSize: 14, fontStyle: 'italic', textAlign: 'center', marginVertical: 20 }}>
