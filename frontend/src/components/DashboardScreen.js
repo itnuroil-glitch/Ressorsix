@@ -306,6 +306,8 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [clientsLoading, setClientsLoading] = useState(false);
   const [isAddClientModalOpen, setIsAddClientModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
+  const [isViewClientCompaniesModalOpen, setIsViewClientCompaniesModalOpen] = useState(false);
+  const [selectedClientForView, setSelectedClientForView] = useState(null);
 
   // Add/Edit Client Form states
   const [clientName, setClientName] = useState('');
@@ -3644,13 +3646,8 @@ export default function DashboardScreen({ user, onSignOut }) {
                         <TouchableOpacity
                           style={[styles.tdCell, { flex: 0.8, alignItems: 'center' }]}
                           onPress={() => {
-                            const clientCompanies = companies.filter(c => String(c.clientid || c.client_id) === String(item.id));
-                            const companyListStr = clientCompanies.length > 0
-                              ? clientCompanies.map(c => `• ${c.company_name}`).join('\n')
-                              : 'No companies associated with this client.';
-                            alert(
-                              `Companies registered under ${item.client_name}:\n\n${companyListStr}`
-                            );
+                            setSelectedClientForView(item);
+                            setIsViewClientCompaniesModalOpen(true);
                           }}
                         >
                           <Ionicons name="eye-outline" size={18} color={COLORS.primary} />
@@ -6393,6 +6390,90 @@ export default function DashboardScreen({ user, onSignOut }) {
                 ) : (
                   <Text style={styles.modalSaveText}>{editingDepartment ? 'Update Dept' : 'Save Dept'}</Text>
                 )}
+              </TouchableOpacity>
+            </View>
+
+      {/* VIEW CLIENT COMPANIES MODAL OVERLAY */}
+      <Modal
+        visible={isViewClientCompaniesModalOpen}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setIsViewClientCompaniesModalOpen(false)}
+      >
+        <View style={dynamicModalOverlayStyle}>
+          <View style={[styles.modalCard, { width: width > 768 ? 600 : '95%', maxWidth: 600, maxHeight: '80%' }]}>
+
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleWrapper}>
+                <Ionicons name="business-outline" size={24} color={COLORS.primary} />
+                <Text style={styles.modalTitle}>
+                  Companies under {selectedClientForView?.client_name}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setIsViewClientCompaniesModalOpen(false)}
+                style={styles.modalCloseBtn}
+              >
+                <Ionicons name="close" size={24} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Modal Content */}
+            <ScrollView
+              style={{ flexGrow: 0, maxHeight: height - 200, paddingVertical: 16 }}
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled={true}
+            >
+              <View style={{ paddingHorizontal: 20 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 12, textTransform: 'uppercase' }}>
+                  Registered Company Records
+                </Text>
+                {selectedClientForView && (
+                  (() => {
+                    const clientCompanies = companies.filter(
+                      c => String(c.clientid || c.client_id) === String(selectedClientForView.id)
+                    );
+                    if (clientCompanies.length > 0) {
+                      return clientCompanies.map((c) => (
+                        <View
+                          key={c.id}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            backgroundColor: '#F8FAFC',
+                            padding: 14,
+                            borderRadius: 8,
+                            borderWidth: 1,
+                            borderColor: '#E2E8F0',
+                            marginBottom: 10
+                          }}
+                        >
+                          <Ionicons name="business-outline" size={18} color={COLORS.primary} style={{ marginRight: 10 }} />
+                          <Text style={{ fontSize: 14, fontWeight: '600', color: '#1E293B' }}>
+                            {c.company_name} {c.short_code ? `(${c.short_code})` : ''}
+                          </Text>
+                        </View>
+                      ));
+                    } else {
+                      return (
+                        <Text style={{ color: COLORS.textMuted, fontSize: 14, fontStyle: 'italic', textAlign: 'center', marginVertical: 20 }}>
+                          No companies associated with this client.
+                        </Text>
+                      );
+                    }
+                  })()
+                )}
+              </View>
+            </ScrollView>
+
+            {/* Modal Footer */}
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.modalCancelBtn, { width: '100%', alignItems: 'center' }]}
+                onPress={() => setIsViewClientCompaniesModalOpen(false)}
+              >
+                <Text style={styles.modalCancelText}>Close</Text>
               </TouchableOpacity>
             </View>
 
