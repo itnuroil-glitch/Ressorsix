@@ -6393,6 +6393,10 @@ export default function DashboardScreen({ user, onSignOut }) {
               </TouchableOpacity>
             </View>
 
+          </View>
+        </View>
+      </Modal>
+
       {/* VIEW CLIENT COMPANIES MODAL OVERLAY */}
       <Modal
         visible={isViewClientCompaniesModalOpen}
