@@ -860,9 +860,59 @@ export default function FieldPermissionsTab({ user, showToast, renderTableToolba
                   );
                 }
 
+                const getAllFieldIds = () => {
+                  const ids = [];
+                  parsedSections.forEach(section => {
+                    (section.fields || []).forEach(field => {
+                      ids.push(field.id);
+                      (field.subsections || []).forEach(sub => {
+                        (sub.fields || []).forEach(sf => {
+                          ids.push(sf.id);
+                        });
+                      });
+                    });
+                  });
+                  return ids;
+                };
+
+                const allFieldIds = getAllFieldIds();
+                const isAllSelected = allFieldIds.length > 0 && allFieldIds.every(id => selectedFields[id]);
+
+                const handleSelectAllToggle = () => {
+                  if (isAllSelected) {
+                    setSelectedFields(prev => {
+                      const updated = { ...prev };
+                      allFieldIds.forEach(id => {
+                        updated[id] = false;
+                      });
+                      return updated;
+                    });
+                  } else {
+                    setSelectedFields(prev => {
+                      const updated = { ...prev };
+                      allFieldIds.forEach(id => {
+                        updated[id] = true;
+                      });
+                      return updated;
+                    });
+                  }
+                };
+
                 return (
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 18, fontWeight: '700', color: '#0F172A', marginBottom: 16 }}>Configure Field Access</Text>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                      <Text style={{ fontSize: 18, fontWeight: '700', color: '#0F172A' }}>Configure Field Access</Text>
+                      <TouchableOpacity
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 4 }}
+                        onPress={handleSelectAllToggle}
+                        activeOpacity={0.7}
+                      >
+                        <View style={{ width: 20, height: 20, borderRadius: 5, borderWidth: 2, borderColor: isAllSelected ? COLORS.primary : '#CBD5E1', backgroundColor: isAllSelected ? COLORS.primary : 'transparent', justifyContent: 'center', alignItems: 'center' }}>
+                          {isAllSelected && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
+                        </View>
+                        <Text style={{ fontSize: 14, fontWeight: '600', color: COLORS.textPrimary }}>Select All</Text>
+                      </TouchableOpacity>
+                    </View>
                     <ScrollView style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', padding: 24 }} showsVerticalScrollIndicator={false}>
                       {parsedSections.map((section, sIdx) => (
                         <View key={`sec-${sIdx}`} style={{ marginBottom: 32 }}>

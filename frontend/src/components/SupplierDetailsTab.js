@@ -153,17 +153,6 @@ export default function SupplierDetailsTab({ user, showToast, isSidebarCollapsed
           String(cf.country_id || cf.countryid) === String(countryId)
         );
       }
-      if (!matchingFieldDef) {
-        matchingFieldDef = customFields.find(cf =>
-          String(cf.module_id || cf.moduleid) === String(moduleId) &&
-          String(cf.country_id || cf.countryid) === '1'
-        );
-      }
-      if (!matchingFieldDef) {
-        matchingFieldDef = customFields.find(cf =>
-          String(cf.module_id || cf.moduleid) === String(moduleId)
-        );
-      }
 
       // 4. Fetch permissions
       const permRes = await fetch(`${API_URL}/api/field-permissions`);
@@ -181,27 +170,8 @@ export default function SupplierDetailsTab({ user, showToast, isSidebarCollapsed
           ? JSON.parse(activePerm.permitted_fields)
           : activePerm.permitted_fields;
       } else {
-        // Fallback: permit all fields in layout if no permission is defined
-        if (matchingFieldDef) {
-          const parsed = typeof matchingFieldDef.field_data === 'string'
-            ? JSON.parse(matchingFieldDef.field_data)
-            : matchingFieldDef.field_data;
-          const enableAll = (fields) => {
-            fields.forEach(f => {
-              permittedFields[f.id] = true;
-              if (f.subsections) {
-                f.subsections.forEach(sub => {
-                  if (sub.fields) enableAll(sub.fields);
-                });
-              }
-            });
-          };
-          if (Array.isArray(parsed)) {
-            parsed.forEach(sec => {
-              if (sec.fields) enableAll(sec.fields);
-            });
-          }
-        }
+        // If no explicit permission is configured, hide the form layout
+        matchingFieldDef = null;
       }
 
       if (matchingFieldDef) {
