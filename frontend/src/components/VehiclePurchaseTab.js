@@ -88,9 +88,12 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
       if (user?.country_id || user?.countryid) setSelectedCountry(String(user?.country_id || user?.countryid));
       if (user?.company_id || user?.companyid) setSelectedCompany(String(user?.company_id || user?.companyid));
 
-      // Look for module containing "purchase" or "vehile purchase" or "vehicle purchase"
-      const viModule = (modulesData || []).find(m => m.module_name && (m.module_name.toLowerCase().includes('purchase') || m.module_name.toLowerCase().includes('purchse')));
-      if (viModule) setSelectedModule(String(viModule.id));
+      // Target the exact Module ID (e.g., '24' for Vehicle Purchase)
+      const TARGET_MODULE_ID = '24';
+      const hasModule = (modulesData || []).some(m => String(m.id) === TARGET_MODULE_ID);
+      if (hasModule) {
+        setSelectedModule(TARGET_MODULE_ID);
+      }
     } catch (err) {
       console.error(err);
     }
