@@ -120,10 +120,29 @@ export default function LoginScreen({ onLoginSuccess }) {
     }
 
     setResetLoading(true);
-    setTimeout(() => {
-      setResetLoading(false);
-      setScreenView('forgot_password_success');
-    }, 1500);
+    fetch(`${API_URL}/api/auth/forgot-password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: resetEmail }),
+    })
+      .then((res) => {
+        return res.json().then((data) => {
+          if (!res.ok) {
+            throw new Error(data.message || 'Failed to submit reset request.');
+          }
+          return data;
+        });
+      })
+      .then(() => {
+        setResetLoading(false);
+        setScreenView('forgot_password_success');
+      })
+      .catch((error) => {
+        setResetLoading(false);
+        setErrorMessage(error.message || 'Connection error. Please try again.');
+      });
   };
 
   // Return to Login screen helper

@@ -3580,6 +3580,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                     <Text style={[styles.thCell, { flex: 1.0 }]}>Status</Text>
                     <Text style={[styles.thCell, { flex: 0.8, textAlign: 'center' }]}>View</Text>
                     <Text style={[styles.thCell, { flex: 0.8, textAlign: 'center' }]}>Edit</Text>
+                    <Text style={[styles.thCell, { flex: 0.8, textAlign: 'center' }]}>Password</Text>
                     <Text style={[styles.thCell, { flex: 0.8, textAlign: 'center' }]}>Delete</Text>
                   </View>
 
@@ -3659,6 +3660,23 @@ export default function DashboardScreen({ user, onSignOut }) {
                           onPress={() => startEditClient(item)}
                         >
                           <Ionicons name="pencil-outline" size={18} color={COLORS.primary} />
+                        </TouchableOpacity>
+
+                        {/* Password reset trigger */}
+                        <TouchableOpacity
+                          style={[styles.tdCell, { flex: 0.8, alignItems: 'center' }]}
+                          onPress={() => {
+                            if (!item.email) {
+                              showToast('This client does not have an email address associated with a portal account.', 'warning');
+                              return;
+                            }
+                            setAdminPasswordResetEmployee({
+                              email: item.email,
+                              full_name: item.client_name
+                            });
+                          }}
+                        >
+                          <Ionicons name="key-outline" size={18} color="#f59e0b" />
                         </TouchableOpacity>
 
                         {/* Delete trigger */}
