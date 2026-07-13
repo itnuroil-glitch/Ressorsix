@@ -1896,7 +1896,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (r.includes('asset') && r.includes('category') || n.includes('asset') && n.includes('category')) return 'asset_category';
     if (r.includes('asset') && r.includes('brand') || n.includes('asset') && n.includes('brand')) return 'asset_brand';
     if (r.includes('asset') && r.includes('assignment') || n.includes('asset') && n.includes('assignment')) return 'asset_assignment';
-    if (r === '/asset' || r === '/assets' || n === 'asset' || n === 'assets' || n === 'asset inventory' || n === 'asset stock report' || n === 'asset inventory report') return 'asset_inventory';
+    if (n === 'asset inventory' || n === 'asset stock report' || n === 'asset inventory report') return 'asset_inventory';
     if (r.includes('supplier') || n.includes('supplier')) return 'supplier_details';
     if ((r.includes('payment') && r.includes('method')) || (n.includes('payment') && n.includes('method'))) return 'payment_method';
     if ((r.includes('purchase') && r.includes('detail')) || (n.includes('purchase') && n.includes('detail'))) return 'purchase_details';

@@ -51,7 +51,7 @@ export default function InventoryTab({ user, showToast, isSidebarCollapsed }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const PER_PAGE = 8;
+  const PER_PAGE = 6;
 
   // Edit / View Modal States
   const [modalOpen, setModalOpen] = useState(false);
