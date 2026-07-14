@@ -1,15 +1,5 @@
 # Dependency directories
 node_modules/
-**/node_modules/
-
-# Build and distribution directories
-dist/
-build/
-bin/
-obj/
-out/
-.expo/
-web-build/
 
 # Local configuration files
 .env
@@ -17,6 +7,7 @@ web-build/
 .env.*.local
 .env.development
 .env.production
+env
 
 # Logs
 npm-debug.log*
@@ -33,11 +24,3 @@ Thumbs.db
 .vscode/
 .idea/
 *.suo
-*.ntvs*
-*.njsproj
-*.sln
-
-# Git backup directories
-.git_backup
-.git_backup/
-

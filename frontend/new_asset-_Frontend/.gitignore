@@ -36,8 +36,3 @@ Thumbs.db
 *.ntvs*
 *.njsproj
 *.sln
-
-# Git backup directories
-.git_backup
-.git_backup/
-
