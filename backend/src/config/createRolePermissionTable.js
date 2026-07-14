@@ -13,6 +13,7 @@ async function migrate() {
         can_create BOOLEAN DEFAULT false,
         can_edit BOOLEAN DEFAULT false,
         can_delete BOOLEAN DEFAULT false,
+        all_record_view BOOLEAN DEFAULT false,
         full_control BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
