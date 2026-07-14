@@ -1104,7 +1104,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     setCompanyShortname(item.company_shortname || '');
     setIndustry(item.industry || '');
     setAddress(item.address || '');
-    
+
     // Resolve country to ID if it's stored as name
     let resolvedCountryId = '';
     if (item.country) {
@@ -3299,7 +3299,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                     <Text style={[styles.thCell, { flex: 1, textAlign: 'center' }]}>STATUS</Text>
                     <Text style={[styles.thCell, { flex: 1.2, textAlign: 'center' }]}>ACTIONS</Text>
                   </View>
- 
+
                   {paginated.map((item) => (
                     <View key={"employee-" + item.id} style={styles.modulesTableRow}>
                       <Text style={[styles.tdCell, { flex: 2, fontWeight: '500', color: COLORS.textPrimary }]} numberOfLines={1}>
@@ -4101,7 +4101,7 @@ export default function DashboardScreen({ user, onSignOut }) {
 
             {rolePermissions.length > 0 ? (
               <ScrollView horizontal={true} showsHorizontalScrollIndicator={true} style={{ width: '100%' }} contentContainerStyle={{ minWidth: '100%' }}>
-                <View style={[styles.modulesTableWrapper, { minWidth: String(selectedRoleId) !== '1' ? 1100 : 1000 }]}><View style={{ paddingBottom: 10 }}>
+                <View style={[styles.modulesTableWrapper, { minWidth: 1100 }]}><View style={{ paddingBottom: 10 }}>
 
                   {/* Table Header Row */}
                   <View style={styles.modulesTableHeader}>
@@ -4110,9 +4110,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                     <Text style={[styles.thCell, { flex: 1.0, textAlign: 'center' }]}>Create</Text>
                     <Text style={[styles.thCell, { flex: 1.0, textAlign: 'center' }]}>Edit</Text>
                     <Text style={[styles.thCell, { flex: 1.0, textAlign: 'center' }]}>Delete</Text>
-                    {String(selectedRoleId) !== '1' && (
-                      <Text style={[styles.thCell, { flex: 1.2, textAlign: 'center' }]}>All Record View</Text>
-                    )}
+                    <Text style={[styles.thCell, { flex: 1.2, textAlign: 'center' }]}>All Record View</Text>
                     <Text style={[styles.thCell, { flex: 1.2, textAlign: 'center', fontWeight: 'bold', color: COLORS.primary }]}>Full Control</Text>
                   </View>
 
@@ -4229,26 +4227,24 @@ export default function DashboardScreen({ user, onSignOut }) {
                         </View>
 
                         {/* All Record View Checkbox */}
-                        {String(selectedRoleId) !== '1' && (
-                          <View style={[styles.tdCell, { flex: 1.2, alignItems: 'center' }]}>
-                            <TouchableOpacity
-                              style={{
-                                width: 20,
-                                height: 20,
-                                borderRadius: 6,
-                                borderWidth: 2,
-                                borderColor: item.all_record_view ? COLORS.primary : '#94A3B8',
-                                backgroundColor: item.all_record_view ? COLORS.primary : 'transparent',
-                                justifyContent: 'center',
-                                alignItems: 'center',
-                              }}
-                              onPress={() => togglePermission(item.module_id, 'all_record_view')}
-                              activeOpacity={0.7}
-                            >
-                              {item.all_record_view && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
-                            </TouchableOpacity>
-                          </View>
-                        )}
+                        <View style={[styles.tdCell, { flex: 1.2, alignItems: 'center' }]}>
+                          <TouchableOpacity
+                            style={{
+                              width: 20,
+                              height: 20,
+                              borderRadius: 6,
+                              borderWidth: 2,
+                              borderColor: item.all_record_view ? COLORS.primary : '#94A3B8',
+                              backgroundColor: item.all_record_view ? COLORS.primary : 'transparent',
+                              justifyContent: 'center',
+                              alignItems: 'center',
+                            }}
+                            onPress={() => togglePermission(item.module_id, 'all_record_view')}
+                            activeOpacity={0.7}
+                          >
+                            {item.all_record_view && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+                          </TouchableOpacity>
+                        </View>
 
                         {/* Full Control Checkbox */}
                         <View style={[styles.tdCell, { flex: 1.2, alignItems: 'center' }]}>
@@ -4665,7 +4661,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                 <Ionicons name="close" size={18} color="#64748B" />
               </TouchableOpacity>
             </View>
- 
+
             {/* Body */}
             <View style={{ padding: 24, gap: 20 }}>
               <View>
@@ -4693,7 +4689,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                   </TouchableOpacity>
                 </View>
               </View>
- 
+
               <View>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B', marginBottom: 8 }}>New Password</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, backgroundColor: '#F8FAFC', paddingHorizontal: 14 }}>
@@ -4719,7 +4715,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                   </TouchableOpacity>
                 </View>
               </View>
- 
+
               <View>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B', marginBottom: 8 }}>Confirm New Password</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, backgroundColor: '#F8FAFC', paddingHorizontal: 14 }}>
@@ -4746,7 +4742,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                 </View>
               </View>
             </View>
- 
+
             {/* Footer */}
             <View style={{ paddingHorizontal: 24, paddingVertical: 20, borderTopWidth: 1, borderTopColor: '#F1F5F9', backgroundColor: '#F8FAFC', flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
               <TouchableOpacity
@@ -4830,7 +4826,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                 <Ionicons name="close" size={18} color="#64748B" />
               </TouchableOpacity>
             </View>
- 
+
             {/* Body */}
             <View style={{ padding: 24, gap: 20 }}>
               <View>
@@ -4858,7 +4854,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                   </TouchableOpacity>
                 </View>
               </View>
- 
+
               <View>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B', marginBottom: 8 }}>Confirm New Password</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, backgroundColor: '#F8FAFC', paddingHorizontal: 14 }}>
@@ -4885,7 +4881,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                 </View>
               </View>
             </View>
- 
+
             {/* Footer */}
             <View style={{ paddingHorizontal: 24, paddingVertical: 20, borderTopWidth: 1, borderTopColor: '#F1F5F9', backgroundColor: '#F8FAFC', flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
               <TouchableOpacity

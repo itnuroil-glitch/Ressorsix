@@ -3931,7 +3931,7 @@ export default function DashboardScreen({ user, onSignOut }) {
 
             {rolePermissions.length > 0 ? (
               <ScrollView horizontal={true} showsHorizontalScrollIndicator={true} style={{ width: '100%' }} contentContainerStyle={{ minWidth: '100%' }}>
-                <View style={[styles.modulesTableWrapper, { minWidth: String(selectedRoleId) !== '1' ? 1100 : 1000 }]}><View style={{ paddingBottom: 10 }}>
+                <View style={[styles.modulesTableWrapper, { minWidth: 1100 }]}><View style={{ paddingBottom: 10 }}>
 
                   {/* Table Header Row */}
                   <View style={styles.modulesTableHeader}>
@@ -3940,9 +3940,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                     <Text style={[styles.thCell, { flex: 1.0, textAlign: 'center' }]}>Create</Text>
                     <Text style={[styles.thCell, { flex: 1.0, textAlign: 'center' }]}>Edit</Text>
                     <Text style={[styles.thCell, { flex: 1.0, textAlign: 'center' }]}>Delete</Text>
-                    {String(selectedRoleId) !== '1' && (
-                      <Text style={[styles.thCell, { flex: 1.2, textAlign: 'center' }]}>All Record View</Text>
-                    )}
+                    <Text style={[styles.thCell, { flex: 1.2, textAlign: 'center' }]}>All Record View</Text>
                     <Text style={[styles.thCell, { flex: 1.2, textAlign: 'center', fontWeight: 'bold', color: COLORS.primary }]}>Full Control</Text>
                   </View>
 
@@ -4059,26 +4057,24 @@ export default function DashboardScreen({ user, onSignOut }) {
                         </View>
 
                         {/* All Record View Checkbox */}
-                        {String(selectedRoleId) !== '1' && (
-                          <View style={[styles.tdCell, { flex: 1.2, alignItems: 'center' }]}>
-                            <TouchableOpacity
-                              style={{
-                                width: 20,
-                                height: 20,
-                                borderRadius: 6,
-                                borderWidth: 2,
-                                borderColor: item.all_record_view ? COLORS.primary : '#94A3B8',
-                                backgroundColor: item.all_record_view ? COLORS.primary : 'transparent',
-                                justifyContent: 'center',
-                                alignItems: 'center',
-                              }}
-                              onPress={() => togglePermission(item.module_id, 'all_record_view')}
-                              activeOpacity={0.7}
-                            >
-                              {item.all_record_view && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
-                            </TouchableOpacity>
-                          </View>
-                        )}
+                        <View style={[styles.tdCell, { flex: 1.2, alignItems: 'center' }]}>
+                          <TouchableOpacity
+                            style={{
+                              width: 20,
+                              height: 20,
+                              borderRadius: 6,
+                              borderWidth: 2,
+                              borderColor: item.all_record_view ? COLORS.primary : '#94A3B8',
+                              backgroundColor: item.all_record_view ? COLORS.primary : 'transparent',
+                              justifyContent: 'center',
+                              alignItems: 'center',
+                            }}
+                            onPress={() => togglePermission(item.module_id, 'all_record_view')}
+                            activeOpacity={0.7}
+                          >
+                            {item.all_record_view && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+                          </TouchableOpacity>
+                        </View>
 
                         {/* Full Control Checkbox */}
                         <View style={[styles.tdCell, { flex: 1.2, alignItems: 'center' }]}>
