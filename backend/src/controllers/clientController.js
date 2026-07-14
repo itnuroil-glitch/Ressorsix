@@ -341,6 +341,17 @@ exports.updateClient = async (req, res) => {
     // Auto-calculate is_multi_country based on companies linked to this client
     await recalculateMultiCountry(id);
 
+    // Propagate country and state (emirate) update to the company table for the client
+    if (country || state) {
+      await db.query(
+        `UPDATE company 
+         SET country = COALESCE($1, country), 
+             emirate = COALESCE($2, emirate) 
+         WHERE clientid = $3`,
+        [country ? country.trim() : null, state ? state.trim() : null, id]
+      );
+    }
+
     // Format BigInt column fields for correct JSON representation
     const formattedClient = { ...result.rows[0] };
     if (formattedClient.trn_no) formattedClient.trn_no = formattedClient.trn_no.toString();
