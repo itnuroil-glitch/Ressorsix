@@ -112,13 +112,68 @@ exports.saveAssetAssignment = async (req, res) => {
 
 exports.getAssetAssignments = async (req, res) => {
   try {
-    const { clientid } = req.query;
+    const { clientid, email } = req.query;
     let query = 'SELECT * FROM tbl_asset_assigned WHERE is_deleted = false';
     const params = [];
+    let paramCount = 1;
+
     if (clientid) {
-      query += ' AND clientid = $1';
+      query += ` AND clientid = $${paramCount++}`;
       params.push(clientid);
     }
+
+    let restrictToEmployeeId = null;
+
+    if (email && email.trim() !== '') {
+      // 1. Resolve employee details and role
+      const empRes = await db.query(
+        'SELECT id, roleid FROM employee WHERE email = $1 AND is_deleted = false',
+        [email.trim().toLowerCase()]
+      );
+
+      if (empRes.rows.length > 0) {
+        const employeeId = empRes.rows[0].id;
+        const roleId = empRes.rows[0].roleid;
+
+        // Superadmin (role 1) and Client Admin (role 2) bypass restriction automatically
+        if (String(roleId) !== '1' && String(roleId) !== '2') {
+          // 2. Fetch the Asset Assignment module ID to check permissions
+          const moduleRes = await db.query(
+            "SELECT id FROM module WHERE LOWER(module_name) LIKE '%asset assignment%' LIMIT 1"
+          );
+
+          if (moduleRes.rows.length > 0) {
+            const moduleId = moduleRes.rows[0].id;
+
+            // 3. Query role permissions table for the all_record_view flag
+            const permRes = await db.query(
+              'SELECT all_record_view FROM role_permission WHERE role_id = $1 AND module_id = $2',
+              [roleId, moduleId]
+            );
+
+            const hasAllRecordView = permRes.rows.length > 0 && permRes.rows[0].all_record_view === true;
+
+            // If the role DOES NOT have All Record View checked, restrict assignments to this employee
+            if (!hasAllRecordView) {
+              restrictToEmployeeId = String(employeeId);
+            }
+          } else {
+            // Fallback: Default restrict if module metadata isn't found
+            restrictToEmployeeId = String(employeeId);
+          }
+        }
+      }
+    }
+
+    // 4. Apply dynamic JSON filtering if restrictToEmployeeId is set
+    if (restrictToEmployeeId) {
+      query += ` AND EXISTS (
+        SELECT 1 FROM jsonb_each_text(field_data::jsonb)
+        WHERE value = $${paramCount++}
+      )`;
+      params.push(restrictToEmployeeId);
+    }
+
     query += ' ORDER BY id DESC';
 
     const result = await db.query(query, params);

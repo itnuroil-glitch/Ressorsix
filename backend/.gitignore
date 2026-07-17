@@ -24,3 +24,8 @@ Thumbs.db
 .vscode/
 .idea/
 *.suo
+
+# Git backup directories
+.git_backup
+.git_backup/
+

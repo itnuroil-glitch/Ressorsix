@@ -158,7 +158,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
         fetch(`${API_URL}/api/clients`),
         fetch(`${API_URL}/api/countries`),
         fetch(`${API_URL}/api/modules`),
-        fetch(`${API_URL}/api/asset-assignment${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`),
+        fetch(`${API_URL}/api/asset-assignment${user && user.clientid ? `?clientid=${user.clientid}&email=${encodeURIComponent(user.email)}` : ''}`),
         fetch(`${API_URL}/api/asset-details/dropdown`),
         fetch(`${API_URL}/api/employees${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`)
       ]);

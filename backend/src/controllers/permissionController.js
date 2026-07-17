@@ -24,6 +24,7 @@ exports.getRolePermissions = async (req, res) => {
         COALESCE(rp.can_create, false) AS can_create,
         COALESCE(rp.can_edit, false) AS can_edit,
         COALESCE(rp.can_delete, false) AS can_delete,
+        COALESCE(rp.all_record_view, false) AS all_record_view,
         COALESCE(rp.full_control, false) AS full_control
       FROM module m
       LEFT JOIN role_permission rp ON rp.module_id = m.id AND rp.role_id = $1
@@ -79,7 +80,7 @@ exports.saveRolePermissions = async (req, res) => {
   const client = await db.pool.connect();
   try {
     const { roleId } = req.params;
-    const { permissions } = req.body; // Array of { module_id, can_view, can_create, can_edit, can_delete, full_control }
+    const { permissions } = req.body; // Array of { module_id, can_view, can_create, can_edit, can_delete, all_record_view, full_control }
 
     if (!Array.isArray(permissions)) {
       return res.status(400).json({ message: 'Permissions array is required.' });
@@ -94,14 +95,15 @@ exports.saveRolePermissions = async (req, res) => {
     await client.query('BEGIN');
 
     const upsertQuery = `
-      INSERT INTO role_permission (role_id, module_id, can_view, can_create, can_edit, can_delete, full_control, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+      INSERT INTO role_permission (role_id, module_id, can_view, can_create, can_edit, can_delete, all_record_view, full_control, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
       ON CONFLICT (role_id, module_id)
       DO UPDATE SET
         can_view = EXCLUDED.can_view,
         can_create = EXCLUDED.can_create,
         can_edit = EXCLUDED.can_edit,
         can_delete = EXCLUDED.can_delete,
+        all_record_view = EXCLUDED.all_record_view,
         full_control = EXCLUDED.full_control,
         updated_at = CURRENT_TIMESTAMP
       RETURNING *
@@ -109,7 +111,7 @@ exports.saveRolePermissions = async (req, res) => {
 
     const savedPermissions = [];
     for (const perm of permissions) {
-      const { module_id, can_view, can_create, can_edit, can_delete, full_control } = perm;
+      const { module_id, can_view, can_create, can_edit, can_delete, all_record_view, full_control } = perm;
       const res = await client.query(upsertQuery, [
         roleId,
         module_id,
@@ -117,6 +119,7 @@ exports.saveRolePermissions = async (req, res) => {
         !!can_create,
         !!can_edit,
         !!can_delete,
+        !!all_record_view,
         !!full_control
       ]);
       savedPermissions.push(res.rows[0]);
