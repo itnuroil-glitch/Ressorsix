@@ -34,6 +34,7 @@ import PurchaseDetailsTab from './PurchaseDetailsTab';
 import PaymentMethodTab from './PaymentMethodTab';
 import UOMTab from './UOMTab';
 import VATTab from './VATTab';
+import PlanManagementTab from './PlanManagementTab';
 
 export default function DashboardScreen({ user, onSignOut }) {
   const { width, height } = useWindowDimensions();
@@ -194,6 +195,8 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [newRoleStatus, setNewRoleStatus] = useState(1); // 1 = Active, 0 = Inactive
   const [roleFormSaving, setRoleFormSaving] = useState(false);
   const [roleFormError, setRoleFormError] = useState('');
+  const [newRoleClientIds, setNewRoleClientIds] = useState([]);
+  const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = useState(false);
 
   // Department state variables
   const [departments, setDepartments] = useState([]);
@@ -298,6 +301,7 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [employeeFormSaving, setEmployeeFormSaving] = useState(false);
   const [employeeFormError, setEmployeeFormError] = useState('');
   const [empRoleError, setEmpRoleError] = useState('');
+  const [isEmpRoleDropdownOpen, setIsEmpRoleDropdownOpen] = useState(false);
   const [empCompanyError, setEmpCompanyError] = useState('');
 
 
@@ -332,6 +336,8 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [clientFormSaving, setClientFormSaving] = useState(false);
   const [clientFormError, setClientFormError] = useState('');
   const [clientWizardStep, setClientWizardStep] = useState(1); // 1 = Identity, 2 = License, 3 = Location, 4 = Limits
+  const [plans, setPlans] = useState([]);
+  const [selectedPlanId, setSelectedPlanId] = useState('');
 
   // Country state variables
   const [countries, setCountries] = useState([]);
@@ -354,6 +360,7 @@ export default function DashboardScreen({ user, onSignOut }) {
 
   // Role Permission states
   const [selectedRoleId, setSelectedRoleId] = useState('');
+  const [isRolePermissionModalOpen, setIsRolePermissionModalOpen] = useState(false);
   const [rolePermissions, setRolePermissions] = useState([]);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
   const [permissionsSaving, setPermissionsSaving] = useState(false);
@@ -369,7 +376,11 @@ export default function DashboardScreen({ user, onSignOut }) {
       return;
     }
     setUserPermissionsLoading(true);
-    fetch(`${API_URL}/api/roles/${user.roleId}/permissions`)
+    let url = `${API_URL}/api/roles/${user.roleId}/permissions`;
+    if (user.clientid) {
+      url += `?clientid=${user.clientid}`;
+    }
+    fetch(url)
       .then((res) => {
         if (!res.ok) throw new Error('Failed to fetch user permissions.');
         return res.json();
@@ -391,7 +402,11 @@ export default function DashboardScreen({ user, onSignOut }) {
       return;
     }
     setPermissionsLoading(true);
-    fetch(`${API_URL}/api/roles/${roleId}/permissions`)
+    let url = `${API_URL}/api/roles/${roleId}/permissions`;
+    if (user && user.clientid) {
+      url += `?clientid=${user.clientid}`;
+    }
+    fetch(url)
       .then((res) => {
         if (!res.ok) throw new Error('Failed to fetch role permissions.');
         return res.json();
@@ -486,6 +501,7 @@ export default function DashboardScreen({ user, onSignOut }) {
       .then(() => {
         showToast('Role permissions updated successfully!', 'success');
         setPermissionsSaving(false);
+        setIsRolePermissionModalOpen(false);
         // Sync active user privileges in real-time if editing their own role!
         if (user && String(selectedRoleId) === String(user.roleId)) {
           fetchUserPermissions();
@@ -676,7 +692,8 @@ export default function DashboardScreen({ user, onSignOut }) {
   // Fetch modules from the REST API
   const fetchModules = () => {
     setModulesLoading(true);
-    fetch(`${API_URL}/api/modules`)
+    const clientParam = user?.clientid ? `?clientid=${user.clientid}` : '';
+    fetch(`${API_URL}/api/modules${clientParam}`)
       .then((res) => {
         if (!res.ok) throw new Error('Failed to retrieve modules.');
         return res.json();
@@ -757,21 +774,39 @@ export default function DashboardScreen({ user, onSignOut }) {
       });
   };
 
-  // Fetch all database tables on mount
+  // Fetch static database tables on mount
   useEffect(() => {
-    fetchModules();
-    fetchRoles();
     fetchDepartments();
     fetchSmtpConfigs();
     fetchClients();
     fetchCompanies();
     fetchCountries();
     fetchStates();
-    fetchUserPermissions();
-    fetchEmployees();
+    fetchPlans();
   }, []);
 
+  // Fetch user-dependent data when user loads or changes
+  useEffect(() => {
+    if (user) {
+      fetchModules();
+      fetchRoles();
+      fetchUserPermissions();
+      fetchEmployees();
+    }
+  }, [user]);
+
   // Fetch clients from the REST API
+
+  const fetchPlans = () => {
+    fetch(`${API_URL}/api/plans`)
+      .then(res => res.json())
+      .then(data => {
+        setPlans(Array.isArray(data) ? data.filter(p => p.status === 1) : []);
+      })
+      .catch(err => {
+        console.error('Error fetching plans:', err);
+      });
+  };
 
   const fetchCompanies = () => {
     setCompaniesLoading(true);
@@ -862,7 +897,8 @@ export default function DashboardScreen({ user, onSignOut }) {
         if (data.tempPassword) {
           alert(`User created! Temporary Password: ${data.tempPassword}`);
         }
-        setIsEmployeeModalOpen(false);
+        setIsEmpRoleDropdownOpen(false);
+                        setIsEmployeeModalOpen(false);
         fetchEmployees();
       })
       .catch(err => {
@@ -886,7 +922,8 @@ export default function DashboardScreen({ user, onSignOut }) {
     setEmpAutoGeneratePassword(false);
     setEmployeeFormError('');
     setEmpCompanyDropdownOpen(false);
-    setIsEmployeeModalOpen(true);
+    setIsEmpRoleDropdownOpen(false);
+              setIsEmployeeModalOpen(true);
   };
 
   const handleDeleteEmployee = (id) => {
@@ -1144,6 +1181,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     setMaxEmployess(item.max_employess ? item.max_employess.toString() : '');
     setMaxAsset(item.max_asset ? item.max_asset.toString() : '');
     setClientStatus(item.status !== undefined ? item.status : 1);
+    setSelectedPlanId(item.plan_id ? String(item.plan_id) : '');
     setEnabledModule(item.enabled_module || '');
     setClientFormError('');
     setClientWizardStep(1);
@@ -1180,6 +1218,7 @@ export default function DashboardScreen({ user, onSignOut }) {
       max_employess: maxEmployess.trim() ? parseInt(maxEmployess.trim(), 10) : null,
       max_asset: maxAsset.trim() ? parseInt(maxAsset.trim(), 10) : null,
       status: clientStatus,
+      plan_id: selectedPlanId ? parseInt(selectedPlanId, 10) : null,
       enabled_module: enabledModule.trim() || null,
     };
 
@@ -1227,6 +1266,7 @@ export default function DashboardScreen({ user, onSignOut }) {
         setMaxEmployess('');
         setMaxAsset('');
         setClientStatus(1);
+        setSelectedPlanId('');
         setEnabledModule('');
         // Re-fetch clients
         fetchClients();
@@ -1582,12 +1622,31 @@ export default function DashboardScreen({ user, onSignOut }) {
       });
   };
 
+  // Initialize empty default permissions for role creation
+  const initializeDefaultRolePermissions = () => {
+    const defaults = modules.map(m => ({
+      module_id: m.id,
+      module_name: m.module_name,
+      parent_id: m.parent_id,
+      permission_id: 0,
+      can_view: false,
+      can_create: false,
+      can_edit: false,
+      can_delete: false,
+      full_control: false
+    }));
+    setRolePermissions(defaults);
+  };
+
   // Trigger editing context for role
   const startEditRole = (item) => {
     setEditingRole(item);
     setNewRoleName(item.role);
     setNewRoleStatus(item.status);
+    setNewRoleClientIds(Array.isArray(item.clientids) ? item.clientids.map(String) : (item.clientid ? [String(item.clientid)] : []));
+    setIsCompanyDropdownOpen(false);
     setRoleFormError('');
+    fetchRolePermissions(item.id);
     setIsAddRoleModalOpen(true);
   };
 
@@ -1600,12 +1659,14 @@ export default function DashboardScreen({ user, onSignOut }) {
       return;
     }
 
+    // Company selection is optional (empty array means Global / System Role)
+
     setRoleFormSaving(true);
 
     const payload = {
       role: newRoleName.trim(),
       status: newRoleStatus,
-      clientid: user?.clientid || null
+      clientids: newRoleClientIds.map(Number)
     };
 
     const url = editingRole
@@ -1628,6 +1689,23 @@ export default function DashboardScreen({ user, onSignOut }) {
           return data;
         });
       })
+      .then((data) => {
+        const savedRoleId = data.role.id;
+        if (activeTab === 'roles') {
+          return data;
+        }
+        // Save the permissions!
+        return fetch(`${API_URL}/api/roles/${savedRoleId}/permissions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ permissions: rolePermissions }),
+        }).then(pRes => {
+          if (!pRes.ok) throw new Error('Failed to save role permissions.');
+          return data;
+        });
+      })
       .then(() => {
         showToast(editingRole ? 'Role updated successfully!' : 'Role created successfully!', 'success');
         setRoleFormSaving(false);
@@ -1636,6 +1714,9 @@ export default function DashboardScreen({ user, onSignOut }) {
         // Reset fields
         setNewRoleName('');
         setNewRoleStatus(1);
+        setNewRoleClientIds([]);
+        setIsCompanyDropdownOpen(false);
+        setRolePermissions([]);
         // Re-fetch roles
         fetchRoles();
       })
@@ -1876,6 +1957,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (r === '/shipments' || n.includes('shipment')) return 'shipments';
     if (r === '/analytics' || n.includes('analytic')) return 'analytics';
     if (r === '/settings' || r === '/modules' || n === 'settings' || n === 'modules') return 'settings';
+    if (r === '/plans' || n === 'plans' || n === 'plan') return 'plans';
     if (r === '/role' || r === '/roles' || n === 'role' || n === 'roles') return 'roles';
     if (r === '/department' || r === '/departments' || n === 'department' || n === 'departments') return 'departments';
     if (r === '/smtp' || n === 'smtp') return 'smtp';
@@ -1912,7 +1994,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (n.includes('dashboard') || r.includes('dashboard')) return 'grid-outline';
     if (n.includes('shipment') || r.includes('shipment')) return 'cube-outline';
     if (n.includes('analytic') || r.includes('analytic')) return 'bar-chart-outline';
-    if (n.includes('setting') || n.includes('module') || r.includes('settings') || r.includes('modules')) return 'layers-outline';
+    if (n.includes('setting') || n.includes('module') || r.includes('settings') || r.includes('modules')) return 'settings-outline';
     if (n.includes('role') || r.includes('role')) return 'people-outline';
     if (n.includes('dept') || n.includes('department') || r.includes('dept') || r.includes('department')) return 'business-outline';
     if (n.includes('smtp') || r.includes('smtp')) return 'mail-outline';
@@ -1944,7 +2026,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     { id: 'shipments', label: 'Shipments', icon: 'cube-outline' },
     { id: 'analytics', label: 'Analytics', icon: 'bar-chart-outline' },
     { id: 'client', label: 'Clients', icon: 'briefcase-outline' },
-    { id: 'settings', label: 'Modules', icon: 'layers-outline' },
+    { id: 'settings', label: 'Settings', icon: 'settings-outline' },
     { id: 'roles', label: 'Roles', icon: 'people-outline' },
     { id: 'departments', label: 'Departments', icon: 'business-outline' },
     { id: 'smtp', label: 'SMTP Config', icon: 'mail-outline' },
@@ -1965,6 +2047,9 @@ export default function DashboardScreen({ user, onSignOut }) {
   // Helper to check if user has access to a specific tab
   const hasTabPermission = (tabId) => {
     if (!user) return false;
+    if (tabId === 'plans') {
+      return String(user.roleId) === '1';
+    }
     if (tabId === 'dashboard' || tabId === 'profile' || tabId === 'shipments' || tabId === 'analytics') {
       return true;
     }
@@ -1981,9 +2066,18 @@ export default function DashboardScreen({ user, onSignOut }) {
     const visibleModules = isSidebarLoading
       ? []
       : modules.filter(m => {
+        // Only Super Admin (roleId === 1) can view the Plans menu
+        if (m.route === '/plans' || m.module_name === 'Plans') {
+          return user && String(user.roleId) === '1';
+        }
         if (hasViewPermission(m.id)) return true;
         // If it's a parent module, show it if any of its children are visible
-        const hasVisibleChildren = modules.some(child => child.parent_id === m.id && hasViewPermission(child.id));
+        const hasVisibleChildren = modules.some(child => {
+          if (child.route === '/plans' || child.module_name === 'Plans') {
+            return child.parent_id === m.id && user && String(user.roleId) === '1';
+          }
+          return child.parent_id === m.id && hasViewPermission(child.id);
+        });
         return hasVisibleChildren;
       });
 
@@ -2041,7 +2135,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                   if (hasViewPermission(parent.id) && parent.route) {
                     virtualChildren.push({
                       id: `virtual-parent-${parent.id}`,
-                      module_name: parent.module_name === 'Settings' ? 'Modules' : parent.module_name,
+                      module_name: parent.module_name === 'Settings' ? 'Settings' : parent.module_name,
                       route: parent.route
                     });
                   }
@@ -2849,7 +2943,13 @@ export default function DashboardScreen({ user, onSignOut }) {
               setEditingRole(null);
               setNewRoleName('');
               setNewRoleStatus(1);
+              const clientCompanyIds = user && String(user.roleId) !== '1'
+                ? companies.filter(c => Number(c.clientid) === Number(user?.clientid)).map(c => String(c.id))
+                : [];
+              setNewRoleClientIds(clientCompanyIds);
+              setIsCompanyDropdownOpen(false);
               setRoleFormError('');
+              initializeDefaultRolePermissions();
               setIsAddRoleModalOpen(true);
             }}
             activeOpacity={0.8}
@@ -3272,6 +3372,7 @@ export default function DashboardScreen({ user, onSignOut }) {
               setEmpAssociatedCompanies([]);
               setEmpAutoGeneratePassword(true);
               setEmployeeFormError('');
+              setIsEmpRoleDropdownOpen(false);
               setIsEmployeeModalOpen(true);
             }}
           >
@@ -3546,6 +3647,7 @@ export default function DashboardScreen({ user, onSignOut }) {
               setMaxAsset('');
               setClientStatus(1);
               setEnabledModule('');
+              setSelectedPlanId('');
               setClientFormError('');
               setClientWizardStep(1);
               setIsAddClientModalOpen(true);
@@ -3597,6 +3699,15 @@ export default function DashboardScreen({ user, onSignOut }) {
                         <Text style={[styles.tdCell, { flex: 0.6, fontWeight: '700' }]}>#{item.id}</Text>
                         <View style={[styles.tdCell, { flex: 2.2 }]}>
                           <Text style={{ fontWeight: '700', color: COLORS.textPrimary }}>{item.client_name}</Text>
+                          {item.plan_name ? (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                              <View style={{ backgroundColor: '#ECECFE', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4 }}>
+                                <Text style={{ fontSize: 10, color: COLORS.primary, fontWeight: '700' }}>
+                                  {item.plan_name.toUpperCase()}
+                                </Text>
+                              </View>
+                            </View>
+                          ) : null}
                           {item.companyname ? (
                             <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
                               {item.companyname} {item.company_shortname ? `(${item.company_shortname})` : ''}
@@ -3985,6 +4096,12 @@ export default function DashboardScreen({ user, onSignOut }) {
   const renderPermissionsTab = () => {
     const activeRole = roles.find(r => String(r.id) === String(selectedRoleId));
 
+    const filteredRoles = roles.filter(r =>
+      r.role.toLowerCase().includes(rolesSearch.toLowerCase())
+    );
+    const displayPage = Math.min(rolesPage, Math.max(1, Math.ceil(filteredRoles.length / ITEMS_PER_PAGE)));
+    const paginatedRoles = filteredRoles.slice((displayPage - 1) * ITEMS_PER_PAGE, displayPage * ITEMS_PER_PAGE);
+
     return (
       <ScrollView style={styles.tabContent} keyboardShouldPersistTaps="handled">
 
@@ -4004,293 +4121,302 @@ export default function DashboardScreen({ user, onSignOut }) {
             <View style={styles.modulesTitleWrapper}>
               <Text style={[styles.tabHeadingTitle, { marginBottom: 2 }]}>Modular Role Permissions</Text>
               <Text style={styles.tabHeadingSubtitle}>
-                Choose a security role and grant or restrict modular permissions (View, Create, Edit, Delete, Full Control).
+                Manage security roles and customize granular modular permissions inside the configuration module.
               </Text>
             </View>
           </View>
-        </View>
 
-        {/* ROLE PICKER CARD */}
-        <View style={[styles.tableCard, { paddingVertical: SPACING.md, paddingHorizontal: SPACING.lg, marginBottom: SPACING.md }]}>
-          <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 8 }}>
-            SELECT SECURITY ROLE *
-          </Text>
-          <select
-            value={selectedRoleId}
-            onChange={(e) => {
-              const val = e.target.value;
-              setSelectedRoleId(val);
-              fetchRolePermissions(val);
-            }}
-            style={{
-              height: 44,
-              borderColor: '#E2E8F0',
-              borderWidth: 1,
-              borderRadius: 8,
-              paddingHorizontal: 16,
-              backgroundColor: '#F8FAFC',
-              color: '#1E293B',
-              fontSize: 14,
-              fontFamily: 'Roboto',
-              fontWeight: '600',
-              outlineStyle: 'none', outlineWidth: 0,
-              width: '100%',
-              cursor: 'pointer',
-            }}
-          >
-            <option value="">-- Select Security Role --</option>
-            {roles.map(r => (
-              <option key={r.id} value={r.id}>
-                {r.role} {r.status === 1 ? '' : '(Inactive)'}
-              </option>
-            ))}
-          </select>
-        </View>
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <TouchableOpacity
+              style={[styles.addModuleBtn, { backgroundColor: '#0F172A' }]}
+              onPress={() => {
+                setEditingRole(null);
+                setNewRoleName('');
+                setNewRoleStatus(1);
+                setNewRoleClientIds([]);
+                setRoleFormError('');
+                if (typeof initializeDefaultRolePermissions === 'function') {
+                  initializeDefaultRolePermissions();
+                }
+                setIsAddRoleModalOpen(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add-circle" size={18} color={COLORS.white} />
+              <Text style={styles.addModuleBtnText}>Add Role Permission</Text>
+            </TouchableOpacity>
 
-        {/* PERMISSIONS MATRIX PANEL */}
-        {permissionsLoading ? (
-          <View style={[styles.tableCard, { padding: 40, alignItems: 'center', justifyContent: 'center' }]}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={{ marginTop: 16, color: COLORS.textSecondary, fontWeight: '600', fontSize: 14 }}>
-              Loading security policy schema from PostgreSQL...
-            </Text>
+
           </View>
-        ) : selectedRoleId ? (
-          <View style={styles.tableCard}>
+        </View>
 
-            {/* Inner Header with Role info & Save Button */}
-            <View style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              borderBottomWidth: 1,
-              borderBottomColor: '#F1F5F9',
-              paddingVertical: 16,
-              paddingHorizontal: 16,
-              marginBottom: 12,
-            }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <View style={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 4,
-                  borderRadius: 12,
-                  backgroundColor: '#ECECFE',
-                }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.primary }}>
-                    Active Role: {activeRole ? activeRole.role : 'Unknown'}
-                  </Text>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={[styles.addModuleBtn, { marginVertical: 0 }]}
-                onPress={handleSavePermissions}
-                disabled={permissionsSaving}
-                activeOpacity={0.8}
-              >
-                {permissionsSaving ? (
-                  <ActivityIndicator size="small" color={COLORS.white} />
-                ) : (
-                  <>
-                    <Ionicons name="save-outline" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
-                    <Text style={styles.addModuleBtnText}>Save Policy Changes</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+        {/* SYSTEM ROLES LIST TABLE CARD */}
+        <View style={[styles.tableCard, { marginTop: SPACING.md }]}>
+          {renderTableToolbar(rolesSearch, setRolesSearch, setRolesPage, 'Search roles by title...')}
+          
+          {rolesLoading ? (
+            <View style={{ padding: 40, alignItems: 'center' }}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
             </View>
-
-            {rolePermissions.length > 0 ? (
+          ) : filteredRoles.length > 0 ? (
+            <>
               <ScrollView horizontal={true} showsHorizontalScrollIndicator={true} style={{ width: '100%' }} contentContainerStyle={{ minWidth: '100%' }}>
-                <View style={[styles.modulesTableWrapper, { minWidth: 1000 }]}><View style={{ paddingBottom: 10 }}>
-
+                <View style={[styles.modulesTableWrapper, { minWidth: 800 }]}><View style={{ paddingBottom: 10 }}>
                   {/* Table Header Row */}
                   <View style={styles.modulesTableHeader}>
-                    <Text style={[styles.thCell, { flex: 3.0 }]}>System Module</Text>
-                    <Text style={[styles.thCell, { flex: 1.0, textAlign: 'center' }]}>View</Text>
-                    <Text style={[styles.thCell, { flex: 1.0, textAlign: 'center' }]}>Create</Text>
-                    <Text style={[styles.thCell, { flex: 1.0, textAlign: 'center' }]}>Edit</Text>
-                    <Text style={[styles.thCell, { flex: 1.0, textAlign: 'center' }]}>Delete</Text>
-                    <Text style={[styles.thCell, { flex: 1.2, textAlign: 'center', fontWeight: 'bold', color: COLORS.primary }]}>Full Control</Text>
+                    <Text style={[styles.thCell, { flex: 0.6 }]}>ID</Text>
+                    <Text style={[styles.thCell, { flex: 2.5 }]}>Role Name</Text>
+                    <Text style={[styles.thCell, { flex: 2.5 }]}>Client & Company</Text>
+                    <Text style={[styles.thCell, { flex: 1.2 }]}>Status</Text>
+                    <Text style={[styles.thCell, { flex: 0.8, textAlign: 'center' }]}>Actions</Text>
                   </View>
 
                   {/* Table Data Rows */}
-                  {rolePermissions.map((item, index) => {
-                    const isParent = item.parent_id === null || item.parent_id === undefined;
-
-                    return (
-                      <View
-                        key={item.module_id}
-                        style={[
-                          styles.modulesTableRow,
-                          index === rolePermissions.length - 1 && styles.lastTableRow,
-                          { paddingVertical: 12 }
-                        ]}
-                      >
-                        {/* Module Label with indentation for child modules */}
-                        <View style={[styles.tdCell, { flex: 3.0, flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
-                          {!isParent && (
-                            <View style={{ width: 14, height: 1, backgroundColor: '#CBD5E1', marginRight: 4 }} />
-                          )}
-                          <Ionicons
-                            name={isParent ? "folder-outline" : "document-text-outline"}
-                            size={14}
-                            color={isParent ? COLORS.primary : COLORS.textSecondary}
-                          />
-                          <Text style={{
-                            color: COLORS.textPrimary,
-                            fontWeight: isParent ? '700' : '500',
-                            fontSize: isParent ? 14 : 13,
-                          }}>
-                            {item.module_name}
+                  {paginatedRoles.map((r, index) => (
+                    <View
+                      key={r.id}
+                      style={[
+                        styles.modulesTableRow,
+                        index === paginatedRoles.length - 1 && styles.lastTableRow,
+                        { paddingVertical: 12 }
+                      ]}
+                    >
+                      <Text style={[styles.tdCell, { flex: 0.6, fontWeight: '700' }]}>#{r.id}</Text>
+                      <Text style={[styles.tdCell, { flex: 2.5, fontWeight: '700', color: COLORS.textPrimary }]}>{r.role}</Text>
+                      <View style={[styles.tdCell, { flex: 2.5 }]}>
+                        {r.client_name ? (
+                          <>
+                            <Text style={{ fontSize: 13, fontWeight: '500', color: COLORS.textPrimary }}>{r.client_name}</Text>
+                            {r.companyname ? (
+                              <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>{r.companyname}</Text>
+                            ) : null}
+                          </>
+                        ) : (
+                          <Text style={{ fontSize: 12, color: COLORS.textMuted, fontStyle: 'italic' }}>Global System Role</Text>
+                        )}
+                      </View>
+                      <View style={[styles.tdCell, { flex: 1.2 }]}>
+                        <View style={[styles.statusBadgeSmall, r.status === 1 ? styles.statusActiveSmall : styles.statusInactiveSmall]}>
+                          <Text style={[styles.statusTextSmall, r.status === 1 ? styles.statusTextActiveSmall : styles.statusTextInactiveSmall]}>
+                            {r.status === 1 ? 'active' : 'inactive'}
                           </Text>
                         </View>
-
-                        {/* View Checkbox */}
-                        <View style={[styles.tdCell, { flex: 1.0, alignItems: 'center' }]}>
-                          <TouchableOpacity
-                            style={{
-                              width: 20,
-                              height: 20,
-                              borderRadius: 6,
-                              borderWidth: 2,
-                              borderColor: item.can_view ? COLORS.primary : '#94A3B8',
-                              backgroundColor: item.can_view ? COLORS.primary : 'transparent',
-                              justifyContent: 'center',
-                              alignItems: 'center',
-                            }}
-                            onPress={() => togglePermission(item.module_id, 'can_view')}
-                            activeOpacity={0.7}
-                          >
-                            {item.can_view && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
-                          </TouchableOpacity>
-                        </View>
-
-                        {/* Create Checkbox */}
-                        <View style={[styles.tdCell, { flex: 1.0, alignItems: 'center' }]}>
-                          <TouchableOpacity
-                            style={{
-                              width: 20,
-                              height: 20,
-                              borderRadius: 6,
-                              borderWidth: 2,
-                              borderColor: item.can_create ? COLORS.primary : '#94A3B8',
-                              backgroundColor: item.can_create ? COLORS.primary : 'transparent',
-                              justifyContent: 'center',
-                              alignItems: 'center',
-                            }}
-                            onPress={() => togglePermission(item.module_id, 'can_create')}
-                            activeOpacity={0.7}
-                          >
-                            {item.can_create && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
-                          </TouchableOpacity>
-                        </View>
-
-                        {/* Edit Checkbox */}
-                        <View style={[styles.tdCell, { flex: 1.0, alignItems: 'center' }]}>
-                          <TouchableOpacity
-                            style={{
-                              width: 20,
-                              height: 20,
-                              borderRadius: 6,
-                              borderWidth: 2,
-                              borderColor: item.can_edit ? COLORS.primary : '#94A3B8',
-                              backgroundColor: item.can_edit ? COLORS.primary : 'transparent',
-                              justifyContent: 'center',
-                              alignItems: 'center',
-                            }}
-                            onPress={() => togglePermission(item.module_id, 'can_edit')}
-                            activeOpacity={0.7}
-                          >
-                            {item.can_edit && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
-                          </TouchableOpacity>
-                        </View>
-
-                        {/* Delete Checkbox */}
-                        <View style={[styles.tdCell, { flex: 1.0, alignItems: 'center' }]}>
-                          <TouchableOpacity
-                            style={{
-                              width: 20,
-                              height: 20,
-                              borderRadius: 6,
-                              borderWidth: 2,
-                              borderColor: item.can_delete ? COLORS.primary : '#94A3B8',
-                              backgroundColor: item.can_delete ? COLORS.primary : 'transparent',
-                              justifyContent: 'center',
-                              alignItems: 'center',
-                            }}
-                            onPress={() => togglePermission(item.module_id, 'can_delete')}
-                            activeOpacity={0.7}
-                          >
-                            {item.can_delete && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
-                          </TouchableOpacity>
-                        </View>
-
-                        {/* Full Control Checkbox */}
-                        <View style={[styles.tdCell, { flex: 1.2, alignItems: 'center' }]}>
-                          <TouchableOpacity
-                            style={{
-                              width: 20,
-                              height: 20,
-                              borderRadius: 6,
-                              borderWidth: 2,
-                              borderColor: item.full_control ? COLORS.success : '#94A3B8',
-                              backgroundColor: item.full_control ? COLORS.success : 'transparent',
-                              justifyContent: 'center',
-                              alignItems: 'center',
-                            }}
-                            onPress={() => togglePermission(item.module_id, 'full_control')}
-                            activeOpacity={0.7}
-                          >
-                            {item.full_control && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
-                          </TouchableOpacity>
-                        </View>
-
                       </View>
-                    );
-                  })}
-                </View></View></ScrollView>
-            ) : (
-              <View style={[styles.emptyView, { paddingVertical: 40 }]}>
-                <Ionicons name="alert-circle-outline" size={44} color={COLORS.textMuted} />
-                <Text style={styles.emptyText}>No registered active modules found.</Text>
+                      <View style={[styles.tdCell, { flex: 0.8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }]}>
+                        <TouchableOpacity
+                          style={{ padding: 4 }}
+                          onPress={() => startEditRole(r)}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="pencil-outline" size={18} color={COLORS.primary} />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={{ padding: 4 }}
+                          onPress={() => confirmDelete(r.id, 'role', r.role)}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="trash-outline" size={18} color={COLORS.error} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+                </View></View>
+              </ScrollView>
+              {renderTablePagination(filteredRoles.length, rolesPage, setRolesPage)}
+            </>
+          ) : (
+            <View style={styles.emptyView}>
+              <Ionicons name="shield-outline" size={44} color={COLORS.textMuted} />
+              <Text style={styles.emptyText}>No registered security roles found.</Text>
+            </View>
+          )}
+        </View>
+
+        {/* MODULAR ROLE PERMISSION CONFIGURATION MODAL */}
+        <Modal
+          visible={isRolePermissionModalOpen}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={() => setIsRolePermissionModalOpen(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalCard, { maxWidth: 900, width: '90%', maxHeight: '90%' }]}>
+              {/* Modal Header */}
+              <View style={[styles.modalHeader, { marginBottom: 12 }]}>
+                <View style={styles.modalTitleWrapper}>
+                  <Ionicons name="shield-checkmark" size={22} color={COLORS.primary} />
+                  <Text style={styles.modalTitle}>Configure Role Permissions</Text>
+                </View>
+                <TouchableOpacity onPress={() => setIsRolePermissionModalOpen(false)} style={styles.modalCloseBtn}>
+                  <Ionicons name="close" size={24} color={COLORS.textPrimary} />
+                </TouchableOpacity>
               </View>
-            )}
 
-            {/* Bottom Note */}
-            <View style={{ padding: 16, backgroundColor: '#FAFAFA', borderTopWidth: 1, borderTopColor: '#F1F5F9', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Ionicons name="information-circle-outline" size={16} color={COLORS.textSecondary} />
-              <Text style={{ fontSize: 12, color: COLORS.textSecondary }}>
-                Note: Updating role permissions takes effect instantly for active system workflows.
-              </Text>
-            </View>
+              {/* Scrollable Content */}
+              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true} keyboardShouldPersistTaps="handled">
+                {/* ROLE PICKER */}
+                <View style={{ marginBottom: 16 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 8 }}>
+                    SELECT SECURITY ROLE *
+                  </Text>
+                  <select
+                    value={selectedRoleId}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedRoleId(val);
+                      fetchRolePermissions(val);
+                    }}
+                    style={{
+                      height: 44,
+                      borderColor: '#E2E8F0',
+                      borderWidth: 1,
+                      borderRadius: 8,
+                      paddingHorizontal: 16,
+                      backgroundColor: '#F8FAFC',
+                      color: '#1E293B',
+                      fontSize: 14,
+                      outlineStyle: 'none',
+                      width: '100%',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <option value="">-- Select Security Role --</option>
+                    {roles.map(r => (
+                      <option key={r.id} value={r.id}>
+                        {r.role} {r.status === 1 ? '' : '(Inactive)'}
+                      </option>
+                    ))}
+                  </select>
+                </View>
 
-          </View>
-        ) : (
-          /* EMPTY STATE SELECT ROLE PROMPT */
-          <View style={[styles.tableCard, { paddingVertical: 60, alignItems: 'center', justifyContent: 'center' }]}>
-            <View style={{
-              width: 72,
-              height: 72,
-              borderRadius: 36,
-              backgroundColor: '#ECECFE',
-              justifyContent: 'center',
-              alignItems: 'center',
-              marginBottom: 16,
-            }}>
-              <Ionicons name="shield-outline" size={36} color={COLORS.primary} />
+                {permissionsLoading ? (
+                  <View style={{ padding: 40, alignItems: 'center' }}>
+                    <ActivityIndicator size="large" color={COLORS.primary} />
+                    <Text style={{ marginTop: 12, color: COLORS.textSecondary }}>Loading permissions schema...</Text>
+                  </View>
+                ) : selectedRoleId ? (
+                  <View style={{ borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 16 }}>
+                    {/* Inner Header with Role info & Save Button */}
+                    <View style={{
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      paddingBottom: 16,
+                    }}>
+                      <View>
+                        <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textPrimary }}>
+                          Active Role: {activeRole ? activeRole.role : 'Unknown'}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        style={[styles.addModuleBtn, { marginVertical: 0 }]}
+                        onPress={handleSavePermissions}
+                        disabled={permissionsSaving}
+                        activeOpacity={0.8}
+                      >
+                        {permissionsSaving ? (
+                          <ActivityIndicator size="small" color={COLORS.white} />
+                        ) : (
+                          <>
+                            <Ionicons name="save-outline" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+                            <Text style={styles.addModuleBtnText}>Save Policy Changes</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+
+                    {rolePermissions.length > 0 ? (
+                      <ScrollView horizontal={true} showsHorizontalScrollIndicator={true} style={{ width: '100%' }}>
+                        <View style={[styles.modulesTableWrapper, { minWidth: 700 }]}><View style={{ paddingBottom: 10 }}>
+                          {/* Table Header Row */}
+                          <View style={styles.modulesTableHeader}>
+                            <Text style={[styles.thCell, { flex: 3.0 }]}>System Module</Text>
+                            <Text style={[styles.thCell, { flex: 1.0, textAlign: 'center' }]}>View</Text>
+                            <Text style={[styles.thCell, { flex: 1.0, textAlign: 'center' }]}>Create</Text>
+                            <Text style={[styles.thCell, { flex: 1.0, textAlign: 'center' }]}>Edit</Text>
+                            <Text style={[styles.thCell, { flex: 1.0, textAlign: 'center' }]}>Delete</Text>
+                            <Text style={[styles.thCell, { flex: 1.2, textAlign: 'center', fontWeight: 'bold', color: COLORS.primary }]}>Full Control</Text>
+                          </View>
+
+                          {/* Table Data Rows */}
+                          {rolePermissions.map((item, index) => {
+                            const isParent = item.parent_id === null || item.parent_id === undefined;
+                            return (
+                              <View key={item.module_id} style={[styles.modulesTableRow, index === rolePermissions.length - 1 && styles.lastTableRow, { paddingVertical: 12 }]}>
+                                <View style={[styles.tdCell, { flex: 3.0, flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
+                                  {!isParent && <View style={{ width: 14, height: 1, backgroundColor: '#CBD5E1', marginRight: 4 }} />}
+                                  <Ionicons name={isParent ? "folder-outline" : "document-text-outline"} size={14} color={isParent ? COLORS.primary : COLORS.textSecondary} />
+                                  <Text style={{ color: COLORS.textPrimary, fontWeight: isParent ? '700' : '500', fontSize: isParent ? 14 : 13 }}>
+                                    {item.module_name}
+                                  </Text>
+                                </View>
+                                {/* Checkboxes */}
+                                {['can_view', 'can_create', 'can_edit', 'can_delete'].map(field => (
+                                  <View key={field} style={[styles.tdCell, { flex: 1.0, alignItems: 'center' }]}>
+                                    <TouchableOpacity
+                                      style={{
+                                        width: 20,
+                                        height: 20,
+                                        borderRadius: 6,
+                                        borderWidth: 2,
+                                        borderColor: item[field] ? COLORS.primary : '#94A3B8',
+                                        backgroundColor: item[field] ? COLORS.primary : 'transparent',
+                                        justifyContent: 'center',
+                                        alignItems: 'center',
+                                      }}
+                                      onPress={() => togglePermission(item.module_id, field)}
+                                      activeOpacity={0.7}
+                                    >
+                                      {item[field] && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+                                    </TouchableOpacity>
+                                  </View>
+                                ))}
+                                {/* Full Control */}
+                                <View style={[styles.tdCell, { flex: 1.2, alignItems: 'center' }]}>
+                                  <TouchableOpacity
+                                    style={{
+                                      width: 20,
+                                      height: 20,
+                                      borderRadius: 6,
+                                      borderWidth: 2,
+                                      borderColor: item.full_control ? COLORS.success : '#94A3B8',
+                                      backgroundColor: item.full_control ? COLORS.success : 'transparent',
+                                      justifyContent: 'center',
+                                      alignItems: 'center',
+                                    }}
+                                    onPress={() => togglePermission(item.module_id, 'full_control')}
+                                    activeOpacity={0.7}
+                                  >
+                                    {item.full_control && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+                                  </TouchableOpacity>
+                                </View>
+                              </View>
+                            );
+                          })}
+                        </View></View>
+                      </ScrollView>
+                    ) : (
+                      <View style={[styles.emptyView, { paddingVertical: 40 }]}>
+                        <Ionicons name="alert-circle-outline" size={44} color={COLORS.textMuted} />
+                        <Text style={styles.emptyText}>No registered active modules found.</Text>
+                      </View>
+                    )}
+                  </View>
+                ) : (
+                  <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                    <Ionicons name="shield-outline" size={48} color={COLORS.textMuted} />
+                    <Text style={{ fontSize: 14, color: COLORS.textSecondary, marginTop: 8 }}>Please select a role above to begin.</Text>
+                  </View>
+                )}
+              </ScrollView>
             </View>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 8 }}>
-              No Security Role Selected
-            </Text>
-            <Text style={{ fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', maxWidth: 400, lineHeight: 20 }}>
-              Please select a security role from the dropdown selector above to manage granular modular permission privileges.
-            </Text>
           </View>
-        )}
+        </Modal>
+
       </ScrollView>
     );
   };
-
   // Select active tab content
   // ─── Profile Tab ───────────────────────────────────────────────────────────
   const renderProfileTab = () => {
@@ -4518,6 +4644,8 @@ export default function DashboardScreen({ user, onSignOut }) {
         return <UOMTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'vat':
         return <VATTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
+      case 'plans':
+        return <PlanManagementTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'state':
         return renderStateTab();
       case 'employees':
@@ -5412,8 +5540,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                 { step: 1, label: 'Identity', icon: 'business-outline' },
                 { step: 2, label: 'License', icon: 'card-outline' },
                 { step: 3, label: 'Location', icon: 'location-outline' },
-                { step: 4, label: 'Modules', icon: 'apps-outline' },
-                { step: 5, label: 'Limits', icon: 'speedometer-outline' }
+                { step: 4, label: 'Limits', icon: 'speedometer-outline' }
               ].map((item, idx) => {
                 const isActive = clientWizardStep === item.step;
                 const isCompleted = clientWizardStep > item.step;
@@ -5520,6 +5647,37 @@ export default function DashboardScreen({ user, onSignOut }) {
                           value={industry}
                           onChangeText={setIndustry}
                         />
+                      </View>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.modalLabel}>Subscription Plan</Text>
+                        <select
+                          value={selectedPlanId}
+                          onChange={(e) => setSelectedPlanId(e.target.value)}
+                          style={{
+                            height: 40,
+                            borderColor: '#E2E8F0',
+                            borderWidth: 1,
+                            borderRadius: 6,
+                            paddingHorizontal: 12,
+                            backgroundColor: '#F8FAFC',
+                            color: '#1E293B',
+                            fontSize: 14,
+                            fontFamily: 'Roboto',
+                            outlineStyle: 'none',
+                            outlineWidth: 0,
+                            width: '100%',
+                          }}
+                        >
+                          <option value="">Select a Subscription Plan</option>
+                          {plans.map(p => (
+                            <option key={p.id} value={p.id}>
+                              {p.plan_name} ($${parseFloat(p.price).toFixed(2)})
+                            </option>
+                          ))}
+                        </select>
                       </View>
                     </View>
                   </View>
@@ -5777,253 +5935,12 @@ export default function DashboardScreen({ user, onSignOut }) {
                 )}
 
                 {/* STEP 4: MODULE PERMISSIONS & SELECTION */}
-                {clientWizardStep === 4 && (
-                  <View>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, marginTop: 4 }}>
-                      <Text style={{ fontWeight: '700', fontSize: 13, color: COLORS.primary }}>
-                        IV. Enabled Modules & Submodules
-                      </Text>
-
-                      <View style={{ flexDirection: 'row', gap: 12 }}>
-                        <TouchableOpacity
-                          style={{
-                            paddingVertical: 6,
-                            paddingHorizontal: 12,
-                            borderRadius: 6,
-                            backgroundColor: '#F1F5F9',
-                            borderWidth: 1,
-                            borderColor: '#CBD5E1',
-                          }}
-                          onPress={() => {
-                            // Enable all active modules
-                            const allNames = modules.filter(m => m.status === 'active').map(m => m.module_name);
-                            setEnabledModule(allNames.join(', '));
-                          }}
-                        >
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569' }}>Enable All</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={{
-                            paddingVertical: 6,
-                            paddingHorizontal: 12,
-                            borderRadius: 6,
-                            backgroundColor: '#FFEBEB',
-                            borderWidth: 1,
-                            borderColor: '#FCA5A5',
-                          }}
-                          onPress={() => {
-                            // Clear all modules
-                            setEnabledModule('');
-                          }}
-                        >
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#E11D48' }}>Clear All</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-
-                    <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 16 }}>
-                      Tick the modules and submodules that this client should have permissions to access in their workspace.
-                    </Text>
-
-                    {/* Modules Checklist Grid */}
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
-                      {modules
-                        .filter(m => !m.parent_id && m.status === 'active')
-                        .map(parent => {
-                          const submodules = modules.filter(m => m.parent_id === parent.id && m.status === 'active');
-                          const parentSelected = (enabledModule || '')
-                            .split(',')
-                            .map(m => m.trim().toLowerCase())
-                            .includes(parent.module_name.trim().toLowerCase());
-
-                          return (
-                            <View
-                              key={parent.id}
-                              style={{
-                                width: width > 1000 ? 'calc(50% - 8px)' : '100%',
-                                backgroundColor: '#FFFFFF',
-                                borderRadius: 12,
-                                borderWidth: 1,
-                                borderColor: parentSelected ? COLORS.primary : '#E2E8F0',
-                                padding: 16,
-                                shadowColor: '#000',
-                                shadowOffset: { width: 0, height: 2 },
-                                shadowOpacity: 0.05,
-                                shadowRadius: 4,
-                                elevation: 2,
-                              }}
-                            >
-                              {/* Parent Module Header */}
-                              <TouchableOpacity
-                                style={{
-                                  flexDirection: 'row',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  borderBottomWidth: submodules.length > 0 ? 1 : 0,
-                                  borderBottomColor: '#F1F5F9',
-                                  paddingBottom: submodules.length > 0 ? 12 : 0,
-                                  marginBottom: submodules.length > 0 ? 12 : 0,
-                                }}
-                                onPress={() => {
-                                  // Toggling parent should toggle all its submodules as well!
-                                  const parentName = parent.module_name.trim();
-                                  const lowerParentName = parentName.toLowerCase();
-                                  const existing = enabledModule
-                                    ? enabledModule.split(',').map(m => m.trim()).filter(Boolean)
-                                    : [];
-                                  const existingLower = existing.map(m => m.toLowerCase());
-
-                                  let newArray;
-                                  if (existingLower.includes(lowerParentName)) {
-                                    // Remove parent and all its submodules
-                                    const subNamesLower = submodules.map(s => s.module_name.trim().toLowerCase());
-                                    newArray = existing.filter(m => {
-                                      const lower = m.toLowerCase();
-                                      return lower !== lowerParentName && !subNamesLower.includes(lower);
-                                    });
-                                  } else {
-                                    // Add parent and all its submodules
-                                    const subNames = submodules.map(s => s.module_name.trim());
-                                    const filteredExisting = existing.filter(m => m.toLowerCase() !== lowerParentName);
-                                    newArray = Array.from(new Set([...filteredExisting, parentName, ...subNames]));
-                                  }
-                                  setEnabledModule(newArray.join(', '));
-                                }}
-                                activeOpacity={0.7}
-                              >
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                                  <View
-                                    style={{
-                                      width: 32,
-                                      height: 32,
-                                      borderRadius: 8,
-                                      backgroundColor: parentSelected ? '#F5F3FF' : '#F1F5F9',
-                                      justifyContent: 'center',
-                                      alignItems: 'center',
-                                    }}
-                                  >
-                                    <Ionicons
-                                      name={
-                                        parent.module_name.toLowerCase().includes('shipment') ? 'boat-outline' :
-                                          parent.module_name.toLowerCase().includes('invoice') ? 'receipt-outline' :
-                                            parent.module_name.toLowerCase().includes('analytic') ? 'pie-chart-outline' :
-                                              parent.module_name.toLowerCase().includes('setting') ? 'settings-outline' :
-                                                parent.module_name.toLowerCase().includes('user') ? 'people-outline' : 'grid-outline'
-                                      }
-                                      size={18}
-                                      color={parentSelected ? COLORS.primary : '#64748B'}
-                                    />
-                                  </View>
-                                  <Text style={{ fontSize: 14, fontWeight: '700', color: parentSelected ? COLORS.primary : '#1E293B' }}>
-                                    {parent.module_name}
-                                  </Text>
-                                </View>
-
-                                {/* Checkbox Indicator */}
-                                <View
-                                  style={{
-                                    width: 20,
-                                    height: 20,
-                                    borderRadius: 6,
-                                    borderWidth: 2,
-                                    borderColor: parentSelected ? COLORS.primary : '#94A3B8',
-                                    backgroundColor: parentSelected ? COLORS.primary : 'transparent',
-                                    justifyContent: 'center',
-                                    alignItems: 'center',
-                                  }}
-                                >
-                                  {parentSelected && (
-                                    <Ionicons name="checkmark" size={12} color="#FFFFFF" />
-                                  )}
-                                </View>
-                              </TouchableOpacity>
-
-                              {/* Nested Submodules */}
-                              {submodules.length > 0 && (
-                                <View style={{ gap: 8, paddingLeft: 6 }}>
-                                  {submodules.map(sub => {
-                                    const subSelected = (enabledModule || '')
-                                      .split(',')
-                                      .map(m => m.trim().toLowerCase())
-                                      .includes(sub.module_name.trim().toLowerCase());
-
-                                    return (
-                                      <TouchableOpacity
-                                        key={sub.id}
-                                        style={{
-                                          flexDirection: 'row',
-                                          alignItems: 'center',
-                                          justifyContent: 'space-between',
-                                          paddingVertical: 4,
-                                        }}
-                                        onPress={() => {
-                                          const subName = sub.module_name.trim();
-                                          const lowerSubName = subName.toLowerCase();
-                                          const existing = enabledModule
-                                            ? enabledModule.split(',').map(m => m.trim()).filter(Boolean)
-                                            : [];
-                                          const existingLower = existing.map(m => m.toLowerCase());
-
-                                          let newArray;
-                                          if (existingLower.includes(lowerSubName)) {
-                                            newArray = existing.filter(m => m.toLowerCase() !== lowerSubName);
-                                          } else {
-                                            // Add submodule, and automatically ensure the parent is enabled!
-                                            const parentName = parent.module_name.trim();
-                                            const lowerParent = parentName.toLowerCase();
-                                            const base = existing.filter(m => m.toLowerCase() !== lowerSubName);
-                                            if (!existingLower.includes(lowerParent)) {
-                                              newArray = [...base, parentName, subName];
-                                            } else {
-                                              newArray = [...base, subName];
-                                            }
-                                          }
-                                          setEnabledModule(newArray.join(', '));
-                                        }}
-                                        activeOpacity={0.7}
-                                      >
-                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: subSelected ? COLORS.primary : '#94A3B8' }} />
-                                          <Text style={{ fontSize: 13, fontWeight: '500', color: subSelected ? '#1E293B' : '#64748B' }}>
-                                            {sub.module_name}
-                                          </Text>
-                                        </View>
-
-                                        {/* Submodule Checkbox */}
-                                        <View
-                                          style={{
-                                            width: 18,
-                                            height: 18,
-                                            borderRadius: 4,
-                                            borderWidth: 1.5,
-                                            borderColor: subSelected ? COLORS.primary : '#CBD5E1',
-                                            backgroundColor: subSelected ? COLORS.primary : 'transparent',
-                                            justifyContent: 'center',
-                                            alignItems: 'center',
-                                          }}
-                                        >
-                                          {subSelected && (
-                                            <Ionicons name="checkmark" size={10} color="#FFFFFF" />
-                                          )}
-                                        </View>
-                                      </TouchableOpacity>
-                                    );
-                                  })}
-                                </View>
-                              )}
-                            </View>
-                          );
-                        })}
-                    </View>
-                  </View>
-                )}
 
                 {/* STEP 5: LICENSE LIMITS & VOLUMES */}
-                {clientWizardStep === 5 && (
+                {clientWizardStep === 4 && (
                   <View>
                     <Text style={{ fontWeight: '700', fontSize: 13, color: COLORS.primary, marginBottom: 12, marginTop: 4 }}>
-                      V. License Limits & Volumes
+                      IV. License Limits & Volumes
                     </Text>
 
                     <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
@@ -6098,7 +6015,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                   <Text style={styles.modalCancelText}>Cancel</Text>
                 </TouchableOpacity>
 
-                {clientWizardStep < 5 ? (
+                {clientWizardStep < 4 ? (
                   <TouchableOpacity
                     style={styles.wizardNextBtn}
                     onPress={() => {
@@ -6142,10 +6059,23 @@ export default function DashboardScreen({ user, onSignOut }) {
         transparent={true}
         onRequestClose={() => {
           setIsAddRoleModalOpen(false);
+          setEditingRole(null);
+          setNewRoleName('');
+          setNewRoleStatus(1);
+          setNewRoleClientIds([]);
+          setIsCompanyDropdownOpen(false);
+          setRolePermissions([]);
         }}
       >
         <View style={dynamicModalOverlayStyle}>
-          <View style={[styles.modalCard, { width: width > 768 ? 720 : '95%', maxWidth: 720, maxHeight: '90%' }]}>
+          <View style={[
+            styles.modalCard,
+            {
+              width: activeTab === 'roles' ? (width > 600 ? 550 : '95%') : (width > 992 ? 880 : (width > 768 ? 780 : '95%')),
+              maxWidth: activeTab === 'roles' ? 580 : 900,
+              maxHeight: '90%'
+            }
+          ]}>
 
             {/* Modal Header */}
             <View style={styles.modalHeader}>
@@ -6154,7 +6084,15 @@ export default function DashboardScreen({ user, onSignOut }) {
                 <Text style={styles.modalTitle}>{editingRole ? 'Edit Security Role' : 'Add Security Role'}</Text>
               </View>
               <TouchableOpacity
-                onPress={() => setIsAddRoleModalOpen(false)}
+                onPress={() => {
+                  setIsAddRoleModalOpen(false);
+                  setEditingRole(null);
+                  setNewRoleName('');
+                  setNewRoleStatus(1);
+                  setNewRoleClientIds([]);
+                  setIsCompanyDropdownOpen(false);
+                  setRolePermissions([]);
+                }}
                 style={styles.modalCloseBtn}
               >
                 <Ionicons name="close" size={24} color={COLORS.textSecondary} />
@@ -6171,17 +6109,249 @@ export default function DashboardScreen({ user, onSignOut }) {
               <View style={styles.modalForm}>
                 {roleFormError ? <Text style={styles.modalError}>{roleFormError}</Text> : null}
 
-                {/* Role Name Input */}
-                <Text style={styles.modalLabel}>Role Title *</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="e.g. Driver"
-                  placeholderTextColor={COLORS.textMuted}
-                  value={newRoleName}
-                  onChangeText={setNewRoleName}
-                />
+                <View style={{ flexDirection: 'row', gap: 16, marginBottom: 16, flexWrap: 'wrap', zIndex: 999 }}>
+                  {/* Role Name Input */}
+                  <View style={{ flex: 1, minWidth: 250 }}>
+                    <Text style={styles.modalLabel}>Role Title *</Text>
+                    {activeTab === 'roles' ? (
+                      <input
+                        type="text"
+                        value={newRoleName}
+                        onChange={(e) => setNewRoleName(e.target.value)}
+                        placeholder="e.g. Driver"
+                        style={{
+                          height: 40,
+                          borderColor: '#E2E8F0',
+                          borderWidth: 1.5,
+                          borderRadius: 10,
+                          paddingHorizontal: 12,
+                          backgroundColor: '#FFFFFF',
+                          color: '#1E293B',
+                          fontSize: 14,
+                          fontFamily: 'Roboto',
+                          outlineStyle: 'none',
+                          outlineWidth: 0,
+                          width: '100%',
+                          marginTop: 6,
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    ) : (
+                      <select
+                        value={newRoleName}
+                        onChange={(e) => setNewRoleName(e.target.value)}
+                        style={{
+                          height: 40,
+                          borderColor: '#E2E8F0',
+                          borderWidth: 1.5,
+                          borderRadius: 10,
+                          paddingHorizontal: 12,
+                          backgroundColor: '#FFFFFF',
+                          color: '#1E293B',
+                          fontSize: 14,
+                          fontFamily: 'Roboto',
+                          outlineStyle: 'none',
+                          outlineWidth: 0,
+                          width: '100%',
+                          marginTop: 6,
+                        }}
+                      >
+                        <option value="">-- Select Role Title --</option>
+                        {(() => {
+                          const uniqueRoles = new Set(roles.map(r => r.role));
+                          if (newRoleName) {
+                            uniqueRoles.add(newRoleName);
+                          }
+                          return Array.from(uniqueRoles).filter(Boolean).map((roleName) => (
+                            <option key={roleName} value={roleName}>
+                              {roleName}
+                            </option>
+                          ));
+                        })()}
+                      </select>
+                    )}
+                  </View>
 
-                {/* Status Segment Selection */}
+                  {/* Company Multi-Select Dropdown */}
+                  {activeTab !== 'roles' && (
+                    <View style={{ flex: 1, minWidth: 250, position: 'relative', zIndex: 100 }}>
+                      <Text style={styles.modalLabel}>Company</Text>
+                      <TouchableOpacity
+                        style={{
+                          minHeight: 44,
+                          borderColor: isCompanyDropdownOpen ? COLORS.primary : '#E2E8F0',
+                          borderWidth: 1.5,
+                          borderRadius: 10,
+                          paddingHorizontal: 14,
+                          paddingVertical: 8,
+                          backgroundColor: '#FFFFFF',
+                          justifyContent: 'center',
+                          width: '100%',
+                          cursor: 'pointer',
+                          marginTop: 6,
+                          shadowColor: isCompanyDropdownOpen ? COLORS.primary : 'transparent',
+                          shadowOffset: { width: 0, height: 0 },
+                          shadowOpacity: 0.1,
+                          shadowRadius: 4,
+                          elevation: isCompanyDropdownOpen ? 2 : 0,
+                        }}
+                        onPress={() => setIsCompanyDropdownOpen(!isCompanyDropdownOpen)}
+                        activeOpacity={0.9}
+                      >
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, flex: 1 }}>
+                            {newRoleClientIds.length > 0 ? (
+                              newRoleClientIds.map(id => {
+                                const sel = companies.find(c => String(c.id) === String(id));
+                                return (
+                                  <View
+                                    key={id}
+                                    style={{
+                                      flexDirection: 'row',
+                                      alignItems: 'center',
+                                      backgroundColor: '#F1F5F9',
+                                      borderColor: '#E2E8F0',
+                                      borderWidth: 1,
+                                      borderRadius: 6,
+                                      paddingLeft: 10,
+                                      paddingRight: 6,
+                                      paddingVertical: 4,
+                                      gap: 6
+                                    }}
+                                  >
+                                    <Text style={{ fontSize: 12, fontWeight: '600', color: '#334155' }}>
+                                      {sel ? sel.company_name : `Company #${id}`}
+                                    </Text>
+                                    <TouchableOpacity
+                                      onPress={(e) => {
+                                        e.stopPropagation();
+                                        setNewRoleClientIds(prev => prev.filter(x => String(x) !== String(id)));
+                                      }}
+                                      style={{
+                                        backgroundColor: '#CBD5E1',
+                                        borderRadius: 10,
+                                        width: 16,
+                                        height: 16,
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
+                                      }}
+                                    >
+                                      <Ionicons name="close" size={11} color="#475569" />
+                                    </TouchableOpacity>
+                                  </View>
+                                );
+                              })
+                            ) : (
+                              <Text style={{ fontSize: 13, color: COLORS.textMuted }}>Select Company</Text>
+                            )}
+                          </View>
+                          <Ionicons name={isCompanyDropdownOpen ? "chevron-up" : "chevron-down"} size={16} color={isCompanyDropdownOpen ? COLORS.primary : COLORS.textSecondary} />
+                        </View>
+                      </TouchableOpacity>
+
+                      {isCompanyDropdownOpen && (
+                        <View style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          backgroundColor: '#FFFFFF',
+                          borderColor: '#E2E8F0',
+                          borderWidth: 1,
+                          borderRadius: 12,
+                          zIndex: 99999,
+                          maxHeight: 250,
+                          overflowY: 'auto',
+                          shadowColor: '#0F172A',
+                          shadowOffset: { width: 0, height: 12 },
+                          shadowOpacity: 0.12,
+                          shadowRadius: 24,
+                          elevation: 10,
+                          marginTop: 1,
+                          paddingVertical: 6,
+                        }}>
+
+
+                          {/* List of Companies (filtered depending on logged-in user) */}
+                          {(() => {
+                            let filteredCompanies = user?.roleId === 1
+                              ? companies
+                              : companies.filter(c => Number(c.clientid) === Number(user?.clientid));
+
+                            if (newRoleName) {
+                              const occupiedCompanyIds = new Set();
+                              roles.forEach(r => {
+                                if (r.role.toLowerCase().trim() === newRoleName.toLowerCase().trim()) {
+                                  if (editingRole && String(editingRole.id) === String(r.id)) {
+                                    return;
+                                  }
+                                  if (Array.isArray(r.clientids)) {
+                                    r.clientids.forEach(id => occupiedCompanyIds.add(String(id)));
+                                  }
+                                }
+                              });
+                              filteredCompanies = filteredCompanies.filter(c => !occupiedCompanyIds.has(String(c.id)));
+                            }
+
+                            return filteredCompanies.map(c => {
+                              const isSelected = newRoleClientIds.some(x => String(x) === String(c.id));
+                              const clientObj = clients.find(cl => Number(cl.id) === Number(c.clientid));
+                              const clientName = clientObj ? clientObj.client_name : '';
+
+                              return (
+                                <TouchableOpacity
+                                  key={c.id}
+                                  style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    paddingVertical: 10,
+                                    paddingHorizontal: 16,
+                                    borderBottomWidth: 1,
+                                    borderBottomColor: '#F8FAFC',
+                                    gap: 12,
+                                    backgroundColor: isSelected ? '#F1F5F9' : 'transparent',
+                                  }}
+                                  onPress={() => {
+                                    if (isSelected) {
+                                      setNewRoleClientIds(prev => prev.filter(x => String(x) !== String(c.id)));
+                                    } else {
+                                      setNewRoleClientIds(prev => [...prev, String(c.id)]);
+                                    }
+                                  }}
+                                >
+                                  <View style={{
+                                    width: 18,
+                                    height: 18,
+                                    borderRadius: 4,
+                                    borderWidth: 1.5,
+                                    borderColor: isSelected ? COLORS.primary : '#CBD5E1',
+                                    backgroundColor: isSelected ? COLORS.primary : 'transparent',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}>
+                                    {isSelected && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+                                  </View>
+                                  <View style={{ flex: 1 }}>
+                                    <Text style={{ fontSize: 13, fontWeight: '600', color: isSelected ? COLORS.primary : '#334155' }}>
+                                      {c.company_name}
+                                    </Text>
+                                    {clientName ? (
+                                      <Text style={{ fontSize: 11, color: '#64748B', marginTop: 1 }}>
+                                        {clientName}
+                                      </Text>
+                                    ) : null}
+                                  </View>
+                                </TouchableOpacity>
+                              );
+                            });
+                          })()}
+                        </View>
+                      )}
+                    </View>
+                  )}
+                </View>
+                
+                                {/* Status Segment Selection */}
                 <Text style={styles.modalLabel}>Status</Text>
                 <TouchableOpacity
                   style={{
@@ -6245,6 +6415,164 @@ export default function DashboardScreen({ user, onSignOut }) {
                     </Text>
                   </View>
                 </TouchableOpacity>
+
+                {/* MODULAR PERMISSIONS MATRIX */}
+                {activeTab !== 'roles' && (
+                  <>
+                    <Text style={[styles.modalLabel, { marginTop: 16, marginBottom: 8 }]}>Modular Permissions</Text>
+                    {rolePermissions.length > 0 ? (
+                      <ScrollView horizontal={true} showsHorizontalScrollIndicator={true} style={{ width: '100%' }} contentContainerStyle={{ minWidth: '100%' }}>
+                        <View style={[styles.modulesTableWrapper, { minWidth: 600, borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingBottom: 10 }]}>
+                          {/* Table Header Row */}
+                          <View style={[styles.modulesTableHeader, { backgroundColor: '#F8FAFC', paddingVertical: 8 }]}>
+                            <Text style={[styles.thCell, { flex: 2.2, fontSize: 12 }]}>System Module</Text>
+                            <Text style={[styles.thCell, { flex: 0.8, textAlign: 'center', fontSize: 12 }]}>View</Text>
+                            <Text style={[styles.thCell, { flex: 0.8, textAlign: 'center', fontSize: 12 }]}>Create</Text>
+                            <Text style={[styles.thCell, { flex: 0.8, textAlign: 'center', fontSize: 12 }]}>Edit</Text>
+                            <Text style={[styles.thCell, { flex: 0.8, textAlign: 'center', fontSize: 12 }]}>Delete</Text>
+                            <Text style={[styles.thCell, { flex: 1.0, textAlign: 'center', fontWeight: 'bold', color: COLORS.primary, fontSize: 12 }]}>Full Control</Text>
+                          </View>
+
+                          {/* Table Data Rows */}
+                          {rolePermissions.map((item, index) => {
+                            const isParent = item.parent_id === null || item.parent_id === undefined;
+
+                            return (
+                              <View
+                                key={item.module_id}
+                                style={[
+                                  styles.modulesTableRow,
+                                  index === rolePermissions.length - 1 && styles.lastTableRow,
+                                  { paddingVertical: 8 }
+                                ]}
+                              >
+                                <View style={[styles.tdCell, { flex: 2.2, flexDirection: 'row', alignItems: 'center', gap: 6 }]}>
+                                  {!isParent && (
+                                    <View style={{ width: 10, height: 1, backgroundColor: '#CBD5E1', marginRight: 2 }} />
+                                  )}
+                                  <Ionicons
+                                    name={isParent ? "folder-outline" : "document-text-outline"}
+                                    size={12}
+                                    color={isParent ? COLORS.primary : COLORS.textSecondary}
+                                  />
+                                  <Text style={{
+                                    color: COLORS.textPrimary,
+                                    fontWeight: isParent ? '700' : '500',
+                                    fontSize: isParent ? 12 : 11,
+                                  }}>
+                                    {item.module_name}
+                                  </Text>
+                                </View>
+
+                                {/* View Checkbox */}
+                                <View style={[styles.tdCell, { flex: 0.8, alignItems: 'center' }]}>
+                                  <TouchableOpacity
+                                    style={{
+                                      width: 18,
+                                      height: 18,
+                                      borderRadius: 5,
+                                      borderWidth: 1.5,
+                                      borderColor: item.can_view ? COLORS.primary : '#94A3B8',
+                                      backgroundColor: item.can_view ? COLORS.primary : 'transparent',
+                                      justifyContent: 'center',
+                                      alignItems: 'center',
+                                    }}
+                                    onPress={() => togglePermission(item.module_id, 'can_view')}
+                                    activeOpacity={0.7}
+                                  >
+                                    {item.can_view && <Ionicons name="checkmark" size={10} color="#FFFFFF" />}
+                                  </TouchableOpacity>
+                                </View>
+
+                                {/* Create Checkbox */}
+                                <View style={[styles.tdCell, { flex: 0.8, alignItems: 'center' }]}>
+                                  <TouchableOpacity
+                                    style={{
+                                      width: 18,
+                                      height: 18,
+                                      borderRadius: 5,
+                                      borderWidth: 1.5,
+                                      borderColor: item.can_create ? COLORS.primary : '#94A3B8',
+                                      backgroundColor: item.can_create ? COLORS.primary : 'transparent',
+                                      justifyContent: 'center',
+                                      alignItems: 'center',
+                                    }}
+                                    onPress={() => togglePermission(item.module_id, 'can_create')}
+                                    activeOpacity={0.7}
+                                  >
+                                    {item.can_create && <Ionicons name="checkmark" size={10} color="#FFFFFF" />}
+                                  </TouchableOpacity>
+                                </View>
+
+                                {/* Edit Checkbox */}
+                                <View style={[styles.tdCell, { flex: 0.8, alignItems: 'center' }]}>
+                                  <TouchableOpacity
+                                    style={{
+                                      width: 18,
+                                      height: 18,
+                                      borderRadius: 5,
+                                      borderWidth: 1.5,
+                                      borderColor: item.can_edit ? COLORS.primary : '#94A3B8',
+                                      backgroundColor: item.can_edit ? COLORS.primary : 'transparent',
+                                      justifyContent: 'center',
+                                      alignItems: 'center',
+                                    }}
+                                    onPress={() => togglePermission(item.module_id, 'can_edit')}
+                                    activeOpacity={0.7}
+                                  >
+                                    {item.can_edit && <Ionicons name="checkmark" size={10} color="#FFFFFF" />}
+                                  </TouchableOpacity>
+                                </View>
+
+                                {/* Delete Checkbox */}
+                                <View style={[styles.tdCell, { flex: 0.8, alignItems: 'center' }]}>
+                                  <TouchableOpacity
+                                    style={{
+                                      width: 18,
+                                      height: 18,
+                                      borderRadius: 5,
+                                      borderWidth: 1.5,
+                                      borderColor: item.can_delete ? COLORS.primary : '#94A3B8',
+                                      backgroundColor: item.can_delete ? COLORS.primary : 'transparent',
+                                      justifyContent: 'center',
+                                      alignItems: 'center',
+                                    }}
+                                    onPress={() => togglePermission(item.module_id, 'can_delete')}
+                                    activeOpacity={0.7}
+                                  >
+                                    {item.can_delete && <Ionicons name="checkmark" size={10} color="#FFFFFF" />}
+                                  </TouchableOpacity>
+                                </View>
+
+                                {/* Full Control Checkbox */}
+                                <View style={[styles.tdCell, { flex: 1.0, alignItems: 'center' }]}>
+                                  <TouchableOpacity
+                                    style={{
+                                      width: 18,
+                                      height: 18,
+                                      borderRadius: 5,
+                                      borderWidth: 1.5,
+                                      borderColor: item.full_control ? COLORS.success : '#94A3B8',
+                                      backgroundColor: item.full_control ? COLORS.success : 'transparent',
+                                      justifyContent: 'center',
+                                      alignItems: 'center',
+                                    }}
+                                    onPress={() => togglePermission(item.module_id, 'full_control')}
+                                    activeOpacity={0.7}
+                                  >
+                                    {item.full_control && <Ionicons name="checkmark" size={10} color="#FFFFFF" />}
+                                  </TouchableOpacity>
+                                </View>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      </ScrollView>
+                    ) : (
+                      <ActivityIndicator size="small" color={COLORS.primary} style={{ marginVertical: 12 }} />
+                    )}
+                  </>
+                )}
               </View>
             </ScrollView>
 
@@ -6252,7 +6580,13 @@ export default function DashboardScreen({ user, onSignOut }) {
             <View style={styles.modalFooter}>
               <TouchableOpacity
                 style={styles.modalCancelBtn}
-                onPress={() => setIsAddRoleModalOpen(false)}
+                onPress={() => {
+                  setIsAddRoleModalOpen(false);
+                  setEditingRole(null);
+                  setNewRoleName('');
+                  setNewRoleStatus(1);
+                  setRolePermissions([]);
+                }}
                 disabled={roleFormSaving}
               >
                 <Text style={styles.modalCancelText}>Cancel</Text>
@@ -7552,16 +7886,31 @@ export default function DashboardScreen({ user, onSignOut }) {
                           <View style={{ flex: 1 }}>
                             <Text style={styles.modalLabel}>System Permissions Role</Text>
                             <View>
-                              <Picker
-                                selectedValue={empRoleId}
-                                onValueChange={(itemValue) => { setEmpRoleId(itemValue); setEmpRoleError(''); }}
-                                style={[styles.modalInput, { width: '100%', height: 42, appearance: 'none', outlineStyle: 'none', cursor: 'pointer', borderColor: empRoleError ? '#EF4444' : undefined }]}
+                              <select
+                                value={empRoleId}
+                                onChange={(e) => { setEmpRoleId(e.target.value); setEmpRoleError(''); }}
+                                style={{
+                                  width: '100%',
+                                  height: 42,
+                                  borderColor: empRoleError ? '#EF4444' : '#E2E8F0',
+                                  borderWidth: 1,
+                                  borderRadius: 8,
+                                  paddingHorizontal: 12,
+                                  backgroundColor: '#FFFFFF',
+                                  color: empRoleId ? '#334155' : '#94A3B8',
+                                  fontSize: 13,
+                                  outlineStyle: 'none',
+                                  cursor: 'pointer',
+                                  appearance: 'auto',
+                                }}
                               >
-                                <Picker.Item label="Select Role" value="" color={COLORS.textMuted} />
+                                <option value="" style={{ color: '#94A3B8' }}>Select Role</option>
                                 {roles.map(r => (
-                                  <Picker.Item key={r.id} label={r.role} value={r.id} />
+                                  <option key={r.id} value={r.id} style={{ color: '#334155' }}>
+                                    {r.role}
+                                  </option>
                                 ))}
-                              </Picker>
+                              </select>
                               {empRoleError ? (
                                 <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4, marginLeft: 2 }}>
                                   ⚠ {empRoleError}

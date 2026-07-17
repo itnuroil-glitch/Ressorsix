@@ -8,22 +8,28 @@ exports.getAllRoles = async (req, res) => {
     const { clientid, roleid } = req.query;
 
     let queryText = `
-      SELECT * FROM role 
-      WHERE is_deleted = false 
+      SELECT r.*, 
+             (SELECT string_agg(cl.client_name, ', ') FROM company c LEFT JOIN client cl ON c.clientid = cl.id WHERE c.id = ANY(r.clientids)) as client_name,
+             (SELECT string_agg(c.company_name, ', ') FROM company c WHERE c.id = ANY(r.clientids)) as companyname
+      FROM role r
+      WHERE r.is_deleted = false 
     `;
     const params = [];
 
     if (roleid && parseInt(roleid) === 1) {
       // Superadmin sees all roles, do not filter by clientid
     } else if (clientid) {
-      // Client sees ONLY their own roles
-      queryText += ` AND clientid = $1 `;
-      params.push(clientid);
+      // Client sees ONLY roles associated with their companies
+      queryText += ` AND EXISTS (
+        SELECT 1 FROM company comp 
+        WHERE comp.id = ANY(r.clientids) AND comp.clientid = $1
+      ) `;
+      params.push(parseInt(clientid, 10));
     } else {
-      queryText += ` AND clientid IS NULL `;
+      queryText += ` AND r.clientids IS NULL `;
     }
     
-    queryText += ` ORDER BY id ASC`;
+    queryText += ` ORDER BY r.id ASC`;
     
     const result = await db.query(queryText, params);
     res.status(200).json(result.rows);
@@ -38,21 +44,25 @@ exports.getAllRoles = async (req, res) => {
 // @access  Public
 exports.createRole = async (req, res) => {
   try {
-    const { role, status, clientid } = req.body;
+    const { role, status, clientids } = req.body;
 
     if (!role) {
       return res.status(400).json({ message: 'Role name is required.' });
     }
 
+    const firstClientId = Array.isArray(clientids) && clientids.length > 0 ? parseInt(clientids[0], 10) : null;
+    const parsedClientIds = Array.isArray(clientids) ? clientids.map(id => parseInt(id, 10)) : null;
+
     const queryText = `
-      INSERT INTO role (role, status, clientid, is_deleted)
-      VALUES ($1, $2, $3, false)
+      INSERT INTO role (role, status, clientid, clientids, is_deleted)
+      VALUES ($1, $2, $3, $4, false)
       RETURNING *
     `;
     const result = await db.query(queryText, [
       role.trim(),
       status !== undefined ? parseInt(status, 10) : 1,
-      clientid ? parseInt(clientid, 10) : null
+      firstClientId,
+      parsedClientIds
     ]);
 
     res.status(201).json({
@@ -71,7 +81,7 @@ exports.createRole = async (req, res) => {
 exports.updateRole = async (req, res) => {
   try {
     const { id } = req.params;
-    const { role, status } = req.body;
+    const { role, status, clientids } = req.body;
 
     // Check if role exists
     const checkQuery = 'SELECT id FROM role WHERE id = $1 AND is_deleted = false';
@@ -81,16 +91,23 @@ exports.updateRole = async (req, res) => {
       return res.status(404).json({ message: 'Role not found or has been deleted.' });
     }
 
+    const firstClientId = Array.isArray(clientids) && clientids.length > 0 ? parseInt(clientids[0], 10) : null;
+    const parsedClientIds = Array.isArray(clientids) ? clientids.map(id => parseInt(id, 10)) : null;
+
     const queryText = `
       UPDATE role
       SET role = COALESCE($1, role),
-          status = COALESCE($2, status)
-      WHERE id = $3 AND is_deleted = false
+          status = COALESCE($2, status),
+          clientids = $3,
+          clientid = $4
+      WHERE id = $5 AND is_deleted = false
       RETURNING *
     `;
     const result = await db.query(queryText, [
       role ? role.trim() : null,
       status !== undefined ? parseInt(status, 10) : null,
+      parsedClientIds,
+      firstClientId,
       id
     ]);
 

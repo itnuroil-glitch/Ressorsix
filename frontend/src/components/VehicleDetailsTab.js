@@ -117,18 +117,13 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
     setIsViewOnly(false);
     setEditingRecord(null);
     setFormData({});
-    if (companies.length === 1 && user && String(user.roleId) !== '1') {
+    setWizardStep(1);
+    if (companies.length === 1) {
       const singleComp = companies[0];
       setSelectedCompany(String(singleComp.id));
-      const targetCountry = singleComp.country ? String(singleComp.country) : selectedCountry;
-      if (singleComp.country) setSelectedCountry(String(singleComp.country));
-      await fetchFormConfiguration(
-        selectedClient,
-        targetCountry,
-        selectedModule
-      );
-    } else {
-      setWizardStep(1);
+      if (singleComp.country) {
+        setSelectedCountry(String(singleComp.country));
+      }
     }
     setIsFormOpen(true);
   };
@@ -293,6 +288,30 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
             fields: sortedSectionFields
           };
         }))).filter(section => section.fields.length > 0);
+
+        // Pre-populate "Company" field if found in layout
+        if (selectedCompany && !editingRecord) {
+          const selectedIds = String(selectedCompany).split(',').map(s => s.trim()).filter(Boolean);
+          if (selectedIds.length > 0) {
+            const firstSelectedComp = companies.find(c => String(c.id) === selectedIds[0]);
+            if (firstSelectedComp) {
+              const compName = firstSelectedComp.company_name || firstSelectedComp.name;
+              if (compName) {
+                // Look for Company field in layout
+                for (const section of filteredSections) {
+                  for (const field of section.fields) {
+                    if (field.name && field.name.toLowerCase() === 'company') {
+                      setFormData(prev => ({
+                        ...prev,
+                        [field.id]: compName
+                      }));
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
 
         setFieldsLayout(filteredSections);
       } else {
@@ -823,7 +842,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
           <Text style={styles.headerTitle}>Vehicle Details</Text>
           <Text style={styles.headerSubtitle}>Manage your vehicle details records.</Text>
         </View>
-        {!isEmployee && (
+        {true && (
           <TouchableOpacity
             style={styles.addButton}
             onPress={handleAddNewRecord}
@@ -836,66 +855,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
 
       {/* MAIN CONTENT */}
       <View style={styles.mainContent}>
-        {isEmployee ? (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, minHeight: 400 }}>
-            <View style={{
-              width: '100%',
-              maxWidth: 600,
-              backgroundColor: '#FFFFFF',
-              borderRadius: 16,
-              padding: 40,
-              alignItems: 'center',
-              borderWidth: 1,
-              borderColor: '#E2E8F0',
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 10 },
-              shadowOpacity: 0.05,
-              shadowRadius: 15,
-              elevation: 4
-            }}>
-              <View style={{
-                width: 80,
-                height: 80,
-                borderRadius: 40,
-                backgroundColor: '#EBF4F0',
-                justifyContent: 'center',
-                alignItems: 'center',
-                marginBottom: 24
-              }}>
-                <Ionicons name="car-sport" size={40} color={COLORS.primary} />
-              </View>
-              <Text style={{ fontSize: 24, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 12, textAlign: 'center' }}>
-                Vehicle Registration Entry
-              </Text>
-              <Text style={{ fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 32, lineHeight: 22, maxWidth: 440 }}>
-                Please register the vehicle specifications and details. All records are processed securely.
-              </Text>
-              <TouchableOpacity
-                style={{
-                  backgroundColor: COLORS.primary,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  paddingVertical: 16,
-                  paddingHorizontal: 32,
-                  borderRadius: 12,
-                  width: '100%',
-                  maxWidth: 320,
-                  shadowColor: COLORS.primary,
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.2,
-                  shadowRadius: 6,
-                  elevation: 2
-                }}
-                onPress={handleAddNewRecord}
-              >
-                <Ionicons name="add-circle" size={22} color="#FFFFFF" style={{ marginRight: 8 }} />
-                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>Add Vehicle Details</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          vehicleDetailsRecords.length === 0 && !searchQuery ? (
+        {vehicleDetailsRecords.length === 0 && !searchQuery ? (
             <View style={styles.emptyState}>
               <Ionicons name="document-text-outline" size={48} color={COLORS.textMuted} />
               <Text style={styles.emptyStateText}>No vehicle details records found.</Text>
@@ -1076,8 +1036,7 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                 );
               })()}
             </View>
-          )
-        )}
+          )}
       </View>
 
       {/* DELETE CONFIRMATION MODAL */}
@@ -1266,17 +1225,10 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                 <TouchableOpacity
                   style={{ marginTop: 24, paddingVertical: 10, paddingHorizontal: 20, backgroundColor: '#E2E8F0', borderRadius: 8 }}
                   onPress={() => {
-                    if (companies.length === 1 && user && String(user.roleId) !== '1') {
-                      setIsFormOpen(false);
-                      setEditingRecord(null);
-                      setFormData({});
-                      setIsViewOnly(false);
-                    } else {
-                      setWizardStep(1);
-                    }
+                    setWizardStep(1);
                   }}
                 >
-                  <Text style={{ color: '#0F172A', fontWeight: '600' }}>{companies.length === 1 && user && String(user.roleId) !== '1' ? 'Close' : 'Go Back'}</Text>
+                  <Text style={{ color: '#0F172A', fontWeight: '600' }}>Go Back</Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -1349,17 +1301,10 @@ export default function VehicleDetailsTab({ user, showToast, isSidebarCollapsed 
                       <TouchableOpacity
                         style={{ paddingVertical: 12, paddingHorizontal: 20, backgroundColor: '#E2E8F0', borderRadius: 8 }}
                         onPress={() => {
-                          if (companies.length === 1 && user && String(user.roleId) !== '1') {
-                            setIsFormOpen(false);
-                            setEditingRecord(null);
-                            setFormData({});
-                            setIsViewOnly(false);
-                          } else {
-                            setWizardStep(1);
-                          }
+                          setWizardStep(1);
                         }}
                       >
-                        <Text style={{ color: '#0F172A', fontWeight: '600' }}>{companies.length === 1 && user && String(user.roleId) !== '1' ? 'Cancel' : 'Back'}</Text>
+                        <Text style={{ color: '#0F172A', fontWeight: '600' }}>Back</Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity

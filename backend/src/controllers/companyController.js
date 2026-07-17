@@ -327,12 +327,25 @@ exports.getCompaniesByClient = async (req, res) => {
         
         // Only restrict if they are not superadmin/client admin
         if (String(roleId) !== '1' && String(roleId) !== '2') {
-          // 2. Fetch assigned companies for this employee
+          // Fetch assigned companies from employee_company
           const compRes = await pool.query(
             'SELECT company_id FROM employee_company WHERE employee_id = $1',
             [employeeId]
           );
-          assignedCompanyIds = compRes.rows.map(r => r.company_id);
+          const empCompanyIds = compRes.rows.map(r => r.company_id);
+
+          // Fetch assigned companies from role's clientids
+          const roleRes = await pool.query(
+            'SELECT clientids FROM role WHERE id = $1 AND is_deleted = false',
+            [roleId]
+          );
+          const roleCompanyIds = (roleRes.rows.length > 0 && Array.isArray(roleRes.rows[0].clientids))
+            ? roleRes.rows[0].clientids
+            : [];
+
+          // Merge both lists to ensure employee gets access to all configured companies
+          const mergedSet = new Set([...empCompanyIds, ...roleCompanyIds]);
+          assignedCompanyIds = Array.from(mergedSet);
         }
       }
     }

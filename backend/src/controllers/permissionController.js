@@ -8,7 +8,7 @@ exports.getRolePermissions = async (req, res) => {
     const { roleId } = req.params;
 
     // Verify if role exists and is active
-    const roleCheck = await db.query('SELECT id, role FROM role WHERE id = $1 AND is_deleted = false', [roleId]);
+    const roleCheck = await db.query('SELECT id, role, clientid FROM role WHERE id = $1 AND is_deleted = false', [roleId]);
     if (roleCheck.rows.length === 0) {
       return res.status(404).json({ message: 'Role not found or has been deleted.' });
     }
@@ -31,6 +31,36 @@ exports.getRolePermissions = async (req, res) => {
       ORDER BY m.parent_id ASC NULLS FIRST, m.id ASC
     `;
     const result = await db.query(queryText, [roleId]);
+
+    // If client role, filter modules based on subscription plan
+    const clientId = req.query.clientid || roleCheck.rows[0].clientid;
+    if (clientId) {
+      const clientRes = await db.query('SELECT plan_id FROM client WHERE id = $1', [clientId]);
+      const planId = clientRes.rows[0]?.plan_id;
+      if (planId) {
+        const planModRes = await db.query('SELECT enabled_module FROM tbl_plan_modules WHERE plan_id = $1', [planId]);
+        const enabledModuleIds = planModRes.rows.map(r => r.enabled_module);
+        const filteredPermissions = result.rows
+          .filter(row => enabledModuleIds.includes(row.module_id))
+          .map(row => ({
+            ...row,
+            can_view: row.can_view,
+            can_create: row.can_create,
+            can_edit: row.can_edit,
+            can_delete: row.can_delete,
+            full_control: row.full_control
+          }));
+        return res.status(200).json({
+          role: roleCheck.rows[0],
+          permissions: filteredPermissions
+        });
+      } else {
+        return res.status(200).json({
+          role: roleCheck.rows[0],
+          permissions: []
+        });
+      }
+    }
 
     res.status(200).json({
       role: roleCheck.rows[0],

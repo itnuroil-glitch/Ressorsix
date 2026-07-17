@@ -30,9 +30,11 @@ const recalculateMultiCountry = async (clientId) => {
 exports.getAllClients = async (req, res) => {
   try {
     const queryText = `
-      SELECT * FROM client 
-      WHERE isdelete = false 
-      ORDER BY id ASC
+      SELECT c.*, p.plan_name 
+      FROM client c
+      LEFT JOIN tbl_plan p ON c.plan_id = p.id
+      WHERE c.isdelete = false 
+      ORDER BY c.id ASC
     `;
     const result = await db.query(queryText);
     res.status(200).json(result.rows);
@@ -66,7 +68,8 @@ exports.createClient = async (req, res) => {
       max_employess,
       max_asset,
       status,
-      enabled_module
+      enabled_module,
+      plan_id
     } = req.body;
 
     if (!client_name) {
@@ -87,9 +90,9 @@ exports.createClient = async (req, res) => {
         client_name, companyname, company_shortname, industry, address, 
         country, state, city, email, trn_no, 
         contact_no, phone_no, website, trade_licenseno, max_companies, 
-        max_employess, max_asset, status, isdelete, enabled_module
+        max_employess, max_asset, status, isdelete, enabled_module, plan_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, false, $19)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, false, $19, $20)
       RETURNING *
     `;
 
@@ -112,7 +115,8 @@ exports.createClient = async (req, res) => {
       max_employess ? parseInt(max_employess, 10) : null,
       max_asset ? parseInt(max_asset, 10) : null,
       status !== undefined ? parseInt(status, 10) : 1,
-      enabled_module ? enabled_module.trim() : null
+      enabled_module ? enabled_module.trim() : null,
+      plan_id ? parseInt(plan_id, 10) : null
     ]);
 
     const newClient = result.rows[0];
@@ -278,7 +282,8 @@ exports.updateClient = async (req, res) => {
       max_employess,
       max_asset,
       status,
-      enabled_module
+      enabled_module,
+      plan_id
     } = req.body;
 
     // Check if client exists
@@ -310,8 +315,9 @@ exports.updateClient = async (req, res) => {
           max_asset = COALESCE($17, max_asset),
           status = COALESCE($18, status),
           enabled_module = COALESCE($19, enabled_module),
+          plan_id = COALESCE($20, plan_id),
           updatedat = CURRENT_TIMESTAMP
-      WHERE id = $20 AND isdelete = false
+      WHERE id = $21 AND isdelete = false
       RETURNING *
     `;
 
@@ -335,11 +341,23 @@ exports.updateClient = async (req, res) => {
       max_asset !== undefined ? parseInt(max_asset, 10) : null,
       status !== undefined ? parseInt(status, 10) : null,
       enabled_module ? enabled_module.trim() : null,
+      plan_id ? parseInt(plan_id, 10) : null,
       id
     ]);
 
     // Auto-calculate is_multi_country based on companies linked to this client
     await recalculateMultiCountry(id);
+
+    // Propagate country and state (emirate) update to the company table for the client
+    if (country || state) {
+      await db.query(
+        `UPDATE company 
+         SET country = COALESCE($1, country), 
+             emirate = COALESCE($2, emirate) 
+         WHERE clientid = $3`,
+        [country ? country.trim() : null, state ? state.trim() : null, id]
+      );
+    }
 
     // Format BigInt column fields for correct JSON representation
     const formattedClient = { ...result.rows[0] };

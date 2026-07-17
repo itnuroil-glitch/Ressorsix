@@ -5,7 +5,35 @@ const db = require('../config/db');
 // @access  Public
 exports.getAllModules = async (req, res) => {
   try {
-    const queryText = `
+    const { clientid } = req.query;
+
+    if (clientid) {
+      // Get the client's plan_id
+      const clientRes = await db.query('SELECT plan_id FROM client WHERE id = $1', [parseInt(clientid, 10)]);
+      const planId = clientRes.rows[0]?.plan_id;
+      
+      if (planId) {
+        // Get enabled module IDs for this plan
+        const planModRes = await db.query('SELECT enabled_module FROM tbl_plan_modules WHERE plan_id = $1', [planId]);
+        const enabledModuleIds = planModRes.rows.map(r => r.enabled_module);
+
+        if (enabledModuleIds.length > 0) {
+          const queryText = `
+            SELECT * FROM module 
+            WHERE id = ANY($1) AND is_deleted = false 
+            ORDER BY parent_id NULLS FIRST, id ASC
+          `;
+          const result = await db.query(queryText, [enabledModuleIds]);
+          return res.status(200).json(result.rows);
+        } else {
+          return res.status(200).json([]);
+        }
+      } else {
+        return res.status(200).json([]);
+      }
+    }
+
+        const queryText = `
       SELECT * FROM module 
       WHERE is_deleted = false 
       ORDER BY parent_id NULLS FIRST, id ASC

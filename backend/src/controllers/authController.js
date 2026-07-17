@@ -222,3 +222,98 @@ exports.adminChangePassword = async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error during admin password change.' });
   }
 };
+
+// @desc    Forgot password - reset and email temporary password
+// @route   POST /api/auth/forgot-password
+// @access  Public
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: 'Please provide email address.' });
+    }
+
+    // Check if user exists in database
+    const findUserQuery = 'SELECT id, email FROM users WHERE email = $1 AND isdelete = false';
+    const userResult = await db.query(findUserQuery, [email.toLowerCase().trim()]);
+
+    if (userResult.rows.length === 0) {
+      // Return 200 generic message even if user not found to prevent user harvesting
+      return res.status(200).json({ message: 'If the email exists, a password reset has been sent.' });
+    }
+
+    // Generate secure 10 character temporary password
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%';
+    let tempPassword = '';
+    for (let i = 0; i < 10; i++) {
+      tempPassword += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    // Hash the temporary password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(tempPassword, salt);
+
+    // Save temporary password to database
+    const updatePasswordQuery = 'UPDATE users SET password = $1 WHERE email = $2';
+    await db.query(updatePasswordQuery, [hashedPassword, email.toLowerCase().trim()]);
+
+    // Send password reset email
+    const smtpQuery = 'SELECT * FROM smtp_configuration WHERE is_deleted = false AND status = 1 LIMIT 1';
+    const smtpResult = await db.query(smtpQuery);
+
+    if (smtpResult.rows.length > 0) {
+      const smtp = smtpResult.rows[0];
+      const nodemailer = require('nodemailer');
+
+      const transporter = nodemailer.createTransport({
+        host: smtp.smtp_host,
+        port: parseInt(smtp.smtp_port, 10) || 587,
+        secure: smtp.security_protocol === 'SSL' || smtp.smtp_port === 465,
+        auth: {
+          user: smtp.smtp_usename,
+          pass: smtp.smtp_password
+        },
+        tls: {
+          rejectUnauthorized: false
+        }
+      });
+
+      const mailOptions = {
+        from: `"${smtp.from_name || 'Trakio Support'}" <${smtp.from_email || smtp.smtp_usename}>`,
+        to: email.toLowerCase().trim(),
+        subject: 'Reset Password - Trakio Logistics Platform',
+        html: `
+          <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; background-color: #ffffff;">
+            <div style="text-align: center; border-bottom: 2px solid #ef4444; padding-bottom: 15px; margin-bottom: 20px;">
+              <h2 style="color: #ef4444; margin: 0;">Password Reset Request</h2>
+            </div>
+            <p>Hello,</p>
+            <p>You are receiving this email because we received a password reset request for your Trakio account.</p>
+            <p>Below is your new temporary login password:</p>
+            <div style="background-color: #f8fafc; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #ef4444; text-align: center;">
+              <code style="font-size: 20px; color: #e11d48; font-weight: bold; letter-spacing: 1px;">${tempPassword}</code>
+            </div>
+            <p style="color: #64748b; font-size: 13px;"><em>For security, please log in and change your password immediately in the settings tab.</em></p>
+            <p style="margin-top: 30px;">Best regards,<br><strong>Trakio Support Team</strong></p>
+          </div>
+        `
+      };
+
+      try {
+        await transporter.sendMail(mailOptions);
+        console.log('Successfully sent reset password email to:', email);
+      } catch (mailErr) {
+        console.error('Failed to send reset password email:', mailErr);
+      }
+    } else {
+      console.warn('No active SMTP configurations found. Reset email was not sent.');
+    }
+
+    res.status(200).json({ message: 'If the email exists, a password reset has been sent.' });
+  } catch (error) {
+    console.error('Error in forgotPassword:', error);
+    res.status(500).json({ message: 'Internal Server Error during password reset.' });
+  }
+};
+

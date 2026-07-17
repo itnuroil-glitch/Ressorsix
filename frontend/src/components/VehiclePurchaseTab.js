@@ -828,7 +828,7 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
           <Text style={styles.headerTitle}>Vehicle Purchase</Text>
           <Text style={styles.headerSubtitle}>Manage your vehicle purchase details records.</Text>
         </View>
-        {!isEmployee && (
+        {true && (
           <TouchableOpacity
             style={styles.addButton}
             onPress={handleAddNewRecord}
@@ -841,7 +841,7 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
 
       {/* MAIN CONTENT */}
       <View style={styles.mainContent}>
-        {isEmployee ? (
+        {false ? (
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, minHeight: 400 }}>
             <View style={{
               width: '100%',

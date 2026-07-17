@@ -27,6 +27,7 @@ const paymentMethodRoutes = require('./routes/paymentMethodRoutes');
 const uomRoutes = require('./routes/uomRoutes');
 const vatRoutes = require('./routes/vatRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
+const planRoutes = require('./routes/planRoutes');
 require('dotenv').config();
 
 const app = express();
@@ -125,6 +126,7 @@ app.use('/api/payment-methods', paymentMethodRoutes);
 app.use('/api/uom', uomRoutes);
 app.use('/api/vat', vatRoutes);
 app.use('/api/inventory', inventoryRoutes);
+app.use('/api/plans', planRoutes);
 // Global Error Handler
 app.use((err, req, res, next) => {
   console.error('Unhandled Error:', err.stack);
