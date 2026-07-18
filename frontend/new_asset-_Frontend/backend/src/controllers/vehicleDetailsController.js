@@ -367,7 +367,7 @@ exports.getVehiclesByClient = async (req, res) => {
       FROM tbl_customfield_details 
       WHERE LOWER(field_name) LIKE '%vehicle%'
     `);
-    
+
     // Sort so fields containing 'name' get highest priority
     const sortedFields = fieldsRes.rows.sort((a, b) => {
       const aName = a.field_name.toLowerCase();
@@ -380,6 +380,32 @@ exports.getVehiclesByClient = async (req, res) => {
     });
     const fieldIds = sortedFields.map(f => f.field_id);
 
+    // Fetch matching custom field IDs for plate numbers or license numbers
+    const plateFieldsRes = await db.query(`
+      SELECT field_id, field_name 
+      FROM tbl_customfield_details 
+      WHERE LOWER(field_name) LIKE '%plate%' 
+         OR LOWER(field_name) LIKE '%license%' 
+         OR LOWER(field_name) LIKE '%liceno%' 
+         OR LOWER(field_name) LIKE '%no%'
+    `);
+
+    // Sort so fields containing 'plate' or 'liceno' or 'license' get highest priority, then 'no'
+    const sortedPlateFields = plateFieldsRes.rows.sort((a, b) => {
+      const aName = a.field_name.toLowerCase();
+      const bName = b.field_name.toLowerCase();
+
+      const getPriority = (name) => {
+        if (name.includes('plate')) return 3;
+        if (name.includes('liceno') || name.includes('license')) return 2;
+        if (name.includes('no') || name.includes('number')) return 1;
+        return 0;
+      };
+
+      return getPriority(bName) - getPriority(aName);
+    });
+    const plateFieldIds = sortedPlateFields.map(f => f.field_id);
+
     // 2. Fetch vehicle details for this client
     const query = `
       SELECT id, vehicle_id, field_data 
@@ -391,36 +417,74 @@ exports.getVehiclesByClient = async (req, res) => {
 
     const formattedVehicles = rows.map(v => {
       let vehicleName = '';
-      if (v.field_data) {
+      let plateNo = '';
+
+      let fieldData = v.field_data;
+      if (typeof fieldData === 'string') {
+        try {
+          fieldData = JSON.parse(fieldData);
+        } catch (e) {
+          fieldData = null;
+        }
+      }
+
+      if (fieldData) {
+        // Find vehicle name
         for (const fid of fieldIds) {
-          if (v.field_data[fid]) {
-            vehicleName = v.field_data[fid];
+          if (fieldData[fid]) {
+            vehicleName = fieldData[fid];
             break;
           }
         }
-        // Fallback: if not found, check any key in field_data that matches fieldsRes
+        // Fallback: if not found, check any key in fieldData that matches fieldsRes
         if (!vehicleName) {
           for (const f of fieldsRes.rows) {
-            if (v.field_data[f.field_id]) {
-              vehicleName = v.field_data[f.field_id];
+            if (fieldData[f.field_id]) {
+              vehicleName = fieldData[f.field_id];
               break;
             }
           }
         }
         // Fallback 2: if still not found, use the first field value
         if (!vehicleName) {
-          const keys = Object.keys(v.field_data);
+          const keys = Object.keys(fieldData);
           if (keys.length > 0) {
-            vehicleName = v.field_data[keys[0]];
+            vehicleName = fieldData[keys[0]];
+          }
+        }
+
+        // Find plate number
+        for (const fid of plateFieldIds) {
+          if (fieldData[fid]) {
+            plateNo = fieldData[fid];
+            break;
+          }
+        }
+        // Fallback: if not found, check any key in fieldData that matches plateFieldsRes
+        if (!plateNo) {
+          for (const f of plateFieldsRes.rows) {
+            if (fieldData[f.field_id]) {
+              plateNo = fieldData[f.field_id];
+              break;
+            }
           }
         }
       }
+
+      // Concatenate plate number with vehicle name if plate number exists and is different from vehicle name
+      let displayName = vehicleName;
+      if (plateNo && plateNo !== vehicleName) {
+        displayName = vehicleName ? `${vehicleName} - ${plateNo}` : plateNo;
+      }
+
       return {
         id: v.id,
         Id: v.id,
         vehicle_id: v.vehicle_id,
-        Vehiclename: vehicleName,
-        vehiclename: vehicleName
+        Vehiclename: displayName,
+        vehiclename: displayName,
+        Plateno: plateNo,
+        plateno: plateNo
       };
     });
 

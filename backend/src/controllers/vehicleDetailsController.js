@@ -81,7 +81,7 @@ const saveAttachmentLocally = (base64String, fileName) => {
 
   const uniqueName = Date.now() + '-' + (fileName ? fileName.replace(/\s+/g, '_') : 'attachment.file');
   const filePath = path.join(attachmentDir, uniqueName);
-  
+
   fs.writeFileSync(filePath, buffer);
   return `/backend/Attachment/${uniqueName}`;
 };
@@ -197,30 +197,30 @@ const processAndSyncFieldDataFiles = async (fieldData, clientid) => {
 exports.saveVehicleDetails = async (req, res) => {
   try {
     const { vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id } = req.body;
-    
+
     // Save any base64 files locally, insert into public.attachment table, and update the paths
     const processedFieldData = await processAndSyncFieldDataFiles(field_data, clientid);
-    
+
     // Convert field_data to JSON string
     const jsonData = JSON.stringify(processedFieldData);
-    
+
     // Auto generate vehicle_id if it's not provided
     let finalVehicleId = vehicle_id;
     if (!finalVehicleId) {
       const seqRes = await db.query("SELECT nextval('tbl_vehicle_details_vehicle_id_seq') AS next_id");
       finalVehicleId = seqRes.rows[0].next_id;
     }
-    
+
     const query = `
       INSERT INTO tbl_vehicle_details (vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id, created_at, updated_at)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *
     `;
-    
+
     const values = [finalVehicleId, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null, roleid || null, user_id || null, company_id || null];
-    
+
     const result = await db.query(query, values);
-    
+
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error saving vehicle details:', error);
@@ -267,7 +267,7 @@ exports.deleteVehicleDetails = async (req, res) => {
     // Fetch the existing record to find associated files
     const selectQuery = 'SELECT field_data FROM tbl_vehicle_details WHERE id = $1';
     const selectResult = await db.query(selectQuery, [id]);
-    
+
     if (selectResult.rowCount === 0) {
       return res.status(404).json({ message: 'Vehicle details record not found' });
     }
@@ -278,7 +278,7 @@ exports.deleteVehicleDetails = async (req, res) => {
     // Delete the vehicle details record
     const query = 'DELETE FROM tbl_vehicle_details WHERE id = $1 RETURNING *';
     const result = await db.query(query, [id]);
-    
+
     // Mark files as deleted in the attachment table
     for (const path of oldPaths) {
       try {
@@ -290,7 +290,7 @@ exports.deleteVehicleDetails = async (req, res) => {
         console.error('Error updating attachment table on deletion:', e);
       }
     }
-    
+
     res.status(200).json({ message: 'Vehicle details record deleted successfully' });
   } catch (error) {
     console.error('Error deleting vehicle details:', error);
@@ -306,7 +306,7 @@ exports.updateVehicleDetails = async (req, res) => {
     // Fetch the existing record to find previously associated files
     const selectQuery = 'SELECT vehicle_id, field_data FROM tbl_vehicle_details WHERE id = $1';
     const selectResult = await db.query(selectQuery, [id]);
-    
+
     if (selectResult.rowCount === 0) {
       return res.status(404).json({ message: 'Vehicle details record not found' });
     }
@@ -380,7 +380,7 @@ exports.getVehiclesByClient = async (req, res) => {
       FROM tbl_customfield_details 
       WHERE LOWER(field_name) LIKE '%vehicle%'
     `);
-    
+
     // Sort so fields containing 'name' get highest priority
     const sortedFields = fieldsRes.rows.sort((a, b) => {
       const aName = a.field_name.toLowerCase();
@@ -393,6 +393,32 @@ exports.getVehiclesByClient = async (req, res) => {
     });
     const fieldIds = sortedFields.map(f => f.field_id);
 
+    // Fetch matching custom field IDs for plate numbers or license numbers
+    const plateFieldsRes = await db.query(`
+      SELECT field_id, field_name 
+      FROM tbl_customfield_details 
+      WHERE LOWER(field_name) LIKE '%plate%' 
+         OR LOWER(field_name) LIKE '%license%' 
+         OR LOWER(field_name) LIKE '%liceno%' 
+         OR LOWER(field_name) LIKE '%no%'
+    `);
+
+    // Sort so fields containing 'plate' or 'liceno' or 'license' get highest priority, then 'no'
+    const sortedPlateFields = plateFieldsRes.rows.sort((a, b) => {
+      const aName = a.field_name.toLowerCase();
+      const bName = b.field_name.toLowerCase();
+
+      const getPriority = (name) => {
+        if (name.includes('plate')) return 3;
+        if (name.includes('liceno') || name.includes('license')) return 2;
+        if (name.includes('no') || name.includes('number')) return 1;
+        return 0;
+      };
+
+      return getPriority(bName) - getPriority(aName);
+    });
+    const plateFieldIds = sortedPlateFields.map(f => f.field_id);
+
     // 2. Fetch vehicle details for this client
     const query = `
       SELECT id, vehicle_id, field_data 
@@ -404,36 +430,74 @@ exports.getVehiclesByClient = async (req, res) => {
 
     const formattedVehicles = rows.map(v => {
       let vehicleName = '';
-      if (v.field_data) {
+      let plateNo = '';
+
+      let fieldData = v.field_data;
+      if (typeof fieldData === 'string') {
+        try {
+          fieldData = JSON.parse(fieldData);
+        } catch (e) {
+          fieldData = null;
+        }
+      }
+
+      if (fieldData) {
+        // Find vehicle name
         for (const fid of fieldIds) {
-          if (v.field_data[fid]) {
-            vehicleName = v.field_data[fid];
+          if (fieldData[fid]) {
+            vehicleName = fieldData[fid];
             break;
           }
         }
-        // Fallback: if not found, check any key in field_data that matches fieldsRes
+        // Fallback: if not found, check any key in fieldData that matches fieldsRes
         if (!vehicleName) {
           for (const f of fieldsRes.rows) {
-            if (v.field_data[f.field_id]) {
-              vehicleName = v.field_data[f.field_id];
+            if (fieldData[f.field_id]) {
+              vehicleName = fieldData[f.field_id];
               break;
             }
           }
         }
         // Fallback 2: if still not found, use the first field value
         if (!vehicleName) {
-          const keys = Object.keys(v.field_data);
+          const keys = Object.keys(fieldData);
           if (keys.length > 0) {
-            vehicleName = v.field_data[keys[0]];
+            vehicleName = fieldData[keys[0]];
+          }
+        }
+
+        // Find plate number
+        for (const fid of plateFieldIds) {
+          if (fieldData[fid]) {
+            plateNo = fieldData[fid];
+            break;
+          }
+        }
+        // Fallback: if not found, check any key in fieldData that matches plateFieldsRes
+        if (!plateNo) {
+          for (const f of plateFieldsRes.rows) {
+            if (fieldData[f.field_id]) {
+              plateNo = fieldData[f.field_id];
+              break;
+            }
           }
         }
       }
+
+      // Concatenate plate number with vehicle name if plate number exists and is different from vehicle name
+      let displayName = vehicleName;
+      if (plateNo && plateNo !== vehicleName) {
+        displayName = vehicleName ? `${vehicleName} - ${plateNo}` : plateNo;
+      }
+
       return {
         id: v.id,
         Id: v.id,
         vehicle_id: v.vehicle_id,
-        Vehiclename: vehicleName,
-        vehiclename: vehicleName
+        Vehiclename: displayName,
+        vehiclename: displayName,
+        Plateno: plateNo,
+        plateno: plateNo
       };
     });
 
@@ -468,12 +532,12 @@ exports.getVehiclePlatesByClient = async (req, res) => {
          OR LOWER(field_name) LIKE '%liceno%' 
          OR LOWER(field_name) LIKE '%no%'
     `);
-    
+
     // Sort so fields containing 'plate' or 'liceno' or 'license' get highest priority, then 'no'
     const sortedFields = fieldsRes.rows.sort((a, b) => {
       const aName = a.field_name.toLowerCase();
       const bName = b.field_name.toLowerCase();
-      
+
       const getPriority = (name) => {
         if (name.includes('plate')) return 3;
         if (name.includes('liceno') || name.includes('license')) return 2;
@@ -560,12 +624,12 @@ exports.getVehicleChassisByClient = async (req, res) => {
          OR LOWER(field_name) LIKE '%vin%' 
          OR LOWER(field_name) LIKE '%engine%'
     `);
-    
+
     // Sort to prioritize chassis first
     const sortedFields = fieldsRes.rows.sort((a, b) => {
       const aName = a.field_name.toLowerCase();
       const bName = b.field_name.toLowerCase();
-      
+
       const getPriority = (name) => {
         if (name.includes('chassis') || name.includes('chasis')) return 3;
         if (name.includes('vin')) return 2;

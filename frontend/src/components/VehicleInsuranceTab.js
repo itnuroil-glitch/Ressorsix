@@ -226,7 +226,7 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
             const data = await res.json();
             if (!Array.isArray(data)) return [];
             return data.map(item => {
-              if (typeof item === 'string') return item;
+              if (typeof item === 'string') return { label: item, value: item };
               if (item && typeof item === 'object') {
                 const nameKey = Object.keys(item).find(key =>
                   key.toLowerCase().includes('name') ||
@@ -238,11 +238,17 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
                   key.toLowerCase().includes('policy') ||
                   key.toLowerCase().includes('department')
                 );
-                if (nameKey) return String(item[nameKey]);
+                const idVal = item.id !== undefined ? item.id : (item.Id !== undefined ? item.Id : item.vehicle_id);
+                if (nameKey && idVal !== undefined) {
+                  return { label: String(item[nameKey]), value: String(idVal) };
+                }
+                if (nameKey) {
+                  return { label: String(item[nameKey]), value: String(item[nameKey]) };
+                }
                 const firstKey = Object.keys(item)[0];
-                return firstKey ? String(item[firstKey]) : '';
+                return firstKey ? { label: String(item[firstKey]), value: String(item[firstKey]) } : null;
               }
-              return String(item);
+              return { label: String(item), value: String(item) };
             }).filter(Boolean);
           } catch (e) {
             console.warn(`Error fetching dynamic options from ${path}:`, e);
@@ -502,7 +508,12 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
         const options = (field.allowedOptions && field.allowedOptions.length > 0)
           ? field.allowedOptions
           : (field.options || '').split(',').map(o => o.trim()).filter(Boolean);
-        const dropdownData = options.map(opt => ({ label: opt, value: opt }));
+        const dropdownData = options.map(opt => {
+          if (opt && typeof opt === 'object' && opt.label !== undefined && opt.value !== undefined) {
+            return opt;
+          }
+          return { label: opt, value: opt };
+        });
         return (
           <SearchableDropdown
             data={dropdownData}
