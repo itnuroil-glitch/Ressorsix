@@ -827,8 +827,9 @@ export default function VehicleInsuranceTab({ user, showToast }) {
             <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20 }}>
               <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>ID</Text>
               <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
-              <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Module Info</Text>
-              <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Data Preview</Text>
+              <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Company Name</Text>
+              <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Insurer</Text>
+              <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Expiry Date</Text>
               <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
               <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>View</Text>
               <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>Edit</Text>
@@ -906,13 +907,28 @@ export default function VehicleInsuranceTab({ user, showToast }) {
                           </View>
 
                           <View style={{ flex: 1.5, paddingRight: 10 }}>
-                            <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{moduleName}</Text>
-                            <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Created: {new Date(record.created_at).toLocaleDateString()}</Text>
+                            <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600' }} numberOfLines={1}>{record.company_name || 'N/A'}</Text>
                           </View>
 
-                          <View style={{ flex: 2, paddingRight: 10 }}>
-                            <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500', marginBottom: 4 }} numberOfLines={1}>{String(firstValue)}</Text>
-                            <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Field: {firstKey}</Text>
+                          <View style={{ flex: 1.5, paddingRight: 10 }}>
+                            <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500' }} numberOfLines={1}>{record.insurer || 'N/A'}</Text>
+                          </View>
+
+                          <View style={{ flex: 1.5, paddingRight: 10 }}>
+                            <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500' }} numberOfLines={1}>
+                              {record.expiry_date && record.expiry_date !== 'N/A' ? (() => {
+                                const valStr = String(record.expiry_date);
+                                if (/^\d{4}-\d{2}-\d{2}$/.test(valStr)) {
+                                  const [year, month, day] = valStr.split('-');
+                                  return `${day}/${month}/${year}`;
+                                } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(valStr)) {
+                                  const [datePart, timePart] = valStr.split('T');
+                                  const [year, month, day] = datePart.split('-');
+                                  return `${day}/${month}/${year} ${timePart}`;
+                                }
+                                return valStr;
+                              })() : 'N/A'}
+                            </Text>
                           </View>
 
                           <View style={{ flex: 1, alignItems: 'flex-start' }}>
