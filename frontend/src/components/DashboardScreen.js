@@ -4572,6 +4572,28 @@ export default function DashboardScreen({ user, onSignOut }) {
     );
   };
 
+  const getTabPermissions = (tabId) => {
+    if (user && String(user.roleId) === '1') {
+      return { can_view: true, can_create: true, can_edit: true, can_delete: true, full_control: true };
+    }
+    const tabModules = modules.filter(m => getTabIdByRoute(m.module_name, m.route) === tabId);
+    if (tabModules.length === 0) {
+      return { can_view: true, can_create: true, can_edit: true, can_delete: true, full_control: true };
+    }
+    const perms = { can_view: false, can_create: false, can_edit: false, can_delete: false, full_control: false };
+    tabModules.forEach(m => {
+      const up = userPermissions.find(p => p.module_id === m.id);
+      if (up) {
+        if (up.can_view) perms.can_view = true;
+        if (up.can_create) perms.can_create = true;
+        if (up.can_edit) perms.can_edit = true;
+        if (up.can_delete) perms.can_delete = true;
+        if (up.full_control) perms.full_control = true;
+      }
+    });
+    return perms;
+  };
+
   const renderTabContent = () => {
     // Permission guard: check that the user has explicit view permissions for this module
     if (!userPermissionsLoading && !hasTabPermission(activeTab)) {
@@ -4618,15 +4640,15 @@ export default function DashboardScreen({ user, onSignOut }) {
       case 'field_permissions':
         return <FieldPermissionsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'vehicle_insurance':
-        return <VehicleInsuranceTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
+        return <VehicleInsuranceTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_insurance')} />;
       case 'vehicle_details':
-        return <VehicleDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
+        return <VehicleDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_details')} />;
       case 'vehicle_purchase':
-        return <VehiclePurchaseTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
+        return <VehiclePurchaseTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_purchase')} />;
       case 'premises_details':
-        return <PremisesDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
+        return <PremisesDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('premises_details')} />;
       case 'asset_details':
-        return <AssetDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
+        return <AssetDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('asset_details')} />;
       case 'asset_category':
         return <AssetCategoryTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'asset_brand':

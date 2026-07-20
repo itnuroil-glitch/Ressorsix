@@ -18,10 +18,14 @@ const COLORS = {
   white: '#FFFFFF',
 };
 
-export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed }) {
+export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, permissions }) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width > 768;
   const isEmployee = user && String(user.roleId) !== '1' && String(user.roleId) !== '2' && String(user.roleId) !== '5' && String(user.roleId) !== '8';
+
+  const canCreate = !user || String(user.roleId) === '1' || (permissions && permissions.can_create);
+  const canEdit = !user || String(user.roleId) === '1' || (permissions && permissions.can_edit);
+  const canDelete = !user || String(user.roleId) === '1' || (permissions && permissions.can_delete);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fieldsLayout, setFieldsLayout] = useState(null);
@@ -380,6 +384,10 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed })
     try {
       const res = await fetch(`${API_URL}/api/asset-details/${recordToDelete.id}`, {
         method: 'DELETE',
+        headers: {
+          'roleid': String(user?.roleId || ''),
+          'clientid': String(user?.clientid || '')
+        }
       });
 
       if (!res.ok) throw new Error('Failed to delete asset details record');
@@ -1026,7 +1034,7 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed })
           <Text style={styles.headerTitle}>Asset Details</Text>
           <Text style={styles.headerSubtitle}>Manage your asset details records.</Text>
         </View>
-        {!isEmployee && (
+        {canCreate && (
           <TouchableOpacity
             style={styles.addButton}
             onPress={handleAddNewRecord}
@@ -1128,8 +1136,8 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed })
                 <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Data Preview</Text>
                 <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
                 <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>View</Text>
-                <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>Edit</Text>
-                <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>Delete</Text>
+                {canEdit && <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>Edit</Text>}
+                {canDelete && <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>Delete</Text>}
               </View>
 
               <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true}>
@@ -1212,13 +1220,17 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed })
                               <Ionicons name="eye-outline" size={18} color="#0F172A" />
                             </TouchableOpacity>
 
-                            <TouchableOpacity style={{ flex: 0.5, alignItems: 'center' }} onPress={() => handleEdit(record)}>
-                              <Ionicons name="pencil" size={18} color="#166534" />
-                            </TouchableOpacity>
+                            {canEdit && (
+                              <TouchableOpacity style={{ flex: 0.5, alignItems: 'center' }} onPress={() => handleEdit(record)}>
+                                <Ionicons name="pencil" size={18} color="#166534" />
+                              </TouchableOpacity>
+                            )}
 
-                            <TouchableOpacity style={{ flex: 0.5, alignItems: 'center' }} onPress={() => handleDelete(record)}>
-                              <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                            </TouchableOpacity>
+                            {canDelete && (
+                              <TouchableOpacity style={{ flex: 0.5, alignItems: 'center' }} onPress={() => handleDelete(record)}>
+                                <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                              </TouchableOpacity>
+                            )}
                           </View>
                         );
                       })}
