@@ -133,7 +133,11 @@ app.use('/api/plans', planRoutes);
 // Global Error Handler
 app.use((err, req, res, next) => {
   console.error('Unhandled Error:', err.stack);
-  res.status(500).json({ message: 'Something went wrong on the server!' });
+  res.status(500).json({ 
+    message: 'Something went wrong on the server!',
+    error: err.message || String(err),
+    stack: err.stack
+  });
 });
 
 // Launch server
