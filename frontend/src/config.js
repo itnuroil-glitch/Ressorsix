@@ -5,6 +5,12 @@ const getApiUrl = () => {
   if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location && window.location.hostname) {
     const protocol = window.location.protocol && window.location.protocol.startsWith('https') ? 'https:' : 'http:';
     const hostname = window.location.hostname;
+
+    // If deployed on cloud environments (like Render or standard HTTPS domains), do NOT append port 5000
+    if (hostname.includes('onrender.com') || (protocol === 'https:' && !hostname.includes('localhost') && !hostname.match(/^\d+\.\d+\.\d+\.\d+$/))) {
+      return `${protocol}//${hostname}`;
+    }
+
     return `${protocol}//${hostname}:5000`;
   }
 
