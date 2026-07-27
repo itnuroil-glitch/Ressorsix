@@ -292,7 +292,10 @@ exports.getRolePermissions = async (req, res) => {
     } catch (error) {
       await client.query('ROLLBACK');
       console.error('Error saving role permissions:', error);
-      res.status(500).json({ message: 'Internal Server Error while saving permissions.' });
+      res.status(500).json({ 
+        message: 'Internal Server Error while saving permissions.',
+        error: error.message || String(error)
+      });
     } finally {
       client.release();
     }
