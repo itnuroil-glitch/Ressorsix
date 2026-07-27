@@ -15,11 +15,11 @@ async function seed() {
     
     // 3. Insert user
     const insertQuery = `
-      INSERT INTO users (email, password)
-      VALUES ($1, $2)
-      RETURNING id, email, created_at
+      INSERT INTO users (email, password, roleid)
+      VALUES ($1, $2, $3)
+      RETURNING id, email, roleid, created_at
     `;
-    const result = await db.query(insertQuery, ['john.smith@email.com', hashedPassword]);
+    const result = await db.query(insertQuery, ['john.smith@email.com', hashedPassword, '1']);
     
     console.log('Database seeded successfully!');
     console.log('Created User:', result.rows[0]);

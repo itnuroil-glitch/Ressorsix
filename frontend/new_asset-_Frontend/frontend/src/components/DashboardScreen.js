@@ -1837,9 +1837,18 @@ export default function DashboardScreen({ user, onSignOut }) {
     // Helper to check view permissions for a given module ID
     const hasViewPermission = (moduleId) => {
       if (!user) return false;
-      // if (String(user.roleId) === '1') return true; // Superadmin bypass removed to enforce role permissions grid
+      // Superadmin bypass
+      if (String(user.roleId) === '1') return true;
 
-      // Rely on Role-based userPermissions
+      // 1. Check company-specific permissions first if present
+      if (userCompanyPermissions && userCompanyPermissions.length > 0) {
+        const compPerms = userCompanyPermissions.filter(p => p.module_id === moduleId);
+        if (compPerms.length > 0) {
+          return compPerms.some(p => p.can_view || p.full_control);
+        }
+      }
+
+      // 2. Rely on Role-based userPermissions (global/default permissions where company_id is null)
       const perm = userPermissions.find(p => p.module_id === moduleId);
       return perm ? perm.can_view : false;
     };

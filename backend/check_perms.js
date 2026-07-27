@@ -8,7 +8,7 @@ const pool = new Pool({
   port: process.env.DB_PORT,
 });
 
-pool.query(`SELECT m.module_name, rp.* FROM role_permission rp JOIN module m ON rp.module_id = m.id WHERE rp.role_id = 2`)
-  .then(res => console.log(res.rows))
+pool.query(`SELECT rp.*, m.module_name, c.company_name FROM role_permission rp JOIN module m ON rp.module_id = m.id LEFT JOIN company c ON rp.company_id = c.id WHERE rp.role_id = 11 ORDER BY rp.module_id, rp.company_id`)
+  .then(res => console.log(JSON.stringify(res.rows, null, 2)))
   .catch(console.error)
   .finally(() => pool.end());

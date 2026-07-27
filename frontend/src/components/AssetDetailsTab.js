@@ -18,7 +18,7 @@ const COLORS = {
   white: '#FFFFFF',
 };
 
-export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, permissions }) {
+export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, permissions, checkRowPermission }) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width > 768;
   const isEmployee = user && String(user.roleId) !== '1' && String(user.roleId) !== '2' && String(user.roleId) !== '5' && String(user.roleId) !== '8';
@@ -99,16 +99,38 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
     }
   };
 
-  const fetchCompaniesForClient = async (clientId) => {
+  const fetchCompaniesForClient = async (clientId, overrideAction) => {
     if (!clientId) {
       setCompanies([]);
       return [];
     }
     try {
+      let action = 'view';
+      if (overrideAction) {
+        action = overrideAction;
+      } else if (isFormOpen) {
+        action = isViewOnly ? 'view' : (editingRecord ? 'edit' : 'create');
+      }
       const emailParam = user?.email ? `?email=${encodeURIComponent(user.email)}` : '';
-      const res = await fetch(`${API_URL}/api/companies/client/${clientId}${emailParam}`);
+      const actionQuery = `&module_id=asset_details&action=${action}`;
+      const res = await fetch(`${API_URL}/api/companies/client/${clientId}${emailParam}${actionQuery}`);
       if (res.ok) {
-        const data = await res.json();
+        let data = await res.json();
+        if (isEmployee) {
+          const allowedIds = [];
+          if (user?.companyid) allowedIds.push(String(user.companyid));
+          if (user?.company_id) allowedIds.push(String(user.company_id));
+          if (user?.associatedCompanyIds) {
+            user.associatedCompanyIds.forEach(id => {
+              if (id) allowedIds.push(String(id));
+            });
+          }
+          if (allowedIds.length > 0) {
+            data = (data || []).filter(c => allowedIds.includes(String(c.id)));
+          } else {
+            data = [];
+          }
+        }
         setCompanies(data || []);
         return data || [];
       }
@@ -122,8 +144,12 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
     setIsViewOnly(false);
     setEditingRecord(null);
     setFormData({});
-    if (companies.length === 1 && user && String(user.roleId) !== '1') {
-      const singleComp = companies[0];
+    let currentCompanies = [];
+    if (selectedClient) {
+      currentCompanies = await fetchCompaniesForClient(selectedClient, 'create');
+    }
+    if (currentCompanies.length === 1 && user && String(user.roleId) !== '1') {
+      const singleComp = currentCompanies[0];
       setSelectedCompany(String(singleComp.id));
       const targetCountry = singleComp.country ? String(singleComp.country) : selectedCountry;
       if (singleComp.country) setSelectedCountry(String(singleComp.country));
@@ -337,7 +363,7 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
     setSelectedClient(String(record.clientid || ''));
     setSelectedCountry(String(record.country_id || ''));
     setSelectedModule(String(record.moduleid || ''));
-    await fetchCompaniesForClient(String(record.clientid || ''));
+    await fetchCompaniesForClient(String(record.clientid || ''), 'edit');
     setSelectedCompany(record.company_id ? String(record.company_id) : '');
     await fetchFormConfiguration(
       String(record.clientid || ''),
@@ -360,7 +386,7 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
     setSelectedClient(String(record.clientid || ''));
     setSelectedCountry(String(record.country_id || ''));
     setSelectedModule(String(record.moduleid || ''));
-    await fetchCompaniesForClient(String(record.clientid || ''));
+    await fetchCompaniesForClient(String(record.clientid || ''), 'view');
     setSelectedCompany(record.company_id ? String(record.company_id) : '');
     await fetchFormConfiguration(
       String(record.clientid || ''),
@@ -386,7 +412,8 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
         method: 'DELETE',
         headers: {
           'roleid': String(user?.roleId || ''),
-          'clientid': String(user?.clientid || '')
+          'clientid': String(user?.clientid || ''),
+          'companyid': String(recordToDelete.company_id || '')
         }
       });
 
@@ -1135,9 +1162,7 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
                 <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Module Info</Text>
                 <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Data Preview</Text>
                 <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
-                <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>View</Text>
-                {canEdit && <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>Edit</Text>}
-                {canDelete && <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>Delete</Text>}
+                <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>ACTION</Text>
               </View>
 
               <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true}>
@@ -1216,21 +1241,23 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
                               </View>
                             </View>
 
-                            <TouchableOpacity style={{ flex: 0.5, alignItems: 'center' }} onPress={() => handleView(record)}>
-                              <Ionicons name="eye-outline" size={18} color="#0F172A" />
-                            </TouchableOpacity>
-
-                            {canEdit && (
-                              <TouchableOpacity style={{ flex: 0.5, alignItems: 'center' }} onPress={() => handleEdit(record)}>
-                                <Ionicons name="pencil" size={18} color="#166534" />
+                            <View style={{ flex: 1.2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+                              <TouchableOpacity style={{ padding: 4 }} onPress={() => handleView(record)}>
+                                <Ionicons name="eye-outline" size={18} color="#0F172A" />
                               </TouchableOpacity>
-                            )}
 
-                            {canDelete && (
-                              <TouchableOpacity style={{ flex: 0.5, alignItems: 'center' }} onPress={() => handleDelete(record)}>
-                                <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                              </TouchableOpacity>
-                            )}
+                              {(checkRowPermission ? checkRowPermission(record.company_id || record.companyid, 'edit') : canEdit) && (
+                                <TouchableOpacity style={{ padding: 4 }} onPress={() => handleEdit(record)}>
+                                  <Ionicons name="pencil" size={18} color="#166534" />
+                                </TouchableOpacity>
+                              )}
+
+                              {(checkRowPermission ? checkRowPermission(record.company_id || record.companyid, 'delete') : canDelete) && (
+                                <TouchableOpacity style={{ padding: 4 }} onPress={() => handleDelete(record)}>
+                                  <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                                </TouchableOpacity>
+                              )}
+                            </View>
                           </View>
                         );
                       })}

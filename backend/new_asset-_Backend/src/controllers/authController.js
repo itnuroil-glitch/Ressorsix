@@ -125,6 +125,15 @@ exports.login = async (req, res) => {
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ');
 
+    // Fetch associated companies if this is an employee user
+    let associatedCompanyIds = [];
+    const empRes = await db.query('SELECT id FROM employee WHERE email = $1 AND is_deleted = false', [email.toLowerCase().trim()]);
+    if (empRes.rows.length > 0) {
+      const empId = empRes.rows[0].id;
+      const compRes = await db.query('SELECT company_id FROM employee_company WHERE employee_id = $1', [empId]);
+      associatedCompanyIds = compRes.rows.map(r => r.company_id);
+    }
+
     res.status(200).json({
       message: 'Sign in successful.',
       token,
@@ -135,6 +144,7 @@ exports.login = async (req, res) => {
         roleId: user.roleid,
         clientid: user.clientid,
         companyid: user.companyid,
+        associatedCompanyIds: associatedCompanyIds,
         createdAt: user.created_at,
       },
     });

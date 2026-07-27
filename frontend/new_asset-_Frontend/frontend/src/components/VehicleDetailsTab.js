@@ -292,6 +292,11 @@ export default function VehicleDetailsTab({ user, showToast }) {
     try {
       const res = await fetch(`${API_URL}/api/vehicle-details/${recordToDelete.id}`, {
         method: 'DELETE',
+        headers: {
+          'roleid': String(user?.roleId || ''),
+          'clientid': String(user?.clientid || ''),
+          'companyid': String(recordToDelete.company_id || '')
+        }
       });
 
       if (!res.ok) throw new Error('Failed to delete vehicle details record');

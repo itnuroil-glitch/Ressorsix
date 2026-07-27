@@ -95,6 +95,8 @@ export default function LoginScreen({ onLoginSuccess }) {
           name: data.user.name,
           roleId: data.user.roleId,
           clientid: data.user.clientid,
+          companyid: data.user.companyid,
+          associatedCompanyIds: data.user.associatedCompanyIds,
           createdAt: data.user.createdAt,
           token: data.token,
         });

@@ -205,17 +205,18 @@ const FIELD_OPTIONS = [
   { label: 'Hidden Field', value: 'Hidden Field' }
 ];
 
-export const CustomDropdown = ({ selectedValue, onValueChange, options, disabled }) => {
+export const CustomDropdown = ({ selectedValue, onValueChange, options = [], disabled }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const containerRef = React.useRef(null);
   const [coords, setCoords] = useState({ x: 0, y: 0, width: 0, height: 0 });
   const { height: windowHeight } = useWindowDimensions();
   
-  const selectedLabel = options.find(o => o.value === selectedValue)?.label || 'Select...';
+  const safeOptions = Array.isArray(options) ? options : [];
+  const selectedLabel = safeOptions.find(o => o && o.value === selectedValue)?.label || 'Select...';
 
-  const filteredOptions = options.filter(opt => 
-    opt.label.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredOptions = safeOptions.filter(opt => 
+    opt && opt.label && opt.label.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const useBottomAlignment = false; // Always open downwards

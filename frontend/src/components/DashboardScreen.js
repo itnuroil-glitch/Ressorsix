@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import {
   StyleSheet,
   Text,
@@ -22,6 +24,7 @@ import FieldPermissionsTab from './FieldPermissionsTab';
 import VehicleInsuranceTab from './VehicleInsuranceTab';
 import VehicleDetailsTab from './VehicleDetailsTab';
 import VehiclePurchaseTab from './VehiclePurchaseTab';
+import VehicleTollTab from './VehicleTollTab';
 import PremisesDetailsTab from './PremisesDetailsTab';
 import AssetDetailsTab from './AssetDetailsTab';
 import AssetCategoryTab from './AssetCategoryTab';
@@ -291,6 +294,7 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [empEmail, setEmpEmail] = useState('');
   const [empPhone, setEmpPhone] = useState('');
   const [empRoleId, setEmpRoleId] = useState('');
+  const [empRoleIds, setEmpRoleIds] = useState([]);
   const [empStatus, setEmpStatus] = useState(1);
   const [empDepartmentId, setEmpDepartmentId] = useState('');
   const [empAssociatedCompanies, setEmpAssociatedCompanies] = useState([]);
@@ -360,6 +364,9 @@ export default function DashboardScreen({ user, onSignOut }) {
 
   // Role Permission states
   const [selectedRoleId, setSelectedRoleId] = useState('');
+  const [selectedPermissionCompanyId, setSelectedPermissionCompanyId] = useState('all');
+  const [modalPermissionCompanyId, setModalPermissionCompanyId] = useState('all');
+  const [companyPermissionDrafts, setCompanyPermissionDrafts] = useState({});
   const [isRolePermissionModalOpen, setIsRolePermissionModalOpen] = useState(false);
   const [rolePermissions, setRolePermissions] = useState([]);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
@@ -367,6 +374,7 @@ export default function DashboardScreen({ user, onSignOut }) {
 
   // Logged-in user permissions
   const [userPermissions, setUserPermissions] = useState([]);
+  const [userCompanyPermissions, setUserCompanyPermissions] = useState([]);
   const [userPermissionsLoading, setUserPermissionsLoading] = useState(true);
 
   // Fetch logged-in user permissions on load
@@ -376,9 +384,12 @@ export default function DashboardScreen({ user, onSignOut }) {
       return;
     }
     setUserPermissionsLoading(true);
-    let url = `${API_URL}/api/roles/${user.roleId}/permissions`;
+    const compIds = (user.associatedCompanyIds && user.associatedCompanyIds.length > 0)
+      ? user.associatedCompanyIds.join(',')
+      : (user.companyid || '');
+    let url = `${API_URL}/api/roles/${user.roleId}/permissions?company_id=${compIds}&_t=${Date.now()}`;
     if (user.clientid) {
-      url += `?clientid=${user.clientid}`;
+      url += `&clientid=${user.clientid}`;
     }
     fetch(url)
       .then((res) => {
@@ -387,6 +398,7 @@ export default function DashboardScreen({ user, onSignOut }) {
       })
       .then((data) => {
         setUserPermissions(data.permissions || []);
+        setUserCompanyPermissions(data.companyPermissions || []);
         setUserPermissionsLoading(false);
       })
       .catch((err) => {
@@ -396,15 +408,18 @@ export default function DashboardScreen({ user, onSignOut }) {
   };
 
   // Fetch role permissions
-  const fetchRolePermissions = (roleId) => {
+  const fetchRolePermissions = (roleId, companyId = '') => {
     if (!roleId) {
       setRolePermissions([]);
       return;
     }
     setPermissionsLoading(true);
-    let url = `${API_URL}/api/roles/${roleId}/permissions`;
+    let url = `${API_URL}/api/roles/${roleId}/permissions?1=1`;
     if (user && user.clientid) {
-      url += `?clientid=${user.clientid}`;
+      url += `&clientid=${user.clientid}`;
+    }
+    if (companyId && companyId !== 'all') {
+      url += `&company_id=${companyId}`;
     }
     fetch(url)
       .then((res) => {
@@ -469,15 +484,6 @@ export default function DashboardScreen({ user, onSignOut }) {
           updated.all_record_view = val;
         } else {
           updated[field] = !perm[field];
-          // If any of the individual ones is set to false, full_control must be false
-          if (!updated[field]) {
-            updated.full_control = false;
-          } else {
-            // If all view, create, edit, delete, all_record_view are true, set full_control to true
-            if (updated.can_view && updated.can_create && updated.can_edit && updated.can_delete && updated.all_record_view) {
-              updated.full_control = true;
-            }
-          }
         }
         return updated;
       });
@@ -487,20 +493,44 @@ export default function DashboardScreen({ user, onSignOut }) {
   const handleSavePermissions = () => {
     if (!selectedRoleId) return;
     setPermissionsSaving(true);
-    fetch(`${API_URL}/api/roles/${selectedRoleId}/permissions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ permissions: rolePermissions }),
-    })
-      .then((res) => {
+
+    const selectedRoleObj = roles.find(r => String(r.id) === String(selectedRoleId));
+    const roleClientId = selectedRoleObj?.clientid || selectedRoleObj?.client_id || user?.clientid || null;
+
+    const allDrafts = {
+      ...companyPermissionDrafts,
+      [selectedPermissionCompanyId || 'all']: rolePermissions
+    };
+
+    const savePromises = Object.entries(allDrafts).map(([compId, perms]) => {
+      let targetCompanyIds = [];
+      if (compId === 'all' || !compId) {
+        targetCompanyIds = ['all'];
+      } else {
+        targetCompanyIds = [compId];
+      }
+
+      return fetch(`${API_URL}/api/roles/${selectedRoleId}/permissions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          permissions: perms,
+          company_ids: targetCompanyIds,
+          client_id: roleClientId
+        }),
+      }).then((res) => {
         if (!res.ok) throw new Error('Failed to save permissions.');
         return res.json();
-      })
+      });
+    });
+
+    Promise.all(savePromises)
       .then(() => {
         showToast('Role permissions updated successfully!', 'success');
         setPermissionsSaving(false);
+        setCompanyPermissionDrafts({});
         setIsRolePermissionModalOpen(false);
         // Sync active user privileges in real-time if editing their own role!
         if (user && String(selectedRoleId) === String(user.roleId)) {
@@ -699,6 +729,20 @@ export default function DashboardScreen({ user, onSignOut }) {
         return res.json();
       })
       .then((data) => {
+        // Check if any Vehicle sub-modules exist but the Vehicle parent (18) is missing
+        const hasVehicleSubmodule = data.some(m => [19, 23, 24].includes(m.id) || m.parent_id === 18);
+        const hasVehicleParent = data.some(m => m.id === 18);
+        
+        if (hasVehicleSubmodule && !hasVehicleParent) {
+          data.push({
+            id: 18,
+            module_name: "Vehicle",
+            parent_id: null,
+            route: null,
+            status: "active"
+          });
+        }
+
         // Group and order hierarchically: parent followed by its children
         const parents = data.filter(m => m.parent_id === null || m.parent_id === undefined);
         const ordered = [];
@@ -851,8 +895,8 @@ export default function DashboardScreen({ user, onSignOut }) {
       setEmployeeFormError('Full Name and Email are required.');
       hasError = true;
     }
-    if (!empRoleId) {
-      setEmpRoleError('Please select a role.');
+    if (!empRoleIds || empRoleIds.length === 0) {
+      setEmpRoleError('Please select at least one role.');
       hasError = true;
     }
     if (!empAssociatedCompanies || empAssociatedCompanies.length === 0) {
@@ -869,7 +913,7 @@ export default function DashboardScreen({ user, onSignOut }) {
       full_name: empFullName.trim(),
       email: empEmail.trim(),
       phone: empPhone.trim(),
-      roleid: empRoleId,
+      roleid: empRoleIds.join(','),
       status: empStatus,
       clientid: user && user.clientid ? user.clientid : null,
       department_id: empDepartmentId,
@@ -915,6 +959,8 @@ export default function DashboardScreen({ user, onSignOut }) {
     setEmpEmail(emp.email || '');
     setEmpPhone(emp.phone || '');
     setEmpRoleId(emp.roleid || '');
+    const parsedRoleIds = emp.roleid ? String(emp.roleid).split(',').map(id => parseInt(id.trim(), 10)).filter(Boolean) : [];
+    setEmpRoleIds(parsedRoleIds);
     setEmpStatus(emp.status !== undefined ? emp.status : 1);
     setEmpDepartmentId(emp.department_id || '');
     // Always load the employee's saved companies when editing
@@ -923,7 +969,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     setEmployeeFormError('');
     setEmpCompanyDropdownOpen(false);
     setIsEmpRoleDropdownOpen(false);
-              setIsEmployeeModalOpen(true);
+    setIsEmployeeModalOpen(true);
   };
 
   const handleDeleteEmployee = (id) => {
@@ -1633,6 +1679,7 @@ export default function DashboardScreen({ user, onSignOut }) {
       can_create: false,
       can_edit: false,
       can_delete: false,
+      all_record_view: false,
       full_control: false
     }));
     setRolePermissions(defaults);
@@ -1643,10 +1690,15 @@ export default function DashboardScreen({ user, onSignOut }) {
     setEditingRole(item);
     setNewRoleName(item.role);
     setNewRoleStatus(item.status);
-    setNewRoleClientIds(Array.isArray(item.clientids) ? item.clientids.map(String) : (item.clientid ? [String(item.clientid)] : []));
+    const clientIds = Array.isArray(item.companyids)
+      ? item.companyids.map(String)
+      : (Array.isArray(item.clientids) ? item.clientids.map(String) : (item.clientid ? [String(item.clientid)] : []));
+    setNewRoleClientIds(clientIds);
     setIsCompanyDropdownOpen(false);
     setRoleFormError('');
-    fetchRolePermissions(item.id);
+    const firstCompId = clientIds.length > 0 ? clientIds[0] : '';
+    setModalPermissionCompanyId(firstCompId || 'all');
+    fetchRolePermissions(item.id, firstCompId);
     setIsAddRoleModalOpen(true);
   };
 
@@ -1666,6 +1718,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     const payload = {
       role: newRoleName.trim(),
       status: newRoleStatus,
+      companyids: newRoleClientIds.map(Number),
       clientids: newRoleClientIds.map(Number)
     };
 
@@ -1691,20 +1744,34 @@ export default function DashboardScreen({ user, onSignOut }) {
       })
       .then((data) => {
         const savedRoleId = data.role.id;
-        if (activeTab === 'roles') {
-          return data;
-        }
-        // Save the permissions!
-        return fetch(`${API_URL}/api/roles/${savedRoleId}/permissions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ permissions: rolePermissions }),
-        }).then(pRes => {
-          if (!pRes.ok) throw new Error('Failed to save role permissions.');
-          return data;
+        const allDrafts = {
+          ...companyPermissionDrafts,
+          [modalPermissionCompanyId || 'all']: rolePermissions
+        };
+
+        const savePromises = Object.entries(allDrafts).map(([compId, perms]) => {
+          if (!perms || perms.length === 0) return Promise.resolve();
+
+          const targetCompIds = (compId && compId !== 'all')
+            ? [Number(compId)]
+            : (newRoleClientIds.length > 0 ? [Number(newRoleClientIds[0])] : [null]);
+
+          return fetch(`${API_URL}/api/roles/${savedRoleId}/permissions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ 
+              permissions: perms,
+              company_ids: targetCompIds
+            }),
+          }).then(pRes => {
+            if (!pRes.ok) throw new Error('Failed to save role permissions.');
+            return pRes.json();
+          });
         });
+
+        return Promise.all(savePromises).then(() => data);
       })
       .then(() => {
         showToast(editingRole ? 'Role updated successfully!' : 'Role created successfully!', 'success');
@@ -1717,8 +1784,9 @@ export default function DashboardScreen({ user, onSignOut }) {
         setNewRoleClientIds([]);
         setIsCompanyDropdownOpen(false);
         setRolePermissions([]);
-        // Re-fetch roles
+        // Re-fetch roles and sync user permissions in real-time
         fetchRoles();
+        fetchUserPermissions();
       })
       .catch((err) => {
         setRoleFormSaving(false);
@@ -1973,6 +2041,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (r.includes('vehicle') && r.includes('insurance') || n.includes('vehicle') && n.includes('insurance')) return 'vehicle_insurance';
     if (r.includes('vehicle') && r.includes('detail') || n.includes('vehicle') && n.includes('detail')) return 'vehicle_details';
     if (r.includes('vehicle') && r.includes('purchase') || n.includes('vehicle') && n.includes('purchase') || r.includes('vehile') && r.includes('purchase') || n.includes('vehile') && n.includes('purchase')) return 'vehicle_purchase';
+    if (r.includes('vehicle') && r.includes('toll') || n.includes('vehicle') && n.includes('toll') || r.includes('vehile') && r.includes('toll') || n.includes('vehile') && n.includes('toll')) return 'vehicle_toll';
     if (r.includes('primise') && r.includes('detail') || n.includes('primise') && n.includes('detail') || r.includes('premise') && r.includes('detail') || n.includes('premise') && n.includes('detail')) return 'premises_details';
     if (r.includes('asset') && r.includes('detail') || n.includes('asset') && n.includes('detail')) return 'asset_details';
     if (r.includes('asset') && r.includes('category') || n.includes('asset') && n.includes('category')) return 'asset_category';
@@ -2039,9 +2108,26 @@ export default function DashboardScreen({ user, onSignOut }) {
   // Helper to check view permissions for a given module ID
   const hasViewPermission = (moduleId) => {
     if (!user) return false;
-    // Rely on Role-based userPermissions
+    // Superadmin bypass
+    if (String(user.roleId) === '1') return true;
+
+    const userCompanyIds = (user?.associatedCompanyIds && user.associatedCompanyIds.length > 0)
+      ? user.associatedCompanyIds.map(String)
+      : (user?.companyid ? [String(user.companyid)] : []);
+
+    // 1. Check company-specific permissions across assigned companies if present
+    if (userCompanyPermissions && userCompanyPermissions.length > 0 && userCompanyIds.length > 0) {
+      const compPerms = userCompanyPermissions.filter(
+        p => p.module_id === moduleId && userCompanyIds.includes(String(p.company_id))
+      );
+      if (compPerms.length > 0) {
+        return compPerms.some(p => p.can_view || p.full_control);
+      }
+    }
+
+    // 2. Rely on Role-based userPermissions (global/default permissions where company_id is null)
     const perm = userPermissions.find(p => p.module_id === moduleId);
-    return perm ? perm.can_view : false;
+    return perm ? (perm.can_view || perm.full_control) : false;
   };
 
   // Helper to check if user has access to a specific tab
@@ -3333,10 +3419,15 @@ export default function DashboardScreen({ user, onSignOut }) {
 
   const renderEmployeesTab = () => {
     const filtered = employees.filter(e => {
-      // If user is a company user, only show employees associated with this company
       let companyMatch = true;
-      if (user && user.companyid) {
-        companyMatch = e.companies && e.companies.some(c => Number(c.id) === Number(user.companyid));
+      if (user && String(user.roleId) !== '1') {
+        const matchesClient = user.clientid && Number(e.clientid) === Number(user.clientid);
+        const matchesCompany = user.companyid && e.companies && e.companies.some(c => Number(c.id) === Number(user.companyid));
+        if (user.clientid) {
+          companyMatch = matchesClient || matchesCompany;
+        } else if (user.companyid) {
+          companyMatch = matchesCompany;
+        }
       }
 
       const matchSearch = (e.full_name && e.full_name.toLowerCase().includes(employeesSearch.toLowerCase())) ||
@@ -3345,6 +3436,239 @@ export default function DashboardScreen({ user, onSignOut }) {
     });
     const displayPage = Math.min(employeesPage, Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE)));
     const paginated = filtered.slice((displayPage - 1) * ITEMS_PER_PAGE, displayPage * ITEMS_PER_PAGE);
+
+    const handleExcelEmployeeImport = (e) => {
+      const file = e.target?.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        try {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const jsonRows = XLSX.utils.sheet_to_json(worksheet);
+
+          if (!jsonRows || jsonRows.length === 0) {
+            showToast('No records found in the selected Excel file.', 'error');
+            return;
+          }
+
+          const mappedEmployees = jsonRows.map(row => {
+            // Match Role by ID or Title
+            const rawRole = String(row['System Permissions Role'] || row['Role'] || row['role'] || row['Role ID'] || '').trim();
+            const roleName = rawRole.toLowerCase();
+            const matchedRoles = roles.filter(r => 
+              String(r.id) === rawRole || (r.role || '').toLowerCase() === roleName
+            );
+            const roleid = matchedRoles.length > 0 ? matchedRoles.map(r => r.id) : (rawRole && !isNaN(rawRole) ? [Number(rawRole)] : []);
+
+            // Match Department by ID or Name
+            const rawDept = String(row['Department'] || row['department'] || row['Department ID'] || '').trim();
+            const deptName = rawDept.toLowerCase();
+            const matchedDept = departments.find(d => 
+              String(d.id) === rawDept || (d.department_name || '').toLowerCase() === deptName
+            );
+            const department_id = matchedDept ? matchedDept.id : (rawDept && !isNaN(rawDept) ? Number(rawDept) : null);
+
+            // Match Company by ID or Name
+            const rawCompanies = String(row['Company'] || row['company'] || row['Companies'] || row['Company ID'] || '').split(',');
+            const matchedCompIds = [];
+            for (let rawC of rawCompanies) {
+              const cTrim = rawC.trim();
+              const cLower = cTrim.toLowerCase();
+              const matchedC = companies.find(c => 
+                String(c.id) === cTrim || (c.company_name || '').toLowerCase() === cLower
+              );
+              if (matchedC) {
+                matchedCompIds.push(matchedC.id);
+              } else if (cTrim && !isNaN(cTrim)) {
+                matchedCompIds.push(Number(cTrim));
+              }
+            }
+
+            const rawStatus = String(row['Status'] || row['status'] || 'Active').trim().toLowerCase();
+            const status = rawStatus === 'inactive' || rawStatus === '0' || rawStatus === 'false' ? 0 : 1;
+
+            return {
+              full_name: row['Full Name'] || row['Name'] || row['name'] || '',
+              email: row['Email'] || row['email'] || '',
+              phone: String(row['Phone'] || row['phone'] || ''),
+              roleid: roleid,
+              department_id: department_id,
+              companies: matchedCompIds,
+              status: status,
+              clientid: user?.clientid || 16
+            };
+          }).filter(emp => emp.full_name && emp.email);
+
+          if (mappedEmployees.length === 0) {
+            showToast('No valid employee rows found. Rows must contain "Full Name" and "Email".', 'error');
+            return;
+          }
+
+          const response = await fetch(`${API_URL}/api/employees/bulk-import`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ employees: mappedEmployees, clientid: user?.clientid || 16 })
+          });
+
+          const resData = await response.json();
+          if (response.ok) {
+            showToast(`Successfully imported ${resData.importedCount} users from Excel!`, 'success');
+            fetchEmployees();
+          } else {
+            showToast(resData.message || 'Failed to import Excel data.', 'error');
+          }
+        } catch (err) {
+          console.error('Excel Import Error:', err);
+          showToast('Error reading Excel file.', 'error');
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    };
+
+    const handleDownloadExcelTemplate = async () => {
+      try {
+        const activeRolesList = roles && roles.length > 0
+          ? roles.filter(r => r.status === 1).map(r => r.role)
+          : ['Accountant', 'Assistant Manager', 'Manager', 'Driver', 'HR Manager', 'Document Controller'];
+
+        const activeDeptsList = departments && departments.length > 0
+          ? departments.filter(d => d.status !== 0).map(d => d.department_name)
+          : ['Admin Department', 'Logistics Department', 'IT Department'];
+
+        const targetClientId = user?.clientid || 16;
+        const clientCompanies = companies && companies.length > 0
+          ? companies.filter(c => Number(c.clientid || c.client_id) === Number(targetClientId))
+          : [];
+
+        const activeCompaniesList = clientCompanies.length > 0
+          ? clientCompanies.map(c => c.company_name)
+          : ['Ansar Mall', 'Night to Night'];
+
+        const workbook = new ExcelJS.Workbook();
+        const mainSheet = workbook.addWorksheet('Employee Import');
+
+        mainSheet.columns = [
+          { header: 'Full Name', key: 'full_name', width: 25 },
+          { header: 'Email', key: 'email', width: 28 },
+          { header: 'Phone', key: 'phone', width: 18 },
+          { header: 'System Permissions Role', key: 'role', width: 28 },
+          { header: 'Department', key: 'department', width: 25 },
+          { header: 'Company', key: 'company', width: 28 },
+          { header: 'Status', key: 'status', width: 15 }
+        ];
+
+        // Header Styling
+        const headerRow = mainSheet.getRow(1);
+        headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        headerRow.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF4F46E5' }
+        };
+
+        // Add Data Rows (existing employees or sample row)
+        if (employees && employees.length > 0) {
+          employees.forEach(emp => {
+            mainSheet.addRow({
+              full_name: emp.full_name || '',
+              email: emp.email || '',
+              phone: emp.phone || '',
+              role: emp.role_name || '',
+              department: emp.department_name || '',
+              company: emp.companies && emp.companies.length > 0 ? emp.companies.map(c => c.company_name).join(', ') : '',
+              status: emp.status === 0 || emp.status === '0' || emp.status === 'Inactive' ? 'Inactive' : 'Active'
+            });
+          });
+        } else {
+          mainSheet.addRow({
+            full_name: 'Kiran Raj',
+            email: 'kiranraj@gmail.com',
+            phone: '9847112233',
+            role: activeRolesList[0] || 'Accountant',
+            department: activeDeptsList[0] || 'Admin Department',
+            company: activeCompaniesList[0] || 'Ansar Mall',
+            status: 'Active'
+          });
+        }
+
+        // Add native Excel Data Validation Dropdowns for rows 2 through 200
+        const rolesFormula = `"${activeRolesList.join(',')}"`;
+        const deptsFormula = `"${activeDeptsList.join(',')}"`;
+        const companiesFormula = `"${activeCompaniesList.join(',')}"`;
+        const statusFormula = '"Active,Inactive"';
+
+        for (let rowIdx = 2; rowIdx <= 200; rowIdx++) {
+          // Column D: System Permissions Role
+          mainSheet.getCell(`D${rowIdx}`).dataValidation = {
+            type: 'list',
+            allowBlank: true,
+            formulae: [rolesFormula]
+          };
+          // Column E: Department
+          mainSheet.getCell(`E${rowIdx}`).dataValidation = {
+            type: 'list',
+            allowBlank: true,
+            formulae: [deptsFormula]
+          };
+          // Column F: Company
+          mainSheet.getCell(`F${rowIdx}`).dataValidation = {
+            type: 'list',
+            allowBlank: true,
+            formulae: [companiesFormula]
+          };
+          // Column G: Status
+          mainSheet.getCell(`G${rowIdx}`).dataValidation = {
+            type: 'list',
+            allowBlank: true,
+            formulae: [statusFormula]
+          };
+        }
+
+        // Add Reference Worksheet
+        const refSheet = workbook.addWorksheet('Valid Roles & References');
+        refSheet.columns = [
+          { header: 'Roles (From Database)', key: 'role', width: 30 },
+          { header: 'Departments (From Database)', key: 'dept', width: 30 },
+          { header: 'Companies (From Database)', key: 'company', width: 30 },
+          { header: 'Status Options', key: 'status', width: 20 }
+        ];
+
+        const refHeaderRow = refSheet.getRow(1);
+        refHeaderRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        refHeaderRow.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF10B981' }
+        };
+
+        const maxRows = Math.max(activeRolesList.length, activeDeptsList.length, activeCompaniesList.length);
+        for (let i = 0; i < maxRows; i++) {
+          refSheet.addRow({
+            role: activeRolesList[i] || '',
+            dept: activeDeptsList[i] || '',
+            company: activeCompaniesList[i] || '',
+            status: i === 0 ? 'Active' : (i === 1 ? 'Inactive' : '')
+          });
+        }
+
+        // Write as file download blob
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = window.URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = 'Employee_Import_Template.xlsx';
+        anchor.click();
+        window.URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error('Error generating Excel template with ExcelJS:', err);
+        showToast('Failed to generate Excel template.', 'error');
+      }
+    };
 
     return (
       <ScrollView style={styles.tabContent} keyboardShouldPersistTaps="handled">
@@ -3359,26 +3683,58 @@ export default function DashboardScreen({ user, onSignOut }) {
             </View>
           </View>
 
-          <TouchableOpacity
-            style={styles.addModuleBtn}
-            onPress={() => {
-              setEditingEmployee(null);
-              setEmpFullName('');
-              setEmpEmail('');
-              setEmpPhone('');
-              setEmpRoleId('');
-              setEmpStatus(1);
-              setEmpDepartmentId('');
-              setEmpAssociatedCompanies([]);
-              setEmpAutoGeneratePassword(true);
-              setEmployeeFormError('');
-              setIsEmpRoleDropdownOpen(false);
-              setIsEmployeeModalOpen(true);
-            }}
-          >
-            <Ionicons name="add" size={20} color={COLORS.white} style={{ marginRight: 6 }} />
-            <Text style={styles.addModuleBtnText}>Create User</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            {/* Download Template Button */}
+            <TouchableOpacity
+              style={[styles.addModuleBtn, { backgroundColor: '#475569' }]}
+              onPress={handleDownloadExcelTemplate}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="download-outline" size={18} color={COLORS.white} style={{ marginRight: 6 }} />
+              <Text style={styles.addModuleBtnText}>Template</Text>
+            </TouchableOpacity>
+
+            {/* Import Excel Button */}
+            <TouchableOpacity
+              style={[styles.addModuleBtn, { backgroundColor: '#16A34A' }]}
+              onPress={() => {
+                if (typeof document !== 'undefined') {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = '.xlsx, .xls, .csv';
+                  input.onchange = handleExcelEmployeeImport;
+                  input.click();
+                }
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="document-text-outline" size={18} color={COLORS.white} style={{ marginRight: 6 }} />
+              <Text style={styles.addModuleBtnText}>Import Excel</Text>
+            </TouchableOpacity>
+
+            {/* Create User Button */}
+            <TouchableOpacity
+              style={styles.addModuleBtn}
+              onPress={() => {
+                setEditingEmployee(null);
+                setEmpFullName('');
+                setEmpEmail('');
+                setEmpPhone('');
+                setEmpRoleId('');
+                setEmpRoleIds([]);
+                setEmpStatus(1);
+                setEmpDepartmentId('');
+                setEmpAssociatedCompanies([]);
+                setEmpAutoGeneratePassword(true);
+                setEmployeeFormError('');
+                setIsEmpRoleDropdownOpen(false);
+                setIsEmployeeModalOpen(true);
+              }}
+            >
+              <Ionicons name="add" size={20} color={COLORS.white} style={{ marginRight: 6 }} />
+              <Text style={styles.addModuleBtnText}>Create User</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={[styles.tableCard, { marginTop: SPACING.md }]}>
@@ -4266,7 +4622,19 @@ export default function DashboardScreen({ user, onSignOut }) {
                     onChange={(e) => {
                       const val = e.target.value;
                       setSelectedRoleId(val);
-                      fetchRolePermissions(val);
+                      setSelectedPermissionCompanyId('all');
+                      setCompanyPermissionDrafts({});
+                      
+                      const rObj = roles.find(r => String(r.id) === String(val));
+                      const rAssoc = rObj
+                        ? companies.filter(c => 
+                            (Array.isArray(rObj.companyids) && rObj.companyids.map(id => String(id)).includes(String(c.id))) ||
+                            (Array.isArray(rObj.clientids) && rObj.clientids.map(id => String(id)).includes(String(c.id))) ||
+                            (rObj.clientid && String(c.clientid) === String(rObj.clientid))
+                          )
+                        : [];
+                      const fetchCompId = rAssoc.length > 0 ? rAssoc.map(c => c.id).join(',') : '';
+                      fetchRolePermissions(val, fetchCompId);
                     }}
                     style={{
                       height: 44,
@@ -4290,6 +4658,71 @@ export default function DashboardScreen({ user, onSignOut }) {
                     ))}
                   </select>
                 </View>
+
+                {/* COMPANY PICKER */}
+                {(() => {
+                  const selectedRoleObj = roles.find(r => String(r.id) === String(selectedRoleId));
+                  const roleAssociatedCompanies = selectedRoleObj
+                    ? companies.filter(c => 
+                        (Array.isArray(selectedRoleObj.companyids) && selectedRoleObj.companyids.map(id => String(id)).includes(String(c.id))) ||
+                        (Array.isArray(selectedRoleObj.clientids) && selectedRoleObj.clientids.map(id => String(id)).includes(String(c.id))) ||
+                        (selectedRoleObj.clientid && String(c.clientid) === String(selectedRoleObj.clientid))
+                      )
+                    : [];
+                  
+                  if (!selectedRoleId) return null;
+
+                  return (
+                    <View style={{ marginBottom: 16 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 8 }}>
+                        SELECT TARGET COMPANY *
+                      </Text>
+                      <select
+                        value={selectedPermissionCompanyId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const currentComp = selectedPermissionCompanyId || 'all';
+                          if (rolePermissions && rolePermissions.length > 0) {
+                            setCompanyPermissionDrafts(prev => ({
+                              ...prev,
+                              [currentComp]: rolePermissions
+                            }));
+                          }
+                          setSelectedPermissionCompanyId(val);
+
+                          if (companyPermissionDrafts[val]) {
+                            setRolePermissions(companyPermissionDrafts[val]);
+                          } else {
+                            const fetchCompId = val === 'all' 
+                              ? roleAssociatedCompanies.map(c => c.id).join(',')
+                              : val;
+                            fetchRolePermissions(selectedRoleId, fetchCompId);
+                          }
+                        }}
+                        style={{
+                          height: 44,
+                          borderColor: '#E2E8F0',
+                          borderWidth: 1,
+                          borderRadius: 8,
+                          paddingHorizontal: 16,
+                          backgroundColor: '#F8FAFC',
+                          color: '#1E293B',
+                          fontSize: 14,
+                          outlineStyle: 'none',
+                          width: '100%',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <option value="all">All Associated Companies</option>
+                        {roleAssociatedCompanies.map(c => (
+                          <option key={c.id} value={c.id}>
+                            {c.company_name}
+                          </option>
+                        ))}
+                      </select>
+                    </View>
+                  );
+                })()}
 
                 {permissionsLoading ? (
                   <View style={{ padding: 40, alignItems: 'center' }}>
@@ -4407,10 +4840,55 @@ export default function DashboardScreen({ user, onSignOut }) {
                 ) : (
                   <View style={{ paddingVertical: 40, alignItems: 'center' }}>
                     <Ionicons name="shield-outline" size={48} color={COLORS.textMuted} />
-                    <Text style={{ fontSize: 14, color: COLORS.textSecondary, marginTop: 8 }}>Please select a role above to begin.</Text>
+                    <Text style={{ fontSize: 14, color: COLORS.textSecondary, marginTop: 8 }}>Please select a security role above to begin configuring permissions.</Text>
                   </View>
                 )}
               </ScrollView>
+
+              {/* Sticky Footer Action Bar */}
+              <View style={{
+                borderTopWidth: 1,
+                borderTopColor: '#E2E8F0',
+                paddingTop: 14,
+                marginTop: 12,
+                flexDirection: 'row',
+                justifyContent: 'flex-end',
+                alignItems: 'center',
+                gap: 12,
+                backgroundColor: '#FFFFFF',
+              }}>
+                <TouchableOpacity
+                  style={{
+                    paddingVertical: 10,
+                    paddingHorizontal: 16,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: '#CBD5E1',
+                    backgroundColor: '#F8FAFC',
+                  }}
+                  onPress={() => setIsRolePermissionModalOpen(false)}
+                >
+                  <Text style={{ color: '#475569', fontWeight: '600', fontSize: 14 }}>Cancel</Text>
+                </TouchableOpacity>
+
+                {selectedRoleId && (
+                  <TouchableOpacity
+                    style={[styles.addModuleBtn, { marginVertical: 0, paddingHorizontal: 20, height: 42 }]}
+                    onPress={handleSavePermissions}
+                    disabled={permissionsSaving}
+                    activeOpacity={0.8}
+                  >
+                    {permissionsSaving ? (
+                      <ActivityIndicator size="small" color={COLORS.white} />
+                    ) : (
+                      <>
+                        <Ionicons name="save-outline" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+                        <Text style={styles.addModuleBtnText}>Save Policy Changes</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
           </View>
         </Modal>
@@ -4581,17 +5059,85 @@ export default function DashboardScreen({ user, onSignOut }) {
       return { can_view: true, can_create: true, can_edit: true, can_delete: true, full_control: true };
     }
     const perms = { can_view: false, can_create: false, can_edit: false, can_delete: false, full_control: false };
+    const userCompanyIds = (user?.associatedCompanyIds && user.associatedCompanyIds.length > 0)
+      ? user.associatedCompanyIds.map(String)
+      : (user?.companyid ? [String(user.companyid)] : []);
+
+    const isTrue = val => val === true || String(val) === '1' || val === 1;
+
     tabModules.forEach(m => {
+      // 1. Aggregate permissions across all assigned companies for multi-company employees
+      if (userCompanyPermissions && userCompanyPermissions.length > 0 && userCompanyIds.length > 0) {
+        const compPerms = userCompanyPermissions.filter(
+          p => p.module_id === m.id && userCompanyIds.includes(String(p.company_id))
+        );
+        if (compPerms.length > 0) {
+          compPerms.forEach(cp => {
+            if (isTrue(cp.can_view) || isTrue(cp.full_control)) perms.can_view = true;
+            if (isTrue(cp.can_create) || isTrue(cp.full_control)) perms.can_create = true;
+            if (isTrue(cp.can_edit) || isTrue(cp.full_control)) perms.can_edit = true;
+            if (isTrue(cp.can_delete) || isTrue(cp.full_control)) perms.can_delete = true;
+            if (isTrue(cp.full_control)) perms.full_control = true;
+          });
+          return;
+        }
+      }
+
+      // 2. Fall back to global userPermissions
       const up = userPermissions.find(p => p.module_id === m.id);
       if (up) {
-        if (up.can_view) perms.can_view = true;
-        if (up.can_create) perms.can_create = true;
-        if (up.can_edit) perms.can_edit = true;
-        if (up.can_delete) perms.can_delete = true;
-        if (up.full_control) perms.full_control = true;
+        if (isTrue(up.can_view) || isTrue(up.full_control)) perms.can_view = true;
+        if (isTrue(up.can_create) || isTrue(up.full_control)) perms.can_create = true;
+        if (isTrue(up.can_edit) || isTrue(up.full_control)) perms.can_edit = true;
+        if (isTrue(up.can_delete) || isTrue(up.full_control)) perms.can_delete = true;
+        if (isTrue(up.full_control)) perms.full_control = true;
       }
     });
     return perms;
+  };
+
+  const checkRowPermission = (tabId, companyId, action) => {
+    if (user && String(user.roleId) === '1') {
+      return true; // Super Admin has full control
+    }
+    
+    // Find modules belonging to this tabId
+    const tabModules = modules.filter(m => getTabIdByRoute(m.module_name, m.route) === tabId);
+    if (tabModules.length === 0) {
+      return true;
+    }
+    const moduleDbIds = tabModules.map(m => m.id);
+    const isTrue = val => val === true || String(val) === '1' || val === 1 || String(val).toLowerCase() === 'true';
+
+    // 1. Check if there are company-specific permissions for this company
+    if (companyId) {
+      const compPerms = userCompanyPermissions.filter(p => String(p.company_id) === String(companyId) && moduleDbIds.includes(p.module_id));
+      if (compPerms.length > 0) {
+        return compPerms.some(p => {
+          if (isTrue(p.full_control)) return true;
+          if (action === 'view' && isTrue(p.can_view)) return true;
+          if (action === 'create' && isTrue(p.can_create)) return true;
+          if (action === 'edit' && isTrue(p.can_edit)) return true;
+          if (action === 'delete' && isTrue(p.can_delete)) return true;
+          return false;
+        });
+      }
+    }
+
+    // 2. Fall back to global userPermissions
+    const globalPerms = userPermissions.filter(p => moduleDbIds.includes(p.module_id));
+    if (globalPerms.length > 0) {
+      return globalPerms.some(p => {
+        if (isTrue(p.full_control)) return true;
+        if (action === 'view' && isTrue(p.can_view)) return true;
+        if (action === 'create' && isTrue(p.can_create)) return true;
+        if (action === 'edit' && isTrue(p.can_edit)) return true;
+        if (action === 'delete' && isTrue(p.can_delete)) return true;
+        return false;
+      });
+    }
+
+    return false;
   };
 
   const renderTabContent = () => {
@@ -4640,35 +5186,37 @@ export default function DashboardScreen({ user, onSignOut }) {
       case 'field_permissions':
         return <FieldPermissionsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'vehicle_insurance':
-        return <VehicleInsuranceTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_insurance')} />;
+        return <VehicleInsuranceTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_insurance')} checkRowPermission={(compId, act) => checkRowPermission('vehicle_insurance', compId, act)} />;
       case 'vehicle_details':
-        return <VehicleDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_details')} />;
+        return <VehicleDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_details')} checkRowPermission={(compId, act) => checkRowPermission('vehicle_details', compId, act)} />;
       case 'vehicle_purchase':
-        return <VehiclePurchaseTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_purchase')} />;
+        return <VehiclePurchaseTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_purchase')} checkRowPermission={(compId, act) => checkRowPermission('vehicle_purchase', compId, act)} />;
+      case 'vehicle_toll':
+        return <VehicleTollTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_toll')} checkRowPermission={(compId, act) => checkRowPermission('vehicle_toll', compId, act)} />;
       case 'premises_details':
-        return <PremisesDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('premises_details')} />;
+        return <PremisesDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('premises_details')} checkRowPermission={(compId, act) => checkRowPermission('premises_details', compId, act)} />;
       case 'asset_details':
-        return <AssetDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('asset_details')} />;
+        return <AssetDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('asset_details')} checkRowPermission={(compId, act) => checkRowPermission('asset_details', compId, act)} />;
       case 'asset_category':
-        return <AssetCategoryTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
+        return <AssetCategoryTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('asset_category')} checkRowPermission={(compId, act) => checkRowPermission('asset_category', compId, act)} />;
       case 'asset_brand':
-        return <AssetBrandTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
+        return <AssetBrandTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('asset_brand')} checkRowPermission={(compId, act) => checkRowPermission('asset_brand', compId, act)} />;
       case 'asset_inventory':
-        return <InventoryTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
+        return <InventoryTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('asset_inventory')} checkRowPermission={(compId, act) => checkRowPermission('asset_inventory', compId, act)} />;
       case 'asset_assignment':
         return <AssetAssignmentTab user={user} showToast={showToast} />;
       case 'supplier_details':
-        return <SupplierDetailsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
+        return <SupplierDetailsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('supplier_details')} checkRowPermission={(compId, act) => checkRowPermission('supplier_details', compId, act)} />;
       case 'purchase_details':
-        return <PurchaseDetailsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
+        return <PurchaseDetailsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('purchase_details')} checkRowPermission={(compId, act) => checkRowPermission('purchase_details', compId, act)} />;
       case 'payment_method':
-        return <PaymentMethodTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
+        return <PaymentMethodTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('payment_method')} checkRowPermission={(compId, act) => checkRowPermission('payment_method', compId, act)} />;
       case 'uom':
-        return <UOMTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
+        return <UOMTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('uom')} checkRowPermission={(compId, act) => checkRowPermission('uom', compId, act)} />;
       case 'vat':
-        return <VATTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
+        return <VATTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vat')} checkRowPermission={(compId, act) => checkRowPermission('vat', compId, act)} />;
       case 'plans':
-        return <PlanManagementTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} />;
+        return <PlanManagementTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('plans')} checkRowPermission={(compId, act) => checkRowPermission('plans', compId, act)} />;
       case 'state':
         return renderStateTab();
       case 'employees':
@@ -6297,23 +6845,16 @@ export default function DashboardScreen({ user, onSignOut }) {
 
                           {/* List of Companies (filtered depending on logged-in user) */}
                           {(() => {
-                            let filteredCompanies = user?.roleId === 1
-                              ? companies
-                              : companies.filter(c => Number(c.clientid) === Number(user?.clientid));
+                            let filteredCompanies = (user && String(user.roleId) !== '1' && user.clientid)
+                              ? companies.filter(c => Number(c.clientid) === Number(user.clientid))
+                              : companies;
 
-                            if (newRoleName) {
-                              const occupiedCompanyIds = new Set();
-                              roles.forEach(r => {
-                                if (r.role.toLowerCase().trim() === newRoleName.toLowerCase().trim()) {
-                                  if (editingRole && String(editingRole.id) === String(r.id)) {
-                                    return;
-                                  }
-                                  if (Array.isArray(r.clientids)) {
-                                    r.clientids.forEach(id => occupiedCompanyIds.add(String(id)));
-                                  }
-                                }
-                              });
-                              filteredCompanies = filteredCompanies.filter(c => !occupiedCompanyIds.has(String(c.id)));
+                            if (filteredCompanies.length === 0) {
+                              return (
+                                <View style={{ padding: 16, alignItems: 'center' }}>
+                                  <Text style={{ fontSize: 13, color: '#94A3B8' }}>No companies found under this client.</Text>
+                                </View>
+                              );
                             }
 
                             return filteredCompanies.map(c => {
@@ -6442,7 +6983,48 @@ export default function DashboardScreen({ user, onSignOut }) {
                 {/* MODULAR PERMISSIONS MATRIX */}
                 {activeTab !== 'roles' && (
                   <>
-                    <Text style={[styles.modalLabel, { marginTop: 16, marginBottom: 8 }]}>Modular Permissions</Text>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, marginBottom: 8 }}>
+                      <Text style={styles.modalLabel}>Modular Permissions</Text>
+                      {newRoleClientIds.length > 1 && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '600', color: COLORS.textSecondary }}>Target Company:</Text>
+                          <select
+                            value={modalPermissionCompanyId}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setModalPermissionCompanyId(val);
+                              const fetchCompId = val === 'all'
+                                ? (newRoleClientIds.length > 0 ? newRoleClientIds[0] : '')
+                                : val;
+                              if (editingRole) {
+                                fetchRolePermissions(editingRole.id, fetchCompId);
+                              }
+                            }}
+                            style={{
+                              height: 32,
+                              borderColor: '#CBD5E1',
+                              borderWidth: 1,
+                              borderRadius: 6,
+                              paddingHorizontal: 8,
+                              backgroundColor: '#FFFFFF',
+                              color: '#1E293B',
+                              fontSize: 12,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <option value="all">All Assigned Companies</option>
+                            {newRoleClientIds.map(id => {
+                              const comp = companies.find(c => String(c.id) === String(id));
+                              return (
+                                <option key={id} value={id}>
+                                  {comp ? comp.company_name : `Company #${id}`}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </View>
+                      )}
+                    </View>
                     {rolePermissions.length > 0 ? (
                       <ScrollView horizontal={true} showsHorizontalScrollIndicator={true} style={{ width: '100%' }} contentContainerStyle={{ minWidth: '100%' }}>
                         <View style={[styles.modulesTableWrapper, { minWidth: 600, borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingBottom: 10 }]}>
@@ -7905,44 +8487,109 @@ export default function DashboardScreen({ user, onSignOut }) {
                           />
                         </View>
 
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, zIndex: 20 }}>
                           <View style={{ flex: 1 }}>
-                            <Text style={styles.modalLabel}>System Permissions Role</Text>
-                            <View>
-                              <select
-                                value={empRoleId}
-                                onChange={(e) => { setEmpRoleId(e.target.value); setEmpRoleError(''); }}
-                                style={{
-                                  width: '100%',
-                                  height: 42,
-                                  borderColor: empRoleError ? '#EF4444' : '#E2E8F0',
-                                  borderWidth: 1,
-                                  borderRadius: 8,
-                                  paddingHorizontal: 12,
-                                  backgroundColor: '#FFFFFF',
-                                  color: empRoleId ? '#334155' : '#94A3B8',
-                                  fontSize: 13,
-                                  outlineStyle: 'none',
-                                  cursor: 'pointer',
-                                  appearance: 'auto',
-                                }}
-                              >
-                                <option value="" style={{ color: '#94A3B8' }}>Select Role</option>
-                                {roles.map(r => (
-                                  <option key={r.id} value={r.id} style={{ color: '#334155' }}>
-                                    {r.role}
-                                  </option>
-                                ))}
-                              </select>
-                              {empRoleError ? (
-                                <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4, marginLeft: 2 }}>
-                                  ⚠ {empRoleError}
-                                </Text>
-                              ) : null}
+                            {/* Label row */}
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                              <Text style={styles.modalLabel}>System Permissions Role</Text>
+                              {empRoleIds.length > 0 && (
+                                <TouchableOpacity onPress={() => setEmpRoleIds([])} style={{ marginLeft: 'auto' }}>
+                                  <Text style={{ fontSize: 12, color: '#EF4444', fontWeight: '600' }}>Clear</Text>
+                                </TouchableOpacity>
+                              )}
                             </View>
+
+                            {/* Dropdown trigger button */}
+                            <TouchableOpacity
+                              onPress={() => { setIsEmpRoleDropdownOpen(prev => !prev); setEmpRoleError(''); }}
+                              style={[styles.modalInput, {
+                                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                                height: 42, paddingHorizontal: 12, cursor: 'pointer', marginBottom: 0,
+                                borderColor: empRoleError ? '#EF4444' : undefined,
+                              }]}
+                            >
+                              <Text style={{ color: empRoleIds.length > 0 ? COLORS.textPrimary : '#94A3B8', fontSize: 14, flex: 1 }} numberOfLines={1}>
+                                {empRoleIds.length > 0
+                                  ? roles.filter(r => empRoleIds.includes(r.id)).map(r => r.role).join(', ')
+                                  : 'Select Role'}
+                              </Text>
+                              {empRoleIds.length > 0 && (
+                                <View style={{ backgroundColor: COLORS.primary, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2, marginRight: 8 }}>
+                                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{empRoleIds.length}</Text>
+                                </View>
+                              )}
+                              <Ionicons name={isEmpRoleDropdownOpen ? 'chevron-up' : 'chevron-down'} size={16} color={isEmpRoleDropdownOpen ? COLORS.primary : '#94A3B8'} />
+                            </TouchableOpacity>
+                            {empRoleError ? (
+                              <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4, marginLeft: 2 }}>
+                                ⚠ {empRoleError}
+                              </Text>
+                            ) : null}
+
+                            {/* Dropdown checklist panel */}
+                            {isEmpRoleDropdownOpen && (
+                              <View style={{
+                                borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10,
+                                backgroundColor: '#FFFFFF', marginTop: 4,
+                                position: 'absolute', top: '100%', left: 0, right: 0,
+                                shadowColor: '#64748B', shadowOffset: { width: 0, height: 4 },
+                                shadowOpacity: 0.12, shadowRadius: 8, elevation: 8,
+                                zIndex: 100, overflow: 'hidden'
+                              }}>
+                                <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 200 }} showsVerticalScrollIndicator={false}>
+                                  {roles.length === 0 ? (
+                                    <View style={{ padding: 16, alignItems: 'center' }}>
+                                      <Ionicons name="shield-outline" size={24} color="#CBD5E1" />
+                                      <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 6 }}>No roles found</Text>
+                                    </View>
+                                  ) : (
+                                    roles.map((r, index) => {
+                                      const isSelected = empRoleIds.includes(r.id);
+                                      return (
+                                        <TouchableOpacity
+                                          key={r.id}
+                                          style={{
+                                            flexDirection: 'row', alignItems: 'center',
+                                            paddingVertical: 11, paddingHorizontal: 14,
+                                            backgroundColor: isSelected ? '#F0FDF4' : '#FFFFFF',
+                                            borderBottomWidth: index < roles.length - 1 ? 1 : 0,
+                                            borderBottomColor: '#F1F5F9',
+                                          }}
+                                          onPress={() => {
+                                            setEmpRoleIds(prev =>
+                                              prev.includes(r.id) ? prev.filter(id => id !== r.id) : [...prev, r.id]
+                                            );
+                                          }}
+                                        >
+                                          {/* Custom checkbox */}
+                                          <View style={{
+                                            width: 20, height: 20, borderRadius: 5,
+                                            borderWidth: 2,
+                                            borderColor: isSelected ? '#10B981' : '#CBD5E1',
+                                            backgroundColor: isSelected ? '#10B981' : '#FFFFFF',
+                                            alignItems: 'center', justifyContent: 'center',
+                                            marginRight: 12, flexShrink: 0
+                                          }}>
+                                            {isSelected && <Ionicons name="checkmark" size={13} color="#FFFFFF" />}
+                                          </View>
+                                          <Text style={{
+                                            fontSize: 14, flex: 1,
+                                            color: isSelected ? '#065F46' : '#475569',
+                                            fontWeight: isSelected ? '600' : '400'
+                                          }}>{r.role}</Text>
+                                          {isSelected && (
+                                            <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: '#10B981' }} />
+                                          )}
+                                        </TouchableOpacity>
+                                      );
+                                    })
+                                  )}
+                                </ScrollView>
+                              </View>
+                            )}
                           </View>
                           <View style={{ width: 16 }} />
-                          <View style={{ width: 100 }}>
+                          <View style={{ width: 100, marginTop: 25 }}>
                             <Text style={[styles.modalLabel, { textAlign: 'center' }]}>Status</Text>
                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 4 }}>
                               <Switch

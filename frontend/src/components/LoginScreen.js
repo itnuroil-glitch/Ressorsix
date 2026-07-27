@@ -95,6 +95,8 @@ export default function LoginScreen({ onLoginSuccess }) {
           name: data.user.name,
           roleId: data.user.roleId,
           clientid: data.user.clientid,
+          companyid: data.user.companyid,
+          associatedCompanyIds: data.user.associatedCompanyIds,
           createdAt: data.user.createdAt,
           token: data.token,
         });
@@ -603,10 +605,14 @@ const styles = StyleSheet.create({
   inputWrapperFocused: {
     borderColor: COLORS.borderFocus,
     backgroundColor: COLORS.white,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0px 1px 2px rgba(27, 62, 48, 0.1)' }
+      : {
+          shadowColor: COLORS.primary,
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.1,
+          shadowRadius: 2,
+        }),
   },
   inputIcon: {
     marginRight: SPACING.sm,

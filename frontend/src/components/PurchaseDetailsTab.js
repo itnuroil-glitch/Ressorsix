@@ -19,10 +19,11 @@ const COLORS = {
   white: '#FFFFFF',
 };
 
-export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed }) {
+export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed, permissions, checkRowPermission }) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width > 768;
   const isEmployee = false;
+  const canCreate = !user || String(user.roleId) === '1' || (permissions && (permissions.can_create || permissions.full_control));
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fieldsLayout, setFieldsLayout] = useState(null);
@@ -390,14 +391,21 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
     }
   };
 
-  const fetchCompaniesForClient = async (clientId) => {
+  const fetchCompaniesForClient = async (clientId, overrideAction) => {
     if (!clientId) {
       setCompanies([]);
       return [];
     }
     try {
+      let action = 'view';
+      if (overrideAction) {
+        action = overrideAction;
+      } else if (isFormOpen) {
+        action = isViewOnly ? 'view' : (editingRecord ? 'edit' : 'create');
+      }
       const emailParam = user?.email ? `?email=${encodeURIComponent(user.email)}` : '';
-      const res = await fetch(`${API_URL}/api/companies/client/${clientId}${emailParam}`);
+      const actionQuery = `&module_id=purchase&action=${action}`;
+      const res = await fetch(`${API_URL}/api/companies/client/${clientId}${emailParam}${actionQuery}`);
       if (res.ok) {
         const data = await res.json();
         setCompanies(data || []);
@@ -415,8 +423,12 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
     setFormData({});
     setLineItems([{ id: Date.now(), barcode: '', barcodes: [], serial_numbers: [], item_name: '', qty: 1, uom: '', unit_price: 0, vat: 0, subtotal: 0 }]);
     setAssignedQuantities([]);
-    if (companies.length === 1 && user && String(user.roleId) !== '1') {
-      const singleComp = companies[0];
+    let currentCompanies = [];
+    if (selectedClient) {
+      currentCompanies = await fetchCompaniesForClient(selectedClient, 'create');
+    }
+    if (currentCompanies.length === 1 && user && String(user.roleId) !== '1') {
+      const singleComp = currentCompanies[0];
       setSelectedCompany(String(singleComp.id));
       const targetCountry = singleComp.country ? String(singleComp.country) : selectedCountry;
       if (singleComp.country) setSelectedCountry(String(singleComp.country));
@@ -663,7 +675,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
     setSelectedClient(String(record.clientid || ''));
     setSelectedCountry(String(record.country_id || ''));
     setSelectedModule(String(record.moduleid || ''));
-    await fetchCompaniesForClient(String(record.clientid || ''));
+    await fetchCompaniesForClient(String(record.clientid || ''), 'edit');
     setSelectedCompany(record.company_id ? String(record.company_id) : '');
     // Load the form configuration then open the modal
     await fetchFormConfiguration(
@@ -717,7 +729,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
     setSelectedClient(String(record.clientid || ''));
     setSelectedCountry(String(record.country_id || ''));
     setSelectedModule(String(record.moduleid || ''));
-    await fetchCompaniesForClient(String(record.clientid || ''));
+    await fetchCompaniesForClient(String(record.clientid || ''), 'view');
     setSelectedCompany(record.company_id ? String(record.company_id) : '');
     // Load the form configuration then open the modal
     await fetchFormConfiguration(
@@ -1240,7 +1252,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
           <Text style={styles.headerTitle}>Purchase Details</Text>
           <Text style={styles.headerSubtitle}>Manage your Purchase details records.</Text>
         </View>
-        {!isEmployee && (
+        {canCreate && (
           <TouchableOpacity
             style={styles.addButton}
             onPress={handleAddNewRecord}
@@ -1343,9 +1355,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
                 <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Supplier Name</Text>
                 <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Submitted By</Text>
                 <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
-                <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>View</Text>
-                <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>Edit</Text>
-                <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>Delete</Text>
+                <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>ACTION</Text>
               </View>
 
               <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true}>
@@ -1450,17 +1460,23 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
                               </View>
                             </View>
 
-                            <TouchableOpacity style={{ flex: 0.5, alignItems: 'center' }} onPress={() => handleView(record)}>
-                              <Ionicons name="eye-outline" size={18} color="#0F172A" />
-                            </TouchableOpacity>
+                            <View style={{ flex: 1.2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+                              <TouchableOpacity style={{ padding: 4 }} onPress={() => handleView(record)}>
+                                <Ionicons name="eye-outline" size={18} color="#0F172A" />
+                              </TouchableOpacity>
 
-                            <TouchableOpacity style={{ flex: 0.5, alignItems: 'center' }} onPress={() => handleEdit(record)}>
-                              <Ionicons name="pencil" size={18} color="#166534" />
-                            </TouchableOpacity>
+                              {(checkRowPermission ? checkRowPermission(record.company_id || record.companyid, 'edit') : canEdit) && (
+                                <TouchableOpacity style={{ padding: 4 }} onPress={() => handleEdit(record)}>
+                                  <Ionicons name="pencil" size={18} color="#166534" />
+                                </TouchableOpacity>
+                              )}
 
-                            <TouchableOpacity style={{ flex: 0.5, alignItems: 'center' }} onPress={() => handleDelete(record)}>
-                              <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                            </TouchableOpacity>
+                              {(checkRowPermission ? checkRowPermission(record.company_id || record.companyid, 'delete') : canDelete) && (
+                                <TouchableOpacity style={{ padding: 4 }} onPress={() => handleDelete(record)}>
+                                  <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                                </TouchableOpacity>
+                              )}
+                            </View>
                           </View>
                         );
                       })}

@@ -510,31 +510,23 @@ exports.getVehiclePlatesByClient = async (req, res) => {
       return res.status(400).json({ message: 'Client ID is required and no active client found' });
     }
 
-    // 1. Fetch matching custom field IDs for plate numbers or license numbers
+    // 1. Fetch matching custom field IDs for vehicle name and plate numbers or license numbers
     const fieldsRes = await db.query(`
       SELECT field_id, field_name 
       FROM tbl_customfield_details 
-      WHERE LOWER(field_name) LIKE '%plate%' 
+      WHERE LOWER(field_name) LIKE '%vehicle%'
+         OR LOWER(field_name) LIKE '%plate%' 
          OR LOWER(field_name) LIKE '%license%' 
          OR LOWER(field_name) LIKE '%liceno%' 
          OR LOWER(field_name) LIKE '%no%'
     `);
-    
-    // Sort so fields containing 'plate' or 'liceno' or 'license' get highest priority, then 'no'
-    const sortedFields = fieldsRes.rows.sort((a, b) => {
-      const aName = a.field_name.toLowerCase();
-      const bName = b.field_name.toLowerCase();
-      
-      const getPriority = (name) => {
-        if (name.includes('plate')) return 3;
-        if (name.includes('liceno') || name.includes('license')) return 2;
-        if (name.includes('no') || name.includes('number')) return 1;
-        return 0;
-      };
 
-      return getPriority(bName) - getPriority(aName);
-    });
-    const fieldIds = sortedFields.map(f => f.field_id);
+    const vehicleNameFieldIds = fieldsRes.rows
+      .filter(f => f.field_name.toLowerCase().includes('vehicle'))
+      .map(f => f.field_id);
+    const vehiclePlateFieldIds = fieldsRes.rows
+      .filter(f => !f.field_name.toLowerCase().includes('vehicle'))
+      .map(f => f.field_id);
 
     // 2. Fetch vehicle details for this client
     const query = `
@@ -546,24 +538,32 @@ exports.getVehiclePlatesByClient = async (req, res) => {
     const { rows } = await db.query(query, [clientId]);
 
     const formattedVehicles = rows.map(v => {
+      let vehicleName = '';
       let plateNo = '';
       if (v.field_data) {
-        for (const fid of fieldIds) {
+        // Extract vehicle name
+        for (const fid of vehicleNameFieldIds) {
+          if (v.field_data[fid]) {
+            vehicleName = v.field_data[fid];
+            break;
+          }
+        }
+        if (!vehicleName) {
+          const matchField = fieldsRes.rows.find(f => f.field_name.toLowerCase().includes('vehicle') && v.field_data[f.field_id]);
+          if (matchField) vehicleName = v.field_data[matchField.field_id];
+        }
+
+        // Extract plate number
+        for (const fid of vehiclePlateFieldIds) {
           if (v.field_data[fid]) {
             plateNo = v.field_data[fid];
             break;
           }
         }
-        // Fallback: if not found, check any key in field_data that matches fieldsRes
         if (!plateNo) {
-          for (const f of fieldsRes.rows) {
-            if (v.field_data[f.field_id]) {
-              plateNo = v.field_data[f.field_id];
-              break;
-            }
-          }
+          const matchField = fieldsRes.rows.find(f => !f.field_name.toLowerCase().includes('vehicle') && v.field_data[f.field_id]);
+          if (matchField) plateNo = v.field_data[matchField.field_id];
         }
-        // Fallback 2: first field
         if (!plateNo) {
           const keys = Object.keys(v.field_data);
           if (keys.length > 0) {
@@ -571,9 +571,15 @@ exports.getVehiclePlatesByClient = async (req, res) => {
           }
         }
       }
+
+      let displayName = plateNo || 'N/A';
+      if (vehicleName && vehicleName !== plateNo) {
+        displayName = `${vehicleName} - ${plateNo || 'N/A'}`;
+      }
+
       return {
-        Plateno: plateNo,
-        plateno: plateNo,
+        Plateno: displayName,
+        plateno: displayName,
         id: v.id,
         Id: v.id,
         vehicle_id: v.vehicle_id

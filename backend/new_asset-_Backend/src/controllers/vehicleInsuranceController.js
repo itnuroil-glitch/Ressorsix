@@ -262,16 +262,163 @@ exports.saveVehicleInsurance = async (req, res) => {
 exports.getVehicleInsurance = async (req, res) => {
   try {
     const { clientid } = req.query;
-    let query = 'SELECT * FROM tbl_vehicle_insurance';
+    let query = `
+      SELECT 
+        v.*, 
+        c.company_name AS company_name,
+        r.role AS role_name, 
+        COALESCE(
+          e.full_name, 
+          u.email, 
+          (SELECT full_name FROM employee e_fallback WHERE e_fallback.roleid = v.roleid AND e_fallback.clientid = v.clientid LIMIT 1)
+        ) AS employee_name
+      FROM tbl_vehicle_insurance v
+      LEFT JOIN company c ON CASE WHEN v.company_id ~ '^[0-9]+$' THEN v.company_id::integer ELSE NULL END = c.id
+      LEFT JOIN role r ON v.roleid = r.id
+      LEFT JOIN users u ON v.user_id = u.id
+      LEFT JOIN employee e ON u.email = e.email
+    `;
     const params = [];
     if (clientid) {
-      query += ' WHERE clientid = $1';
+      query += ' WHERE v.clientid = $1';
       params.push(clientid);
     }
-    query += ' ORDER BY id DESC';
+    query += ' ORDER BY v.id DESC';
 
     const result = await db.query(query, params);
-    res.status(200).json(result.rows);
+    const insuranceRows = result.rows;
+
+    if (insuranceRows.length === 0) {
+      return res.status(200).json([]);
+    }
+
+    // 1. Fetch vehicle details to map vehicle names
+    let vehicleQuery = 'SELECT vehicle_id, field_data FROM tbl_vehicle_details';
+    let vehicleParams = [];
+    if (clientid) {
+      vehicleQuery += ' WHERE clientid = $1';
+      vehicleParams.push(clientid);
+    }
+    const vehiclesRes = await db.query(vehicleQuery, vehicleParams);
+
+    // Fetch field names for vehicle lookup
+    const vehicleFieldsRes = await db.query(`
+      SELECT field_id, field_name 
+      FROM tbl_customfield_details 
+      WHERE LOWER(field_name) LIKE '%vehicle%'
+         OR LOWER(field_name) LIKE '%plate%' 
+         OR LOWER(field_name) LIKE '%license%' 
+         OR LOWER(field_name) LIKE '%liceno%' 
+         OR LOWER(field_name) LIKE '%no%'
+    `);
+
+    const vehicleNameFieldIds = vehicleFieldsRes.rows
+      .filter(f => f.field_name.toLowerCase().includes('vehicle'))
+      .map(f => f.field_id);
+    const vehiclePlateFieldIds = vehicleFieldsRes.rows
+      .filter(f => !f.field_name.toLowerCase().includes('vehicle'))
+      .map(f => f.field_id);
+
+    const vehicleMap = {};
+    vehiclesRes.rows.forEach(v => {
+      let fieldData = v.field_data;
+      if (typeof fieldData === 'string') {
+        try { fieldData = JSON.parse(fieldData); } catch (e) { fieldData = null; }
+      }
+      if (fieldData) {
+        let vehicleName = '';
+        let plateNo = '';
+        for (const fid of vehicleNameFieldIds) {
+          if (fieldData[fid]) { vehicleName = fieldData[fid]; break; }
+        }
+        if (!vehicleName) {
+          // Fallback: check any key in fieldData that contains vehicle in name
+          const matchField = vehicleFieldsRes.rows.find(f => f.field_name.toLowerCase().includes('vehicle') && fieldData[f.field_id]);
+          if (matchField) vehicleName = fieldData[matchField.field_id];
+        }
+        if (!vehicleName) {
+          const keys = Object.keys(fieldData);
+          if (keys.length > 0) vehicleName = fieldData[keys[0]];
+        }
+
+        for (const fid of vehiclePlateFieldIds) {
+          if (fieldData[fid]) { plateNo = fieldData[fid]; break; }
+        }
+        if (!plateNo) {
+          const matchField = vehicleFieldsRes.rows.find(f => !f.field_name.toLowerCase().includes('vehicle') && fieldData[f.field_id]);
+          if (matchField) plateNo = fieldData[matchField.field_id];
+        }
+
+        let displayName = vehicleName;
+        if (plateNo && plateNo !== vehicleName) {
+          displayName = vehicleName ? `${vehicleName} - ${plateNo}` : plateNo;
+        }
+        vehicleMap[v.vehicle_id] = displayName;
+      }
+    });
+
+    // 2. Fetch field definitions to map Expiry Date & Insurer dynamically
+    const fieldsRes = await db.query(`
+      SELECT field_id, field_name 
+      FROM tbl_customfield_details 
+      WHERE isdelete = false AND is_active = true
+        AND (LOWER(field_name) LIKE '%expire%' 
+          OR LOWER(field_name) LIKE '%expiry%' 
+          OR LOWER(field_name) LIKE '%end%'
+          OR LOWER(field_name) LIKE '%insurer%' 
+          OR LOWER(field_name) LIKE '%insurance company%' 
+          OR LOWER(field_name) LIKE '%provider%')
+    `);
+
+    const expiryFieldIds = fieldsRes.rows
+      .filter(f => {
+        const name = f.field_name.toLowerCase();
+        return name.includes('expire') || name.includes('expiry') || name.includes('end');
+      })
+      .map(f => f.field_id);
+
+    const insurerFieldIds = fieldsRes.rows
+      .filter(f => {
+        const name = f.field_name.toLowerCase();
+        return name.includes('insurer') || name.includes('insurance company') || name.includes('provider');
+      })
+      .map(f => f.field_id);
+
+    // 3. Populate each record
+    const finalRows = insuranceRows.map(row => {
+      let fieldData = row.field_data;
+      if (typeof fieldData === 'string') {
+        try { fieldData = JSON.parse(fieldData); } catch (e) { fieldData = {}; }
+      } else {
+        fieldData = fieldData || {};
+      }
+
+      let expiry_date = null;
+      for (const fid of expiryFieldIds) {
+        if (fieldData[fid]) {
+          expiry_date = fieldData[fid];
+          break;
+        }
+      }
+
+      let insurer = null;
+      for (const fid of insurerFieldIds) {
+        if (fieldData[fid]) {
+          insurer = fieldData[fid];
+          break;
+        }
+      }
+
+      return {
+        ...row,
+        company_name: row.company_name || 'N/A',
+        vehicle_display_name: row.vehicle_id ? (vehicleMap[row.vehicle_id] || `Vehicle #${row.vehicle_id}`) : 'N/A',
+        expiry_date: expiry_date || 'N/A',
+        insurer: insurer || 'N/A'
+      };
+    });
+
+    res.status(200).json(finalRows);
   } catch (error) {
     console.error('Error fetching vehicle insurance:', error);
     res.status(500).json({ message: 'Error fetching vehicle insurance' });

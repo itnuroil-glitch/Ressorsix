@@ -309,6 +309,11 @@ export default function VehicleInsuranceTab({ user, showToast }) {
     try {
       const res = await fetch(`${API_URL}/api/vehicle-insurance/${recordToDelete.id}`, {
         method: 'DELETE',
+        headers: {
+          'roleid': String(user?.roleId || ''),
+          'clientid': String(user?.clientid || ''),
+          'companyid': String(recordToDelete.company_id || '')
+        }
       });
 
       if (!res.ok) throw new Error('Failed to delete insurance record');

@@ -312,19 +312,158 @@ exports.getCompaniesByClient = async (req, res) => {
       return res.status(400).json({ message: 'Client ID is required and no active client found' });
     }
 
-    const query = `
-      SELECT id, company_name 
+    const email = req.query.email;
+    const moduleIdParam = req.query.module_id || req.query.moduleid;
+    const actionParam = req.query.action;
+    let assignedCompanyIds = null;
+
+    if (email && email.trim() !== '') {
+      // 1. Look up employee by email
+      const empRes = await pool.query(
+        'SELECT id, roleid FROM employee WHERE email = $1 AND is_deleted = false',
+        [email.trim().toLowerCase()]
+      );
+      if (empRes.rows.length > 0) {
+        const employeeId = empRes.rows[0].id;
+        const roleId = empRes.rows[0].roleid;
+        
+        // Only restrict if they are not superadmin/client admin
+        if (String(roleId) !== '1' && String(roleId) !== '2') {
+          // Fetch assigned companies from employee_company
+          const compRes = await pool.query(
+            'SELECT company_id FROM employee_company WHERE employee_id = $1',
+            [employeeId]
+          );
+          const empCompanyIds = compRes.rows.map(r => r.company_id);
+
+          // Fetch assigned companies from role's clientids
+          const roleRes = await pool.query(
+            'SELECT clientids FROM role WHERE id = $1 AND is_deleted = false',
+            [roleId]
+          );
+          const roleCompanyIds = (roleRes.rows.length > 0 && Array.isArray(roleRes.rows[0].clientids))
+            ? roleRes.rows[0].clientids
+            : [];
+
+          // Merge both lists to ensure employee gets access to all configured companies
+          const mergedSet = new Set([...empCompanyIds, ...roleCompanyIds]);
+          assignedCompanyIds = Array.from(mergedSet);
+
+          // Perform company-specific role permissions check if module_id & action are specified
+          if (moduleIdParam && actionParam) {
+            const colCheck = await pool.query(`
+              SELECT 1 FROM information_schema.columns 
+              WHERE table_name = 'role_permission' AND column_name = 'company_id'
+            `);
+            if (colCheck.rows.length > 0) {
+              const modulesRes = await pool.query("SELECT id, module_name, route FROM module WHERE status = 'active' AND is_deleted = false");
+              const getTabIdByRoute = (name, route) => {
+                let r = route ? route.toLowerCase().trim() : '';
+                let n = name ? name.toLowerCase().trim() : '';
+                if (r === '/dashboard' || n.includes('dashboard')) return 'dashboard';
+                if (r === '/shipments' || n.includes('shipment')) return 'shipments';
+                if (r === '/analytics' || n.includes('analytic')) return 'analytics';
+                if (r === '/settings' || r === '/modules' || n === 'settings' || n === 'modules') return 'settings';
+                if (r === '/plans' || n === 'plans' || n === 'plan') return 'plans';
+                if (r === '/role' || r === '/roles' || n === 'role' || n === 'roles') return 'roles';
+                if (r === '/department' || r === '/departments' || n === 'department' || n === 'departments') return 'departments';
+                if (r === '/smtp' || n === 'smtp') return 'smtp';
+                if (r === '/client' || r === '/clients' || n === 'client' || n === 'clients') return 'client';
+                if (r === '/country' || r === '/countries' || n === 'country' || n === 'countries') return 'country';
+                if (r === '/state' || r === '/states' || n === 'state' || n === 'states') return 'state';
+                if (r === '/permissions' || r === '/permission' || n === 'role permissions' || n === 'permissions') return 'permissions';
+                if (r === '/company' || r === '/companies' || n === 'company' || n === 'companies') return 'company';
+                if (r === '/employee' || r === '/employees' || n === 'employee' || n === 'employees') return 'employees';
+                if (r.includes('custom') && r.includes('field') || n.includes('custom') && n.includes('field')) return 'custom_fields';
+                if (r.includes('field') && r.includes('permission') || n.includes('field') && n.includes('permission')) return 'field_permissions';
+                if (r.includes('feild') && r.includes('permision') || n.includes('feild') && n.includes('permision')) return 'field_permissions';
+                if (r.includes('vehicle') && r.includes('insurance') || n.includes('vehicle') && n.includes('insurance')) return 'vehicle_insurance';
+                if (r.includes('vehicle') && r.includes('detail') || n.includes('vehicle') && n.includes('detail')) return 'vehicle_details';
+                if (r.includes('vehicle') && r.includes('purchase') || n.includes('vehicle') && n.includes('purchase') || r.includes('vehile') && r.includes('purchase') || n.includes('vehile') && n.includes('purchase')) return 'vehicle_purchase';
+                if (r.includes('primise') && r.includes('detail') || n.includes('primise') && n.includes('detail') || r.includes('premise') && r.includes('detail') || n.includes('premise') && n.includes('detail')) return 'premises_details';
+                if (r.includes('asset') && r.includes('detail') || n.includes('asset') && n.includes('detail')) return 'asset_details';
+                if (r.includes('asset') && r.includes('category') || n.includes('asset') && n.includes('category')) return 'asset_category';
+                if (r.includes('asset') && r.includes('brand') || n.includes('asset') && n.includes('brand')) return 'asset_brand';
+                if (r.includes('asset') && r.includes('assignment') || n.includes('asset') && n.includes('assignment')) return 'asset_assignment';
+                return '';
+              };
+
+              const matchedModules = modulesRes.rows.filter(m => getTabIdByRoute(m.module_name, m.route) === moduleIdParam);
+              if (matchedModules.length > 0) {
+                const moduleDbIds = matchedModules.map(m => m.id);
+
+                // Fetch company-specific permissions
+                const permRes = await pool.query(
+                  'SELECT company_id, can_view, can_create, can_edit, can_delete, full_control FROM role_permission WHERE role_id = $1 AND module_id = ANY($2) AND company_id IS NOT NULL',
+                  [roleId, moduleDbIds]
+                );
+
+                if (permRes.rows.length > 0) {
+                  // Filter based on specific action
+                  const allowedCompanyIds = permRes.rows
+                    .filter(row => {
+                      if (row.full_control) return true;
+                      if (actionParam === 'create' && row.can_create) return true;
+                      if (actionParam === 'view' && row.can_view) return true;
+                      if (actionParam === 'edit' && row.can_edit) return true;
+                      if (actionParam === 'delete' && row.can_delete) return true;
+                      return false;
+                    })
+                    .map(row => row.company_id);
+
+                  assignedCompanyIds = assignedCompanyIds.filter(cid => allowedCompanyIds.includes(cid));
+                } else {
+                  // If no company-specific permissions exist, check global permissions
+                  const globalPermRes = await pool.query(
+                    'SELECT can_view, can_create, can_edit, can_delete, full_control FROM role_permission WHERE role_id = $1 AND module_id = ANY($2) AND company_id IS NULL',
+                    [roleId, moduleDbIds]
+                  );
+                  const hasGlobalPermission = globalPermRes.rows.some(row => {
+                    if (row.full_control) return true;
+                    if (actionParam === 'create' && row.can_create) return true;
+                    if (actionParam === 'view' && row.can_view) return true;
+                    if (actionParam === 'edit' && row.can_edit) return true;
+                    if (actionParam === 'delete' && row.can_delete) return true;
+                    return false;
+                  });
+
+                  if (!hasGlobalPermission) {
+                    assignedCompanyIds = [];
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    let query = `
+      SELECT id, company_name, country 
       FROM company 
       WHERE clientid = $1 AND (is_deleted = false OR is_deleted IS NULL)
-      ORDER BY id DESC
     `;
-    const { rows } = await pool.query(query, [clientId]);
+    const params = [clientId];
+
+    if (assignedCompanyIds !== null) {
+      if (assignedCompanyIds.length > 0) {
+        query += ` AND id = ANY($2)`;
+        params.push(assignedCompanyIds);
+      } else {
+        query += ` AND id = -1`;
+      }
+    }
+
+    query += ` ORDER BY id DESC`;
+
+    const { rows } = await pool.query(query, params);
 
     const formattedCompanies = rows.map(row => ({
       id: row.id,
       Id: row.id,
       company_name: row.company_name,
-      Companyname: row.company_name
+      Companyname: row.company_name,
+      country: row.country
     }));
 
     res.status(200).json(formattedCompanies);

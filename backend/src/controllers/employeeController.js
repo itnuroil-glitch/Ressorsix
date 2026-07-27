@@ -7,9 +7,10 @@ exports.getAllEmployees = async (req, res) => {
     const { clientid } = req.query;
 
     let queryText = `
-      SELECT e.*, r.role as role_name, d.department_name
+      SELECT e.*, 
+             (SELECT string_agg(role, ', ') FROM role WHERE id = ANY(string_to_array(e.roleid::text, ',')::int[])) as role_name, 
+             d.department_name
       FROM employee e
-      LEFT JOIN role r ON e.roleid = r.id
       LEFT JOIN department d ON e.department_id = d.id
       WHERE e.is_deleted = false
     `;
@@ -76,6 +77,8 @@ exports.createEmployee = async (req, res) => {
       return res.status(400).json({ message: 'Full name and email are required.' });
     }
 
+    const finalRoleId = roleid ? (Array.isArray(roleid) ? roleid.join(',') : String(roleid)) : null;
+
     await client.query('BEGIN');
 
     // Create the employee
@@ -88,7 +91,7 @@ exports.createEmployee = async (req, res) => {
       full_name,
       email,
       phone,
-      roleid ? parseInt(roleid) : null,
+      finalRoleId,
       status !== undefined ? parseInt(status) : 1,
       clientid ? parseInt(clientid) : null,
       department_id ? parseInt(department_id) : null
@@ -118,12 +121,12 @@ exports.createEmployee = async (req, res) => {
       if (userCheck.rows.length === 0) {
         await client.query(
           'INSERT INTO users (email, password, roleid, clientid) VALUES ($1, $2, $3, $4)',
-          [email, hashedPassword, roleid ? parseInt(roleid) : null, clientid ? parseInt(clientid) : null]
+          [email, hashedPassword, finalRoleId, clientid ? parseInt(clientid) : null]
         );
       } else {
         await client.query(
           'UPDATE users SET password = $1, roleid = $2, clientid = $3 WHERE email = $4',
-          [hashedPassword, roleid ? parseInt(roleid) : null, clientid ? parseInt(clientid) : null, email]
+          [hashedPassword, finalRoleId, clientid ? parseInt(clientid) : null, email]
         );
       }
       newEmployee.tempPassword = tempPassword; // Return it so admin can give it to the user
@@ -185,6 +188,8 @@ exports.updateEmployee = async (req, res) => {
       auto_generate_password
     } = req.body;
 
+    const finalRoleId = roleid ? (Array.isArray(roleid) ? roleid.join(',') : String(roleid)) : null;
+
     await client.query('BEGIN');
 
     const updateEmployee = `
@@ -202,7 +207,7 @@ exports.updateEmployee = async (req, res) => {
       full_name,
       email,
       phone,
-      roleid ? parseInt(roleid) : null,
+      finalRoleId,
       status !== undefined ? parseInt(status) : null,
       department_id ? parseInt(department_id) : null,
       id
@@ -240,7 +245,7 @@ exports.updateEmployee = async (req, res) => {
           [
             updatedEmployee.email,
             hashedPassword,
-            updatedEmployee.roleid ? parseInt(updatedEmployee.roleid) : null,
+            updatedEmployee.roleid ? String(updatedEmployee.roleid) : null,
             updatedEmployee.clientid ? parseInt(updatedEmployee.clientid) : null
           ]
         );
@@ -249,7 +254,7 @@ exports.updateEmployee = async (req, res) => {
           'UPDATE users SET password = $1, roleid = $2, clientid = $3 WHERE email = $4',
           [
             hashedPassword,
-            updatedEmployee.roleid ? parseInt(updatedEmployee.roleid) : null,
+            updatedEmployee.roleid ? String(updatedEmployee.roleid) : null,
             updatedEmployee.clientid ? parseInt(updatedEmployee.clientid) : null,
             updatedEmployee.email
           ]
@@ -291,7 +296,7 @@ exports.updateEmployee = async (req, res) => {
       await client.query(
         'UPDATE users SET roleid = $1, clientid = $2 WHERE email = $3',
         [
-          updatedEmployee.roleid ? parseInt(updatedEmployee.roleid) : null,
+          updatedEmployee.roleid ? String(updatedEmployee.roleid) : null,
           updatedEmployee.clientid ? parseInt(updatedEmployee.clientid) : null,
           updatedEmployee.email
         ]
@@ -325,3 +330,95 @@ exports.deleteEmployee = async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 };
+
+exports.bulkImportEmployees = async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    const { employees, clientid } = req.body;
+
+    if (!employees || !Array.isArray(employees) || employees.length === 0) {
+      return res.status(400).json({ message: 'No employee records found in payload.' });
+    }
+
+    await client.query('BEGIN');
+
+    let count = 0;
+    for (const emp of employees) {
+      const {
+        full_name,
+        email,
+        phone,
+        roleid,
+        status,
+        department_id,
+        companies,
+        auto_generate_password = true
+      } = emp;
+
+      if (!full_name || !email) continue;
+
+      const finalClientId = emp.clientid ? parseInt(emp.clientid) : (clientid ? parseInt(clientid) : null);
+      const finalRoleId = roleid ? (Array.isArray(roleid) ? roleid.join(',') : String(roleid)) : null;
+
+      // Insert into employee
+      const insertEmp = `
+        INSERT INTO employee (full_name, email, phone, roleid, status, clientid, department_id, is_deleted)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, false)
+        RETURNING *
+      `;
+      const empRes = await client.query(insertEmp, [
+        full_name,
+        email,
+        phone || '',
+        finalRoleId,
+        status !== undefined ? parseInt(status) : 1,
+        finalClientId,
+        department_id ? parseInt(department_id) : null
+      ]);
+
+      const newEmp = empRes.rows[0];
+
+      // Associate companies
+      if (companies && Array.isArray(companies) && companies.length > 0) {
+        for (const compId of companies) {
+          await client.query(
+            'INSERT INTO employee_company (employee_id, company_id) VALUES ($1, $2)',
+            [newEmp.id, parseInt(compId)]
+          );
+        }
+      }
+
+      // Generate user account if requested
+      if (auto_generate_password) {
+        const userCheck = await client.query('SELECT id FROM users WHERE email = $1', [email]);
+        const tempPassword = Math.random().toString(36).slice(-8);
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(tempPassword, salt);
+
+        if (userCheck.rows.length === 0) {
+          await client.query(
+            'INSERT INTO users (email, password, roleid, clientid) VALUES ($1, $2, $3, $4)',
+            [email, hashedPassword, finalRoleId, finalClientId]
+          );
+        } else {
+          await client.query(
+            'UPDATE users SET password = $1, roleid = $2, clientid = $3 WHERE email = $4',
+            [hashedPassword, finalRoleId, finalClientId, email]
+          );
+        }
+      }
+
+      count++;
+    }
+
+    await client.query('COMMIT');
+    res.status(200).json({ message: 'Bulk employee import successful', importedCount: count });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error bulk importing employees:', error);
+    res.status(500).json({ message: 'Internal Server Error: ' + error.message });
+  } finally {
+    client.release();
+  }
+};
+

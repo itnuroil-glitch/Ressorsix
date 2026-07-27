@@ -6,6 +6,8 @@ router.route('/')
   .get(employeeController.getAllEmployees)
   .post(employeeController.createEmployee);
 
+router.post('/bulk-import', employeeController.bulkImportEmployees);
+
 router.route('/:id')
   .put(employeeController.updateEmployee)
   .delete(employeeController.deleteEmployee);
