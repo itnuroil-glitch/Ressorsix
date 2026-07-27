@@ -88,6 +88,12 @@ exports.register = async (req, res) => {
 // @route   POST /api/auth/login
 // @access  Public
 exports.login = async (req, res) => {
+  console.log('\n====================================');
+  console.log('[SERVER LOG] Received POST /api/auth/login');
+  console.log('[SERVER LOG] User Email:', req.body?.email);
+  console.log('[SERVER LOG] Request Origin:', req.headers.origin || req.headers.host || 'Unknown Origin');
+  console.log('====================================\n');
+
   try {
     const { email, password } = req.body;
 

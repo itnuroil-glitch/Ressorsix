@@ -69,23 +69,35 @@ export default function LoginScreen({ onLoginSuccess }) {
       return;
     }
 
-    // Connect to Trakio Express API backend (PostgreSQL database auth)
-    setLoading(true);
+    console.log('====================================');
+    console.log('[CLIENT LOG] Sending login request to:', `${API_URL}/api/auth/login`);
+    console.log('[CLIENT LOG] Target email:', email);
+    console.log('====================================');
+
     fetch(`${API_URL}/api/auth/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ email, password }),
+      credentials: 'include',
     })
       .then(async (res) => {
+        console.log('[CLIENT LOG] Full Response Object:', res);
+        console.log('[CLIENT LOG] Response Status:', res.status, res.statusText);
+
         const text = await res.text();
+        console.log('[CLIENT LOG] Raw Server Response Body:', text);
+
         let data = {};
         try {
           data = text ? JSON.parse(text) : {};
+          console.log('[CLIENT LOG] Parsed Response Data:', data);
         } catch (e) {
+          console.error('[CLIENT LOG] JSON Parsing Error:', e);
           data = {};
         }
+
         if (!res.ok) {
           throw new Error(data.message || `Server returned error (${res.status}). Please verify backend logs.`);
         }
@@ -95,6 +107,7 @@ export default function LoginScreen({ onLoginSuccess }) {
         return data;
       })
       .then((data) => {
+        console.log('[CLIENT LOG] Sign-in succeeded for:', data.user);
         setLoading(false);
         // Successful authentication
         onLoginSuccess({
@@ -110,6 +123,7 @@ export default function LoginScreen({ onLoginSuccess }) {
         });
       })
       .catch((error) => {
+        console.error('[CLIENT LOG] Login Error Caught:', error);
         setLoading(false);
         setErrorMessage(error.message || 'Connection error. Please ensure the Trakio backend server is running.');
       });
@@ -279,10 +293,10 @@ export default function LoginScreen({ onLoginSuccess }) {
               <View style={styles.successIconContainer}>
                 <Ionicons name="checkmark-circle" size={64} color={COLORS.success} />
               </View>
-              
+
               <Text style={styles.title}>Check Your Email</Text>
               <Text style={styles.successSubtitle}>
-                We've sent a password reset link to <Text style={styles.boldText}>{resetEmail}</Text>. 
+                We've sent a password reset link to <Text style={styles.boldText}>{resetEmail}</Text>.
                 Please check your inbox and follow the instructions to reset your password.
               </Text>
 
@@ -621,11 +635,11 @@ const styles = StyleSheet.create({
     ...(Platform.OS === 'web'
       ? { boxShadow: '0px 1px 2px rgba(27, 62, 48, 0.1)' }
       : {
-          shadowColor: COLORS.primary,
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.1,
-          shadowRadius: 2,
-        }),
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+      }),
   },
   inputIcon: {
     marginRight: SPACING.sm,
