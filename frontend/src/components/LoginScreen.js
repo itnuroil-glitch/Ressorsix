@@ -134,13 +134,18 @@ export default function LoginScreen({ onLoginSuccess }) {
       },
       body: JSON.stringify({ email: resetEmail }),
     })
-      .then((res) => {
-        return res.json().then((data) => {
-          if (!res.ok) {
-            throw new Error(data.message || 'Failed to submit reset request.');
-          }
-          return data;
-        });
+      .then(async (res) => {
+        const text = await res.text();
+        let data = {};
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch (e) {
+          data = {};
+        }
+        if (!res.ok) {
+          throw new Error(data.message || `Server returned error (${res.status}). Please try again.`);
+        }
+        return data;
       })
       .then(() => {
         setResetLoading(false);
