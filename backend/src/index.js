@@ -74,12 +74,12 @@ app.use('/api/auth', authRoutes);
 // Mounting module CRUD routes
 app.use('/api/modules', moduleRoutes);
 
-// Mounting role CRUD routes
-app.use('/api/roles', roleRoutes);
-
 // Mounting role permission routes
 const permissionRoutes = require('./routes/permissionRoutes');
 app.use('/api/roles/:roleId/permissions', permissionRoutes);
+
+// Mounting role CRUD routes
+app.use('/api/roles', roleRoutes);
 
 // Mounting department CRUD routes
 app.use('/api/departments', departmentRoutes);
