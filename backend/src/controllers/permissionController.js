@@ -254,19 +254,33 @@ exports.getRolePermissions = async (req, res) => {
 
         for (const perm of permissions) {
           const { module_id, can_view, can_create, can_edit, can_delete, all_record_view, full_control } = perm;
-          const res = await client.query(insertQuery, [
-            roleId,
-            module_id,
-            compId,
-            finalClientId,
-            !!can_view,
-            !!can_create,
-            !!can_edit,
-            !!can_delete,
-            !!all_record_view,
-            !!full_control
-          ]);
-          savedPermissions.push(res.rows[0]);
+          
+          let numericModuleId = parseInt(module_id, 10);
+          if (isNaN(numericModuleId)) {
+            const modRes = await client.query(
+              "SELECT id FROM module WHERE LOWER(module_name) = LOWER($1) OR LOWER(route) = LOWER($1)",
+              [String(module_id)]
+            );
+            if (modRes.rows.length > 0) {
+              numericModuleId = modRes.rows[0].id;
+            }
+          }
+
+          if (numericModuleId) {
+            const res = await client.query(insertQuery, [
+              roleId,
+              numericModuleId,
+              compId,
+              finalClientId,
+              !!can_view,
+              !!can_create,
+              !!can_edit,
+              !!can_delete,
+              !!all_record_view,
+              !!full_control
+            ]);
+            savedPermissions.push(res.rows[0]);
+          }
         }
       }
 
