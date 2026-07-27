@@ -78,13 +78,18 @@ export default function LoginScreen({ onLoginSuccess }) {
       },
       body: JSON.stringify({ email, password }),
     })
-      .then((res) => {
-        return res.json().then((data) => {
-          if (!res.ok) {
-            throw new Error(data.message || 'Failed to authenticate.');
-          }
-          return data;
-        });
+      .then(async (res) => {
+        const text = await res.text();
+        let data = {};
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch (e) {
+          data = {};
+        }
+        if (!res.ok) {
+          throw new Error(data.message || `Server returned error (${res.status}). Please verify backend logs.`);
+        }
+        return data;
       })
       .then((data) => {
         setLoading(false);
