@@ -43,9 +43,9 @@ export default function PlanManagementTab({ user, showToast, renderTableToolbar,
       const res = await fetch(`${API_URL}/api/modules`);
       if (!res.ok) throw new Error('Failed to fetch modules data');
       const data = await res.json();
-      
+
       // Keep all active modules (both parents and submodules)
-      const activeModules = data.filter(m => m.status === 'active');
+      const activeModules = data.filter(m => !m.status || String(m.status).toLowerCase() === 'active' || String(m.status) === '1');
       setDbModules(activeModules);
     } catch (err) {
       console.error('Error fetching modules:', err);
@@ -356,8 +356,8 @@ export default function PlanManagementTab({ user, showToast, renderTableToolbar,
 
               <View style={styles.formGroup}>
                 <Text style={[styles.inputLabel, { marginBottom: 12 }]}>Enable Access to Modules</Text>
-                {dbModules.filter(m => m.parent_id === null || m.parent_id === undefined).map(parent => {
-                  const submodules = dbModules.filter(m => m.parent_id === parent.id);
+                {dbModules.filter(m => m.parent_id === null || m.parent_id === undefined || m.parent_id === '').map(parent => {
+                  const submodules = dbModules.filter(m => m.parent_id !== null && m.parent_id !== undefined && String(m.parent_id) === String(parent.id));
                   const isParentChecked = enabledModules.includes(parent.id.toString());
                   const childrenIds = submodules.map(sub => sub.id.toString());
 
