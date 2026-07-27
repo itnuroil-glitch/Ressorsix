@@ -89,6 +89,9 @@ export default function LoginScreen({ onLoginSuccess }) {
         if (!res.ok) {
           throw new Error(data.message || `Server returned error (${res.status}). Please verify backend logs.`);
         }
+        if (!data || !data.user) {
+          throw new Error(data.message || 'Invalid server response: Missing user payload.');
+        }
         return data;
       })
       .then((data) => {
@@ -97,11 +100,11 @@ export default function LoginScreen({ onLoginSuccess }) {
         onLoginSuccess({
           id: data.user.id,
           email: data.user.email,
-          name: data.user.name,
+          name: data.user.name || data.user.email,
           roleId: data.user.roleId,
           clientid: data.user.clientid,
           companyid: data.user.companyid,
-          associatedCompanyIds: data.user.associatedCompanyIds,
+          associatedCompanyIds: data.user.associatedCompanyIds || [],
           createdAt: data.user.createdAt,
           token: data.token,
         });
