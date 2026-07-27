@@ -38,15 +38,14 @@ const PORT = process.env.PORT || 5000;
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-    if (!process.env.FRONTEND_URL) {
-      // In local dev, echo the origin dynamically to support credentials
+    if (!process.env.FRONTEND_URL || process.env.FRONTEND_URL === '*') {
       return callback(null, true);
     }
     const allowedOrigins = process.env.FRONTEND_URL.split(',').map(url => url.trim());
-    if (allowedOrigins.includes(origin)) {
+    if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(null, true);
     }
   },
   credentials: true
