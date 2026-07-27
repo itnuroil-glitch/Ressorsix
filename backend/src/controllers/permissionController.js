@@ -195,26 +195,25 @@ exports.getRolePermissions = async (req, res) => {
         allAssociatedCompanyIds.push(...roleObj.companyids);
       }
       if (roleObj.clientid) {
-        allAssociatedCompanyIds.push(roleObj.clientid);
-        const compRes = await client.query('SELECT clientid FROM company WHERE id = $1', [roleObj.clientid]);
-        if (compRes.rows.length > 0 && compRes.rows[0].clientid) {
-          if (!targetClientId) targetClientId = compRes.rows[0].clientid;
-          const allCompsRes = await client.query('SELECT id FROM company WHERE clientid = $1 AND is_deleted = false', [compRes.rows[0].clientid]);
-          allAssociatedCompanyIds.push(...allCompsRes.rows.map(r => r.id));
-        }
+        targetClientId = roleObj.clientid;
+        const allCompsRes = await client.query('SELECT id FROM company WHERE clientid = $1 AND (is_deleted = false OR is_deleted IS NULL)', [roleObj.clientid]);
+        allAssociatedCompanyIds.push(...allCompsRes.rows.map(r => r.id));
       }
       allAssociatedCompanyIds = [...new Set(allAssociatedCompanyIds)].filter(Boolean);
 
       // Determine which company IDs to save for
+      let rawCompInput = company_id !== undefined && company_id !== null ? company_id : company_ids;
       let targetCompanyIds = [];
-      if (Array.isArray(company_ids) && company_ids.includes('all')) {
+
+      if (rawCompInput === 'all' || (Array.isArray(rawCompInput) && rawCompInput.includes('all'))) {
         targetCompanyIds = allAssociatedCompanyIds.length > 0 ? allAssociatedCompanyIds : [null];
-      } else if (company_ids === 'all') {
-        targetCompanyIds = allAssociatedCompanyIds.length > 0 ? allAssociatedCompanyIds : [null];
-      } else if (Array.isArray(company_ids) && company_ids.length > 0) {
-        targetCompanyIds = company_ids.map(id => (id && id !== 'null' && id !== 'all') ? parseInt(id, 10) : null).filter(id => id !== null);
-      } else if (company_ids && company_ids !== 'null' && company_ids !== '' && company_ids !== 'all') {
-        targetCompanyIds = [parseInt(company_ids, 10)];
+      } else if (Array.isArray(rawCompInput)) {
+        targetCompanyIds = rawCompInput.map(id => parseInt(id, 10)).filter(id => !isNaN(id));
+      } else if (typeof rawCompInput === 'string' && rawCompInput.includes(',')) {
+        targetCompanyIds = rawCompInput.split(',').map(id => parseInt(id.trim(), 10)).filter(id => !isNaN(id));
+      } else if (rawCompInput !== undefined && rawCompInput !== null && rawCompInput !== '' && rawCompInput !== 'null') {
+        const parsed = parseInt(rawCompInput, 10);
+        if (!isNaN(parsed)) targetCompanyIds = [parsed];
       }
 
       if (targetCompanyIds.length === 0) {
@@ -238,11 +237,32 @@ exports.getRolePermissions = async (req, res) => {
         }
       }
 
-      const insertQuery = `
-        INSERT INTO role_permission (role_id, module_id, company_id, client_id, can_view, can_create, can_edit, can_delete, all_record_view, full_control, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
-        RETURNING *
+      // Check if client_id column exists in role_permission
+      const colCheck = await client.query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name = 'role_permission' AND column_name IN ('client_id', 'clientid')
+      `);
+      const hasClientIdCol = colCheck.rows.some(r => r.column_name === 'client_id');
+      const hasClientidCol = colCheck.rows.some(r => r.column_name === 'clientid');
+
+      let insertQuery = `
+        INSERT INTO role_permission (role_id, module_id, company_id, can_view, can_create, can_edit, can_delete, all_record_view, full_control, updated_at
       `;
+      let valPlaceholders = `$1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP`;
+      let paramCount = 9;
+
+      if (hasClientIdCol) {
+        paramCount++;
+        insertQuery += `, client_id`;
+        valPlaceholders += `, $${paramCount}`;
+      }
+      if (hasClientidCol) {
+        paramCount++;
+        insertQuery += `, clientid`;
+        valPlaceholders += `, $${paramCount}`;
+      }
+
+      insertQuery += `) VALUES (${valPlaceholders}) RETURNING *`;
 
       const savedPermissions = [];
       for (const compId of targetCompanyIds) {
@@ -267,18 +287,21 @@ exports.getRolePermissions = async (req, res) => {
           }
 
           if (numericModuleId) {
-            const res = await client.query(insertQuery, [
+            const params = [
               roleId,
               numericModuleId,
               compId,
-              finalClientId,
               !!can_view,
               !!can_create,
               !!can_edit,
               !!can_delete,
               !!all_record_view,
               !!full_control
-            ]);
+            ];
+            if (hasClientIdCol) params.push(finalClientId);
+            if (hasClientidCol) params.push(finalClientId);
+
+            const res = await client.query(insertQuery, params);
             savedPermissions.push(res.rows[0]);
           }
         }
