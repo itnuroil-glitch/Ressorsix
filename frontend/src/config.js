@@ -1,27 +1,25 @@
 import { Platform } from 'react-native';
 
 const getApiUrl = () => {
-  // On Web platform, dynamically use browser window location hostname so LAN & external IP access always routes API calls to host server
+  // 1. Check explicitly set environment variables FIRST (for production cloud deployments like Render)
+  if (process.env.EXPO_PUBLIC_API_URL_WEB) {
+    return process.env.EXPO_PUBLIC_API_URL_WEB;
+  }
+  if (process.env.REACT_APP_API_URL) {
+    return process.env.REACT_APP_API_URL;
+  }
+
+  // 2. Local development dynamic hostname detection for Web
   if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location && window.location.hostname) {
     const protocol = window.location.protocol && window.location.protocol.startsWith('https') ? 'https:' : 'http:';
     const hostname = window.location.hostname;
 
-    // If deployed on cloud environments (like Render or standard HTTPS domains), do NOT append port 5000
-    if (hostname.includes('onrender.com') || (protocol === 'https:' && !hostname.includes('localhost') && !hostname.match(/^\d+\.\d+\.\d+\.\d+$/))) {
-      return `${protocol}//${hostname}`;
+    // If running on local network / localhost, route to port 5000
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+      return `${protocol}//${hostname}:5000`;
     }
 
-    return `${protocol}//${hostname}:5000`;
-  }
-
-  if (Platform.OS === 'web') {
-    if (process.env.EXPO_PUBLIC_API_URL_WEB) {
-      return process.env.EXPO_PUBLIC_API_URL_WEB;
-    }
-    if (process.env.REACT_APP_API_URL) {
-      return process.env.REACT_APP_API_URL;
-    }
-    return 'http://localhost:5000';
+    return `${protocol}//${hostname}`;
   }
 
   return (
