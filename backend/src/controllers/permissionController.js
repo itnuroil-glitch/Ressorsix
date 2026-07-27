@@ -187,16 +187,29 @@ exports.getRolePermissions = async (req, res) => {
       }
       const roleObj = roleCheck.rows[0];
 
-      let targetClientId = client_id || clientid || roleObj.clientid || null;
+      let targetClientId = client_id || clientid || null;
+      if (!targetClientId && roleObj.clientid) {
+        const clientCheck = await client.query('SELECT id FROM client WHERE id = $1', [roleObj.clientid]);
+        if (clientCheck.rows.length > 0) {
+          targetClientId = roleObj.clientid;
+        } else {
+          const compCheck = await client.query('SELECT clientid FROM company WHERE id = $1', [roleObj.clientid]);
+          if (compCheck.rows.length > 0 && compCheck.rows[0].clientid) {
+            targetClientId = compCheck.rows[0].clientid;
+          }
+        }
+      }
 
       // Get all company IDs associated with this role via clientid or companyids
       let allAssociatedCompanyIds = [];
       if (Array.isArray(roleObj.companyids) && roleObj.companyids.length > 0) {
         allAssociatedCompanyIds.push(...roleObj.companyids);
       }
-      if (roleObj.clientid) {
-        targetClientId = roleObj.clientid;
-        const allCompsRes = await client.query('SELECT id FROM company WHERE clientid = $1 AND (is_deleted = false OR is_deleted IS NULL)', [roleObj.clientid]);
+      if (targetClientId) {
+        const allCompsRes = await client.query(
+          'SELECT id FROM company WHERE clientid = $1 AND (is_deleted = false OR is_deleted IS NULL)',
+          [targetClientId]
+        );
         allAssociatedCompanyIds.push(...allCompsRes.rows.map(r => r.id));
       }
       allAssociatedCompanyIds = [...new Set(allAssociatedCompanyIds)].filter(Boolean);
