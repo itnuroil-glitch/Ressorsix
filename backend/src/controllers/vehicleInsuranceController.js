@@ -270,16 +270,16 @@ exports.getVehicleInsurance = async (req, res) => {
         COALESCE(
           e.full_name, 
           u.email, 
-          (SELECT full_name FROM employee e_fallback WHERE e_fallback.roleid = v.roleid::text AND e_fallback.clientid = v.clientid LIMIT 1)
+          (SELECT full_name FROM employee e_fallback WHERE e_fallback.roleid::text = v.roleid::text AND e_fallback.clientid::text = v.clientid::text LIMIT 1)
         ) AS employee_name
       FROM tbl_vehicle_insurance v
-      LEFT JOIN company c ON CASE WHEN v.company_id ~ '^[0-9]+$' THEN v.company_id::integer ELSE NULL END = c.id
+      LEFT JOIN company c ON CASE WHEN v.company_id::text ~ '^[0-9]+$' THEN v.company_id::text::integer ELSE NULL END = c.id
       LEFT JOIN users u ON v.user_id = u.id
       LEFT JOIN employee e ON u.email = e.email
     `;
     const params = [];
     if (clientid) {
-      query += ' WHERE v.clientid = $1';
+      query += ' WHERE v.clientid::text = $1';
       params.push(clientid);
     }
     query += ' ORDER BY v.id DESC';

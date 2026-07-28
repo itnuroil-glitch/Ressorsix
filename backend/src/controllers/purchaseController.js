@@ -212,7 +212,7 @@ exports.getAllPurchases = async (req, res) => {
         COALESCE(
           e.full_name, 
           u.email, 
-          (SELECT full_name FROM employee e_fallback WHERE e_fallback.roleid = p.roleid::text AND e_fallback.clientid = p.clientid LIMIT 1)
+          (SELECT full_name FROM employee e_fallback WHERE e_fallback.roleid::text = p.roleid::text AND e_fallback.clientid::text = p.clientid::text LIMIT 1)
         ) AS employee_name
       FROM tbl_Purchases p
       LEFT JOIN users u ON p.user_id = u.id
@@ -220,7 +220,7 @@ exports.getAllPurchases = async (req, res) => {
     `;
     let params = [];
     if (clientid) {
-      query += ' WHERE p.clientid = $1';
+      query += ' WHERE p.clientid::text = $1';
       params.push(clientid);
     }
     query += ' ORDER BY p.id DESC';
