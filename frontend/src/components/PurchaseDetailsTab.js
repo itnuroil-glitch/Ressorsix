@@ -24,6 +24,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
   const isLargeScreen = width > 768;
   const isEmployee = false;
   const canCreate = !user || String(user.roleId) === '1' || (permissions && (permissions.can_create || permissions.full_control));
+  const canEdit = !user || String(user.roleId) === '1' || (permissions && (permissions.can_edit || permissions.full_control));
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fieldsLayout, setFieldsLayout] = useState(null);

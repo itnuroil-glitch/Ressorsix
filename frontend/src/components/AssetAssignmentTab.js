@@ -22,6 +22,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
   const { width } = useWindowDimensions();
   const isLargeScreen = width > 768;
   const isEmployee = user && String(user.roleId) !== '1' && String(user.roleId) !== '2' && String(user.roleId) !== '5' && String(user.roleId) !== '8';
+  const canEdit = !user || String(user.roleId) === '1' || (permissions && (permissions.can_edit || permissions.full_control));
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fieldsLayout, setFieldsLayout] = useState(null);
