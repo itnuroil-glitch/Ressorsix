@@ -208,7 +208,7 @@ exports.getAllPurchases = async (req, res) => {
           FROM company 
           WHERE id = ANY(string_to_array(nullif(p.company_id, ''), ',')::integer[])
         ) AS company_name,
-        (SELECT string_agg(role, ', ') FROM role WHERE id = ANY(string_to_array(p.roleid::text, ',')::int[])) AS role_name, 
+        (SELECT string_agg(role, ', ') FROM role WHERE p.roleid IS NOT NULL AND id::text = ANY(string_to_array(p.roleid::text, ','))) AS role_name, 
         COALESCE(
           e.full_name, 
           u.email, 

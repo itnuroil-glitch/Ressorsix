@@ -3,7 +3,7 @@ const db = require('./db');
 async function createTollTable() {
   try {
     console.log('Creating tbl_vehicle_toll table in PostgreSQL database...');
-    
+
     const query = `
       CREATE TABLE IF NOT EXISTS tbl_vehicle_toll (
         id SERIAL PRIMARY KEY,

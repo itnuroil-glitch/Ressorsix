@@ -234,7 +234,7 @@ exports.getVehicleDetails = async (req, res) => {
     let query = `
       SELECT 
         v.*, 
-        (SELECT string_agg(role, ', ') FROM role WHERE id = ANY(string_to_array(v.roleid::text, ',')::int[])) AS role_name, 
+        (SELECT string_agg(role, ', ') FROM role WHERE v.roleid IS NOT NULL AND id::text = ANY(string_to_array(v.roleid::text, ','))) AS role_name, 
         COALESCE(
           e.full_name, 
           u.email, 
