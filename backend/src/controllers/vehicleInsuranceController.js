@@ -12,17 +12,29 @@ const resolveVehicleId = async (fieldData, clientId) => {
     if (insuranceValues.length === 0) return null;
 
     const vehiclesRes = await db.query(
-      'SELECT vehicle_id, field_data FROM tbl_vehicle_details WHERE clientid = $1',
-      [clientId]
+      'SELECT vehicle_id, field_data FROM tbl_vehicle_details WHERE clientid::text = $1',
+      [String(clientId)]
     );
 
     for (const row of vehiclesRes.rows) {
       if (row.field_data) {
-        const vehicleValues = Object.values(row.field_data)
+        let fieldDataObj = row.field_data;
+        if (typeof fieldDataObj === 'string') {
+          try { fieldDataObj = JSON.parse(fieldDataObj); } catch (e) { fieldDataObj = {}; }
+        }
+        const vehicleValues = Object.values(fieldDataObj)
           .map(v => String(v).trim().toLowerCase())
           .filter(v => v.length > 0);
 
-        const hasMatch = insuranceValues.some(val => vehicleValues.includes(val));
+        const hasMatch = insuranceValues.some(val => {
+          if (vehicleValues.includes(val)) return true;
+          if (val.includes(' - ')) {
+            const parts = val.split(' - ').map(p => p.trim());
+            return parts.some(p => vehicleValues.includes(p));
+          }
+          return vehicleValues.some(v => val.includes(v) || v.includes(val));
+        });
+
         if (hasMatch) {
           return row.vehicle_id;
         }
@@ -295,7 +307,7 @@ exports.getVehicleInsurance = async (req, res) => {
     let vehicleQuery = 'SELECT vehicle_id, field_data FROM tbl_vehicle_details';
     let vehicleParams = [];
     if (clientid) {
-      vehicleQuery += ' WHERE clientid = $1';
+      vehicleQuery += ' WHERE clientid::text = $1';
       vehicleParams.push(clientid);
     }
     const vehiclesRes = await db.query(vehicleQuery, vehicleParams);
