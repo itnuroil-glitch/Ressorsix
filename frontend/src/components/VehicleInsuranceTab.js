@@ -241,6 +241,9 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
             return data.map(item => {
               if (typeof item === 'string') return { label: item, value: item };
               if (item && typeof item === 'object') {
+                if (item.vehicle_display_name) {
+                  return { label: String(item.vehicle_display_name), value: String(item.vehicle_display_name) };
+                }
                 const nameKey = Object.keys(item).find(key =>
                   key.toLowerCase().includes('name') ||
                   key.toLowerCase().includes('label') ||
@@ -477,7 +480,7 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
       }
 
       const payload = {
-        vehicle_id: null,
+        vehicle_id: editingRecord ? (editingRecord.vehicle_id || null) : null,
         custom_field_id: customFieldId,
         field_data: finalFormData,
         clientid: configParams.clientid,
