@@ -613,7 +613,7 @@ const s = StyleSheet.create({
 
   paginRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC' },
   pgInfoLeft: { fontSize: 12, color: '#64748B' },
-  pgBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' },
+  pgBtn: { paddingHorizontal: 14, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' },
   pgBtnOn: { backgroundColor: '#FFFFFF' },
   pgBtnOff: { backgroundColor: '#F1F5F9' },
   pgBtnTxt: { fontSize: 12, fontWeight: '500' },

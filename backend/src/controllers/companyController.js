@@ -76,7 +76,7 @@ exports.getAllCompanies = async (req, res) => {
 exports.createCompany = async (req, res) => {
   try {
     const {
-      clientid, company_name, short_code, legal_form, industry, business_activity,
+      clientid, company_name, short_code, traffic_file_number, legal_form, industry, business_activity,
       jurisdiction, licensing_authority, trade_license_number, trade_license_issue_date,
       trade_license_expiry_date, company_status, country, emirate, registered_address,
       po_box, contact_person, contact_email, contact_phone, website, vat_registered, trn,
@@ -102,7 +102,7 @@ exports.createCompany = async (req, res) => {
 
     const query = `
       INSERT INTO company (
-        clientid, company_name, short_code, legal_form, industry, business_activity,
+        clientid, company_name, short_code, traffic_file_number, legal_form, industry, business_activity,
         jurisdiction, licensing_authority, trade_license_number, trade_license_issue_date,
         trade_license_expiry_date, company_status, country, emirate, registered_address,
         po_box, contact_person, contact_email, contact_phone, website, vat_registered, trn,
@@ -115,14 +115,14 @@ exports.createCompany = async (req, res) => {
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
         $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-        $21, $22, $23, $24, $25, $26, $27, $28, $29,
-        $30, $31, $32, $33, $34, $35, $36, $37, $38, $39,
+        $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
+        $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,
         false, NOW(), NOW()
       ) RETURNING *;
     `;
 
     const values = [
-      finalClientId, company_name, short_code, legal_form, industry, business_activity,
+      finalClientId, company_name, short_code, traffic_file_number, legal_form, industry, business_activity,
       jurisdiction, licensing_authority, trade_license_number, trade_license_issue_date,
       trade_license_expiry_date, company_status, country, emirate, registered_address,
       po_box, contact_person, contact_email, contact_phone, website, vat_registered, trn,
@@ -197,7 +197,7 @@ exports.updateCompany = async (req, res) => {
   try {
     const { id } = req.params;
     const {
-      clientid, company_name, short_code, legal_form, industry, business_activity,
+      clientid, company_name, short_code, traffic_file_number, legal_form, industry, business_activity,
       jurisdiction, licensing_authority, trade_license_number, trade_license_issue_date,
       trade_license_expiry_date, company_status, country, emirate, registered_address,
       po_box, contact_person, contact_email, contact_phone, website, vat_registered, trn,
@@ -217,23 +217,23 @@ exports.updateCompany = async (req, res) => {
 
     const query = `
       UPDATE company SET
-        clientid = $1, company_name = $2, short_code = $3, legal_form = $4, industry = $5,
-        business_activity = $6, jurisdiction = $7, licensing_authority = $8,
-        trade_license_number = $9, trade_license_issue_date = $10, trade_license_expiry_date = $11,
-        company_status = $12, country = $13, emirate = $14, registered_address = $15,
-        po_box = $16, contact_person = $17, contact_email = $18, contact_phone = $19,
-        website = $20, vat_registered = $21, trn = $22, corporate_tax_registration_number = $23,
-        establishment_card_number = $24, establishment_card_expiry_date = $25, mohre_number = $26,
-        wps_registered = $27, nafis_emiratisation_applicable = $28, gpssa_applicable = $29,
-        authorized_signatory_name = $30, authorized_signatory_designation = $31, default_bank = $32,
-        default_currency = $33, asset_prefix = $34, vehicle_prefix = $35, employee_prefix = $36,
-        trade_license_alert_days = $37, establishment_card_alert_days = $38, insurance_alert_days = $39,
+        clientid = $1, company_name = $2, short_code = $3, traffic_file_number = $4, legal_form = $5, industry = $6,
+        business_activity = $7, jurisdiction = $8, licensing_authority = $9,
+        trade_license_number = $10, trade_license_issue_date = $11, trade_license_expiry_date = $12,
+        company_status = $13, country = $14, emirate = $15, registered_address = $16,
+        po_box = $17, contact_person = $18, contact_email = $19, contact_phone = $20,
+        website = $21, vat_registered = $22, trn = $23, corporate_tax_registration_number = $24,
+        establishment_card_number = $25, establishment_card_expiry_date = $26, mohre_number = $27,
+        wps_registered = $28, nafis_emiratisation_applicable = $29, gpssa_applicable = $30,
+        authorized_signatory_name = $31, authorized_signatory_designation = $32, default_bank = $33,
+        default_currency = $34, asset_prefix = $35, vehicle_prefix = $36, employee_prefix = $37,
+        trade_license_alert_days = $38, establishment_card_alert_days = $39, insurance_alert_days = $40,
         updated_at = NOW()
-      WHERE id = $40 RETURNING *;
+      WHERE id = $41 RETURNING *;
     `;
 
     const values = [
-      clientid || null, company_name, short_code, legal_form, industry, business_activity,
+      clientid || null, company_name, short_code, traffic_file_number, legal_form, industry, business_activity,
       jurisdiction, licensing_authority, trade_license_number, trade_license_issue_date,
       trade_license_expiry_date, company_status, country, emirate, registered_address,
       po_box, contact_person, contact_email, contact_phone, website, vat_registered, trn,

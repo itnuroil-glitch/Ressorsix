@@ -1,0 +1,1578 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+  Modal,
+  ActivityIndicator,
+  useWindowDimensions
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { SearchableDropdown } from './CustomFieldsTab';
+
+const API_URL = 'http://localhost:5000';
+
+const COLORS = {
+  primary: '#004D34',
+  primaryHover: '#003826',
+  sageGreen: '#8FA89B',
+  secondary: '#1E293B',
+  bgLight: '#F8FAFC',
+  cardBg: '#FFFFFF',
+  textPrimary: '#0F172A',
+  textSecondary: '#64748B',
+  textMuted: '#94A3B8',
+  border: '#CBD5E1',
+  success: '#16A34A',
+  warning: '#F59E0B',
+  error: '#EF4444',
+  white: '#FFFFFF',
+};
+
+const defaultBillFields = [
+  { id: 'f_company', name: 'Company', type: 'Dropdown', isRequired: true },
+  { id: 'f_provider', name: 'Telecom Provider', type: 'Dropdown', isRequired: true },
+  { id: 'f_account', name: 'Mobile Number / Account', type: 'Dropdown', isRequired: true },
+  { id: 'f_billno', name: 'Bill Number', type: 'Textbox', isRequired: true },
+  { id: 'f_month', name: 'Bill Month', type: 'Date', isRequired: true },
+  { id: 'f_from', name: 'Bill Period From', type: 'Date', isRequired: true },
+  { id: 'f_to', name: 'Bill Period To', type: 'Date', isRequired: true },
+  { id: 'f_issue', name: 'Bill Issue Date', type: 'Date', isRequired: true },
+  { id: 'f_due', name: 'Due Date', type: 'Date', isRequired: true },
+  { id: 'f_plan', name: 'Monthly Plan Amount', type: 'Number', isRequired: true },
+  { id: 'f_rental', name: 'Service Rental', type: 'Number', isRequired: false },
+  { id: 'f_usage', name: 'Usage Charges', type: 'Number', isRequired: false },
+  { id: 'f_onetime', name: 'One-Time Charges', type: 'Number', isRequired: false },
+  { id: 'f_other', name: 'Other Charges', type: 'Number', isRequired: false },
+  { id: 'f_vat', name: 'VAT', type: 'Number', isRequired: false },
+  { id: 'f_total', name: 'Total Bill', type: 'Number', isRequired: true },
+  { id: 'f_excess', name: 'Excess Amount', type: 'Textbox', isRequired: false },
+  { id: 'f_status', name: 'Payment Status', type: 'Dropdown', isRequired: true },
+  { id: 'f_pdf', name: 'Invoice PDF', type: 'File Upload', isRequired: false },
+  { id: 'f_remarks', name: 'Remarks', type: 'Textbox', isRequired: false },
+];
+
+const TelecomBillTab = ({
+  user,
+  showToast,
+  isSidebarCollapsed,
+  permissions = { can_view: true, can_create: true, can_edit: true, can_delete: true, full_control: true },
+  checkRowPermission = () => true
+}) => {
+  const { width } = useWindowDimensions();
+  const isLargeScreen = width > 768;
+
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+
+  // Wizard Step State (1: Configuration, 2: Form Data)
+  const [wizardStep, setWizardStep] = useState(1);
+
+  // Master Dropdown Data
+  const [clientsList, setClientsList] = useState([]);
+  const [companiesList, setCompaniesList] = useState([]);
+  const [telecomProvidersList, setTelecomProvidersList] = useState([]);
+  const [simDetailsList, setSimDetailsList] = useState([]);
+
+  // Selected Configuration Values
+  const [selectedClient, setSelectedClient] = useState('');
+  const [selectedCompany, setSelectedCompany] = useState('');
+
+  // Dynamic Custom Fields State
+  const [customFields, setCustomFields] = useState(null);
+  const [fieldsLayout, setFieldsLayout] = useState([]);
+  const [formData, setFormData] = useState({});
+  const [countries, setCountries] = useState([]);
+  const [selectedCountry, setSelectedCountry] = useState(null);
+
+  // Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isViewOnly, setIsViewOnly] = useState(false);
+  const [editingRecord, setEditingRecord] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [parsingPdf, setParsingPdf] = useState(false);
+
+  // Delete modal state
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [recordToDelete, setRecordToDelete] = useState(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
+  const canCreate = user?.roleId === 1 || user?.roleId === '1' || permissions?.can_create || permissions?.full_control;
+  const canEdit = user?.roleId === 1 || user?.roleId === '1' || permissions?.can_edit || permissions?.full_control;
+  const canDelete = user?.roleId === 1 || user?.roleId === '1' || permissions?.can_delete || permissions?.full_control;
+
+  useEffect(() => {
+    fetchCountries();
+    fetchClients();
+    fetchCompaniesAll();
+    fetchDynamicDropdowns();
+  }, []);
+
+  useEffect(() => {
+    fetchRecords();
+  }, [user]);
+
+  useEffect(() => {
+    fetchCustomFields();
+  }, [selectedCountry, selectedClient, user]);
+
+  const fetchCountries = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/countries`);
+      if (res.ok) {
+        const data = await res.json();
+        setCountries(data);
+        if (data.length > 0) {
+          const uae = data.find(c => c.name.toLowerCase().includes('uae') || c.name.toLowerCase().includes('emirates'));
+          setSelectedCountry(uae ? uae.id : data[0].id);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching countries:', err);
+    }
+  };
+
+  const fetchClients = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/clients`);
+      if (res.ok) {
+        const data = await res.json();
+        setClientsList(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Error fetching clients:', err);
+    }
+  };
+
+  const fetchCompaniesAll = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/companies`);
+      if (res.ok) {
+        const data = await res.json();
+        setCompaniesList(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Error fetching companies:', err);
+    }
+  };
+
+  const fetchCompaniesForClient = async (clientId) => {
+    if (!clientId) {
+      fetchCompaniesAll();
+      return;
+    }
+    try {
+      const res = await fetch(`${API_URL}/api/companies/client/${clientId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setCompaniesList(data);
+        } else {
+          fetchCompaniesAll();
+        }
+      } else {
+        fetchCompaniesAll();
+      }
+    } catch (err) {
+      fetchCompaniesAll();
+    }
+  };
+
+  const fetchDynamicDropdowns = async () => {
+    try {
+      const [providerRes, simRes] = await Promise.all([
+        fetch(`${API_URL}/api/telecom-providers`),
+        fetch(`${API_URL}/api/sim-details`)
+      ]);
+      if (providerRes.ok) setTelecomProvidersList(await providerRes.json());
+      if (simRes.ok) setSimDetailsList(await simRes.json());
+    } catch (err) {
+      console.error('Error fetching dynamic dropdowns:', err);
+    }
+  };
+
+  const fetchCustomFields = async (overrideClientId = null) => {
+    try {
+      const activeClient = overrideClientId || selectedClient;
+      const res = await fetch(`${API_URL}/api/custom-fields`);
+      if (!res.ok) return;
+      const allCustomFields = await res.json();
+
+      let matchingFieldDef = allCustomFields.find(cf =>
+        String(cf.moduleid || cf.module_id) === '56' &&
+        (activeClient ? String(cf.clientid || cf.client_id) === String(activeClient) : true)
+      );
+
+      if (!matchingFieldDef) {
+        matchingFieldDef = allCustomFields.find(cf => String(cf.moduleid || cf.module_id) === '56');
+      }
+
+      if (matchingFieldDef) {
+        setCustomFields(matchingFieldDef);
+        let parsed = [];
+        if (matchingFieldDef.field_data) {
+          parsed = typeof matchingFieldDef.field_data === 'string'
+            ? JSON.parse(matchingFieldDef.field_data)
+            : matchingFieldDef.field_data;
+        }
+
+        try {
+          const permRes = await fetch(`${API_URL}/api/field-permissions`);
+          if (permRes.ok) {
+            const permList = await permRes.json();
+            const activePerm = permList.find(p =>
+              String(p.moduleid || p.module_id) === '56' &&
+              (activeClient ? String(p.clientid) === String(activeClient) : true)
+            );
+
+            if (activePerm && activePerm.permitted_fields) {
+              const permittedMap = typeof activePerm.permitted_fields === 'string'
+                ? JSON.parse(activePerm.permitted_fields)
+                : activePerm.permitted_fields;
+
+              parsed = parsed.map(sec => ({
+                ...sec,
+                fields: (sec.fields || []).filter(f => {
+                  if (permittedMap[f.id] !== undefined) return Boolean(permittedMap[f.id]);
+                  if (permittedMap[f.name] !== undefined) return Boolean(permittedMap[f.name]);
+                  return true;
+                })
+              }));
+            }
+          }
+        } catch (e) {
+          console.warn('Field permission check warning:', e);
+        }
+
+        setFieldsLayout(parsed || []);
+        return parsed || [];
+      }
+    } catch (err) {
+      console.error('Error fetching custom fields:', err);
+    }
+    return [];
+  };
+
+  const fetchRecords = async () => {
+    setLoading(true);
+    try {
+      const clientQuery = user?.clientid ? `?clientid=${user.clientid}` : '';
+      const res = await fetch(`${API_URL}/api/telecom-bills${clientQuery}`);
+      if (res.ok) {
+        const data = await res.json();
+        setRecords(data);
+      } else {
+        showToast('Failed to fetch telecom bills.', 'error');
+      }
+    } catch (err) {
+      console.error('Error fetching telecom bills:', err);
+      showToast('Error connecting to backend.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClientChange = (clientId) => {
+    setSelectedClient(clientId ? String(clientId) : '');
+    setSelectedCompany('');
+    fetchCompaniesForClient(clientId ? String(clientId) : null);
+  };
+
+  const handleAutoFillFromPdf = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setParsingPdf(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const base64String = e.target.result;
+        const res = await fetch(`${API_URL}/api/pdf/parse-pdf`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            file_base64: base64String,
+            file_name: file.name
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.message || 'Failed to extract PDF data');
+        }
+
+        const ext = data.extractedData || {};
+
+        let compName = '';
+        if (ext.company_id) {
+          const foundComp = companiesList.find(c => String(c.id) === String(ext.company_id));
+          if (foundComp) compName = foundComp.company_name;
+        }
+
+        if (!compName && companiesList.length > 0) {
+          compName = companiesList[0].company_name || companiesList[0].name || '';
+        }
+
+        if (compName) {
+          setSelectedCompany(compName);
+        }
+
+        let activeClientId = selectedClient;
+        if (clientsList.length > 0 && !activeClientId) {
+          const defaultClient = clientsList.find(c => String(c.id) === String(user?.clientid)) || clientsList[0];
+          activeClientId = String(defaultClient.id || defaultClient.clientid || '1');
+          setSelectedClient(activeClientId);
+        }
+
+        const currentLayout = await fetchCustomFields(activeClientId);
+        const layoutToUse = (currentLayout && currentLayout.length > 0)
+          ? currentLayout
+          : fieldsLayout;
+
+        const dynMap = ext.dynamic_field_map || {};
+        const dynamicExtractedFields = {};
+
+        // Match form field names dynamically against extracted PDF text lines
+        const targetFields = layoutToUse.length > 0
+          ? layoutToUse.flatMap(sec => sec.fields || [])
+          : defaultBillFields;
+
+        targetFields.forEach(f => {
+          if (!f) return;
+          const name = f.name || '';
+          const id = f.id || '';
+          let extractedVal = '';
+
+          const nLower = name.toLowerCase().trim();
+          if (nLower.includes('company')) extractedVal = compName || selectedCompany || '';
+          else if (nLower.includes('provider')) extractedVal = ext.telecom_provider || '';
+          else if (nLower.includes('account') || nLower.includes('mobile')) extractedVal = ext.mobile_account || '';
+          else if (nLower.includes('bill number') || nLower.includes('invoice number') || nLower.includes('bill no') || nLower.includes('invoice no') || nLower === 'bill #') extractedVal = ext.bill_number || ext.doc_number || '';
+          else if (nLower.includes('bill month')) extractedVal = ext.issue_date || ext.period_from || '';
+          else if (nLower.includes('period from') || nLower.includes('from date')) extractedVal = ext.period_from || ext.issue_date || '';
+          else if (nLower.includes('period to') || nLower.includes('to date')) extractedVal = ext.period_to || ext.expiry_date || '';
+          else if (nLower.includes('issue date')) extractedVal = ext.issue_date || '';
+          else if (nLower.includes('due date') || nLower.includes('pay before')) extractedVal = ext.due_date || ext.expiry_date || '';
+          else if (nLower.includes('plan amount')) extractedVal = ext.service_rental || ext.total_amount || '';
+          else if (nLower.includes('rental')) extractedVal = ext.service_rental || '';
+          else if (nLower.includes('usage')) extractedVal = ext.usage_charges || '';
+          else if (nLower.includes('one-time') || nLower.includes('one time')) extractedVal = ext.one_time_charges || '';
+          else if (nLower.includes('other')) extractedVal = ext.other_charges || '';
+          else if (nLower === 'vat' || nLower.includes('vat') || nLower.includes('tax')) extractedVal = ext.vat || '';
+          else if (nLower.includes('total bill') || nLower.includes('total amount') || nLower.includes('grand total') || nLower === 'total') extractedVal = ext.total_amount || '';
+          else if (nLower.includes('pdf') || nLower.includes('invoice') || nLower.includes('document')) extractedVal = file.name;
+          else if (nLower.includes('remarks')) extractedVal = ext.remarks || '';
+          else if (nLower.includes('status')) extractedVal = 'Pending';
+          else if (dynMap[name] || dynMap[id] || dynMap[nLower] || dynMap[nLower.replace(/[\s\-_]+/g, '_')]) {
+            extractedVal = dynMap[name] || dynMap[id] || dynMap[nLower] || dynMap[nLower.replace(/[\s\-_]+/g, '_')];
+          }
+
+          if (extractedVal !== undefined && extractedVal !== null && extractedVal !== '') {
+            if (name) dynamicExtractedFields[name] = extractedVal;
+            if (id) dynamicExtractedFields[id] = extractedVal;
+          }
+        });
+
+        const newFormData = {
+          Company: compName || selectedCompany || '',
+          f_company: compName || selectedCompany || '',
+          'Telecom Provider': ext.telecom_provider || '',
+          f_provider: ext.telecom_provider || '',
+          'Mobile Number / Account': ext.mobile_account || '',
+          f_account: ext.mobile_account || '',
+          'Bill Number': ext.bill_number || ext.doc_number || '',
+          f_billno: ext.bill_number || ext.doc_number || '',
+          'Bill Month': ext.issue_date || ext.period_from || '',
+          f_month: ext.issue_date || ext.period_from || '',
+          'Bill Period From': ext.period_from || ext.issue_date || '',
+          f_from: ext.period_from || ext.issue_date || '',
+          'Bill Period To': ext.period_to || ext.expiry_date || '',
+          f_to: ext.period_to || ext.expiry_date || '',
+          'Bill Issue Date': ext.issue_date || '',
+          f_issue: ext.issue_date || '',
+          'Due Date': ext.due_date || ext.expiry_date || '',
+          f_due: ext.due_date || ext.expiry_date || '',
+          'Monthly Plan Amount': ext.service_rental || ext.total_amount || '',
+          f_plan: ext.service_rental || ext.total_amount || '',
+          'Service Rental': ext.service_rental || '',
+          f_rental: ext.service_rental || '',
+          'Usage Charges': ext.usage_charges || '',
+          f_usage: ext.usage_charges || '',
+          'One-Time Charges': ext.one_time_charges || '',
+          f_onetime: ext.one_time_charges || '',
+          'Other Charges': ext.other_charges || '',
+          f_other: ext.other_charges || '',
+          'VAT': ext.vat || '',
+          f_vat: ext.vat || '',
+          'Total Bill': ext.total_amount || '',
+          f_total: ext.total_amount || '',
+          'Invoice PDF': file.name,
+          f_pdf: file.name,
+          'Invoice PDF_base64': base64String,
+          'Remarks': ext.remarks || '',
+          f_remarks: ext.remarks || '',
+          'Payment Status': 'Pending',
+          f_status: 'Pending'
+        };
+
+        const cleanedNewFormData = {};
+        Object.keys(newFormData).forEach(k => {
+          if (newFormData[k] !== undefined && newFormData[k] !== null && newFormData[k] !== '') {
+            cleanedNewFormData[k] = newFormData[k];
+          }
+        });
+
+        setFormData(prev => ({
+          ...prev,
+          ...cleanedNewFormData,
+          ...dynamicExtractedFields
+        }));
+
+        setWizardStep(2);
+
+        if (showToast) {
+          showToast('PDF data extracted & Telecom Bill form auto-filled!', 'success');
+        }
+      };
+
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('PDF Parse Error:', err);
+      if (showToast) {
+        showToast(err.message || 'Error extracting PDF data', 'error');
+      }
+    } finally {
+      setParsingPdf(false);
+      if (event.target) event.target.value = '';
+    }
+  };
+
+  const openAddModal = () => {
+    setIsViewOnly(false);
+    setEditingRecord(null);
+    setWizardStep(1);
+    setSelectedClient('');
+    setSelectedCompany('');
+    fetchCompaniesAll();
+    setFormData({ status: 'Pending' });
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (record) => {
+    setIsViewOnly(false);
+    setEditingRecord(record);
+    setWizardStep(2);
+    let parsed = {};
+    if (record.field_data) {
+      try {
+        parsed = typeof record.field_data === 'string' ? JSON.parse(record.field_data) : record.field_data;
+      } catch (e) {}
+    }
+    const recClient = String(record.clientid || user?.clientid || '');
+    const recCompany = String(record.company_id || parsed.Company || parsed.company_id || '');
+    setSelectedClient(recClient);
+    if (recClient) fetchCompaniesForClient(recClient);
+    setSelectedCompany(recCompany);
+    setFormData({
+      ...parsed,
+      Company: recCompany,
+      status: record.status || parsed.status || parsed['Payment Status'] || 'Pending'
+    });
+    setIsModalOpen(true);
+  };
+
+  const openViewModal = (record) => {
+    setIsViewOnly(true);
+    setEditingRecord(record);
+    setWizardStep(2);
+    let parsed = {};
+    if (record.field_data) {
+      try {
+        parsed = typeof record.field_data === 'string' ? JSON.parse(record.field_data) : record.field_data;
+      } catch (e) {}
+    }
+    const recClient = String(record.clientid || user?.clientid || '');
+    const recCompany = String(record.company_id || parsed.Company || parsed.company_id || '');
+    setSelectedClient(recClient);
+    setSelectedCompany(recCompany);
+    setFormData({
+      ...parsed,
+      Company: recCompany,
+      status: record.status || parsed.status || parsed['Payment Status'] || 'Pending'
+    });
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditingRecord(null);
+    setIsViewOnly(false);
+    setWizardStep(1);
+    setFormData({});
+  };
+
+  const handleNextStep = async () => {
+    if (!selectedClient) {
+      showToast('Please select a Client.', 'warning');
+      return;
+    }
+    setFormData(prev => ({
+      ...prev,
+      Company: selectedCompany,
+      company_id: selectedCompany
+    }));
+    await fetchCustomFields();
+    setWizardStep(2);
+  };
+
+  const handleInputChange = (fieldKey, value) => {
+    if (isViewOnly) return;
+    setFormData(prev => {
+      const updated = { ...prev, [fieldKey]: value };
+
+      const totalBill = parseFloat(updated['Total Bill'] || updated['total_bill'] || 0);
+      const planAmount = parseFloat(updated['Monthly Plan Amount'] || updated['monthly_plan_amount'] || 0);
+      if (!isNaN(totalBill) && !isNaN(planAmount)) {
+        const excess = Math.max(0, totalBill - planAmount);
+        updated['Excess Amount'] = excess.toFixed(2);
+      }
+      return updated;
+    });
+  };
+
+  const handleSave = async () => {
+    if (isViewOnly) return;
+    setSaving(true);
+    try {
+      const payload = {
+        custom_field_id: customFields?.id || null,
+        field_data: { ...formData, Company: selectedCompany || formData.Company },
+        clientid: selectedClient || user?.clientid || null,
+        country_id: selectedCountry || 1,
+        company_id: selectedCompany || formData.Company || null,
+        user_id: user?.id || null,
+        status: formData['Payment Status'] || formData.status || 'Pending'
+      };
+
+      const url = editingRecord
+        ? `${API_URL}/api/telecom-bills/${editingRecord.tele_bill_id || editingRecord.id}`
+        : `${API_URL}/api/telecom-bills`;
+      const method = editingRecord ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        showToast(editingRecord ? 'Telecom bill record updated successfully!' : 'Telecom bill record created successfully!', 'success');
+        closeModal();
+        fetchRecords();
+      } else {
+        const errData = await res.json();
+        showToast(errData.error || errData.message || 'Failed to save telecom bill.', 'error');
+      }
+    } catch (err) {
+      console.error('Error saving telecom bill:', err);
+      showToast('Error connecting to backend.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openDeleteModal = (record) => {
+    setRecordToDelete(record);
+    setDeleteConfirmText('');
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (deleteConfirmText.toUpperCase() !== 'YES' && deleteConfirmText.toUpperCase() !== 'DELETE') {
+      showToast('Please type YES to confirm deletion.', 'warning');
+      return;
+    }
+    setDeleting(true);
+    try {
+      const res = await fetch(`${API_URL}/api/telecom-bills/${recordToDelete.tele_bill_id || recordToDelete.id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        showToast('Telecom bill record deleted successfully!', 'success');
+        setIsDeleteModalOpen(false);
+        setRecordToDelete(null);
+        fetchRecords();
+      } else {
+        showToast('Could not delete record.', 'error');
+      }
+    } catch (err) {
+      showToast('Server connection error.', 'error');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const formatDateForInput = (valStr) => {
+    if (!valStr || typeof valStr !== 'string') return '';
+    const clean = valStr.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
+    const parts = clean.split(/[\/\.-]/);
+    if (parts.length === 3) {
+      if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    }
+    const d = new Date(clean);
+    if (!isNaN(d.getTime())) {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    return clean;
+  };
+
+  const renderFieldInput = (field) => {
+    const valByName = formData[field.name];
+    const valById = field.id ? formData[field.id] : undefined;
+    const val = (valByName !== undefined && valByName !== null && valByName !== '')
+      ? valByName
+      : (valById !== undefined && valById !== null ? valById : '');
+
+    const fType = (field.type || '').toLowerCase().trim();
+
+    if (field.name === 'Company' || fType.includes('company')) {
+      return (
+        <SearchableDropdown
+          data={companiesList}
+          value={val || selectedCompany}
+          onChange={(v) => {
+            setSelectedCompany(v);
+            handleInputChange(field.name, v);
+          }}
+          placeholder="-- Select Company --"
+          searchPlaceholder="Search Company..."
+          displayKey="company_name"
+          valueKey="company_name"
+          disabled={isViewOnly}
+        />
+      );
+    }
+
+    if (field.name === 'Telecom Provider' || fType.includes('provider')) {
+      return (
+        <SearchableDropdown
+          data={telecomProvidersList}
+          value={val}
+          onChange={(v) => handleInputChange(field.name, v)}
+          placeholder="-- Select Telecom Provider --"
+          searchPlaceholder="Search Provider..."
+          displayKey="provider_name"
+          valueKey="provider_name"
+          disabled={isViewOnly}
+        />
+      );
+    }
+
+    if (field.name === 'Mobile Number / Account' || fType.includes('account')) {
+      const simFormattedData = simDetailsList.map(s => {
+        const fd = typeof s.field_data === 'string' ? JSON.parse(s.field_data || '{}') : (s.field_data || {});
+        const label = fd['SIM Number / ICCID'] || fd['Account Number'] || fd['mobile_number'] || `SIM #${s.tele_id || s.id}`;
+        return { label, value: label, rawRecord: s, rawFd: fd };
+      });
+
+      return (
+        <SearchableDropdown
+          data={simFormattedData}
+          value={val}
+          onChange={(v) => {
+            handleInputChange(field.name, v);
+            const matchedSim = simDetailsList.find(s => {
+              const fd = typeof s.field_data === 'string' ? JSON.parse(s.field_data || '{}') : (s.field_data || {});
+              const label = fd['SIM Number / ICCID'] || fd['Account Number'] || fd['mobile_number'] || `SIM #${s.tele_id || s.id}`;
+              return label === v;
+            });
+            if (matchedSim) {
+              const fd = typeof matchedSim.field_data === 'string' ? JSON.parse(matchedSim.field_data || '{}') : (matchedSim.field_data || {});
+              const planAmt = fd['Monthly Rental'] || fd['Monthly Plan Amount'] || fd['plan_amount'] || '';
+              const prov = fd['Telecom Provider'] || fd['provider'] || '';
+              if (planAmt) {
+                handleInputChange('Monthly Plan Amount', planAmt);
+                handleInputChange('Service Rental', planAmt);
+              }
+              if (prov) handleInputChange('Telecom Provider', prov);
+            }
+          }}
+          placeholder="-- Select Mobile / Account --"
+          searchPlaceholder="Search Mobile..."
+          displayKey="label"
+          valueKey="value"
+          disabled={isViewOnly}
+        />
+      );
+    }
+
+    if (fType === 'dropdown' || fType === 'searchable dropdown') {
+      const options = field.optionsArr || (field.options ? field.options.split(',') : []);
+      const formattedOptions = options.map(opt => ({ label: opt.trim(), value: opt.trim() }));
+
+      return (
+        <SearchableDropdown
+          data={formattedOptions}
+          value={val}
+          onChange={(v) => handleInputChange(field.name, v)}
+          placeholder={`-- Select ${field.name} --`}
+          searchPlaceholder={`Search ${field.name}...`}
+          displayKey="label"
+          valueKey="value"
+          disabled={isViewOnly}
+        />
+      );
+    }
+
+    if (fType === 'date' || fType.includes('date')) {
+      const dateVal = formatDateForInput(val);
+      return (
+        <input
+          type="date"
+          style={{ ...styles.htmlInput, ...(isViewOnly ? styles.disabledInputHtml : {}) }}
+          value={dateVal}
+          disabled={isViewOnly}
+          onChange={(e) => handleInputChange(field.name, e.target.value)}
+        />
+      );
+    }
+
+    // FILE UPLOAD AND IMAGE UPLOAD RENDERING MATCHING ENTERPRISE SPECIFICATIONS
+    if (fType.includes('file') || fType.includes('upload') || fType.includes('image') || fType.includes('pdf') || (field.name || '').toLowerCase().includes('pdf') || (field.name || '').toLowerCase().includes('invoice')) {
+      const handleFileSelect = () => {
+        if (typeof document !== 'undefined') {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = 'application/pdf,image/*';
+          input.onchange = (e) => {
+            const file = e.target.files?.[0];
+            if (file) {
+              if (file.name.toLowerCase().endsWith('.pdf') || file.type.includes('pdf')) {
+                handleAutoFillFromPdf(e);
+              } else {
+                handleInputChange(field.name, file.name);
+              }
+            }
+          };
+          input.click();
+        }
+      };
+
+      return (
+        <View style={{ width: '100%' }}>
+          {!val ? (
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: isViewOnly ? '#F1F5F9' : '#FAFAFA',
+                paddingHorizontal: 14,
+                height: 44,
+                borderRadius: 8,
+                borderWidth: 1,
+                borderColor: '#CBD5E1',
+                borderStyle: 'dashed',
+                gap: 8,
+              }}
+              onPress={handleFileSelect}
+              disabled={isViewOnly}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="cloud-upload-outline" size={20} color="#64748B" />
+              <Text style={{ flex: 1, color: '#94A3B8', fontSize: 13 }}>
+                Click to upload file...
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F1F5F9', paddingHorizontal: 12, height: 44, borderRadius: 8, borderWidth: 1, borderColor: '#CBD5E1', justifyContent: 'space-between' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                <Ionicons name="document-text-outline" size={18} color="#166534" />
+                <Text style={{ color: '#0F172A', fontSize: 13, fontWeight: '600' }} numberOfLines={1}>
+                  {typeof val === 'object' ? val.name : String(val)}
+                </Text>
+              </View>
+              {!isViewOnly && (
+                <TouchableOpacity onPress={() => handleInputChange(field.name, '')} style={{ padding: 4 }}>
+                  <Ionicons name="close-circle" size={18} color="#EF4444" />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </View>
+      );
+    }
+
+    return (
+      <TextInput
+        style={[styles.textInput, isViewOnly && styles.disabledInput]}
+        value={String(val)}
+        editable={!isViewOnly}
+        onChangeText={(text) => handleInputChange(field.name, text)}
+        placeholder={`Enter ${field.name}`}
+        placeholderTextColor={COLORS.textMuted}
+        keyboardType={fType === 'number' ? 'numeric' : 'default'}
+      />
+    );
+  };
+
+  const filteredRecords = records.filter(r => {
+    if (user && String(user.roleId) !== '1' && user.clientid && String(r.clientid) !== String(user.clientid)) {
+      return false;
+    }
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    const fdStr = JSON.stringify(r.field_data || {}).toLowerCase();
+    const clientStr = (r.client_name || '').toLowerCase();
+    const compStr = (r.company_name || '').toLowerCase();
+    return fdStr.includes(q) || clientStr.includes(q) || compStr.includes(q) || (r.status && r.status.toLowerCase().includes(q));
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / itemsPerPage));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedRecords = filteredRecords.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  // Default Fallback Fields Array matching vehicle details section structure
+  const defaultBillFields = [
+    { id: 'f_company', name: 'Company', type: 'Dropdown', isRequired: true },
+    { id: 'f_provider', name: 'Telecom Provider', type: 'Dropdown', isRequired: true },
+    { id: 'f_account', name: 'Mobile Number / Account', type: 'Dropdown', isRequired: true },
+    { id: 'f_billno', name: 'Bill Number', type: 'Textbox', isRequired: true },
+    { id: 'f_month', name: 'Bill Month', type: 'Date', isRequired: true },
+    { id: 'f_from', name: 'Bill Period From', type: 'Date', isRequired: true },
+    { id: 'f_to', name: 'Bill Period To', type: 'Date', isRequired: true },
+    { id: 'f_issue', name: 'Bill Issue Date', type: 'Date', isRequired: true },
+    { id: 'f_due', name: 'Due Date', type: 'Date', isRequired: true },
+    { id: 'f_plan', name: 'Monthly Plan Amount', type: 'Number', isRequired: true },
+    { id: 'f_rental', name: 'Service Rental', type: 'Number', isRequired: false },
+    { id: 'f_usage', name: 'Usage Charges', type: 'Number', isRequired: false },
+    { id: 'f_onetime', name: 'One-Time Charges', type: 'Number', isRequired: false },
+    { id: 'f_other', name: 'Other Charges', type: 'Number', isRequired: false },
+    { id: 'f_vat', name: 'VAT', type: 'Number', isRequired: false },
+    { id: 'f_total', name: 'Total Bill', type: 'Number', isRequired: true },
+    { id: 'f_excess', name: 'Excess Amount', type: 'Textbox', isRequired: false },
+    { id: 'f_status', name: 'Payment Status', type: 'Dropdown', isRequired: true },
+    { id: 'f_pdf', name: 'Invoice PDF', type: 'File Upload', isRequired: false },
+    { id: 'f_remarks', name: 'Remarks', type: 'Textbox', isRequired: false },
+  ];
+
+  return (
+    <ScrollView style={styles.tabContent} keyboardShouldPersistTaps="handled">
+      {/* HEADER SECTION */}
+      <View style={styles.headerContainer}>
+        <View style={styles.titleWrapper}>
+          <Text style={styles.tabHeadingTitle}>Telecom Bill Form</Text>
+          <Text style={styles.tabHeadingSubtitle}>Manage your telecom bill form records.</Text>
+        </View>
+
+        {canCreate && (
+          <TouchableOpacity style={styles.addBtn} onPress={openAddModal} activeOpacity={0.8}>
+            <Ionicons name="add" size={18} color={COLORS.white} />
+            <Text style={styles.addBtnText}>Add Bill</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* DATA TABLE (UNIFIED ENTERPRISE CARD MATCHING ASSET DETAILS 100%) */}
+      <View style={styles.tableCard}>
+
+        {/* INTEGRATED SEARCH TOOLBAR */}
+        <View style={styles.toolbarWrapper}>
+          <View style={styles.searchBarWrapper}>
+            <Ionicons name="search" size={16} color="#94A3B8" />
+            <TextInput
+              style={styles.searchBarInput}
+              placeholder="Search by ID or Client..."
+              value={search}
+              onChangeText={text => { setSearch(text); setPage(1); }}
+              placeholderTextColor="#94A3B8"
+            />
+          </View>
+        </View>
+
+        {loading ? (
+          <View style={styles.loaderView}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={{ color: COLORS.textSecondary, marginTop: 12, fontWeight: '500' }}>Loading telecom bills...</Text>
+          </View>
+        ) : paginatedRecords.length > 0 ? (
+          <>
+            {/* TABLE HEADER ROW */}
+            <View style={styles.tableHeaderRow}>
+              <Text style={[styles.thCell, { flex: 0.6 }]}>ID</Text>
+              <Text style={[styles.thCell, { flex: 1.8 }]}>CLIENT INFO</Text>
+              <Text style={[styles.thCell, { flex: 1.8 }]}>COMPANY</Text>
+              <Text style={[styles.thCell, { flex: 1.8 }]}>TELECOM PROVIDER</Text>
+              <Text style={[styles.thCell, { flex: 1.6 }]}>ACCOUNT / MOBILE</Text>
+              <Text style={[styles.thCell, { flex: 1.4 }]}>TOTAL BILL</Text>
+              <Text style={[styles.thCell, { flex: 1.0, textAlign: 'center' }]}>STATUS</Text>
+              <Text style={[styles.thCell, { flex: 1.2, textAlign: 'center' }]}>ACTION</Text>
+            </View>
+
+            {/* TABLE BODY ROWS */}
+            {paginatedRecords.map((r) => {
+              const fd = typeof r.field_data === 'string' ? JSON.parse(r.field_data || '{}') : (r.field_data || {});
+              const company = r.company_name || fd['Company'] || '—';
+              const provider = fd['Telecom Provider'] || fd['telecom_provider'] || '—';
+              const account = fd['Mobile Number / Account'] || fd['account'] || '—';
+              const totalBill = fd['Total Bill'] || fd['total_bill'] ? `AED ${fd['Total Bill'] || fd['total_bill']}` : '—';
+              const st = r.status || fd['Payment Status'] || 'Active';
+              const stLower = st.toLowerCase();
+              const isPaid = stLower === 'paid' || stLower === 'active';
+              const isPending = stLower === 'pending';
+
+              return (
+                <View key={r.tele_bill_id || r.id} style={styles.tableBodyRow}>
+                  <Text style={[styles.tdCell, { flex: 0.6, fontWeight: '700', color: '#334155' }]}>#{r.tele_bill_id || r.id}</Text>
+
+                  <View style={[styles.tdCell, { flex: 1.8 }]}>
+                    <Text style={{ fontWeight: '600', color: '#0F172A', fontSize: 13, marginBottom: 2 }}>
+                      {r.client_name || user?.client_name || 'Nirmal Raj'}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: '#94A3B8' }}>
+                      Country: {r.country_name || 'United Arab Emirates'}
+                    </Text>
+                  </View>
+
+                  <Text style={[styles.tdCell, { flex: 1.8, color: '#0F172A', fontWeight: '500' }]}>{company}</Text>
+                  <Text style={[styles.tdCell, { flex: 1.8, color: '#475569', fontWeight: '500' }]}>{provider}</Text>
+                  <Text style={[styles.tdCell, { flex: 1.6, color: '#475569', fontWeight: '500' }]}>{account}</Text>
+                  <Text style={[styles.tdCell, { flex: 1.4, fontWeight: '700', color: COLORS.primary }]}>{totalBill}</Text>
+
+                  <View style={[styles.tdCell, { flex: 1.0, alignItems: 'center' }]}>
+                    <View style={[styles.statusBadge, isPaid ? styles.statusActive : isPending ? styles.statusPending : styles.statusInactive]}>
+                      <Text style={[styles.statusText, isPaid ? styles.statusTextActive : isPending ? styles.statusTextPending : styles.statusTextInactive]}>
+                        {st.toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={[styles.tdCell, { flex: 1.2, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12 }]}>
+                    <TouchableOpacity style={{ padding: 4 }} onPress={() => openViewModal(r)} activeOpacity={0.7}>
+                      <Ionicons name="eye-outline" size={18} color="#0F172A" />
+                    </TouchableOpacity>
+
+                    {canEdit && (
+                      <TouchableOpacity style={{ padding: 4 }} onPress={() => openEditModal(r)} activeOpacity={0.7}>
+                        <Ionicons name="pencil" size={18} color="#166534" />
+                      </TouchableOpacity>
+                    )}
+
+                    {canDelete && (
+                      <TouchableOpacity style={{ padding: 4 }} onPress={() => openDeleteModal(r)} activeOpacity={0.7}>
+                        <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              );
+            })}
+
+            {/* INTEGRATED PAGINATION FOOTER */}
+            <View style={styles.paginationRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                <Text style={{ fontSize: 12, color: '#64748B' }}>
+                  Showing <Text style={{ fontWeight: '600', color: '#334155' }}>{(currentPage - 1) * itemsPerPage + 1}</Text> to <Text style={{ fontWeight: '600', color: '#334155' }}>{Math.min(currentPage * itemsPerPage, filteredRecords.length)}</Text> of <Text style={{ fontWeight: '600', color: '#334155' }}>{filteredRecords.length}</Text> entries
+                </Text>
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={{ fontSize: 12, color: '#64748B' }}>Rows per page:</Text>
+                  <select
+                    value={itemsPerPage}
+                    onChange={(e) => {
+                      setItemsPerPage(Number(e.target.value));
+                      setPage(1);
+                    }}
+                    style={styles.rowsSelectHtml}
+                  >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <TouchableOpacity
+                  style={[styles.pageNavBtn, currentPage <= 1 && styles.pageNavBtnDisabled]}
+                  disabled={currentPage <= 1}
+                  onPress={() => setPage(p => p - 1)}
+                >
+                  <Text style={[styles.pageNavText, currentPage <= 1 && styles.pageNavTextDisabled]}>{'< Prev'}</Text>
+                </TouchableOpacity>
+
+                <Text style={{ fontSize: 12, color: '#64748B' }}>
+                  Page <Text style={{ fontWeight: '600', color: '#334155' }}>{currentPage}</Text> of {totalPages}
+                </Text>
+
+                <TouchableOpacity
+                  style={[styles.pageNavBtn, currentPage >= totalPages && styles.pageNavBtnDisabled]}
+                  disabled={currentPage >= totalPages}
+                  onPress={() => setPage(p => p + 1)}
+                >
+                  <Text style={[styles.pageNavText, currentPage >= totalPages && styles.pageNavTextDisabled]}>{'Next >'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        ) : (
+          <View style={styles.emptyView}>
+            <Ionicons name="receipt-outline" size={48} color={COLORS.textMuted} />
+            <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.textPrimary, marginTop: 12 }}>No Telecom Bills Found</Text>
+            <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 4 }}>Add a new telecom bill record to start tracking bills.</Text>
+          </View>
+        )}
+      </View>
+
+      {/* 2-STEP MODAL WIZARD */}
+      <Modal visible={isModalOpen} transparent animationType="fade">
+        <View style={[styles.modalOverlay, isLargeScreen && { marginLeft: isSidebarCollapsed ? 78 : 260 }]}>
+          <View style={styles.modalContent}>
+
+            {/* MODAL HEADER WITH GREEN DOCUMENT ICON */}
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Ionicons name="document-text" size={24} color={COLORS.primary} />
+                <Text style={styles.modalTitle}>
+                  {isViewOnly ? 'Telecom Bill Details' : editingRecord ? 'Edit Telecom Bill' : 'Add Telecom Bill'}
+                </Text>
+              </View>
+
+              {!isViewOnly && (
+                <label style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', marginLeft: 'auto', marginRight: 16 }}>
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    style={{ display: 'none' }}
+                    onChange={handleAutoFillFromPdf}
+                    disabled={parsingPdf}
+                  />
+                  <View style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                    backgroundColor: '#004D34',
+                    paddingHorizontal: 14,
+                    paddingVertical: 7,
+                    borderRadius: 8,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.1,
+                    shadowRadius: 4,
+                    elevation: 3,
+                  }}>
+                    {parsingPdf ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Ionicons name="sparkles" size={15} color="#F9C62A" />
+                    )}
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF' }}>
+                      {parsingPdf ? 'Extracting PDF...' : 'Auto-Fill Form from PDF'}
+                    </Text>
+                  </View>
+                </label>
+              )}
+
+              <TouchableOpacity onPress={closeModal} style={styles.closeButton}>
+                <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* WIZARD STEP HEADER BAR */}
+            {!isViewOnly && (
+              <View style={styles.wizardHeaderBar}>
+                {[
+                  { id: 1, label: 'Configuration', icon: 'settings-outline' },
+                  { id: 2, label: 'Form Data', icon: 'document-text-outline' }
+                ].map((step, index, arr) => {
+                  const isActive = wizardStep === step.id;
+                  const isPast = wizardStep > step.id;
+
+                  return (
+                    <React.Fragment key={step.id}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <View style={[styles.stepCircle, (isActive || isPast) ? styles.stepCircleActive : styles.stepCircleInactive]}>
+                          <Ionicons name={step.icon} size={14} color={(isActive || isPast) ? COLORS.white : COLORS.textSecondary} />
+                        </View>
+                        <Text style={[styles.stepLabel, (isActive || isPast) ? styles.stepLabelActive : styles.stepLabelInactive]}>
+                          {step.label}
+                        </Text>
+                      </View>
+                      {index < arr.length - 1 && (
+                        <View style={[styles.stepDivider, wizardStep > step.id ? styles.stepDividerActive : styles.stepDividerInactive]} />
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* WIZARD STEP 1: CONFIGURATION */}
+            {wizardStep === 1 && !isViewOnly ? (
+              <>
+                <ScrollView style={{ flex: 1, backgroundColor: '#FFFFFF' }} contentContainerStyle={{ padding: 24 }}>
+                  {/* CLIENT * */}
+                  <View style={[styles.configFieldGroup, { zIndex: 30 }]}>
+                    <Text style={styles.configLabel}>CLIENT *</Text>
+                    <SearchableDropdown
+                      data={clientsList}
+                      value={selectedClient}
+                      onChange={handleClientChange}
+                      placeholder="-- Select Client --"
+                      searchPlaceholder="Search Client..."
+                      displayKey="client_name"
+                      valueKey="id"
+                    />
+                  </View>
+
+                  {/* COMPANY * */}
+                  <View style={[styles.configFieldGroup, { zIndex: 20 }]}>
+                    <Text style={styles.configLabel}>COMPANY *</Text>
+                    <SearchableDropdown
+                      data={selectedClient
+                        ? companiesList.filter(c => !c.clientid || String(c.clientid) === String(selectedClient))
+                        : companiesList
+                      }
+                      value={selectedCompany}
+                      onChange={(val) => setSelectedCompany(val)}
+                      placeholder={selectedClient ? "-- Select Company --" : "-- Select Client First --"}
+                      searchPlaceholder="Search Company..."
+                      displayKey="company_name"
+                      valueKey="company_name"
+                      disabled={!selectedClient}
+                    />
+                  </View>
+                </ScrollView>
+
+                {/* STEP 1 MODAL FOOTER */}
+                <View style={styles.modalFooter}>
+                  <TouchableOpacity style={styles.cancelBtn} onPress={closeModal}>
+                    <Text style={styles.cancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.saveBtn,
+                      { backgroundColor: (selectedClient && selectedCompany) ? '#004D34' : '#94A3B8' },
+                      { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 6 }
+                    ]}
+                    disabled={!selectedClient || !selectedCompany}
+                    onPress={handleNextStep}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.saveBtnText}>Next</Text>
+                    <Ionicons name="arrow-forward" size={16} color={COLORS.white} />
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              /* WIZARD STEP 2: FORM DATA */
+              <>
+                <ScrollView style={{ flex: 1, backgroundColor: '#F8FAFC' }} contentContainerStyle={{ padding: 24, paddingBottom: 24 }}>
+                  {fieldsLayout.length > 0 ? (
+                    fieldsLayout.map((sec, sIdx) => (
+                      <View key={sec.id || sIdx} style={styles.sectionCard}>
+                        <View style={styles.sectionHeader}>
+                          <Text style={styles.sectionTitle}>{(sec.name || 'TELECOM BILL FORM DETAILS').toUpperCase()}</Text>
+                        </View>
+                        <View style={styles.sectionBody}>
+                          {(sec.fields || []).map((f, fIdx) => (
+                            <View key={f.id || fIdx} style={[styles.fieldContainer, { width: isLargeScreen ? '48%' : '100%', zIndex: 100 - fIdx, position: 'relative' }]}>
+                              <Text style={styles.fieldLabel}>
+                                {f.name} {f.isRequired && !isViewOnly && <Text style={{ color: COLORS.error }}>*</Text>}
+                              </Text>
+                              {renderFieldInput(f)}
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    ))
+                  ) : (
+                    /* VEHICLE DETAILS SECTION CARD FALLBACK */
+                    <View style={styles.sectionCard}>
+                      <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>TELECOM BILL FORM DETAILS</Text>
+
+                        {!isViewOnly && (
+                          <label style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
+                            <input
+                              type="file"
+                              accept="application/pdf"
+                              style={{ display: 'none' }}
+                              onChange={handleAutoFillFromPdf}
+                              disabled={parsingPdf}
+                            />
+                            <View style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 6,
+                              backgroundColor: '#004D34',
+                              paddingHorizontal: 14,
+                              paddingVertical: 7,
+                              borderRadius: 8,
+                              shadowColor: '#000',
+                              shadowOffset: { width: 0, height: 2 },
+                              shadowOpacity: 0.1,
+                              shadowRadius: 4,
+                              elevation: 3,
+                            }}>
+                              {parsingPdf ? (
+                                <ActivityIndicator size="small" color="#FFFFFF" />
+                              ) : (
+                                <Ionicons name="sparkles" size={15} color="#F9C62A" />
+                              )}
+                              <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF' }}>
+                                {parsingPdf ? 'Extracting PDF...' : 'Auto-Fill Form from PDF'}
+                              </Text>
+                            </View>
+                          </label>
+                        )}
+                      </View>
+                      <View style={styles.sectionBody}>
+                        {defaultBillFields.map((f, fIdx) => (
+                          <View key={f.id} style={[styles.fieldContainer, { width: isLargeScreen ? '48%' : '100%', zIndex: 100 - fIdx, position: 'relative' }]}>
+                            <Text style={styles.fieldLabel}>
+                              {f.name} {f.isRequired && !isViewOnly && <Text style={{ color: COLORS.error }}>*</Text>}
+                            </Text>
+                            {renderFieldInput(f)}
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+                </ScrollView>
+
+                {/* STEP 2 MODAL FOOTER */}
+                <View style={styles.modalFooter}>
+                  {!isViewOnly && (
+                    <TouchableOpacity style={styles.backBtn} onPress={() => setWizardStep(1)}>
+                      <Ionicons name="arrow-back" size={16} color={COLORS.textSecondary} style={{ marginRight: 4 }} />
+                      <Text style={styles.backBtnText}>Back</Text>
+                    </TouchableOpacity>
+                  )}
+                  <View style={{ flexDirection: 'row', gap: 12, marginLeft: 'auto' }}>
+                    <TouchableOpacity style={styles.cancelBtn} onPress={closeModal}>
+                      <Text style={styles.cancelBtnText}>{isViewOnly ? 'Close' : 'Cancel'}</Text>
+                    </TouchableOpacity>
+                    {!isViewOnly && (
+                      <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving} activeOpacity={0.8}>
+                        {saving ? (
+                          <ActivityIndicator size="small" color={COLORS.white} />
+                        ) : (
+                          <Text style={styles.saveBtnText}>{editingRecord ? 'Update Record' : 'Complete & Save'}</Text>
+                        )}
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              </>
+            )}
+
+          </View>
+        </View>
+      </Modal>
+
+      {/* DELETE CONFIRMATION MODAL */}
+      <Modal visible={isDeleteModalOpen} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxWidth: 440, minHeight: 0, padding: 24 }]}>
+            <View style={{ alignItems: 'center', marginBottom: 16 }}>
+              <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#FEE2E2', justifyContent: 'center', alignItems: 'center' }}>
+                <Ionicons name="trash-outline" size={24} color={COLORS.error} />
+              </View>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textPrimary, marginTop: 12 }}>Delete Telecom Bill Record?</Text>
+              <Text style={{ fontSize: 13, color: COLORS.textSecondary, textAlign: 'center', marginTop: 6 }}>
+                Type <Text style={{ fontWeight: '800', color: COLORS.error }}>YES</Text> to confirm deletion of this telecom bill record.
+              </Text>
+            </View>
+
+            <TextInput
+              style={[styles.textInput, { textAlign: 'center', fontWeight: '700', letterSpacing: 1 }]}
+              placeholder="Type YES"
+              value={deleteConfirmText}
+              onChangeText={setDeleteConfirmText}
+              placeholderTextColor={COLORS.textMuted}
+            />
+
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 20 }}>
+              <TouchableOpacity style={[styles.cancelBtn, { flex: 1 }]} onPress={() => setIsDeleteModalOpen(false)}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.saveBtn, { flex: 1, backgroundColor: COLORS.error }]} onPress={handleDelete} disabled={deleting}>
+                {deleting ? (
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                ) : (
+                  <Text style={styles.saveBtnText}>Delete</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  tabContent: { flex: 1, padding: 24, backgroundColor: '#F8FAFC' },
+  headerContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  titleWrapper: { justifyContent: 'center' },
+  tabHeadingTitle: { fontSize: 24, fontWeight: '800', color: '#0F172A', letterSpacing: -0.5 },
+  tabHeadingSubtitle: { fontSize: 13, color: '#64748B', marginTop: 2 },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#004D34', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 24 },
+  addBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 13 },
+  
+  /* UNIFIED ENTERPRISE TABLE CARD MATCHING ASSET DETAILS */
+  tableCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+    overflow: 'hidden',
+  },
+  toolbarWrapper: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  searchBarWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    width: 300,
+  },
+  searchBarInput: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    fontSize: 13,
+    color: '#334155',
+    outlineStyle: 'none',
+  },
+  tableHeaderRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    backgroundColor: '#FFFFFF',
+  },
+  thCell: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  tableBodyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
+  },
+  tdCell: {
+    fontSize: 13,
+    color: COLORS.textPrimary,
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusActive: { backgroundColor: '#F0FDF4' },
+  statusPending: { backgroundColor: '#FEF3C7' },
+  statusInactive: { backgroundColor: '#FEE2E2' },
+  statusText: { fontSize: 11, fontWeight: '700' },
+  statusTextActive: { color: '#166534' },
+  statusTextPending: { color: '#B45309' },
+  statusTextInactive: { color: '#991B1B' },
+  loaderView: { padding: 40, alignItems: 'center' },
+  emptyView: { padding: 50, alignItems: 'center', backgroundColor: COLORS.cardBg },
+  paginationRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
+  pageNavBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  pageNavBtnDisabled: {
+    backgroundColor: '#F1F5F9',
+  },
+  pageNavText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  pageNavTextDisabled: {
+    color: '#94A3B8',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 1050,
+    maxHeight: '90%',
+    minHeight: '61%',
+    backgroundColor: COLORS.cardBg,
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 30,
+    elevation: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    backgroundColor: '#FFFFFF',
+  },
+  modalTitle: { fontSize: 20, fontWeight: '700', color: '#0F172A' },
+  closeButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
+  wizardHeaderBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 16, backgroundColor: '#F8FAFC', borderBottomWidth: 1, borderBottomColor: '#E2E8F0' },
+  stepCircle: { width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  stepCircleActive: { backgroundColor: '#0F172A' },
+  stepCircleInactive: { backgroundColor: '#E2E8F0' },
+  stepLabel: { fontSize: 13, fontWeight: '600' },
+  stepLabelActive: { color: '#0F172A' },
+  stepLabelInactive: { color: COLORS.textSecondary },
+  stepDivider: { flex: 1, height: 2, marginHorizontal: 12 },
+  stepDividerActive: { backgroundColor: '#0F172A' },
+  stepDividerInactive: { backgroundColor: '#E2E8F0' },
+  configFieldGroup: { marginBottom: 24 },
+  configLabel: { fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8, textTransform: 'uppercase' },
+  nextBtn: { width: 120, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+  nextBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 14 },
+  sectionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+    overflow: 'visible',
+    zIndex: 1,
+  },
+  sectionHeader: {
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#004D34',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  sectionBody: {
+    padding: 20,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  fieldContainer: {
+    width: '48%',
+    marginBottom: 20,
+  },
+  fieldLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E293B',
+    marginBottom: 8,
+  },
+  textInput: {
+    height: 44,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    fontSize: 14,
+    color: COLORS.textPrimary,
+    backgroundColor: '#F8FAFC',
+    outlineStyle: 'none',
+  },
+  disabledInput: { backgroundColor: '#F1F5F9', color: '#64748B' },
+  modalFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF'
+  },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#E2E8F0'
+  },
+  backBtnText: { color: '#0F172A', fontWeight: '600', fontSize: 14 },
+  cancelBtn: { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: '#CBD5E1', backgroundColor: '#FFFFFF' },
+  cancelBtnText: { color: '#64748B', fontWeight: '600', fontSize: 14 },
+  saveBtn: { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, backgroundColor: '#004D34' },
+  saveBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 14 },
+});
+
+export default TelecomBillTab;

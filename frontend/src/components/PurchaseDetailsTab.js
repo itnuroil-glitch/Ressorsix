@@ -25,6 +25,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
   const isEmployee = false;
   const canCreate = !user || String(user.roleId) === '1' || (permissions && (permissions.can_create || permissions.full_control));
   const canEdit = !user || String(user.roleId) === '1' || (permissions && (permissions.can_edit || permissions.full_control));
+  const canDelete = !user || String(user.roleId) === '1' || (permissions && (permissions.can_delete || permissions.full_control));
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fieldsLayout, setFieldsLayout] = useState(null);
@@ -34,11 +35,12 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isViewOnly, setIsViewOnly] = useState(false);
   const [PurchaseDetailsRecords, setPurchaseDetailsRecords] = useState([]);
+  const [allCustomFields, setAllCustomFields] = useState([]);
 
   // Table state
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 5;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Edit state
   const [editingRecord, setEditingRecord] = useState(null);
@@ -68,6 +70,37 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
   const [uomList, setUomList] = useState([]);
   const [assetsList, setAssetsList] = useState([]);
   const [vatList, setVatList] = useState([]);
+  const fieldMap = React.useMemo(() => {
+    const map = {};
+    if (Array.isArray(allCustomFields)) {
+      allCustomFields.forEach(cf => {
+        let layout = cf.field_data || cf.fields_layout;
+        if (typeof layout === 'string') {
+          try { layout = JSON.parse(layout); } catch (e) { layout = null; }
+        }
+        if (layout && layout.sections) {
+          layout.sections.forEach(sec => {
+            if (sec.fields) {
+              sec.fields.forEach(f => {
+                if (f.id && f.name) map[String(f.id)] = f.name;
+              });
+            }
+          });
+        } else if (Array.isArray(layout)) {
+          layout.forEach(secOrField => {
+            if (secOrField.fields && Array.isArray(secOrField.fields)) {
+              secOrField.fields.forEach(f => {
+                if (f.id && f.name) map[String(f.id)] = f.name;
+              });
+            } else if (secOrField.id && secOrField.name) {
+              map[String(secOrField.id)] = secOrField.name;
+            }
+          });
+        }
+      });
+    }
+    return map;
+  }, [allCustomFields]);
 
   useEffect(() => {
     fetchInitialData();
@@ -360,22 +393,25 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
 
   const fetchInitialData = async () => {
     try {
-      const [clientsRes, countriesRes, modulesRes, recordsRes] = await Promise.all([
+      const [clientsRes, countriesRes, modulesRes, recordsRes, customFieldsRes] = await Promise.all([
         fetch(`${API_URL}/api/clients`),
         fetch(`${API_URL}/api/countries`),
         fetch(`${API_URL}/api/modules`),
-        fetch(`${API_URL}/api/purchases${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`)
+        fetch(`${API_URL}/api/purchases${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`),
+        fetch(`${API_URL}/api/custom-fields`)
       ]);
-      const [clientsData, countriesData, modulesData, recordsData] = await Promise.all([
+      const [clientsData, countriesData, modulesData, recordsData, customFieldsData] = await Promise.all([
         clientsRes.json(),
         countriesRes.json(),
         modulesRes.json(),
-        recordsRes.ok ? recordsRes.json() : []
+        recordsRes.ok ? recordsRes.json() : [],
+        customFieldsRes.ok ? customFieldsRes.json() : []
       ]);
       setClients(clientsData || []);
       setCountries(countriesData || []);
       setModules(modulesData || []);
       setPurchaseDetailsRecords(Array.isArray(recordsData) ? recordsData : []);
+      setAllCustomFields(Array.isArray(customFieldsData) ? customFieldsData : []);
 
       // Try to set defaults if available
       const clientVal = user?.client_id || user?.clientid;
@@ -1348,14 +1384,16 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
               </View>
 
               {/* Table Header */}
-              <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20 }}>
+              <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20, backgroundColor: '#F8FAFC' }}>
                 <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>ID</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Company</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Module Info</Text>
-                <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Supplier Name</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Submitted By</Text>
-                <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
+                {(!user || String(user.roleId) === '1') && (
+                  <Text style={{ flex: 1.3, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
+                )}
+                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Supplier Name</Text>
+                <Text style={{ flex: 1.3, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Purchase Date</Text>
+                <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Invoice Number</Text>
+                <Text style={{ flex: 1.3, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Company</Text>
+                <Text style={{ flex: 0.9, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
                 <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>ACTION</Text>
               </View>
 
@@ -1366,12 +1404,51 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
                       if (String(r.clientid) !== String(user.clientid)) return false;
                     }
                     if (!searchQuery) return true;
+                    const term = searchQuery.toLowerCase();
+
+                    let pData = {};
+                    if (r.field_data) {
+                      try { pData = typeof r.field_data === 'string' ? JSON.parse(r.field_data) : r.field_data; } catch (e) { }
+                    }
                     const cObj = clients.find(c => String(c.id) === String(r.clientid));
                     const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
-                    return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
+                    const compObj = companies.find(c => String(c.id) === String(r.company_id || r.companyid));
+                    const compName = r.company_name || (compObj ? (compObj.company_name || compObj.name) : '');
+
+                    let sName = 'N/A';
+                    let pDate = r.created_at ? new Date(r.created_at).toLocaleDateString() : 'N/A';
+                    let invNo = 'N/A';
+
+                    if (pData && typeof pData === 'object') {
+                      for (const [key, value] of Object.entries(pData)) {
+                        if (!value) continue;
+                        const valStr = typeof value === 'object' ? (value.name || JSON.stringify(value)) : String(value);
+                        const fName = (fieldMap[String(key)] || key).toLowerCase().trim();
+
+                        if (fName.includes('supplier name') || fName === 'supplier_name' || (sName === 'N/A' && fName.includes('supplier') && !fName.includes('type'))) {
+                          sName = valStr;
+                        }
+                        if (fName.includes('purchase date') || fName.includes('invoice date') || fName.includes('order date') || (fName.includes('date') && !fName.includes('expire') && !fName.includes('due'))) {
+                          pDate = valStr;
+                        }
+                        if (fName.includes('invoice') || fName.includes('bill') || fName.includes('inv_no') || fName.includes('ref') || fName.includes('receipt')) {
+                          invNo = valStr;
+                        }
+                      }
+                      if (sName === 'N/A' && Object.values(pData)[0]) sName = String(Object.values(pData)[0]);
+                    }
+
+                    return (
+                      String(r.id).includes(term) ||
+                      cName.toLowerCase().includes(term) ||
+                      compName.toLowerCase().includes(term) ||
+                      sName.toLowerCase().includes(term) ||
+                      pDate.toLowerCase().includes(term) ||
+                      invNo.toLowerCase().includes(term)
+                    );
                   });
-                  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-                  const paginated = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+                  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+                  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
                   if (filtered.length === 0) {
                     return (
@@ -1394,68 +1471,78 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
                         const clientName = clientObj ? (clientObj.client_name || clientObj.name) : `Client ${record.clientid}`;
                         const countryObj = countries.find(c => String(c.id) === String(record.country_id));
                         const countryName = countryObj ? countryObj.name : `Country ${record.country_id}`;
-                        const moduleObj = modules.find(m => String(m.id) === String(record.moduleid));
-                        const moduleName = moduleObj ? moduleObj.module_name : `Module ${record.moduleid}`;
 
-                        const rawFirstValue = Object.values(parsedData)[0];
-                        let firstValue = '-';
-                        if (rawFirstValue && typeof rawFirstValue === 'object') {
-                          if (Array.isArray(rawFirstValue)) {
-                            firstValue = rawFirstValue.map(f => f.name || 'File').join(', ');
-                          } else {
-                            firstValue = rawFirstValue.name || 'File';
+                        // Supplier Name, Purchase Date & Invoice Number
+                        let supplierNameDisplay = 'N/A';
+                        let purchaseDateDisplay = record.created_at ? new Date(record.created_at).toLocaleDateString() : 'N/A';
+                        let invoiceNumberDisplay = 'N/A';
+
+                        if (parsedData && typeof parsedData === 'object') {
+                          for (const [key, value] of Object.entries(parsedData)) {
+                            if (value === undefined || value === null || value === '') continue;
+                            const valStr = typeof value === 'object' ? (value.name || JSON.stringify(value)) : String(value);
+
+                            let fieldName = (fieldMap[String(key)] || key).toLowerCase().trim();
+                            if (fieldsLayout && fieldsLayout.sections) {
+                              for (const sec of fieldsLayout.sections) {
+                                const found = (sec.fields || []).find(f => String(f.id) === String(key));
+                                if (found) { fieldName = found.name.toLowerCase().trim(); break; }
+                              }
+                            }
+
+                            if (fieldName.includes('supplier name') || fieldName === 'supplier_name' || (supplierNameDisplay === 'N/A' && fieldName.includes('supplier') && !fieldName.includes('type'))) {
+                              supplierNameDisplay = valStr;
+                            }
+                            
+                            if (fieldName.includes('purchase date') || fieldName.includes('invoice date') || fieldName.includes('order date') || (fieldName.includes('date') && !fieldName.includes('expire') && !fieldName.includes('due'))) {
+                              purchaseDateDisplay = valStr;
+                            }
+
+                            if (fieldName.includes('invoice') || fieldName.includes('bill') || fieldName.includes('inv_no') || fieldName.includes('ref') || fieldName.includes('receipt')) {
+                              invoiceNumberDisplay = valStr;
+                            }
                           }
-                        } else if (rawFirstValue !== undefined && rawFirstValue !== null) {
-                          firstValue = String(rawFirstValue);
+
+                          if (supplierNameDisplay === 'N/A') {
+                            const entries = Object.entries(parsedData);
+                            if (entries.length > 0 && typeof entries[0][1] === 'string' && !entries[0][1].match(/^\d{4}-\d{2}-\d{2}/)) {
+                              supplierNameDisplay = entries[0][1];
+                            }
+                          }
                         }
-                        const firstKey = Object.keys(parsedData)[0] ? Object.keys(parsedData)[0].replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()) : 'No Data';
+
+                        // Company
+                        const companyObj = companies.find(c => String(c.id) === String(record.company_id || record.companyid));
+                        const companyNameDisplay = record.company_name || (companyObj ? (companyObj.company_name || companyObj.name) : null) || 'N/A';
 
                         return (
                           <View key={record.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
                             <Text style={{ flex: 0.5, fontSize: 12, color: '#334155', fontWeight: '700' }}>#{record.id}</Text>
 
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{clientName}</Text>
-                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Country: {countryName}</Text>
-                            </View>
+                            {(!user || String(user.roleId) === '1') && (
+                              <View style={{ flex: 1.3, paddingRight: 10 }}>
+                                <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 2 }} numberOfLines={1}>{clientName}</Text>
+                                <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Country: {countryName}</Text>
+                              </View>
+                            )}
 
                             <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '500' }} numberOfLines={1}>{record.company_name || 'N/A'}</Text>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600' }} numberOfLines={1}>{supplierNameDisplay}</Text>
                             </View>
 
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{moduleName}</Text>
-                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Created: {new Date(record.created_at).toLocaleDateString()}</Text>
-                            </View>
-                            <View style={{ flex: 2, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500', marginBottom: 4 }} numberOfLines={1}>{String(firstValue)}</Text>
-                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Field: {firstKey}</Text>
-                              {(() => {
-                                let parsedLineItems = [];
-                                if (record.line_items) {
-                                  try {
-                                    parsedLineItems = typeof record.line_items === 'string' ? JSON.parse(record.line_items) : record.line_items;
-                                  } catch (e) { }
-                                }
-                                const serialsList = (parsedLineItems || [])
-                                  .flatMap(item => item.serial_numbers || (item.serial_number ? [item.serial_number] : []))
-                                  .filter(s => s && String(s).trim() !== '');
-
-                                if (serialsList.length === 0) return null;
-                                return (
-                                  <Text style={{ fontSize: 11, color: COLORS.primary, fontWeight: '600', marginTop: 2 }} numberOfLines={1}>
-                                    S/Ns: {serialsList.join(', ')}
-                                  </Text>
-                                );
-                              })()}
+                            <View style={{ flex: 1.3, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500' }} numberOfLines={1}>{purchaseDateDisplay}</Text>
                             </View>
 
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{record.role_name || `Role: ${record.roleid || 'N/A'}`}</Text>
-                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>{record.employee_name || 'N/A'}</Text>
+                            <View style={{ flex: 1.4, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500' }} numberOfLines={1}>{invoiceNumberDisplay}</Text>
                             </View>
 
-                            <View style={{ flex: 1, alignItems: 'flex-start' }}>
+                            <View style={{ flex: 1.3, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '500' }} numberOfLines={1}>{companyNameDisplay}</Text>
+                            </View>
+
+                            <View style={{ flex: 0.9, alignItems: 'flex-start' }}>
                               <View style={{ backgroundColor: '#F0FDF4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
                                 <Text style={{ fontSize: 11, fontWeight: '700', color: '#166534' }}>Active</Text>
                               </View>
@@ -1497,19 +1584,50 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
                   const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
                   return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
                 });
-                const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-                const startEntry = filtered.length === 0 ? 0 : ((currentPage - 1) * ITEMS_PER_PAGE) + 1;
-                const endEntry = Math.min(currentPage * ITEMS_PER_PAGE, filtered.length);
+                const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+                const startEntry = filtered.length === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1;
+                const endEntry = Math.min(currentPage * itemsPerPage, filtered.length);
 
                 return (
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC' }}>
-                    <Text style={{ fontSize: 12, color: '#64748B' }}>
-                      Showing <Text style={{ fontWeight: '600', color: '#334155' }}>{startEntry}</Text> to <Text style={{ fontWeight: '600', color: '#334155' }}>{endEntry}</Text> of <Text style={{ fontWeight: '600', color: '#334155' }}>{filtered.length}</Text> entries
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                      <Text style={{ fontSize: 12, color: '#64748B' }}>
+                        Showing <Text style={{ fontWeight: '600', color: '#334155' }}>{startEntry}</Text> to <Text style={{ fontWeight: '600', color: '#334155' }}>{endEntry}</Text> of <Text style={{ fontWeight: '600', color: '#334155' }}>{filtered.length}</Text> entries
+                      </Text>
+
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={{ fontSize: 12, color: '#64748B' }}>Rows per page:</Text>
+                        <select
+                          value={itemsPerPage}
+                          onChange={(e) => {
+                            setItemsPerPage(Number(e.target.value));
+                            setCurrentPage(1);
+                          }}
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: 6,
+                            borderColor: '#CBD5E1',
+                            borderWidth: 1,
+                            borderStyle: 'solid',
+                            fontSize: 12,
+                            color: '#1E293B',
+                            backgroundColor: '#FFFFFF',
+                            outline: 'none',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <option value={10}>10</option>
+                          <option value={20}>20</option>
+                          <option value={25}>25</option>
+                          <option value={50}>50</option>
+                          <option value={100}>100</option>
+                        </select>
+                      </View>
+                    </View>
 
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                       <TouchableOpacity
-                        style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: currentPage > 1 ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
+                        style={{ paddingHorizontal: 14, paddingVertical: 2, backgroundColor: currentPage > 1 ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
                         disabled={currentPage === 1}
                         onPress={() => setCurrentPage(p => p - 1)}
                       >
@@ -1521,7 +1639,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
                       </Text>
 
                       <TouchableOpacity
-                        style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: currentPage < totalPages ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
+                        style={{ paddingHorizontal: 14, paddingVertical: 2, backgroundColor: currentPage < totalPages ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
                         disabled={currentPage === totalPages}
                         onPress={() => setCurrentPage(p => p + 1)}
                       >

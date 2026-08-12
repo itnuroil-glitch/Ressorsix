@@ -40,7 +40,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
   // Table state
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 5;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Edit state
   const [editingRecord, setEditingRecord] = useState(null);
@@ -241,6 +241,8 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
             return data.map(item => {
               if (typeof item === 'string') return item;
               if (item && typeof item === 'object') {
+                if (item.label) return String(item.label);
+                if (item.value) return String(item.value);
                 const nameKey = Object.keys(item).find(key =>
                   key.toLowerCase().includes('name') ||
                   key.toLowerCase().includes('label') ||
@@ -271,6 +273,16 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                 ? f.optionsArr
                 : (f.options || '').split(',').map(o => o.trim()).filter(Boolean);
               updatedField.allowedOptions = (dbOptions && dbOptions.length > 0) ? dbOptions : fallback;
+            }
+
+            // Auto-fetch Account Numbers for any "Acc No" dropdown when options are empty
+            const fieldNameLower = (f.name || f.label || '').toLowerCase();
+            if ((!updatedField.allowedOptions || updatedField.allowedOptions.length === 0) &&
+                (fieldNameLower.includes('acc no') || fieldNameLower.includes('account no') || fieldNameLower.includes('acc_no'))) {
+              const accOptions = await fetchDynamicOptions('/api/vehicle-tolls/account-numbers');
+              if (accOptions && accOptions.length > 0) {
+                updatedField.allowedOptions = accOptions;
+              }
             }
           }
           if (f.subsections && f.subsections.length > 0) {
@@ -525,8 +537,8 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
     return str.includes(q);
   });
 
-  const totalPages = Math.ceil(filteredRecords.length / ITEMS_PER_PAGE) || 1;
-  const paginatedRecords = filteredRecords.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+  const totalPages = Math.ceil(filteredRecords.length / itemsPerPage) || 1;
+  const paginatedRecords = filteredRecords.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   return (
     <View style={styles.container}>
@@ -593,8 +605,8 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                   const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
                   return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
                 });
-                const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-                const paginated = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+                const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+                const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
                 if (filtered.length === 0) {
                   return (
@@ -699,19 +711,50 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                 const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
                 return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
               });
-              const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-              const startEntry = filtered.length === 0 ? 0 : ((currentPage - 1) * ITEMS_PER_PAGE) + 1;
-              const endEntry = Math.min(currentPage * ITEMS_PER_PAGE, filtered.length);
+              const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+              const startEntry = filtered.length === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1;
+              const endEntry = Math.min(currentPage * itemsPerPage, filtered.length);
 
               return (
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC' }}>
-                  <Text style={{ fontSize: 12, color: '#64748B' }}>
-                    Showing <Text style={{ fontWeight: '600', color: '#334155' }}>{startEntry}</Text> to <Text style={{ fontWeight: '600', color: '#334155' }}>{endEntry}</Text> of <Text style={{ fontWeight: '600', color: '#334155' }}>{filtered.length}</Text> entries
-                  </Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingBottom: 24, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                    <Text style={{ fontSize: 12, color: '#64748B' }}>
+                      Showing <Text style={{ fontWeight: '600', color: '#334155' }}>{startEntry}</Text> to <Text style={{ fontWeight: '600', color: '#334155' }}>{endEntry}</Text> of <Text style={{ fontWeight: '600', color: '#334155' }}>{filtered.length}</Text> entries
+                    </Text>
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ fontSize: 12, color: '#64748B' }}>Rows per page:</Text>
+                      <select
+                        value={itemsPerPage}
+                        onChange={(e) => {
+                          setItemsPerPage(Number(e.target.value));
+                          setCurrentPage(1);
+                        }}
+                        style={{
+                          padding: '4px 8px',
+                          borderRadius: 6,
+                          borderColor: '#CBD5E1',
+                          borderWidth: 1,
+                          borderStyle: 'solid',
+                          fontSize: 12,
+                          color: '#1E293B',
+                          backgroundColor: '#FFFFFF',
+                          outline: 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value={10}>10</option>
+                        <option value={20}>20</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                      </select>
+                    </View>
+                  </View>
 
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                     <TouchableOpacity
-                      style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: currentPage > 1 ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
+                      style={{ paddingHorizontal: 14, paddingVertical: 2, backgroundColor: currentPage > 1 ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
                       disabled={currentPage === 1}
                       onPress={() => setCurrentPage(p => p - 1)}
                     >
@@ -723,7 +766,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                     </Text>
 
                     <TouchableOpacity
-                      style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: currentPage < totalPages ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
+                      style={{ paddingHorizontal: 14, paddingVertical: 2, backgroundColor: currentPage < totalPages ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
                       disabled={currentPage === totalPages}
                       onPress={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                     >
@@ -879,14 +922,46 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                       </View>
 
                       <View style={styles.sectionBody}>
-                        {section.fields.map((field, fieldIndex) => (
-                          <View key={field.id} style={[styles.fieldContainer, { zIndex: section.fields.length - fieldIndex }]}>
-                            <Text style={styles.fieldLabel}>
-                              {field.name} {field.isRequired && <Text style={{ color: COLORS.error }}>*</Text>}
-                            </Text>
-                            {renderField(field)}
-                          </View>
-                        ))}
+                        {section.fields.map((field, fieldIndex) => {
+                          const visibleSubsections = (field.subsections || []).filter(sub => {
+                            if (!sub.triggerValue || sub.triggerValue.trim() === '') {
+                              return true;
+                            }
+                            const parentValue = formData[field.id];
+                            return parentValue && String(parentValue).trim().toLowerCase() === String(sub.triggerValue).trim().toLowerCase();
+                          });
+                          const hasSubsections = visibleSubsections.length > 0;
+
+                          return (
+                            <View key={field.id} style={[hasSubsections ? styles.fieldContainerFull : styles.fieldContainer, { zIndex: section.fields.length - fieldIndex }]}>
+                              <Text style={styles.fieldLabel}>
+                                {field.name} {field.isRequired && <Text style={{ color: COLORS.error }}>*</Text>}
+                              </Text>
+                              {renderField(field)}
+
+                              {/* Render subsections if any are visible */}
+                              {hasSubsections && (
+                                <View style={styles.subsectionsContainer}>
+                                  {visibleSubsections.map((sub, subIndex) => (
+                                    <View key={sub.id} style={[styles.subsectionCard, { zIndex: visibleSubsections.length - subIndex, position: 'relative' }]}>
+                                      <Text style={styles.subsectionTitle}>{sub.name}</Text>
+                                      <View style={styles.subsectionBody}>
+                                        {sub.fields.map((sf, sfIndex) => (
+                                          <View key={sf.id} style={[styles.fieldContainer, { zIndex: sub.fields.length - sfIndex }]}>
+                                            <Text style={styles.fieldLabel}>
+                                              {sf.name} {sf.isRequired && <Text style={{ color: COLORS.error }}>*</Text>}
+                                            </Text>
+                                            {renderField(sf)}
+                                          </View>
+                                        ))}
+                                      </View>
+                                    </View>
+                                  ))}
+                                </View>
+                              )}
+                            </View>
+                          );
+                        })}
                       </View>
                     </View>
                   ))}
@@ -1276,6 +1351,35 @@ const styles = StyleSheet.create({
     width: '48%',
     marginBottom: 20,
     position: 'relative',
+  },
+  fieldContainerFull: {
+    width: '100%',
+    marginBottom: 20,
+    position: 'relative',
+  },
+  subsectionsContainer: {
+    marginTop: 12,
+    gap: 16,
+    width: '100%',
+  },
+  subsectionCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 16,
+  },
+  subsectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginBottom: 12,
+    textTransform: 'uppercase',
+  },
+  subsectionBody: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
   fieldLabel: {
     fontSize: 14,

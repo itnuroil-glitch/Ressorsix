@@ -234,6 +234,7 @@ exports.getVehicleDetails = async (req, res) => {
     let query = `
       SELECT 
         v.*, 
+        c.company_name,
         (SELECT string_agg(role, ', ') FROM role WHERE v.roleid IS NOT NULL AND id::text = ANY(string_to_array(v.roleid::text, ','))) AS role_name, 
         COALESCE(
           e.full_name, 
@@ -243,6 +244,7 @@ exports.getVehicleDetails = async (req, res) => {
       FROM tbl_vehicle_details v
       LEFT JOIN users u ON v.user_id = u.id
       LEFT JOIN employee e ON u.email = e.email
+      LEFT JOIN company c ON v.company_id::text = c.id::text
     `;
     const params = [];
     if (clientid) {
@@ -252,7 +254,89 @@ exports.getVehicleDetails = async (req, res) => {
     query += ' ORDER BY v.id DESC';
 
     const result = await db.query(query, params);
-    res.status(200).json(result.rows);
+
+    // Fetch custom field definitions to accurately extract vehicle name and plate number
+    const fieldsRes = await db.query(`
+      SELECT field_id, field_name 
+      FROM tbl_customfield_details 
+      WHERE LOWER(field_name) LIKE '%vehicle%'
+         OR LOWER(field_name) LIKE '%plate%' 
+         OR LOWER(field_name) LIKE '%license%' 
+         OR LOWER(field_name) LIKE '%liceno%' 
+         OR LOWER(field_name) LIKE '%no%'
+    `);
+
+    const vehicleNameFieldIds = fieldsRes.rows
+      .filter(f => f.field_name.toLowerCase().includes('vehicle'))
+      .sort((a, b) => {
+        const aName = a.field_name.toLowerCase();
+        const bName = b.field_name.toLowerCase();
+        const aHasName = aName.includes('name');
+        const bHasName = bName.includes('name');
+        if (aHasName && !bHasName) return -1;
+        if (!aHasName && bHasName) return 1;
+        return 0;
+      })
+      .map(f => f.field_id);
+
+    const vehiclePlateFieldIds = fieldsRes.rows
+      .filter(f => !f.field_name.toLowerCase().includes('vehicle'))
+      .sort((a, b) => {
+        const aName = a.field_name.toLowerCase();
+        const bName = b.field_name.toLowerCase();
+        const getPriority = (name) => {
+          if (name.includes('plate')) return 3;
+          if (name.includes('liceno') || name.includes('license')) return 2;
+          if (name.includes('no') || name.includes('number')) return 1;
+          return 0;
+        };
+        return getPriority(bName) - getPriority(aName);
+      })
+      .map(f => f.field_id);
+
+    const finalRows = result.rows.map(row => {
+      let fieldData = row.field_data;
+      if (typeof fieldData === 'string') {
+        try { fieldData = JSON.parse(fieldData); } catch (e) { fieldData = {}; }
+      } else {
+        fieldData = fieldData || {};
+      }
+
+      let vehicleName = '';
+      for (const fid of vehicleNameFieldIds) {
+        if (fieldData[fid] && typeof fieldData[fid] === 'string') {
+          vehicleName = fieldData[fid];
+          break;
+        }
+      }
+
+      let plateNo = '';
+      for (const fid of vehiclePlateFieldIds) {
+        if (fieldData[fid] && typeof fieldData[fid] === 'string') {
+          plateNo = fieldData[fid];
+          break;
+        }
+      }
+
+      // Fallback if missing
+      const stringValues = Object.values(fieldData).filter(v => typeof v === 'string' && v.trim());
+      if (!vehicleName && stringValues.length > 0) vehicleName = stringValues[0];
+      if (!plateNo && stringValues.length > 1) plateNo = stringValues[1];
+
+      let displayName = vehicleName;
+      if (plateNo && plateNo !== vehicleName) {
+        displayName = vehicleName ? `${vehicleName} - ${plateNo}` : plateNo;
+      }
+
+      return {
+        ...row,
+        vehicle_name: vehicleName || 'N/A',
+        plate_no: plateNo || 'N/A',
+        vehicle_display_name: displayName || 'N/A'
+      };
+    });
+
+    res.status(200).json(finalRows);
   } catch (error) {
     console.error('Error fetching vehicle details:', error);
     res.status(500).json({ message: 'Error fetching vehicle details' });

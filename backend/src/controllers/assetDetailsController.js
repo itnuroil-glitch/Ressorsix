@@ -314,16 +314,68 @@ exports.saveAssetDetails = async (req, res) => {
 exports.getAssetDetails = async (req, res) => {
   try {
     const { clientid } = req.query;
-    let query = 'SELECT * FROM tbl_asset';
+    let query = `
+      SELECT a.*, c.company_name
+      FROM tbl_asset a
+      LEFT JOIN company c ON a.company_id::text = c.id::text
+    `;
     const params = [];
     if (clientid) {
-      query += ' WHERE clientid = $1';
+      query += ' WHERE a.clientid = $1';
       params.push(clientid);
     }
-    query += ' ORDER BY id DESC';
+    query += ' ORDER BY a.id DESC';
 
     const result = await db.query(query, params);
-    res.status(200).json(result.rows);
+
+    const fieldsRes = await db.query('SELECT field_id, field_name FROM tbl_customfield_details');
+    const fieldMap = {};
+    fieldsRes.rows.forEach(f => {
+      fieldMap[f.field_id] = f.field_name;
+    });
+
+    const enrichedRows = result.rows.map(row => {
+      let parsedData = {};
+      if (row.field_data) {
+        try {
+          parsedData = typeof row.field_data === 'string' ? JSON.parse(row.field_data) : row.field_data;
+        } catch (e) {}
+      }
+
+      let assetName = 'N/A';
+      let manufacturer = 'N/A';
+      let openingQty = 'N/A';
+
+      if (parsedData && typeof parsedData === 'object') {
+        for (const [fId, val] of Object.entries(parsedData)) {
+          if (val === undefined || val === null || val === '') continue;
+          const fname = (fieldMap[fId] || fId || '').toLowerCase().trim();
+          const strVal = typeof val === 'object' ? (val.name || JSON.stringify(val)) : String(val);
+
+          if (fId === '1781609374288' || (fname.includes('asset') && (fname.includes('name') || fname.includes('model') || fname.includes('title')))) {
+            if (assetName === 'N/A') assetName = strVal;
+          } else if (fname.includes('manufactur') || fname.includes('brand') || fname.includes('make')) {
+            if (manufacturer === 'N/A') manufacturer = strVal;
+          } else if (fId === '1781612001954' || fname.includes('opening') || fname.includes('quantity') || fname.includes('qty')) {
+            if (openingQty === 'N/A') openingQty = strVal;
+          }
+        }
+
+        if (assetName === 'N/A' && Object.keys(parsedData).length > 0) {
+          const firstVal = Object.values(parsedData)[0];
+          if (firstVal && typeof firstVal !== 'object') assetName = String(firstVal);
+        }
+      }
+
+      return {
+        ...row,
+        asset_name: assetName,
+        manufacturer: manufacturer,
+        opening_qty: openingQty
+      };
+    });
+
+    res.status(200).json(enrichedRows);
   } catch (error) {
     console.error('Error fetching asset details:', error);
     res.status(500).json({ message: 'Error fetching asset details' });

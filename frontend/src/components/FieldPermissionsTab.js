@@ -136,6 +136,8 @@ const SearchableDropdown = ({ value, onChange, data, placeholder, searchPlacehol
 const FIELD_OPTIONS = [
   { label: 'Textbox', value: 'Textbox' },
   { label: 'Textarea', value: 'Textarea' },
+  { label: 'Phone Number', value: 'Phone Number' },
+  { label: 'Phone', value: 'Phone' },
   { label: 'Number', value: 'Number' },
   { label: 'Decimal', value: 'Decimal' },
   { label: 'Date', value: 'Date' },
@@ -146,9 +148,9 @@ const FIELD_OPTIONS = [
   { label: 'Radio Button', value: 'Radio Button' },
   { label: 'Checkbox', value: 'Checkbox' },
   { label: 'Toggle/Switch', value: 'Toggle/Switch' },
+  { label: 'Single Checkbox', value: 'Single Checkbox' },
   { label: 'Email', value: 'Email' },
   { label: 'URL', value: 'URL' },
-  { label: 'Phone', value: 'Phone' },
   { label: 'File Upload', value: 'File Upload' },
   { label: 'Image Upload', value: 'Image Upload' },
   { label: 'Signature', value: 'Signature' },
@@ -273,6 +275,11 @@ export default function FieldPermissionsTab({ user, showToast, renderTableToolba
   const [activeSectionId, setActiveSectionId] = useState(sections[0].id);
   const [activeSubsectionModal, setActiveSubsectionModal] = useState(null); // { sectionId, fieldId }
   const [selectedFields, setSelectedFields] = useState({}); // Track selected fields { fieldId: boolean }
+  const [validationDialog, setValidationDialog] = useState({ open: false, title: '', message: '' });
+
+  const showValidationDialog = (message, title = 'Required Fields') => {
+    setValidationDialog({ open: true, title, message });
+  };
 
   const addSection = () => {
     const newId = Date.now().toString();
@@ -503,7 +510,7 @@ export default function FieldPermissionsTab({ user, showToast, renderTableToolba
   const handleNextStep = async () => {
     if (wizardStep === 1) {
       if (!formClientId || !formModuleId || !formCountryId) {
-        showToast('Client, Module and Country are required', 'error');
+        showValidationDialog('Client, Module and Country are required', 'Selection Required');
         return;
       }
       setLoading(true);
@@ -534,7 +541,7 @@ export default function FieldPermissionsTab({ user, showToast, renderTableToolba
 
   const handleSave = async () => {
     if (!formClientId || !formModuleId || !formCountryId) {
-      showToast('Client, Module and Country are required', 'error');
+      showValidationDialog('Client, Module and Country are required', 'Selection Required');
       return;
     }
     setSaving(true);
@@ -1211,6 +1218,80 @@ export default function FieldPermissionsTab({ user, showToast, renderTableToolba
           </View>
         </View>
       </Modal>
+
+      {/* CUSTOM STYLED VALIDATION DIALOGUE BOX */}
+      {validationDialog.open && (
+        <Modal transparent visible animationType="fade" onRequestClose={() => setValidationDialog({ open: false, title: '', message: '' })}>
+          <View style={{
+            flex: 1,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 99999,
+            padding: 20
+          }}>
+            <View style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: 16,
+              width: '100%',
+              maxWidth: 400,
+              padding: 28,
+              alignItems: 'center',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 20 },
+              shadowOpacity: 0.25,
+              shadowRadius: 25,
+              elevation: 10,
+              borderWidth: 1,
+              borderColor: '#F1F5F9'
+            }}>
+              {/* Top Warning Icon */}
+              <View style={{
+                width: 60,
+                height: 60,
+                borderRadius: 30,
+                backgroundColor: '#FEF2F2',
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginBottom: 18,
+                borderWidth: 1,
+                borderColor: '#FEE2E2'
+              }}>
+                <Ionicons name="alert-circle" size={34} color="#EF4444" />
+              </View>
+
+              {/* Title & Description */}
+              <Text style={{ fontSize: 18, fontWeight: '700', color: '#0F172A', marginBottom: 8, textAlign: 'center' }}>
+                {validationDialog.title || 'Required Fields'}
+              </Text>
+              <Text style={{ fontSize: 14, color: '#64748B', textAlign: 'center', marginBottom: 24, lineHeight: 22 }}>
+                {validationDialog.message}
+              </Text>
+
+              {/* Action Button */}
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#0F172A',
+                  paddingVertical: 12,
+                  paddingHorizontal: 32,
+                  borderRadius: 10,
+                  width: '100%',
+                  alignItems: 'center',
+                  shadowColor: '#0F172A',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.15,
+                  shadowRadius: 8,
+                  elevation: 2
+                }}
+                onPress={() => setValidationDialog({ open: false, title: '', message: '' })}
+                activeOpacity={0.85}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '600' }}>OK, Got it</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
     </ScrollView>
   );
 }

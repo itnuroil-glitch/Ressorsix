@@ -10,6 +10,7 @@ async function migrate() {
         clientid INTEGER REFERENCES client(id) ON DELETE SET NULL,
         company_name VARCHAR(255) NOT NULL,
         short_code VARCHAR(100),
+        traffic_file_number VARCHAR(100),
         legal_form VARCHAR(255),
         industry VARCHAR(255),
         business_activity TEXT,

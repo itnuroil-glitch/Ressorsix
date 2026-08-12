@@ -22,7 +22,9 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
   const { width } = useWindowDimensions();
   const isLargeScreen = width > 768;
   const isEmployee = user && String(user.roleId) !== '1' && String(user.roleId) !== '2' && String(user.roleId) !== '5' && String(user.roleId) !== '8';
+  const canCreate = !user || String(user.roleId) === '1' || (permissions && (permissions.can_create || permissions.full_control));
   const canEdit = !user || String(user.roleId) === '1' || (permissions && (permissions.can_edit || permissions.full_control));
+  const canDelete = !user || String(user.roleId) === '1' || (permissions && (permissions.can_delete || permissions.full_control));
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fieldsLayout, setFieldsLayout] = useState(null);
@@ -36,7 +38,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
   // Table state
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 5;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Edit state
   const [editingRecord, setEditingRecord] = useState(null);
@@ -1210,13 +1212,18 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
               </View>
 
               {/* Table Header */}
-              <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20 }}>
+              <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20, backgroundColor: '#F8FAFC' }}>
                 <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>ID</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Employee Name</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Module Info</Text>
-                <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Data Preview</Text>
-                <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
+                {(!user || String(user.roleId) === '1') && (
+                  <Text style={{ flex: 1.3, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
+                )}
+                <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Employee Name</Text>
+                <Text style={{ flex: 1.3, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Company</Text>
+                <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Assigned Date</Text>
+                <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Return Date</Text>
+                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Asset Name</Text>
+                <Text style={{ flex: 0.8, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Qty</Text>
+                <Text style={{ flex: 0.9, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
                 <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>ACTION</Text>
               </View>
 
@@ -1227,12 +1234,47 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
                       if (String(r.clientid) !== String(user.clientid)) return false;
                     }
                     if (!searchQuery) return true;
+                    const term = searchQuery.toLowerCase();
+                    let pData = {};
+                    if (r.field_data) {
+                      try { pData = typeof r.field_data === 'string' ? JSON.parse(r.field_data) : r.field_data; } catch (e) { }
+                    }
                     const cObj = clients.find(c => String(c.id) === String(r.clientid));
                     const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
-                    return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
+                    const compObj = companies.find(c => String(c.id) === String(r.company_id || r.companyid));
+                    const compName = r.company_name || (compObj ? (compObj.company_name || compObj.name) : '');
+                    
+                    let eName = r.employee_name || '';
+                    if (!eName && pData) {
+                      for (const [key, value] of Object.entries(pData)) {
+                        if (key !== 'assetItems' && value && typeof value === 'string' && value.length > 0 && value.length < 50 && !key.toLowerCase().includes('date') && !value.includes('-')) {
+                          const matchedEmployee = employees.find(e => String(e.id) === String(value));
+                          if (matchedEmployee) {
+                            eName = matchedEmployee.full_name || matchedEmployee.name || matchedEmployee.employee_name || '';
+                            break;
+                          }
+                        }
+                      }
+                    }
+
+                    let aName = '';
+                    if (pData.assetItems && Array.isArray(pData.assetItems)) {
+                      aName = pData.assetItems.map(item => {
+                        const aObj = assetOptions.find(opt => String(opt.value) === String(item.asset_id));
+                        return aObj ? aObj.label : '';
+                      }).join(' ');
+                    }
+
+                    return (
+                      String(r.id).includes(term) ||
+                      cName.toLowerCase().includes(term) ||
+                      compName.toLowerCase().includes(term) ||
+                      eName.toLowerCase().includes(term) ||
+                      aName.toLowerCase().includes(term)
+                    );
                   });
-                  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-                  const paginated = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+                  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+                  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
                   if (filtered.length === 0) {
                     return (
@@ -1251,74 +1293,123 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
                             parsedData = typeof record.field_data === 'string' ? JSON.parse(record.field_data) : record.field_data;
                           } catch (e) { }
                         }
+
+                        // Client & Country
                         const clientObj = clients.find(c => String(c.id) === String(record.clientid));
                         const clientName = clientObj ? (clientObj.client_name || clientObj.name) : `Client ${record.clientid}`;
                         const countryObj = countries.find(c => String(c.id) === String(record.country_id));
                         const countryName = countryObj ? countryObj.name : `Country ${record.country_id}`;
-                        const moduleObj = modules.find(m => String(m.id) === String(record.moduleid));
-                        const moduleName = moduleObj ? moduleObj.module_name : `Module ${record.moduleid}`;
 
-                        let assetDisplay = 'No Asset Assigned';
-                        let barcodeDisplay = '-';
-                        if (parsedData.assetItems && parsedData.assetItems.length > 0) {
-                          const item = parsedData.assetItems[0];
-                          const assetObj = assetOptions.find(opt => String(opt.value) === String(item.asset_id));
-                          assetDisplay = assetObj ? assetObj.label : `Asset ID: ${item.asset_id}`;
-                          barcodeDisplay = item.barcode || 'No Barcode';
-
-                          if (parsedData.assetItems.length > 1) {
-                            const extraCount = parsedData.assetItems.length - 1;
-                            assetDisplay += ` (+ ${extraCount} more)`;
-                            barcodeDisplay += ` (+ ${extraCount} more)`;
+                        // Employee Name
+                        let empNameDisplay = record.employee_name || 'N/A';
+                        if (empNameDisplay === 'N/A' && parsedData) {
+                          for (const [key, value] of Object.entries(parsedData)) {
+                            if (key !== 'assetItems' && value && typeof value === 'string' && value.length > 0 && value.length < 50 && !key.toLowerCase().includes('date') && !value.includes('-')) {
+                               const matchedEmployee = employees.find(e => String(e.id) === String(value));
+                               if (matchedEmployee) {
+                                  empNameDisplay = matchedEmployee.full_name || matchedEmployee.name || matchedEmployee.employee_name;
+                                  break;
+                               }
+                            }
                           }
+                        }
+
+                        // Company
+                        const companyObj = companies.find(c => String(c.id) === String(record.company_id || record.companyid));
+                        const companyNameDisplay = record.company_name || (companyObj ? (companyObj.company_name || companyObj.name) : null) || 'N/A';
+
+                        // Assigned Date & Return Date
+                        let assignedDateDisplay = '-';
+                        let returnDateDisplay = '-';
+
+                        if (parsedData) {
+                          for (const [key, value] of Object.entries(parsedData)) {
+                            if (!value || typeof value !== 'string') continue;
+                            const kLower = key.toLowerCase();
+                            if (kLower.includes('assigned') || kLower.includes('start') || kLower.includes('issue')) {
+                              if (assignedDateDisplay === '-') assignedDateDisplay = value.split('T')[0];
+                            } else if (kLower.includes('return') || kLower.includes('end') || kLower.includes('expiry') || kLower.includes('due')) {
+                              if (returnDateDisplay === '-') returnDateDisplay = value.split('T')[0];
+                            }
+                          }
+                        }
+
+                        if (assignedDateDisplay === '-' && parsedData) {
+                          const dateEntries = Object.entries(parsedData).filter(([k, v]) => k !== 'assetItems' && typeof v === 'string' && (v.match(/^\d{4}-\d{2}-\d{2}/) || v.match(/^\d{2}\/\d{2}\/\d{4}/)));
+                          if (dateEntries.length > 0) assignedDateDisplay = dateEntries[0][1].split('T')[0];
+                          if (dateEntries.length > 1) returnDateDisplay = dateEntries[1][1].split('T')[0];
+                        }
+
+                        // Asset Name & Qty
+                        let assetNameDisplay = 'No Asset';
+                        let barcodeDisplay = '-';
+                        let totalQty = 0;
+
+                        if (parsedData.assetItems && Array.isArray(parsedData.assetItems) && parsedData.assetItems.length > 0) {
+                          const itemNames = [];
+                          parsedData.assetItems.forEach(item => {
+                            const assetObj = assetOptions.find(opt => String(opt.value) === String(item.asset_id));
+                            const aName = assetObj ? assetObj.label : (item.asset_name || `Asset ${item.asset_id}`);
+                            const q = parseInt(item.qty, 10) || 1;
+                            totalQty += q;
+                            if (aName && !itemNames.includes(aName)) itemNames.push(aName);
+                          });
+                          assetNameDisplay = itemNames.join(', ');
+                          if (parsedData.assetItems[0].barcode) {
+                            barcodeDisplay = parsedData.assetItems[0].barcode;
+                            if (parsedData.assetItems.length > 1) barcodeDisplay += ` (+${parsedData.assetItems.length - 1})`;
+                          }
+                        } else if (record.asset_id) {
+                          const assetObj = assetOptions.find(opt => String(opt.value) === String(record.asset_id));
+                          assetNameDisplay = assetObj ? assetObj.label : `Asset ${record.asset_id}`;
+                          totalQty = 1;
                         }
 
                         return (
                           <View key={record.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
                             <Text style={{ flex: 0.5, fontSize: 12, color: '#334155', fontWeight: '700' }}>#{record.id}</Text>
 
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{clientName}</Text>
-                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Country: {countryName}</Text>
+                            {(!user || String(user.roleId) === '1') && (
+                              <View style={{ flex: 1.3, paddingRight: 10 }}>
+                                <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 2 }} numberOfLines={1}>{clientName}</Text>
+                                <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>{countryName}</Text>
+                              </View>
+                            )}
+
+                            <View style={{ flex: 1.4, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600' }} numberOfLines={1}>{empNameDisplay}</Text>
+                            </View>
+
+                            <View style={{ flex: 1.3, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '500' }} numberOfLines={1}>{companyNameDisplay}</Text>
+                            </View>
+
+                            <View style={{ flex: 1.2, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 12, color: '#475569', fontWeight: '500' }} numberOfLines={1}>{assignedDateDisplay}</Text>
+                            </View>
+
+                            <View style={{ flex: 1.2, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 12, color: '#475569', fontWeight: '500' }} numberOfLines={1}>{returnDateDisplay}</Text>
                             </View>
 
                             <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              {(() => {
-                                let empNameDisplay = record.employee_name || 'N/A';
-                                if (empNameDisplay === 'N/A' && parsedData) {
-                                  for (const [key, value] of Object.entries(parsedData)) {
-                                    if (key !== 'assetItems' && typeof value === 'string' && value.length > 0 && value.length < 50 && !key.includes('date') && !value.includes('-')) {
-                                       const matchedEmployee = employees.find(e => String(e.id) === String(value));
-                                       if (matchedEmployee) {
-                                          empNameDisplay = matchedEmployee.full_name || matchedEmployee.name;
-                                          break;
-                                       }
-                                    }
-                                  }
-                                }
-                                return (
-                                  <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{empNameDisplay}</Text>
-                                );
-                              })()}
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 2 }} numberOfLines={1}>{assetNameDisplay}</Text>
+                              {barcodeDisplay !== '-' && (
+                                <Text style={{ fontSize: 11, color: '#0284C7', fontWeight: '500' }} numberOfLines={1}>{barcodeDisplay}</Text>
+                              )}
                             </View>
 
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{moduleName}</Text>
-                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Created: {new Date(record.created_at).toLocaleDateString()}</Text>
+                            <View style={{ flex: 0.8, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700' }}>{totalQty}</Text>
                             </View>
 
-                            <View style={{ flex: 2, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#475569', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{assetDisplay}</Text>
-                              <Text style={{ fontSize: 11, color: '#0284C7', fontWeight: '500' }} numberOfLines={1}>Barcode: {barcodeDisplay}</Text>
-                            </View>
-
-                            <View style={{ flex: 1, alignItems: 'flex-start' }}>
+                            <View style={{ flex: 0.9, alignItems: 'flex-start' }}>
                               <View style={{ backgroundColor: '#F0FDF4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
                                 <Text style={{ fontSize: 11, fontWeight: '700', color: '#166534' }}>Active</Text>
                               </View>
                             </View>
 
-                            <View style={{ flex: 1.2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+                            <View style={{ flex: 1.2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
                               <TouchableOpacity style={{ padding: 4 }} onPress={() => handleView(record)}>
                                 <Ionicons name="eye-outline" size={18} color="#0F172A" />
                               </TouchableOpacity>
@@ -1354,19 +1445,50 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
                   const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
                   return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
                 });
-                const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-                const startEntry = filtered.length === 0 ? 0 : ((currentPage - 1) * ITEMS_PER_PAGE) + 1;
-                const endEntry = Math.min(currentPage * ITEMS_PER_PAGE, filtered.length);
+                const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+                const startEntry = filtered.length === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1;
+                const endEntry = Math.min(currentPage * itemsPerPage, filtered.length);
 
                 return (
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC' }}>
-                    <Text style={{ fontSize: 12, color: '#64748B' }}>
-                      Showing <Text style={{ fontWeight: '600', color: '#334155' }}>{startEntry}</Text> to <Text style={{ fontWeight: '600', color: '#334155' }}>{endEntry}</Text> of <Text style={{ fontWeight: '600', color: '#334155' }}>{filtered.length}</Text> entries
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                      <Text style={{ fontSize: 12, color: '#64748B' }}>
+                        Showing <Text style={{ fontWeight: '600', color: '#334155' }}>{startEntry}</Text> to <Text style={{ fontWeight: '600', color: '#334155' }}>{endEntry}</Text> of <Text style={{ fontWeight: '600', color: '#334155' }}>{filtered.length}</Text> entries
+                      </Text>
+
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={{ fontSize: 12, color: '#64748B' }}>Rows per page:</Text>
+                        <select
+                          value={itemsPerPage}
+                          onChange={(e) => {
+                            setItemsPerPage(Number(e.target.value));
+                            setCurrentPage(1);
+                          }}
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: 6,
+                            borderColor: '#CBD5E1',
+                            borderWidth: 1,
+                            borderStyle: 'solid',
+                            fontSize: 12,
+                            color: '#1E293B',
+                            backgroundColor: '#FFFFFF',
+                            outline: 'none',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <option value={10}>10</option>
+                          <option value={20}>20</option>
+                          <option value={25}>25</option>
+                          <option value={50}>50</option>
+                          <option value={100}>100</option>
+                        </select>
+                      </View>
+                    </View>
 
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                       <TouchableOpacity
-                        style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: currentPage > 1 ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
+                        style={{ paddingHorizontal: 14, paddingVertical: 2, backgroundColor: currentPage > 1 ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
                         disabled={currentPage === 1}
                         onPress={() => setCurrentPage(p => p - 1)}
                       >
@@ -1378,7 +1500,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
                       </Text>
 
                       <TouchableOpacity
-                        style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: currentPage < totalPages ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
+                        style={{ paddingHorizontal: 14, paddingVertical: 2, backgroundColor: currentPage < totalPages ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
                         disabled={currentPage === totalPages}
                         onPress={() => setCurrentPage(p => p + 1)}
                       >

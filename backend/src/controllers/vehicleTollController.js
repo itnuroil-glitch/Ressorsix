@@ -166,3 +166,91 @@ exports.updateVehicleToll = async (req, res) => {
     res.status(500).json({ message: 'Error updating vehicle toll', error: error.message });
   }
 };
+
+exports.getAccountNumbers = async (req, res) => {
+  try {
+    const { clientid } = req.query;
+    let query = `
+      SELECT field_data 
+      FROM tbl_vehicle_toll 
+      WHERE (is_deleted = false OR is_deleted IS NULL)
+    `;
+    const params = [];
+    if (clientid) {
+      query += ' AND clientid::text = $1';
+      params.push(String(clientid));
+    }
+    const result = await db.query(query, params);
+
+    const accountNumbers = new Set();
+    result.rows.forEach(row => {
+      if (row.field_data) {
+        let parsed = row.field_data;
+        if (typeof parsed === 'string') {
+          try { parsed = JSON.parse(parsed); } catch (e) { parsed = {}; }
+        }
+        Object.values(parsed).forEach(val => {
+          if (val && typeof val !== 'object' && String(val).trim().length > 0 && String(val) !== 'true' && String(val) !== 'false') {
+            accountNumbers.add(String(val).trim());
+          }
+        });
+      }
+    });
+
+    res.status(200).json(Array.from(accountNumbers).map(acc => ({ label: acc, value: acc })));
+  } catch (error) {
+    console.error('Error fetching account numbers:', error);
+    res.status(500).json({ message: 'Error fetching account numbers', error: error.message });
+  }
+};
+
+exports.getAccountNumbersByClient = async (req, res) => {
+  try {
+    let clientId = req.params.clientId || req.params.clientid || req.query.clientId || req.query.clientid;
+    if (!clientId || clientId.trim() === '') {
+      const clientRes = await db.query('SELECT id FROM client WHERE isdelete = false ORDER BY id ASC LIMIT 1');
+      if (clientRes.rows.length > 0) {
+        clientId = clientRes.rows[0].id;
+      }
+    }
+
+    let query = `
+      SELECT field_data 
+      FROM tbl_vehicle_toll 
+      WHERE (is_deleted = false OR is_deleted IS NULL)
+    `;
+    const params = [];
+    if (clientId) {
+      query += ' AND clientid::text = $1';
+      params.push(String(clientId));
+    }
+    const result = await db.query(query, params);
+
+    const accountNumbers = new Set();
+    result.rows.forEach(row => {
+      if (row.field_data) {
+        let parsed = row.field_data;
+        if (typeof parsed === 'string') {
+          try { parsed = JSON.parse(parsed); } catch (e) { parsed = {}; }
+        }
+        Object.values(parsed).forEach(val => {
+          if (val && typeof val !== 'object' && String(val).trim().length > 0 && String(val) !== 'true' && String(val) !== 'false') {
+            accountNumbers.add(String(val).trim());
+          }
+        });
+      }
+    });
+
+    const list = Array.from(accountNumbers).map(acc => ({
+      AccNo: acc,
+      accNo: acc,
+      label: acc,
+      value: acc
+    }));
+
+    res.status(200).json(list);
+  } catch (error) {
+    console.error('Error fetching account numbers by client:', error);
+    res.status(500).json({ message: 'Error fetching account numbers by client', error: error.message });
+  }
+};

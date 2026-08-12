@@ -21,6 +21,7 @@ const COLORS = {
 export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed, permissions, checkRowPermission }) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width > 768;
+  const isSuperAdmin = !user || String(user.roleId) === '1';
   const isEmployee = user && String(user.roleId) !== '1' && String(user.roleId) !== '2' && String(user.roleId) !== '5' && String(user.roleId) !== '8';
 
   const canCreate = !user || String(user.roleId) === '1' || (permissions && (permissions.can_create || permissions.full_control));
@@ -39,7 +40,7 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
   // Table state
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 5;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Edit state
   const [editingRecord, setEditingRecord] = useState(null);
@@ -462,14 +463,34 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
     switch (field.type) {
       case 'Dropdown':
       case 'Searchable Dropdown': {
+        const fNameLower = (field.name || field.label || '').toLowerCase();
         const options = (field.allowedOptions && field.allowedOptions.length > 0)
           ? field.allowedOptions
           : (field.options || '').split(',').map(o => o.trim()).filter(Boolean);
-        const dropdownData = options.map(opt => ({ label: opt, value: opt }));
+        const dropdownData = options.map(opt => {
+          let label = typeof opt === 'object' ? (opt.label !== undefined ? opt.label : opt.value) : String(opt);
+          let value = typeof opt === 'object' ? (opt.value !== undefined ? opt.value : opt.label) : String(opt);
+          if (fNameLower.includes('plate') && String(label).includes(' - ')) {
+            label = String(label).split(' - ')[1].trim();
+            value = String(value).includes(' - ') ? String(value).split(' - ')[1].trim() : label;
+          } else if (fNameLower.includes('vehicle') && fNameLower.includes('name') && String(label).includes(' - ')) {
+            label = String(label).split(' - ')[0].trim();
+            value = String(value).includes(' - ') ? String(value).split(' - ')[0].trim() : label;
+          }
+          return { label, value };
+        });
+
+        let currentValue = formData[field.id] || '';
+        if (fNameLower.includes('plate') && String(currentValue).includes(' - ')) {
+          currentValue = String(currentValue).split(' - ')[1].trim();
+        } else if (fNameLower.includes('vehicle') && fNameLower.includes('name') && String(currentValue).includes(' - ')) {
+          currentValue = String(currentValue).split(' - ')[0].trim();
+        }
+
         return (
           <SearchableDropdown
             data={dropdownData}
-            value={formData[field.id] || ''}
+            value={currentValue}
             onChange={(val) => handleInputChange(field.id, val)}
             placeholder={`-- Select ${field.name} --`}
             searchPlaceholder={`Search ${field.name}...`}
@@ -945,10 +966,15 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
               {/* Table Header */}
               <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20 }}>
                 <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>ID</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Module Info</Text>
-                <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Data Preview</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Submitted By</Text>
+                {isSuperAdmin && (
+                  <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
+                )}
+                <Text style={{ flex: 1.3, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Plate Number</Text>
+                <Text style={{ flex: 1.3, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Purchase Date</Text>
+                <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Supplier</Text>
+                <Text style={{ flex: 1.3, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Purchase Price</Text>
+                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Company Name</Text>
+                <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Submitted By</Text>
                 <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
                 <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>ACTION</Text>
               </View>
@@ -960,12 +986,18 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
                       if (String(r.clientid) !== String(user.clientid)) return false;
                     }
                     if (!searchQuery) return true;
+                    const queryLower = searchQuery.toLowerCase();
                     const cObj = clients.find(c => String(c.id) === String(r.clientid));
                     const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
-                    return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
+                    const vehName = r.vehicle_name || r.vehicle_display_name || '';
+                    const plateNo = r.plate_no || '';
+                    return String(r.id).includes(searchQuery) ||
+                      (cName && cName.toLowerCase().includes(queryLower)) ||
+                      (vehName && vehName.toLowerCase().includes(queryLower)) ||
+                      (plateNo && plateNo.toLowerCase().includes(queryLower));
                   });
-                  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-                  const paginated = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+                  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+                  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
                   if (filtered.length === 0) {
                     return (
@@ -974,6 +1006,20 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
                       </View>
                     );
                   }
+
+                  const formatDate = (dateVal) => {
+                    if (!dateVal || dateVal === 'N/A') return 'N/A';
+                    const valStr = String(dateVal);
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(valStr)) {
+                      const [year, month, day] = valStr.split('-');
+                      return `${day}/${month}/${year}`;
+                    } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(valStr)) {
+                      const [datePart, timePart] = valStr.split('T');
+                      const [year, month, day] = datePart.split('-');
+                      return `${day}/${month}/${year} ${timePart}`;
+                    }
+                    return valStr;
+                  };
 
                   return (
                     <View style={{ flex: 1 }}>
@@ -988,42 +1034,62 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
                         const clientName = clientObj ? (clientObj.client_name || clientObj.name) : `Client ${record.clientid}`;
                         const countryObj = countries.find(c => String(c.id) === String(record.country_id));
                         const countryName = countryObj ? countryObj.name : `Country ${record.country_id}`;
-                        const moduleObj = modules.find(m => String(m.id) === String(record.moduleid));
-                        const moduleName = moduleObj ? moduleObj.module_name : `Module ${record.moduleid}`;
 
-                        const rawFirstValue = Object.values(parsedData)[0];
-                        let firstValue = '-';
-                        if (rawFirstValue && typeof rawFirstValue === 'object') {
-                          if (Array.isArray(rawFirstValue)) {
-                            firstValue = rawFirstValue.map(f => f.name || 'File').join(', ');
-                          } else {
-                            firstValue = rawFirstValue.name || 'File';
+                        let vehicleName = record.vehicle_name && record.vehicle_name !== 'N/A' 
+                          ? record.vehicle_name 
+                          : (record.vehicle_display_name ? record.vehicle_display_name.split(' - ')[0] : 'N/A');
+
+                        let plateNo = record.plate_no && record.plate_no !== 'N/A' 
+                          ? record.plate_no 
+                          : (record.vehicle_display_name && record.vehicle_display_name.includes(' - ') ? record.vehicle_display_name.split(' - ')[1] : 'N/A');
+
+                        if (vehicleName.includes(' - ')) {
+                          const parts = vehicleName.split(' - ');
+                          vehicleName = parts[0].trim();
+                          if (plateNo === 'N/A' || /^\d{4}-\d{2}-\d{2}/.test(plateNo)) {
+                            plateNo = parts[1].trim();
                           }
-                        } else if (rawFirstValue !== undefined && rawFirstValue !== null) {
-                          firstValue = String(rawFirstValue);
                         }
-                        const firstKey = Object.keys(parsedData)[0] ? Object.keys(parsedData)[0].replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()) : 'No Data';
+
+                        if (/^\d{4}-\d{2}-\d{2}/.test(plateNo) && record.vehicle_display_name && record.vehicle_display_name.includes(' - ')) {
+                          plateNo = record.vehicle_display_name.split(' - ')[1].trim();
+                        }
+
+                        const companyObj = companies.find(c => String(c.id) === String(record.company_id || record.companyid));
+                        const compName = record.company_name || (companyObj ? (companyObj.company_name || companyObj.name) : null) || 'N/A';
 
                         return (
                           <View key={record.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
                             <Text style={{ flex: 0.5, fontSize: 12, color: '#334155', fontWeight: '700' }}>#{record.id}</Text>
 
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{clientName}</Text>
-                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Country: {countryName}</Text>
+                            {isSuperAdmin && (
+                              <View style={{ flex: 1.5, paddingRight: 10 }}>
+                                <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{clientName}</Text>
+                                <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Country: {countryName}</Text>
+                              </View>
+                            )}
+
+                            <View style={{ flex: 1.3, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600' }} numberOfLines={1}>{plateNo}</Text>
+                            </View>
+
+                            <View style={{ flex: 1.3, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500' }} numberOfLines={1}>{formatDate(record.purchase_date)}</Text>
+                            </View>
+
+                            <View style={{ flex: 1.4, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500' }} numberOfLines={1}>{record.supplier || 'N/A'}</Text>
+                            </View>
+
+                            <View style={{ flex: 1.3, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500' }} numberOfLines={1}>{record.purchase_price || 'N/A'}</Text>
                             </View>
 
                             <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{moduleName}</Text>
-                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Created: {new Date(record.created_at).toLocaleDateString()}</Text>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600' }} numberOfLines={1}>{compName}</Text>
                             </View>
 
-                            <View style={{ flex: 2, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500', marginBottom: 4 }} numberOfLines={1}>{String(firstValue)}</Text>
-                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Field: {firstKey}</Text>
-                            </View>
-
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
+                            <View style={{ flex: 1.4, paddingRight: 10 }}>
                               <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{record.role_name || (record.roleid ? `Role: ${record.roleid}` : 'N/A')}</Text>
                               <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>{record.employee_name || 'N/A'}</Text>
                             </View>
@@ -1070,19 +1136,50 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
                   const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
                   return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
                 });
-                const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-                const startEntry = filtered.length === 0 ? 0 : ((currentPage - 1) * ITEMS_PER_PAGE) + 1;
-                const endEntry = Math.min(currentPage * ITEMS_PER_PAGE, filtered.length);
+                const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+                const startEntry = filtered.length === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1;
+                const endEntry = Math.min(currentPage * itemsPerPage, filtered.length);
 
                 return (
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC' }}>
-                    <Text style={{ fontSize: 12, color: '#64748B' }}>
-                      Showing <Text style={{ fontWeight: '600', color: '#334155' }}>{startEntry}</Text> to <Text style={{ fontWeight: '600', color: '#334155' }}>{endEntry}</Text> of <Text style={{ fontWeight: '600', color: '#334155' }}>{filtered.length}</Text> entries
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                      <Text style={{ fontSize: 12, color: '#64748B' }}>
+                        Showing <Text style={{ fontWeight: '600', color: '#334155' }}>{startEntry}</Text> to <Text style={{ fontWeight: '600', color: '#334155' }}>{endEntry}</Text> of <Text style={{ fontWeight: '600', color: '#334155' }}>{filtered.length}</Text> entries
+                      </Text>
+
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={{ fontSize: 12, color: '#64748B' }}>Rows per page:</Text>
+                        <select
+                          value={itemsPerPage}
+                          onChange={(e) => {
+                            setItemsPerPage(Number(e.target.value));
+                            setCurrentPage(1);
+                          }}
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: 6,
+                            borderColor: '#CBD5E1',
+                            borderWidth: 1,
+                            borderStyle: 'solid',
+                            fontSize: 12,
+                            color: '#1E293B',
+                            backgroundColor: '#FFFFFF',
+                            outline: 'none',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <option value={10}>10</option>
+                          <option value={20}>20</option>
+                          <option value={25}>25</option>
+                          <option value={50}>50</option>
+                          <option value={100}>100</option>
+                        </select>
+                      </View>
+                    </View>
 
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                       <TouchableOpacity
-                        style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: currentPage > 1 ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
+                        style={{ paddingHorizontal: 14, paddingVertical: 2, backgroundColor: currentPage > 1 ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
                         disabled={currentPage === 1}
                         onPress={() => setCurrentPage(p => p - 1)}
                       >
@@ -1094,7 +1191,7 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
                       </Text>
 
                       <TouchableOpacity
-                        style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: currentPage < totalPages ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
+                        style={{ paddingHorizontal: 14, paddingVertical: 2, backgroundColor: currentPage < totalPages ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
                         disabled={currentPage === totalPages}
                         onPress={() => setCurrentPage(p => p + 1)}
                       >

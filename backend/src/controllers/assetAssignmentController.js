@@ -113,12 +113,17 @@ exports.saveAssetAssignment = async (req, res) => {
 exports.getAssetAssignments = async (req, res) => {
   try {
     const { clientid, email } = req.query;
-    let query = 'SELECT * FROM tbl_asset_assigned WHERE is_deleted = false';
+    let query = `
+      SELECT a.*, c.company_name
+      FROM tbl_asset_assigned a
+      LEFT JOIN company c ON a.company_id::text = c.id::text
+      WHERE a.is_deleted = false
+    `;
     const params = [];
     let paramCount = 1;
 
     if (clientid) {
-      query += ` AND clientid = $${paramCount++}`;
+      query += ` AND a.clientid = $${paramCount++}`;
       params.push(clientid);
     }
 
@@ -174,7 +179,7 @@ exports.getAssetAssignments = async (req, res) => {
       params.push(restrictToEmployeeId);
     }
 
-    query += ' ORDER BY id DESC';
+    query += ' ORDER BY a.id DESC';
 
     const result = await db.query(query, params);
     res.status(200).json(result.rows);

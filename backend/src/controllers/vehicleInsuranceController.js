@@ -368,18 +368,42 @@ exports.getVehicleInsurance = async (req, res) => {
       }
     });
 
-    // 2. Fetch field definitions to map Expiry Date & Insurer dynamically
+    // 2. Fetch field definitions to map Vehicle Name, Start Date, Expiry Date & Insurer dynamically
     const fieldsRes = await db.query(`
       SELECT field_id, field_name 
       FROM tbl_customfield_details 
       WHERE isdelete = false AND is_active = true
-        AND (LOWER(field_name) LIKE '%expire%' 
+        AND (LOWER(field_name) LIKE '%vehicle%'
+          OR LOWER(field_name) LIKE '%start%'
+          OR LOWER(field_name) LIKE '%issue%'
+          OR LOWER(field_name) LIKE '%effective%'
+          OR LOWER(field_name) LIKE '%expire%' 
           OR LOWER(field_name) LIKE '%expiry%' 
           OR LOWER(field_name) LIKE '%end%'
           OR LOWER(field_name) LIKE '%insurer%' 
           OR LOWER(field_name) LIKE '%insurance company%' 
           OR LOWER(field_name) LIKE '%provider%')
     `);
+
+    const vehicleInsuranceFieldIds = fieldsRes.rows
+      .filter(f => f.field_name.toLowerCase().includes('vehicle'))
+      .sort((a, b) => {
+        const aName = a.field_name.toLowerCase();
+        const bName = b.field_name.toLowerCase();
+        const aHasName = aName.includes('name');
+        const bHasName = bName.includes('name');
+        if (aHasName && !bHasName) return -1;
+        if (!aHasName && bHasName) return 1;
+        return 0;
+      })
+      .map(f => f.field_id);
+
+    const startDateFieldIds = fieldsRes.rows
+      .filter(f => {
+        const name = f.field_name.toLowerCase();
+        return name.includes('start') || name.includes('issue') || name.includes('effective');
+      })
+      .map(f => f.field_id);
 
     const expiryFieldIds = fieldsRes.rows
       .filter(f => {
@@ -404,6 +428,27 @@ exports.getVehicleInsurance = async (req, res) => {
         fieldData = fieldData || {};
       }
 
+      let insuranceVehicleName = null;
+      for (const fid of vehicleInsuranceFieldIds) {
+        if (fieldData[fid] && typeof fieldData[fid] === 'string' && fieldData[fid].trim()) {
+          insuranceVehicleName = fieldData[fid];
+          break;
+        }
+      }
+      if (!insuranceVehicleName) {
+        // Fallback: search values for formatted string containing ' - '
+        const vals = Object.values(fieldData);
+        insuranceVehicleName = vals.find(v => typeof v === 'string' && v.includes(' - ')) || null;
+      }
+
+      let start_date = null;
+      for (const fid of startDateFieldIds) {
+        if (fieldData[fid]) {
+          start_date = fieldData[fid];
+          break;
+        }
+      }
+
       let expiry_date = null;
       for (const fid of expiryFieldIds) {
         if (fieldData[fid]) {
@@ -420,10 +465,13 @@ exports.getVehicleInsurance = async (req, res) => {
         }
       }
 
+      const vehicle_display_name = insuranceVehicleName || (row.vehicle_id ? vehicleMap[row.vehicle_id] : null) || 'N/A';
+
       return {
         ...row,
         company_name: row.company_name || 'N/A',
-        vehicle_display_name: row.vehicle_id ? (vehicleMap[row.vehicle_id] || `Vehicle #${row.vehicle_id}`) : 'N/A',
+        vehicle_display_name: vehicle_display_name,
+        start_date: start_date || 'N/A',
         expiry_date: expiry_date || 'N/A',
         insurer: insurer || 'N/A'
       };

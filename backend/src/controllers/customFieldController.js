@@ -250,3 +250,71 @@ exports.getFieldValues = async (req, res) => {
   }
 };
 
+exports.getCustomFieldsByModule = async (req, res) => {
+  try {
+    const { moduleId } = req.params;
+    const query = `
+      SELECT cf.id, cf.clientid, cf.moduleid, cf.country_id as countryid, cf.status, cf.isdelete, cf.created_at, cf.field_data,
+             c.client_name, m.module_name, co.name as country_name
+      FROM tbl_customfields cf
+      LEFT JOIN client c ON cf.clientid = c.id
+      LEFT JOIN module m ON cf.moduleid = m.id
+      LEFT JOIN country co ON cf.country_id = co.id
+      WHERE cf.isdelete = false AND cf.moduleid = $1
+      ORDER BY cf.id DESC
+    `;
+    const result = await db.query(query, [moduleId]);
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Error fetching custom fields by module:', error);
+    res.status(500).json({ message: 'Error fetching custom fields by module' });
+  }
+};
+
+exports.getPermissionedCustomFields = async (req, res) => {
+  try {
+    const { clientid, moduleid } = req.query;
+    let query = `
+      SELECT cf.id, cf.clientid, cf.moduleid, cf.country_id as countryid, cf.status, cf.isdelete, cf.created_at, cf.field_data,
+             c.client_name, m.module_name, co.name as country_name
+      FROM tbl_customfields cf
+      LEFT JOIN client c ON cf.clientid = c.id
+      LEFT JOIN module m ON cf.moduleid = m.id
+      LEFT JOIN country co ON cf.country_id = co.id
+      WHERE cf.isdelete = false
+    `;
+    const params = [];
+    if (clientid) {
+      params.push(clientid);
+      query += ` AND cf.clientid = $${params.length}`;
+    }
+    if (moduleid) {
+      params.push(moduleid);
+      query += ` AND cf.moduleid = $${params.length}`;
+    }
+    query += ` ORDER BY cf.id DESC`;
+
+    const result = await db.query(query, params);
+    
+    // If clientid filter was passed but returned no specific records, fall back to module-level records
+    if (result.rows.length === 0 && clientid && moduleid) {
+      const fallbackResult = await db.query(`
+        SELECT cf.id, cf.clientid, cf.moduleid, cf.country_id as countryid, cf.status, cf.isdelete, cf.created_at, cf.field_data,
+               c.client_name, m.module_name, co.name as country_name
+        FROM tbl_customfields cf
+        LEFT JOIN client c ON cf.clientid = c.id
+        LEFT JOIN module m ON cf.moduleid = m.id
+        LEFT JOIN country co ON cf.country_id = co.id
+        WHERE cf.isdelete = false AND cf.moduleid = $1
+        ORDER BY cf.id DESC
+      `, [moduleid]);
+      return res.status(200).json(fallbackResult.rows);
+    }
+
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Error fetching permissioned custom fields:', error);
+    res.status(500).json({ message: 'Error fetching permissioned custom fields' });
+  }
+};
+

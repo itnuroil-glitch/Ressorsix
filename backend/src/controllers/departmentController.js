@@ -1,10 +1,32 @@
 const db = require('../config/db');
 
-// @desc    Get all active departments
+// @desc    Get all active departments (optionally filtered by client_id / clientid)
 // @route   GET /api/departments
 // @access  Public
 exports.getAllDepartments = async (req, res) => {
   try {
+    const clientId = req.query.client_id || req.query.clientid;
+    if (clientId) {
+      try {
+        const queryText = `
+          SELECT * FROM department 
+          WHERE is_delete = false AND (clientid = $1 OR client_id = $1 OR clientid IS NULL)
+          ORDER BY id ASC
+        `;
+        const result = await db.query(queryText, [clientId]);
+        return res.status(200).json(result.rows);
+      } catch (err) {
+        // Fallback if clientid column does not exist on department table
+        const queryText = `
+          SELECT * FROM department 
+          WHERE is_delete = false 
+          ORDER BY id ASC
+        `;
+        const result = await db.query(queryText);
+        return res.status(200).json(result.rows);
+      }
+    }
+
     const queryText = `
       SELECT * FROM department 
       WHERE is_delete = false 

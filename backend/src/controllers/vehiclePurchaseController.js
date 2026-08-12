@@ -265,6 +265,7 @@ exports.getVehiclePurchase = async (req, res) => {
     let query = `
       SELECT 
         v.*, 
+        c.company_name,
         (SELECT string_agg(role, ', ') FROM role WHERE v.roleid IS NOT NULL AND id::text = ANY(string_to_array(v.roleid::text, ','))) AS role_name, 
         COALESCE(
           e.full_name, 
@@ -274,6 +275,7 @@ exports.getVehiclePurchase = async (req, res) => {
       FROM tbl_vehicle_purchase v
       LEFT JOIN users u ON v.user_id = u.id
       LEFT JOIN employee e ON u.email = e.email
+      LEFT JOIN company c ON v.company_id::text = c.id::text
     `;
     const params = [];
     if (clientid) {
@@ -283,7 +285,158 @@ exports.getVehiclePurchase = async (req, res) => {
     query += ' ORDER BY v.id DESC';
 
     const result = await db.query(query, params);
-    res.status(200).json(result.rows);
+
+    // Fetch custom field definitions to map Vehicle Name, Plate No, Purchase Date, Supplier & Purchase Price
+    const fieldsRes = await db.query(`
+      SELECT field_id, field_name 
+      FROM tbl_customfield_details 
+      WHERE isdelete = false AND is_active = true
+        AND (LOWER(field_name) LIKE '%vehicle%'
+          OR LOWER(field_name) LIKE '%plate%' 
+          OR LOWER(field_name) LIKE '%license%' 
+          OR LOWER(field_name) LIKE '%liceno%' 
+          OR LOWER(field_name) LIKE '%no%'
+          OR LOWER(field_name) LIKE '%purchase%'
+          OR LOWER(field_name) LIKE '%supplier%'
+          OR LOWER(field_name) LIKE '%vendor%'
+          OR LOWER(field_name) LIKE '%price%'
+          OR LOWER(field_name) LIKE '%cost%'
+          OR LOWER(field_name) LIKE '%amount%')
+    `);
+
+    const vehicleNameFieldIds = fieldsRes.rows
+      .filter(f => f.field_name.toLowerCase().includes('vehicle'))
+      .sort((a, b) => {
+        const aName = a.field_name.toLowerCase();
+        const bName = b.field_name.toLowerCase();
+        const aHasName = aName.includes('name');
+        const bHasName = bName.includes('name');
+        if (aHasName && !bHasName) return -1;
+        if (!aHasName && bHasName) return 1;
+        return 0;
+      })
+      .map(f => f.field_id);
+
+    const vehiclePlateFieldIds = fieldsRes.rows
+      .filter(f => {
+        const name = f.field_name.toLowerCase();
+        return !name.includes('vehicle') && (name.includes('plate') || name.includes('license') || name.includes('liceno'));
+      })
+      .map(f => f.field_id);
+
+    const purchaseDateFieldIds = fieldsRes.rows
+      .filter(f => {
+        const name = f.field_name.toLowerCase();
+        return name.includes('purchase') && name.includes('date');
+      })
+      .map(f => f.field_id);
+
+    const supplierFieldIds = fieldsRes.rows
+      .filter(f => {
+        const name = f.field_name.toLowerCase();
+        return name.includes('supplier') || name.includes('vendor');
+      })
+      .map(f => f.field_id);
+
+    const priceFieldIds = fieldsRes.rows
+      .filter(f => {
+        const name = f.field_name.toLowerCase();
+        return name.includes('price') || name.includes('cost') || name.includes('amount');
+      })
+      .map(f => f.field_id);
+
+    const finalRows = result.rows.map(row => {
+      let fieldData = row.field_data;
+      if (typeof fieldData === 'string') {
+        try { fieldData = JSON.parse(fieldData); } catch (e) { fieldData = {}; }
+      } else {
+        fieldData = fieldData || {};
+      }
+
+      let vehicleName = '';
+      for (const fid of vehicleNameFieldIds) {
+        if (fieldData[fid] && typeof fieldData[fid] === 'string' && fieldData[fid].trim()) {
+          vehicleName = fieldData[fid];
+          break;
+        }
+      }
+
+      let plateNo = '';
+      for (const fid of vehiclePlateFieldIds) {
+        if (fieldData[fid] && typeof fieldData[fid] === 'string' && fieldData[fid].trim()) {
+          plateNo = fieldData[fid];
+          break;
+        }
+      }
+
+      // Filter out plateNo if it's a date or invalid
+      if (plateNo && (/^\d{4}-\d{2}-\d{2}/.test(plateNo) || plateNo.length > 20)) {
+        plateNo = '';
+      }
+
+      let purchaseDate = '';
+      for (const fid of purchaseDateFieldIds) {
+        if (fieldData[fid]) {
+          purchaseDate = fieldData[fid];
+          break;
+        }
+      }
+
+      let supplier = '';
+      for (const fid of supplierFieldIds) {
+        if (fieldData[fid] && typeof fieldData[fid] === 'string' && fieldData[fid].trim()) {
+          supplier = fieldData[fid];
+          break;
+        }
+      }
+
+      let purchasePrice = '';
+      for (const fid of priceFieldIds) {
+        if (fieldData[fid] !== undefined && fieldData[fid] !== null && String(fieldData[fid]).trim() !== '') {
+          purchasePrice = String(fieldData[fid]);
+          break;
+        }
+      }
+
+      // Fallbacks if not found by field_id:
+      const stringEntries = Object.entries(fieldData).filter(([k, v]) => typeof v === 'string' && v.trim());
+      if (!vehicleName && stringEntries.length > 0) vehicleName = stringEntries[0][1];
+
+      // If vehicleName contains formatted ' - ', split into vehicleName and plateNo
+      let vehicleNameOnly = vehicleName;
+      if (vehicleName && vehicleName.includes(' - ')) {
+        const parts = vehicleName.split(' - ');
+        vehicleNameOnly = parts[0].trim();
+        if (!plateNo) {
+          plateNo = parts[1].trim();
+        }
+      }
+
+      if (!plateNo && stringEntries.length > 1) {
+        const candidate = stringEntries[1][1];
+        if (!/^\d{4}-\d{2}-\d{2}/.test(candidate)) {
+          plateNo = candidate;
+        }
+      }
+
+      let displayName = vehicleName;
+      if (plateNo && plateNo !== vehicleNameOnly) {
+        displayName = vehicleNameOnly ? `${vehicleNameOnly} - ${plateNo}` : plateNo;
+      }
+
+      return {
+        ...row,
+        company_name: row.company_name || 'N/A',
+        vehicle_name: vehicleNameOnly || 'N/A',
+        plate_no: plateNo || 'N/A',
+        vehicle_display_name: displayName || 'N/A',
+        purchase_date: purchaseDate || 'N/A',
+        supplier: supplier || 'N/A',
+        purchase_price: purchasePrice || 'N/A'
+      };
+    });
+
+    res.status(200).json(finalRows);
   } catch (error) {
     console.error('Error fetching vehicle purchase:', error);
     res.status(500).json({ message: 'Error fetching vehicle purchase' });

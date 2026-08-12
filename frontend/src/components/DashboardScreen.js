@@ -38,6 +38,17 @@ import PaymentMethodTab from './PaymentMethodTab';
 import UOMTab from './UOMTab';
 import VATTab from './VATTab';
 import PlanManagementTab from './PlanManagementTab';
+import SimPlanTab from './SimPlanTab';
+import TelecomProviderTab from './TelecomProviderTab';
+import TeleCategoryTab from './TeleCategoryTab';
+import TeleChargeTypeTab from './TeleChargeTypeTab';
+import SimDetailsTab from './SimDetailsTab';
+import TelecomBillTab from './TelecomBillTab';
+import UsageChargesTab from './UsageChargesTab';
+import PremiumExtraChargesTab from './PremiumExtraChargesTab';
+import PremiumExtraChargeTypeTab from './PremiumExtraChargeTypeTab';
+import TelecomDocumentTab from './TelecomDocumentTab';
+import TeleDocTypeTab from './TeleDocTypeTab';
 
 export default function DashboardScreen({ user, onSignOut }) {
   const { width, height } = useWindowDimensions();
@@ -52,6 +63,7 @@ export default function DashboardScreen({ user, onSignOut }) {
           input[type="date"]::-webkit-calendar-picker-indicator { background: transparent; bottom: 0; color: transparent; cursor: pointer; height: auto; left: 0; position: absolute; right: 0; top: 0; width: auto; }
           input[type="date"] { position: relative; }
           select { appearance: none; -webkit-appearance: none; -moz-appearance: none; background-image: url("data:image/svg+xml;utf8,<svg fill='%2364748B' height='24' viewBox='0 0 24 24' width='24' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/><path d='M0 0h24v24H0z' fill='none'/></svg>"); background-repeat: no-repeat; background-position-x: 98%; background-position-y: center; }
+          .r-fontSize-vbi3md { font-size: 12.5px !important; }
         `;
         document.head.appendChild(style);
       }
@@ -72,6 +84,20 @@ export default function DashboardScreen({ user, onSignOut }) {
       localStorage.setItem('trakio_active_tab', activeTab);
     }
   }, [activeTab]);
+
+  const [activeModuleId, setActiveModuleId] = useState(() => {
+    if (typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem('trakio_active_module_id');
+      if (saved) return saved;
+    }
+    return null;
+  });
+
+  useEffect(() => {
+    if (typeof localStorage !== 'undefined' && activeModuleId !== null && activeModuleId !== undefined) {
+      localStorage.setItem('trakio_active_module_id', String(activeModuleId));
+    }
+  }, [activeModuleId]);
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [hoveredItemId, setHoveredItemId] = useState(null);
@@ -174,7 +200,7 @@ export default function DashboardScreen({ user, onSignOut }) {
 
   // Module state variables
   const [modules, setModules] = useState([]);
-  const [modulesLoading, setModulesLoading] = useState(false);
+  const [modulesLoading, setModulesLoading] = useState(true);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingModule, setEditingModule] = useState(null); // stores active module object under edit
 
@@ -244,6 +270,7 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [companiesPage, setCompaniesPage] = useState(1);
   const [companyNameInput, setCompanyNameInput] = useState('');
   const [companyShortCode, setCompanyShortCode] = useState('');
+  const [companyTrafficFileNumber, setCompanyTrafficFileNumber] = useState('');
   const [companyClientId, setCompanyClientId] = useState('');
   const [companyIndustry, setCompanyIndustry] = useState('');
   const [companyStatus, setCompanyStatus] = useState('Active');
@@ -457,12 +484,17 @@ export default function DashboardScreen({ user, onSignOut }) {
         const orphans = permissions.filter(p => !orderedIds.has(p.module_id));
         ordered.push(...orphans);
 
-        setRolePermissions(ordered);
+        if (!ordered || ordered.length === 0) {
+          initializeDefaultRolePermissions();
+        } else {
+          setRolePermissions(ordered);
+        }
         setPermissionsLoading(false);
       })
       .catch((err) => {
         console.error('Error fetching permissions:', err);
         showToast('Could not load role permissions.', 'error');
+        initializeDefaultRolePermissions();
         setPermissionsLoading(false);
       });
   };
@@ -1034,6 +1066,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     setEditingCompany(item);
     setCompanyNameInput(item.company_name || '');
     setCompanyShortCode(item.short_code || '');
+    setCompanyTrafficFileNumber(item.traffic_file_number || '');
     setCompanyClientId(item.clientid ? String(item.clientid) : '');
     setCompanyIndustry(item.industry || '');
     setCompanyStatus(item.company_status || 'Active');
@@ -1108,6 +1141,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     const payload = {
       company_name: companyNameInput,
       short_code: companyShortCode,
+      traffic_file_number: companyTrafficFileNumber,
       clientid: companyClientId ? parseInt(companyClientId) : (user?.clientid ? parseInt(user.clientid) : null),
       industry: companyIndustry,
       company_status: companyStatus,
@@ -2021,6 +2055,10 @@ export default function DashboardScreen({ user, onSignOut }) {
   const getTabIdByRoute = (name, route) => {
     let r = route ? route.toLowerCase().trim() : '';
     let n = name ? name.toLowerCase().trim() : '';
+    if (n === 'tele doument type' || n === 'tele document type' || n === 'tele_doc_type' || r === '/tele-doc-types' || r === '/tele-doc-type') return 'tele_doc_type';
+    if (n === 'tele charge type' || n === 'telecom charge type' || n === 'tele_charge_type') return 'tele_charge_type';
+    if (n === 'tele category' || n === 'telecom category' || n === 'tele_category') return 'tele_category';
+    if (n === 'telecom document' || n === 'tele document' || n === 'telecom_document') return 'telecom_document';
     if (r === '/dashboard' || n.includes('dashboard')) return 'dashboard';
     if (r === '/shipments' || n.includes('shipment')) return 'shipments';
     if (r === '/analytics' || n.includes('analytic')) return 'analytics';
@@ -2053,6 +2091,18 @@ export default function DashboardScreen({ user, onSignOut }) {
     if ((r.includes('purchase') && r.includes('detail')) || (n.includes('purchase') && n.includes('detail'))) return 'purchase_details';
     if (r.includes('uom') || n.includes('uom')) return 'uom';
     if (r.includes('vat') || n.includes('vat')) return 'vat';
+    if ((r.includes('premium') || n.includes('premium') || r.includes('extra') || n.includes('extra')) && (r.includes('type') || n.includes('type') || r.includes('chargetype') || n.includes('chargetype'))) return 'premium_extra_charge_type';
+    if (r.includes('premium') || n.includes('premium') || r.includes('extra') || n.includes('extra')) return 'premium_extra_charges';
+    if ((r.includes('tele') || n.includes('tele')) && (r.includes('charge') && r.includes('type') || n.includes('charge') && n.includes('type') || r.includes('chargetype') || n.includes('chargetype'))) return 'tele_charge_type';
+    if ((r.includes('tele') || n.includes('tele')) && (r.includes('category') || n.includes('category'))) return 'tele_category';
+    if (r.includes('bill') || n.includes('bill')) return 'telecom_bill';
+    if (r.includes('data') || n.includes('data')) return 'telecom_data';
+    if ((r.includes('tele') || n.includes('tele') || r.includes('sim') || n.includes('sim')) && (r.includes('detail') || n.includes('detail'))) return 'sim_details';
+    if (r.includes('usage') || n.includes('usage') || r.includes('charge') || n.includes('charge')) return 'usage_charges';
+    if ((r.includes('type') || n.includes('type')) && (r.includes('doc') || n.includes('doc') || r.includes('doument') || n.includes('document'))) return 'tele_doc_type';
+    if (r.includes('doc') || n.includes('doc') || r.includes('document') || n.includes('document')) return 'telecom_document';
+    if (r.includes('telecom') || n.includes('telecom') || r.includes('telecome') || n.includes('telecome')) return 'telecom_provider';
+    if (r.includes('sim') || n.includes('sim')) return 'sim_plan';
     return null; // unknown route — don't switch tab
   };
 
@@ -2060,6 +2110,11 @@ export default function DashboardScreen({ user, onSignOut }) {
   const getModuleIcon = (name, route) => {
     const n = (name || '').toLowerCase();
     const r = (route || '').toLowerCase();
+    if (n.includes('insurance') || r.includes('insurance')) return 'document-text-outline';
+    if (n.includes('purchase') || r.includes('purchase')) return 'cart-outline';
+    if (n.includes('toll') || r.includes('toll')) return 'receipt-outline';
+    if (n.includes('vehicle') || r.includes('vehicle')) return 'car-outline';
+    if (n.includes('supplier') || r.includes('supplier')) return 'diamond-outline';
     if (n.includes('dashboard') || r.includes('dashboard')) return 'grid-outline';
     if (n.includes('shipment') || r.includes('shipment')) return 'cube-outline';
     if (n.includes('analytic') || r.includes('analytic')) return 'bar-chart-outline';
@@ -2080,30 +2135,27 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (n.includes('asset') || r.includes('asset')) return 'wallet-outline';
     if (n.includes('uom') || r.includes('uom')) return 'options-outline';
     if (n.includes('vat') || r.includes('vat')) return 'calculator-outline';
-    return 'document-text-outline'; // fallback standard icon
+    return 'document-text-outline';
   };
 
-  // Verifies if a given module matches our active view tab
+  // Verifies if a given module matches our active view tab for sidebar selection
   const isModuleActive = (mod) => {
-    const tabId = getTabIdByRoute(mod.module_name, mod.route);
-    return activeTab === tabId;
+    if (!mod || activeModuleId === null || activeModuleId === undefined) return false;
+    const modId = mod.id?.toString().startsWith('virtual-parent-')
+      ? mod.id.toString().replace('virtual-parent-', '')
+      : mod.id;
+    return String(activeModuleId) === String(modId);
   };
 
-  // Nav Items static fallback list (in case modules table is empty or loading)
-  const fallbackNavigationItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: 'grid-outline' },
-    { id: 'shipments', label: 'Shipments', icon: 'cube-outline' },
-    { id: 'analytics', label: 'Analytics', icon: 'bar-chart-outline' },
-    { id: 'client', label: 'Clients', icon: 'briefcase-outline' },
-    { id: 'settings', label: 'Settings', icon: 'settings-outline' },
-    { id: 'roles', label: 'Roles', icon: 'people-outline' },
-    { id: 'departments', label: 'Departments', icon: 'business-outline' },
-    { id: 'smtp', label: 'SMTP Config', icon: 'mail-outline' },
-    { id: 'country', label: 'Countries', icon: 'earth-outline' },
-    { id: 'state', label: 'States', icon: 'map-outline' },
-    { id: 'employees', label: 'Employees', icon: 'people-outline' },
-    { id: 'permissions', label: 'Permissions', icon: 'shield-checkmark-outline' },
-  ];
+  // Sync activeModuleId when modules load or activeTab changes if activeModuleId is not set
+  useEffect(() => {
+    if (modules && modules.length > 0) {
+      const matched = modules.find(m => getTabIdByRoute(m.module_name, m.route) === activeTab);
+      if (matched) {
+        setActiveModuleId(matched.id);
+      }
+    }
+  }, [modules, activeTab]);
 
   // Helper to check view permissions for a given module ID
   const hasViewPermission = (moduleId) => {
@@ -2127,7 +2179,7 @@ export default function DashboardScreen({ user, onSignOut }) {
 
     // 2. Rely on Role-based userPermissions (global/default permissions where company_id is null)
     const perm = userPermissions.find(p => p.module_id === moduleId);
-    return perm ? (perm.can_view || perm.full_control) : false;
+    return perm ? (perm.can_view || perm.full_control) : true;
   };
 
   // Helper to check if user has access to a specific tab
@@ -2136,7 +2188,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (tabId === 'plans') {
       return String(user.roleId) === '1';
     }
-    if (tabId === 'dashboard' || tabId === 'profile' || tabId === 'shipments' || tabId === 'analytics') {
+    if (tabId === 'dashboard' || tabId === 'profile' || tabId === 'shipments' || tabId === 'analytics' || tabId === 'tele_doc_type') {
       return true;
     }
     const tabModules = modules.filter(m => getTabIdByRoute(m.module_name, m.route) === tabId);
@@ -2146,7 +2198,7 @@ export default function DashboardScreen({ user, onSignOut }) {
 
   // Render Sidebar Menu Links
   const renderSidebarContent = () => {
-    const isSidebarLoading = userPermissionsLoading;
+    const isSidebarLoading = userPermissionsLoading || modulesLoading;
 
     // Filter modules array based on view permission, showing parent if any child is allowed.
     const visibleModules = isSidebarLoading
@@ -2174,16 +2226,19 @@ export default function DashboardScreen({ user, onSignOut }) {
 
     return (
       <ScrollView contentContainerStyle={[styles.sidebarInner, isSidebarCollapsed && { paddingHorizontal: 6 }]} showsVerticalScrollIndicator={false}>
-        <View style={{ width: '100%' }}>
+
+        <View style={{ width: '100%', zIndex: 1 }}>
           {/* Brand Header */}
           <View style={[styles.sidebarLogoContainer, isSidebarCollapsed && { paddingHorizontal: 0, justifyContent: 'center' }]}>
             {!isSidebarCollapsed ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: SPACING.sm }}>
-                  <MaterialCommunityIcons name="cube-outline" size={26} color={COLORS.white} />
-                  <Text style={styles.sidebarBrandName}>Trakio</Text>
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>Portal</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={styles.brandLogoBox}>
+                    <View style={styles.brandLogoInnerSquare} />
+                  </View>
+                  <View>
+                    <Text style={styles.sidebarBrandName}>Trakio</Text>
+                    <Text style={styles.sidebarBrandSubtitle}>PORTAL</Text>
                   </View>
                 </View>
                 <TouchableOpacity
@@ -2191,7 +2246,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                   style={{ padding: 4 }}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <Ionicons name="menu-outline" size={24} color={COLORS.white} />
+                  <Ionicons name="menu-outline" size={24} color="#FFFFFF" />
                 </TouchableOpacity>
               </View>
             ) : (
@@ -2200,20 +2255,23 @@ export default function DashboardScreen({ user, onSignOut }) {
                 style={{ padding: 8, backgroundColor: 'rgba(255, 255, 255, 0.1)', borderRadius: 8 }}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Ionicons name="menu-outline" size={24} color={COLORS.white} />
+                <Ionicons name="menu-outline" size={24} color="#FFFFFF" />
               </TouchableOpacity>
             )}
           </View>
 
-
-
           {/* Menu Navigation - Dynamic from PostgreSQL table */}
-          {modules.length > 0 ? (
+          {isSidebarLoading ? (
+            <View style={{ paddingVertical: 40, alignItems: 'center', justifyContent: 'center' }}>
+              <ActivityIndicator size="small" color={COLORS.white} />
+            </View>
+          ) : parentModules.length > 0 ? (
             <View style={[styles.sidebarMenuItems, isSidebarCollapsed && { paddingHorizontal: 0, gap: 10, alignItems: 'center' }]}>
               {parentModules.map((parent) => {
                 const children = effectiveModules.filter(m => m.parent_id === parent.id);
                 const hasChildren = children.length > 0;
-                const isParentActive = isModuleActive(parent);
+                const isParentGroupActive = isModuleActive(parent) || children.some(c => isModuleActive(c));
+                const isParentActive = !hasChildren && isModuleActive(parent);
 
                 // Add parent as the first virtual sub-menu item so it is always accessible and clickable
                 const virtualChildren = [];
@@ -2229,15 +2287,17 @@ export default function DashboardScreen({ user, onSignOut }) {
                 }
 
                 if (isSidebarCollapsed) {
+                  const isCollapsedActive = isParentActive || isParentGroupActive;
                   return (
                     <TouchableOpacity
                       key={parent.id}
                       style={[
                         styles.sidebarMenuItemCollapsed,
-                        isParentActive && styles.sidebarMenuItemActive,
+                        isCollapsedActive && styles.sidebarMenuItemActive,
                       ]}
                       onPress={() => {
                         if (!hasChildren) {
+                          setActiveModuleId(parent.id);
                           const tabId = getTabIdByRoute(parent.module_name, parent.route);
                           if (tabId) setActiveTab(tabId);
                         }
@@ -2248,8 +2308,8 @@ export default function DashboardScreen({ user, onSignOut }) {
                     >
                       <Ionicons
                         name={getModuleIcon(parent.module_name, parent.route)}
-                        size={20}
-                        color={isParentActive ? COLORS.white : 'rgba(255, 255, 255, 0.65)'}
+                        size={22}
+                        color={isCollapsedActive ? "#F9C62A" : "#FFFFFF"}
                       />
 
                       {/* Floating overlay sub-menu when hovering settings */}
@@ -2268,6 +2328,10 @@ export default function DashboardScreen({ user, onSignOut }) {
                                     isChildActive && styles.floatingSubmenuItemActive,
                                   ]}
                                   onPress={() => {
+                                    const modId = child.id?.toString().startsWith('virtual-parent-')
+                                      ? child.id.toString().replace('virtual-parent-', '')
+                                      : child.id;
+                                    setActiveModuleId(modId);
                                     const tabId = getTabIdByRoute(child.module_name, child.route);
                                     if (tabId) setActiveTab(tabId);
                                     setHoveredItemId(null);
@@ -2296,7 +2360,9 @@ export default function DashboardScreen({ user, onSignOut }) {
                 }
 
                 // Expanded mode parent and children list
-                const isExpanded = expandedParentIds[parent.id] === true;
+                const isExpanded = expandedParentIds[parent.id] !== undefined
+                  ? expandedParentIds[parent.id]
+                  : isParentGroupActive;
 
                 return (
                   <View key={parent.id} style={styles.sidebarMenuSection}>
@@ -2310,37 +2376,46 @@ export default function DashboardScreen({ user, onSignOut }) {
                         if (hasChildren) {
                           setExpandedParentIds(prev => ({
                             ...prev,
-                            [parent.id]: !prev[parent.id]
+                            [parent.id]: !isExpanded
                           }));
+                        } else {
+                          setActiveModuleId(parent.id);
+                          const targetTab = getTabIdByRoute(parent.module_name, parent.route);
+                          if (targetTab) setActiveTab(targetTab);
                         }
-                        const targetTab = getTabIdByRoute(parent.module_name, parent.route);
-                        if (targetTab) setActiveTab(targetTab);
                         setIsMobileSidebarOpen(false);
                       }}
                       activeOpacity={0.7}
                     >
                       <Ionicons
                         name={getModuleIcon(parent.module_name, parent.route)}
-                        size={20}
-                        color={isParentActive ? COLORS.white : 'rgba(255, 255, 255, 0.65)'}
+                        size={22}
+                        color={(isParentActive || isParentGroupActive) ? "#F9C62A" : "#FFFFFF"}
                       />
                       <Text
                         style={[
                           styles.sidebarMenuText,
-                          isParentActive && styles.sidebarMenuTextActive,
+                          (isParentActive || isParentGroupActive) && styles.sidebarMenuTextActive,
                         ]}
                       >
                         {parent.module_name}
                       </Text>
 
-                      {hasChildren && (
+                      {hasChildren ? (
                         <Ionicons
                           name={isExpanded ? "chevron-down" : "chevron-forward"}
-                          size={14}
-                          color="rgba(255, 255, 255, 0.4)"
+                          size={16}
+                          color={(isParentActive || isParentGroupActive) ? "#F9C62A" : "rgba(255, 255, 255, 0.7)"}
                           style={{ marginLeft: 'auto' }}
                         />
-                      )}
+                      ) : isParentActive ? (
+                        <Ionicons
+                          name="chevron-forward"
+                          size={16}
+                          color="#F9C62A"
+                          style={{ marginLeft: 'auto' }}
+                        />
+                      ) : null}
                     </TouchableOpacity>
 
                     {/* Sub-menu child items */}
@@ -2348,6 +2423,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                       <View style={styles.sidebarSubMenuContainer}>
                         {virtualChildren.map((child) => {
                           const isChildActive = isModuleActive(child);
+                          const isVirtualParent = child.id.toString().startsWith('virtual-parent-');
                           return (
                             <TouchableOpacity
                               key={child.id}
@@ -2356,16 +2432,21 @@ export default function DashboardScreen({ user, onSignOut }) {
                                 isChildActive && styles.sidebarSubMenuItemActive,
                               ]}
                               onPress={() => {
+                                const modId = child.id?.toString().startsWith('virtual-parent-')
+                                  ? child.id.toString().replace('virtual-parent-', '')
+                                  : child.id;
+                                setActiveModuleId(modId);
                                 const targetTab = getTabIdByRoute(child.module_name, child.route);
                                 if (targetTab) setActiveTab(targetTab);
                                 setIsMobileSidebarOpen(false);
                               }}
                               activeOpacity={0.7}
                             >
+                              <View style={[styles.treeDot, isChildActive && styles.treeDotActive]} />
                               <Ionicons
-                                name={child.id.toString().startsWith('virtual-parent-') ? "layers-outline" : "return-down-forward-outline"}
-                                size={14}
-                                color={isChildActive ? COLORS.white : 'rgba(255, 255, 255, 0.45)'}
+                                name={isVirtualParent ? getModuleIcon(parent.module_name, parent.route) : getModuleIcon(child.module_name, child.route)}
+                                size={18}
+                                color={isChildActive ? "#F9C62A" : "#FFFFFF"}
                                 style={{ marginRight: 6 }}
                               />
                               <Text
@@ -2385,89 +2466,27 @@ export default function DashboardScreen({ user, onSignOut }) {
                 );
               })}
             </View>
-          ) : (
-            // Fallback Menu in case database is empty
-            <View style={[styles.sidebarMenuItems, isSidebarCollapsed && { paddingHorizontal: 0, gap: 10, alignItems: 'center' }]}>
-              {fallbackNavigationItems.map((item) => {
-                const isActive = activeTab === item.id;
-
-                if (isSidebarCollapsed) {
-                  return (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={[
-                        styles.sidebarMenuItemCollapsed,
-                        isActive && styles.sidebarMenuItemActive,
-                      ]}
-                      onPress={() => setActiveTab(item.id)}
-                      onMouseEnter={() => setHoveredItemId(item.id)}
-                      onMouseLeave={() => setHoveredItemId(null)}
-                      activeOpacity={0.7}
-                    >
-                      <Ionicons
-                        name={item.icon}
-                        size={20}
-                        color={isActive ? COLORS.white : 'rgba(255, 255, 255, 0.65)'}
-                      />
-                      {hoveredItemId === item.id && (
-                        <View style={styles.tooltip}>
-                          <Text style={styles.tooltipText}>{item.label}</Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                }
-
-                return (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[
-                      styles.sidebarMenuItem,
-                      isActive && styles.sidebarMenuItemActive,
-                    ]}
-                    onPress={() => {
-                      setActiveTab(item.id);
-                      setIsMobileSidebarOpen(false);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons
-                      name={item.icon}
-                      size={20}
-                      color={isActive ? COLORS.white : 'rgba(255, 255, 255, 0.65)'}
-                    />
-                    <Text
-                      style={[
-                        styles.sidebarMenuText,
-                        isActive && styles.sidebarMenuTextActive,
-                      ]}
-                    >
-                      {item.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
+          ) : null}
         </View>
 
         {/* Sidebar Footer User Details */}
         <View style={[styles.sidebarFooter, isSidebarCollapsed && { paddingHorizontal: 0, alignItems: 'center', borderTopWidth: 0 }]}>
           {!isSidebarCollapsed ? (
-            <View style={{ width: '100%' }}>
-              <View style={styles.sidebarUserCard}>
+            <View style={styles.sidebarUserSection}>
+              <View style={styles.sidebarUserCardRow}>
                 <View style={styles.sidebarAvatar}>
                   <Text style={styles.sidebarAvatarText}>
-                    {user.name ? user.name.split(' ').map(n => n[0]).join('') : 'JS'}
+                    {user.name ? user.name.split(' ').map(n => n[0]).join('').slice(0, 2) : 'JS'}
                   </Text>
                 </View>
                 <View style={styles.sidebarUserInfo}>
                   <Text style={styles.sidebarUserName} numberOfLines={1}>{user.name || 'John Smith'}</Text>
-                  <Text style={styles.sidebarUserEmail} numberOfLines={1}>{user.email}</Text>
+                  <Text style={styles.sidebarUserRole} numberOfLines={1}>{user.roleName || user.email || 'Administrator'}</Text>
                 </View>
               </View>
-              <TouchableOpacity style={styles.sidebarSignOut} onPress={onSignOut}>
-                <Ionicons name="log-out-outline" size={18} color="#FF8A8A" />
+              <View style={styles.sidebarUserDivider} />
+              <TouchableOpacity style={styles.sidebarSignOutBtn} onPress={onSignOut} activeOpacity={0.7}>
+                <Ionicons name="exit-outline" size={18} color="#FFFFFF" />
                 <Text style={styles.sidebarSignOutText}>Sign Out</Text>
               </TouchableOpacity>
             </View>
@@ -2479,7 +2498,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                 onMouseLeave={() => setHoveredItemId(null)}
               >
                 <Text style={styles.sidebarAvatarText}>
-                  {user.name ? user.name.split(' ').map(n => n[0]).join('') : 'JS'}
+                  {user.name ? user.name.split(' ').map(n => n[0]).join('').slice(0, 2) : 'JS'}
                 </Text>
                 {hoveredItemId === 'avatar' && (
                   <View style={styles.tooltip}>
@@ -2493,10 +2512,10 @@ export default function DashboardScreen({ user, onSignOut }) {
                 onMouseEnter={() => setHoveredItemId('signout')}
                 onMouseLeave={() => setHoveredItemId(null)}
               >
-                <Ionicons name="log-out-outline" size={20} color="#FF8A8A" />
+                <Ionicons name="exit-outline" size={20} color="#FFFFFF" />
                 {hoveredItemId === 'signout' && (
                   <View style={[styles.tooltip, { bottom: 10 }]}>
-                    <Text style={[styles.tooltipText, { color: '#FF8A8A' }]}>Sign Out</Text>
+                    <Text style={[styles.tooltipText, { color: '#FFFFFF' }]}>Sign Out</Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -2507,6 +2526,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     );
   };
 
+  // End of DashboardScreen component - Tele Document Type module active
   // Render Dashboard Tab Content
   const renderDashboardTab = () => {
     const stats = [
@@ -3455,7 +3475,7 @@ export default function DashboardScreen({ user, onSignOut }) {
             return;
           }
 
-          const mappedEmployees = jsonRows.map(row => {
+          const rawMappedRows = jsonRows.map(row => {
             // Match Role by ID or Title
             const rawRole = String(row['System Permissions Role'] || row['Role'] || row['role'] || row['Role ID'] || '').trim();
             const roleName = rawRole.toLowerCase();
@@ -3472,19 +3492,35 @@ export default function DashboardScreen({ user, onSignOut }) {
             );
             const department_id = matchedDept ? matchedDept.id : (rawDept && !isNaN(rawDept) ? Number(rawDept) : null);
 
-            // Match Company by ID or Name
-            const rawCompanies = String(row['Company'] || row['company'] || row['Companies'] || row['Company ID'] || '').split(',');
+            // Match Company by ID or Name (supports Option A Multi-Column Dropdowns: Company 1, Company 2, Company 3, etc.)
+            const rawCompValues = [
+              row['Company 1'],
+              row['Company 2'],
+              row['Company 3'],
+              row['Company 4'],
+              row['Company 5'],
+              row['Company'],
+              row['company'],
+              row['Companies'],
+              row['Company ID'],
+              row['Company (Comma-separated for multiple)']
+            ].filter(val => val !== undefined && val !== null && String(val).trim() !== '');
+
             const matchedCompIds = [];
-            for (let rawC of rawCompanies) {
-              const cTrim = rawC.trim();
-              const cLower = cTrim.toLowerCase();
-              const matchedC = companies.find(c => 
-                String(c.id) === cTrim || (c.company_name || '').toLowerCase() === cLower
-              );
-              if (matchedC) {
-                matchedCompIds.push(matchedC.id);
-              } else if (cTrim && !isNaN(cTrim)) {
-                matchedCompIds.push(Number(cTrim));
+            for (let item of rawCompValues) {
+              const splitItems = String(item).split(',');
+              for (let rawC of splitItems) {
+                const cTrim = rawC.trim();
+                if (!cTrim) continue;
+                const cLower = cTrim.toLowerCase();
+                const matchedC = companies.find(c => 
+                  String(c.id) === cTrim || (c.company_name || '').toLowerCase() === cLower
+                );
+                if (matchedC && !matchedCompIds.includes(matchedC.id)) {
+                  matchedCompIds.push(matchedC.id);
+                } else if (!isNaN(cTrim) && !matchedCompIds.includes(Number(cTrim))) {
+                  matchedCompIds.push(Number(cTrim));
+                }
               }
             }
 
@@ -3503,10 +3539,31 @@ export default function DashboardScreen({ user, onSignOut }) {
             };
           }).filter(emp => emp.full_name && emp.email);
 
-          if (mappedEmployees.length === 0) {
+          if (rawMappedRows.length === 0) {
             showToast('No valid employee rows found. Rows must contain "Full Name" and "Email".', 'error');
             return;
           }
+
+          // Group and Merge row entries by Email if needed
+          const employeeMap = new Map();
+          for (const emp of rawMappedRows) {
+            const emailKey = emp.email.trim().toLowerCase();
+            if (!employeeMap.has(emailKey)) {
+              employeeMap.set(emailKey, { ...emp, companies: [...emp.companies] });
+            } else {
+              const existing = employeeMap.get(emailKey);
+              for (const compId of emp.companies) {
+                if (!existing.companies.includes(compId)) {
+                  existing.companies.push(compId);
+                }
+              }
+              if (!existing.department_id && emp.department_id) existing.department_id = emp.department_id;
+              if ((!existing.roleid || existing.roleid.length === 0) && emp.roleid && emp.roleid.length > 0) existing.roleid = emp.roleid;
+              if (!existing.phone && emp.phone) existing.phone = emp.phone;
+            }
+          }
+
+          const mappedEmployees = Array.from(employeeMap.values());
 
           const response = await fetch(`${API_URL}/api/employees/bulk-import`, {
             method: 'POST',
@@ -3557,7 +3614,9 @@ export default function DashboardScreen({ user, onSignOut }) {
           { header: 'Phone', key: 'phone', width: 18 },
           { header: 'System Permissions Role', key: 'role', width: 28 },
           { header: 'Department', key: 'department', width: 25 },
-          { header: 'Company', key: 'company', width: 28 },
+          { header: 'Company 1', key: 'company1', width: 28 },
+          { header: 'Company 2', key: 'company2', width: 28 },
+          { header: 'Company 3', key: 'company3', width: 28 },
           { header: 'Status', key: 'status', width: 15 }
         ];
 
@@ -3570,16 +3629,19 @@ export default function DashboardScreen({ user, onSignOut }) {
           fgColor: { argb: 'FF4F46E5' }
         };
 
-        // Add Data Rows (existing employees or sample row)
+        // Add Data Rows (Option A: Multi-Column Dropdowns: Company 1, Company 2, Company 3)
         if (employees && employees.length > 0) {
           employees.forEach(emp => {
+            const empComps = emp.companies || [];
             mainSheet.addRow({
               full_name: emp.full_name || '',
               email: emp.email || '',
               phone: emp.phone || '',
               role: emp.role_name || '',
               department: emp.department_name || '',
-              company: emp.companies && emp.companies.length > 0 ? emp.companies.map(c => c.company_name).join(', ') : '',
+              company1: empComps[0]?.company_name || '',
+              company2: empComps[1]?.company_name || '',
+              company3: empComps[2]?.company_name || '',
               status: emp.status === 0 || emp.status === '0' || emp.status === 'Inactive' ? 'Inactive' : 'Active'
             });
           });
@@ -3590,45 +3652,14 @@ export default function DashboardScreen({ user, onSignOut }) {
             phone: '9847112233',
             role: activeRolesList[0] || 'Accountant',
             department: activeDeptsList[0] || 'Admin Department',
-            company: activeCompaniesList[0] || 'Ansar Mall',
+            company1: activeCompaniesList[0] || 'Ansar Mall',
+            company2: activeCompaniesList[1] || 'Night to Night',
+            company3: '',
             status: 'Active'
           });
         }
 
-        // Add native Excel Data Validation Dropdowns for rows 2 through 200
-        const rolesFormula = `"${activeRolesList.join(',')}"`;
-        const deptsFormula = `"${activeDeptsList.join(',')}"`;
-        const companiesFormula = `"${activeCompaniesList.join(',')}"`;
-        const statusFormula = '"Active,Inactive"';
-
-        for (let rowIdx = 2; rowIdx <= 200; rowIdx++) {
-          // Column D: System Permissions Role
-          mainSheet.getCell(`D${rowIdx}`).dataValidation = {
-            type: 'list',
-            allowBlank: true,
-            formulae: [rolesFormula]
-          };
-          // Column E: Department
-          mainSheet.getCell(`E${rowIdx}`).dataValidation = {
-            type: 'list',
-            allowBlank: true,
-            formulae: [deptsFormula]
-          };
-          // Column F: Company
-          mainSheet.getCell(`F${rowIdx}`).dataValidation = {
-            type: 'list',
-            allowBlank: true,
-            formulae: [companiesFormula]
-          };
-          // Column G: Status
-          mainSheet.getCell(`G${rowIdx}`).dataValidation = {
-            type: 'list',
-            allowBlank: true,
-            formulae: [statusFormula]
-          };
-        }
-
-        // Add Reference Worksheet
+        // Add Reference Worksheet FIRST so dataValidation can safely reference it
         const refSheet = workbook.addWorksheet('Valid Roles & References');
         refSheet.columns = [
           { header: 'Roles (From Database)', key: 'role', width: 30 },
@@ -3645,7 +3676,7 @@ export default function DashboardScreen({ user, onSignOut }) {
           fgColor: { argb: 'FF10B981' }
         };
 
-        const maxRows = Math.max(activeRolesList.length, activeDeptsList.length, activeCompaniesList.length);
+        const maxRows = Math.max(activeRolesList.length, activeDeptsList.length, activeCompaniesList.length, 2);
         for (let i = 0; i < maxRows; i++) {
           refSheet.addRow({
             role: activeRolesList[i] || '',
@@ -3653,6 +3684,55 @@ export default function DashboardScreen({ user, onSignOut }) {
             company: activeCompaniesList[i] || '',
             status: i === 0 ? 'Active' : (i === 1 ? 'Inactive' : '')
           });
+        }
+
+        // Add native Excel Data Validation Dropdowns for rows 2 through 200 using Range Formulas
+        const rolesEndRow = Math.max(activeRolesList.length + 1, 2);
+        const deptsEndRow = Math.max(activeDeptsList.length + 1, 2);
+        const compEndRow = Math.max(activeCompaniesList.length + 1, 2);
+
+        const rolesFormula = `'Valid Roles & References'!$A$2:$A$${rolesEndRow}`;
+        const deptsFormula = `'Valid Roles & References'!$B$2:$B$${deptsEndRow}`;
+        const companiesFormula = `'Valid Roles & References'!$C$2:$C$${compEndRow}`;
+        const statusFormula = `'Valid Roles & References'!$D$2:$D$3`;
+
+        for (let rowIdx = 2; rowIdx <= 200; rowIdx++) {
+          // Column D: System Permissions Role
+          mainSheet.getCell(`D${rowIdx}`).dataValidation = {
+            type: 'list',
+            allowBlank: true,
+            formulae: [rolesFormula]
+          };
+          // Column E: Department
+          mainSheet.getCell(`E${rowIdx}`).dataValidation = {
+            type: 'list',
+            allowBlank: true,
+            formulae: [deptsFormula]
+          };
+          // Column F: Company 1 Dropdown
+          mainSheet.getCell(`F${rowIdx}`).dataValidation = {
+            type: 'list',
+            allowBlank: true,
+            formulae: [companiesFormula]
+          };
+          // Column G: Company 2 Dropdown
+          mainSheet.getCell(`G${rowIdx}`).dataValidation = {
+            type: 'list',
+            allowBlank: true,
+            formulae: [companiesFormula]
+          };
+          // Column H: Company 3 Dropdown
+          mainSheet.getCell(`H${rowIdx}`).dataValidation = {
+            type: 'list',
+            allowBlank: true,
+            formulae: [companiesFormula]
+          };
+          // Column I: Status Dropdown
+          mainSheet.getCell(`I${rowIdx}`).dataValidation = {
+            type: 'list',
+            allowBlank: true,
+            formulae: [statusFormula]
+          };
         }
 
         // Write as file download blob
@@ -3840,6 +3920,7 @@ export default function DashboardScreen({ user, onSignOut }) {
               setEditingCompany(null);
               setCompanyNameInput('');
               setCompanyShortCode('');
+              setCompanyTrafficFileNumber('');
               setCompanyClientId('');
               setCompanyIndustry('');
               setCompanyStatus('Active');
@@ -4914,11 +4995,11 @@ export default function DashboardScreen({ user, onSignOut }) {
       <View style={styles.tabContent}>
         {/* Header Title */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24, gap: 14 }}>
-          <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' }}>
-            <Ionicons name="person-outline" size={24} color="#3B82F6" />
+          <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#FFF4E5', justifyContent: 'center', alignItems: 'center' }}>
+            <Ionicons name="person-outline" size={24} color="#D86A1A" />
           </View>
           <View>
-            <Text style={{ fontSize: 24, fontWeight: '800', color: '#0F172A', letterSpacing: -0.5 }}>User Profile</Text>
+            <Text style={{ fontSize: 24, fontWeight: '800', color: '#4A001A', letterSpacing: -0.5, fontFamily: 'Inter, system-ui, sans-serif' }}>User Profile</Text>
             <Text style={{ fontSize: 14, color: '#64748B', marginTop: 2 }}>Manage your account settings and preferences</Text>
           </View>
         </View>
@@ -4926,120 +5007,266 @@ export default function DashboardScreen({ user, onSignOut }) {
         {/* Responsive Two-Column Layout */}
         <View style={{ flexDirection: isLargeScreen ? 'row' : 'column', gap: 24 }}>
 
-          {/* Left Column: Profile Summary */}
-          <View style={{ flex: isLargeScreen ? 1 : undefined, maxWidth: isLargeScreen ? 340 : '100%' }}>
-            <View style={{ backgroundColor: COLORS.white, borderRadius: 16, padding: 24, ...SHADOWS.card, alignItems: 'center', borderWidth: 1, borderColor: '#F1F5F9' }}>
+          {/* Left Column: Profile Summary Card (Clean White/Cream Aesthetic) */}
+          <View style={{ flex: isLargeScreen ? 1 : undefined, maxWidth: isLargeScreen ? 330 : '100%' }}>
+            <View style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: 24,
+              padding: 24,
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              minHeight: 500,
+              borderWidth: 1, borderColor: '#F1F5F9',
+              boxShadow: '0px 8px 28px rgba(0, 0, 0, 0.04)',
+              elevation: 4,
+              position: 'relative',
+              overflow: 'hidden',
+            }}>
+              {/* Subtle Warm Top Glow Accent */}
               <View style={{
-                width: 104, height: 104, borderRadius: 52,
-                backgroundColor: '#F8FAFC',
-                borderWidth: 4, borderColor: '#EFF6FF',
-                justifyContent: 'center', alignItems: 'center',
-                marginBottom: 16,
-                shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5
-              }}>
-                <Text style={{ color: COLORS.primary, fontSize: 36, fontWeight: '800' }}>{initials}</Text>
-              </View>
+                position: 'absolute', top: -40, right: -40, width: 140, height: 140, borderRadius: 70,
+                backgroundColor: '#FFF4E5', pointerEvents: 'none',
+              }} />
 
-              <Text style={{ fontSize: 20, fontWeight: '800', color: '#0F172A', textAlign: 'center' }}>
-                {user.name || 'John Smith'}
-              </Text>
-              <Text style={{ fontSize: 14, color: '#64748B', marginTop: 4, textAlign: 'center' }}>
-                {user.email}
-              </Text>
+              <View style={{ alignItems: 'center', width: '100%', zIndex: 2 }}>
+                {/* Avatar Ring Container with Floating Camera Badge */}
+                <View style={{ position: 'relative', marginBottom: 16, marginTop: 8 }}>
+                  <View style={{
+                    width: 106, height: 106, borderRadius: 53,
+                    backgroundColor: '#4A001A',
+                    borderWidth: 3, borderColor: '#F5A623',
+                    justifyContent: 'center', alignItems: 'center',
+                    boxShadow: '0 6px 20px rgba(74, 0, 26, 0.15)',
+                    elevation: 6
+                  }}>
+                    <Text style={{ color: '#FFFFFF', fontSize: 38, fontWeight: '800', fontFamily: 'Inter, system-ui, sans-serif' }}>{initials}</Text>
+                  </View>
 
-              <View style={{
-                marginTop: 16, paddingHorizontal: 16, paddingVertical: 6,
-                backgroundColor: '#EFF6FF', borderRadius: 20,
-              }}>
-                <Text style={{ color: '#3B82F6', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                  {user.role || user.roleName || 'Staff Member'}
+                  {/* Floating Camera Button on Avatar */}
+                  <TouchableOpacity
+                    onPress={() => showToast('Avatar upload coming soon.', 'success')}
+                    style={{
+                      position: 'absolute', bottom: 2, right: 2,
+                      width: 32, height: 32, borderRadius: 16,
+                      backgroundColor: '#4A001A',
+                      borderWidth: 2, borderColor: '#FFFFFF',
+                      justifyContent: 'center', alignItems: 'center',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                      elevation: 4,
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="camera" size={15} color="#F9C62A" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Name */}
+                <Text style={{ fontSize: 22, fontWeight: '800', color: '#4A001A', textAlign: 'center', letterSpacing: -0.3, fontFamily: 'Inter, system-ui, sans-serif' }}>
+                  {user.name || 'John Smith'}
                 </Text>
+
+                {/* Email */}
+                <Text style={{ fontSize: 13, color: '#64748B', marginTop: 4, textAlign: 'center' }}>
+                  {user.email}
+                </Text>
+
+                {/* Role Badge */}
+                <View style={{
+                  marginTop: 14, paddingHorizontal: 16, paddingVertical: 7,
+                  backgroundColor: '#FFF4E5',
+                  borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 6,
+                  borderWidth: 1, borderColor: '#FFE2C2',
+                }}>
+                  <Ionicons name="shield-checkmark" size={13} color="#D86A1A" />
+                  <Text style={{ color: '#4A001A', fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                    {user.role || user.roleName || 'STAFF MEMBER'}
+                  </Text>
+                </View>
+
+                {/* Quick Stats Card */}
+                <View style={{
+                  marginTop: 20, width: '100%',
+                  backgroundColor: '#FFF8F0',
+                  borderRadius: 16, paddingVertical: 12, paddingHorizontal: 16,
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
+                  borderWidth: 1, borderColor: '#FFE8D6',
+                }}>
+                  <View style={{ alignItems: 'center' }}>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: 0.8 }}>STATUS</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 }}>
+                      <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#10B981' }} />
+                      <Text style={{ fontSize: 13, fontWeight: '800', color: '#065F46' }}>Active</Text>
+                    </View>
+                  </View>
+
+                  <View style={{ width: 1, height: 26, backgroundColor: 'rgba(74, 0, 26, 0.1)' }} />
+
+                  <View style={{ alignItems: 'center' }}>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: '#94A3B8', textTransform: 'uppercase', letterSpacing: 0.8 }}>MEMBER</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#4A001A', marginTop: 3 }}>Verified</Text>
+                  </View>
+                </View>
               </View>
 
-              <View style={{ width: '100%', height: 1, backgroundColor: '#F1F5F9', marginVertical: 24 }} />
-
+              {/* Change Photo Action Button */}
               <TouchableOpacity
                 onPress={() => showToast('Avatar upload coming soon.', 'success')}
                 style={{
                   width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                  gap: 8, backgroundColor: '#F8FAFC', borderRadius: 10,
-                  paddingVertical: 12, borderWidth: 1, borderColor: '#E2E8F0',
+                  gap: 8, backgroundColor: '#4A001A',
+                  backgroundImage: 'linear-gradient(90deg, #4A001A 0%, #D86A1A 100%)',
+                  borderRadius: 14,
+                  paddingVertical: 13,
+                  marginTop: 24, zIndex: 2,
+                  boxShadow: '0 4px 14px rgba(74, 0, 26, 0.2)',
+                  elevation: 4,
                 }}
-                activeOpacity={0.7}
+                activeOpacity={0.85}
               >
-                <Ionicons name="camera-outline" size={18} color="#475569" />
-                <Text style={{ color: '#475569', fontWeight: '700', fontSize: 13 }}>Change Photo</Text>
+                <Ionicons name="camera-outline" size={18} color="#FFFFFF" />
+                <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>Change Photo</Text>
               </TouchableOpacity>
             </View>
           </View>
 
           {/* Right Column: Details & Security */}
           <View style={{ flex: 2 }}>
-            <View style={{ backgroundColor: COLORS.white, borderRadius: 16, ...SHADOWS.card, borderWidth: 1, borderColor: '#F1F5F9', overflow: 'hidden' }}>
-              <View style={{ paddingHorizontal: 24, paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#F8FAFC' }}>
-                <Text style={{ fontSize: 16, fontWeight: '800', color: '#0F172A' }}>Personal Information</Text>
-                <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>Basic details associated with your account</Text>
+
+            {/* Personal Information Card */}
+            <View style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: 20,
+              borderWidth: 1,
+              borderColor: '#F1F5F9',
+              overflow: 'hidden',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
+              elevation: 2,
+            }}>
+              {/* Card Header Banner */}
+              <View style={{
+                backgroundColor: '#4A001A',
+                backgroundImage: 'linear-gradient(90deg, #4A001A 0%, #6E0F28 60%, #8A1830 100%)',
+                paddingHorizontal: 24,
+                paddingVertical: 18,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 14,
+              }}>
+                <View style={{
+                  width: 42, height: 42, borderRadius: 21,
+                  backgroundColor: '#D86A1A',
+                  justifyContent: 'center', alignItems: 'center',
+                  boxShadow: '0 2px 8px rgba(216, 106, 26, 0.4)',
+                }}>
+                  <Ionicons name="person-outline" size={20} color="#FFFFFF" />
+                </View>
+                <View>
+                  <Text style={{ fontSize: 17, fontWeight: '800', color: '#FFFFFF' }}>Personal Information</Text>
+                  <Text style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.8)', marginTop: 2 }}>Basic details associated with your account</Text>
+                </View>
               </View>
 
-              <View style={{ padding: 24, gap: 20 }}>
-                {infoRows.map((row, idx) => (
-                  <View key={idx} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 16 }}>
-                    <View style={{
-                      width: 40, height: 40, borderRadius: 10,
-                      backgroundColor: '#F1F5F9',
-                      justifyContent: 'center', alignItems: 'center',
-                    }}>
-                      <Ionicons name={row.icon} size={20} color="#64748B" />
+              {/* Rows List */}
+              <View style={{ padding: 24 }}>
+                {infoRows.map((row, idx) => {
+                  const bgColors = ['#FFF4E5', '#FFF0F3', '#FFFBEB', '#FDF2F8'];
+                  const iconColors = ['#D86A1A', '#991B1B', '#D97706', '#BE185D'];
+                  return (
+                    <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: idx < infoRows.length - 1 ? 16 : 0 }}>
+                      <View style={{
+                        width: 42, height: 42, borderRadius: 12,
+                        backgroundColor: bgColors[idx % bgColors.length],
+                        justifyContent: 'center', alignItems: 'center',
+                        marginRight: 16,
+                      }}>
+                        <Ionicons name={row.icon} size={20} color={iconColors[idx % iconColors.length]} />
+                      </View>
+                      <View style={{ flex: 1, borderBottomWidth: idx < infoRows.length - 1 ? 1 : 0, borderBottomColor: '#F1F5F9', paddingBottom: idx < infoRows.length - 1 ? 16 : 0 }}>
+                        <Text style={{ fontSize: 11, color: '#4A001A', fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 4 }}>
+                          {row.label}
+                        </Text>
+                        <Text style={{ fontSize: 16, color: '#0F172A', fontWeight: '700' }}>
+                          {row.value}
+                        </Text>
+                      </View>
                     </View>
-                    <View style={{ flex: 1, borderBottomWidth: idx < infoRows.length - 1 ? 1 : 0, borderBottomColor: '#F1F5F9', paddingBottom: idx < infoRows.length - 1 ? 16 : 0 }}>
-                      <Text style={{ fontSize: 12, color: '#64748B', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
-                        {row.label}
-                      </Text>
-                      <Text style={{ fontSize: 15, color: '#0F172A', fontWeight: '600' }}>
-                        {row.value}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
             </View>
 
             {/* Security Settings Section */}
-            <View style={{ backgroundColor: COLORS.white, borderRadius: 16, ...SHADOWS.card, borderWidth: 1, borderColor: '#F1F5F9', marginTop: 24, overflow: 'hidden' }}>
-              <View style={{ paddingHorizontal: 24, paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#F8FAFC', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Ionicons name="shield-half-outline" size={20} color="#0F172A" />
+            <View style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: 20,
+              borderWidth: 1,
+              borderColor: '#F1F5F9',
+              marginTop: 24,
+              overflow: 'hidden',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
+              elevation: 2,
+            }}>
+              {/* Security Header Banner */}
+              <View style={{
+                backgroundColor: '#FFF8F0',
+                backgroundImage: 'linear-gradient(90deg, #FFF8F0 0%, #FFF3E0 100%)',
+                paddingHorizontal: 24,
+                paddingVertical: 18,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 14,
+                borderBottomWidth: 1,
+                borderBottomColor: 'rgba(216, 106, 26, 0.1)',
+              }}>
+                <View style={{
+                  width: 42, height: 42, borderRadius: 21,
+                  backgroundColor: '#D86A1A',
+                  backgroundImage: 'linear-gradient(135deg, #D86A1A 0%, #F5A623 100%)',
+                  justifyContent: 'center', alignItems: 'center',
+                  boxShadow: '0 2px 8px rgba(216, 106, 26, 0.3)',
+                }}>
+                  <Ionicons name="shield-outline" size={20} color="#FFFFFF" />
+                </View>
                 <View>
-                  <Text style={{ fontSize: 16, fontWeight: '800', color: '#0F172A' }}>Security Settings</Text>
+                  <Text style={{ fontSize: 17, fontWeight: '800', color: '#4A001A' }}>Security Settings</Text>
                   <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>Manage your password and active sessions</Text>
                 </View>
               </View>
 
+              {/* Action Buttons */}
               <View style={{ padding: 24, flexDirection: isLargeScreen ? 'row' : 'column', gap: 16 }}>
                 <TouchableOpacity
                   onPress={() => setChangePasswordVisible(true)}
                   style={{
                     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                    gap: 10, backgroundColor: COLORS.primary, borderRadius: 10,
+                    gap: 10, backgroundColor: '#4A001A',
+                    backgroundImage: 'linear-gradient(90deg, #4A001A 0%, #D86A1A 100%)',
+                    borderRadius: 12,
                     paddingVertical: 14, paddingHorizontal: 20,
-                    shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 4
+                    boxShadow: '0 4px 14px rgba(74, 0, 26, 0.25)',
+                    elevation: 4,
                   }}
                   activeOpacity={0.85}
                 >
-                  <Ionicons name="key-outline" size={18} color="#fff" />
-                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Update Password</Text>
+                  <Ionicons name="key-outline" size={18} color="#FFFFFF" />
+                  <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Update Password</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   onPress={onSignOut}
                   style={{
                     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                    gap: 10, backgroundColor: '#FFF1F2', borderRadius: 10,
-                    paddingVertical: 14, paddingHorizontal: 20, borderWidth: 1.5, borderColor: '#FECDD3',
+                    gap: 10, backgroundColor: '#4A001A',
+                    backgroundImage: 'linear-gradient(90deg, #4A001A 0%, #D86A1A 100%)',
+                    borderRadius: 12,
+                    paddingVertical: 14, paddingHorizontal: 20,
+                    boxShadow: '0 4px 14px rgba(74, 0, 26, 0.25)',
+                    elevation: 4,
                   }}
                   activeOpacity={0.85}
                 >
-                  <Ionicons name="log-out-outline" size={18} color="#EF4444" />
-                  <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 14 }}>Sign Out Account</Text>
+                  <Ionicons name="log-out-outline" size={18} color="#FFFFFF" />
+                  <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Sign Out</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -5091,6 +5318,12 @@ export default function DashboardScreen({ user, onSignOut }) {
         if (isTrue(up.can_edit) || isTrue(up.full_control)) perms.can_edit = true;
         if (isTrue(up.can_delete) || isTrue(up.full_control)) perms.can_delete = true;
         if (isTrue(up.full_control)) perms.full_control = true;
+      } else {
+        perms.can_view = true;
+        perms.can_create = true;
+        perms.can_edit = true;
+        perms.can_delete = true;
+        perms.full_control = true;
       }
     });
     return perms;
@@ -5217,6 +5450,49 @@ export default function DashboardScreen({ user, onSignOut }) {
         return <VATTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vat')} checkRowPermission={(compId, act) => checkRowPermission('vat', compId, act)} />;
       case 'plans':
         return <PlanManagementTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('plans')} checkRowPermission={(compId, act) => checkRowPermission('plans', compId, act)} />;
+      case 'sim_plan':
+        return <SimPlanTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('sim_plan')} checkRowPermission={(compId, act) => checkRowPermission('sim_plan', compId, act)} />;
+      case 'telecom_provider':
+        return <TelecomProviderTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('telecom_provider')} checkRowPermission={(compId, act) => checkRowPermission('telecom_provider', compId, act)} />;
+      case 'tele_category':
+        return <TeleCategoryTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('tele_category')} checkRowPermission={(compId, act) => checkRowPermission('tele_category', compId, act)} />;
+      case 'tele_charge_type':
+      case 'telecom_charge_type':
+      case 'telecome_charge_type':
+        return <TeleChargeTypeTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('tele_charge_type')} checkRowPermission={(compId, act) => checkRowPermission('tele_charge_type', compId, act)} />;
+      case 'sim_details':
+      case 'telecom_details':
+      case 'telecome_details':
+        return <SimDetailsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('sim_details')} checkRowPermission={(compId, act) => checkRowPermission('sim_details', compId, act)} title="Telecom Details" buttonLabel="+ Add Telecom Details" />;
+      case 'telecom_data':
+      case 'telecome_data':
+        return <SimDetailsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('sim_details')} checkRowPermission={(compId, act) => checkRowPermission('sim_details', compId, act)} title="Telecom Data" buttonLabel="+ Add Telecom Data" />;
+      case 'telecom_bill':
+      case 'telecome_bill':
+        return <TelecomBillTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('telecom_bill')} checkRowPermission={(compId, act) => checkRowPermission('telecom_bill', compId, act)} />;
+      case 'usage_charges':
+      case 'usage_charge':
+      case 'tele_usage_charges':
+      case 'tele_usage_charge':
+        return <UsageChargesTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('usage_charges')} checkRowPermission={(compId, act) => checkRowPermission('usage_charges', compId, act)} />;
+      case 'premium_extra_charge_type':
+      case 'premium_charge_type':
+      case 'extra_charge_type':
+        return <PremiumExtraChargeTypeTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('premium_extra_charge_type')} checkRowPermission={(compId, act) => checkRowPermission('premium_extra_charge_type', compId, act)} />;
+      case 'premium_extra_charges':
+      case 'premium_charges':
+      case 'extra_charges':
+        return <PremiumExtraChargesTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('premium_extra_charges')} checkRowPermission={(compId, act) => checkRowPermission('premium_extra_charges', compId, act)} />;
+      case 'telecom_document':
+      case 'telecome_document':
+      case 'tele_document':
+      case 'telecom_documents':
+        return <TelecomDocumentTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('telecom_document')} checkRowPermission={(compId, act) => checkRowPermission('telecom_document', compId, act)} />;
+      case 'tele_doc_type':
+      case 'tele_document_type':
+      case 'tele_doument_type':
+      case 'telecom_document_type':
+        return <TeleDocTypeTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('tele_doc_type')} checkRowPermission={(compId, act) => checkRowPermission('tele_doc_type', compId, act)} />;
       case 'state':
         return renderStateTab();
       case 'employees':
@@ -5244,48 +5520,130 @@ export default function DashboardScreen({ user, onSignOut }) {
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
 
-      {/* Premium Toast Notification System */}
-      {toast.visible && (
-        <View
-          style={{
-            position: 'absolute',
-            top: 24,
-            right: 24,
-            backgroundColor:
-              toast.type === 'success' ? '#10B981' :
-                toast.type === 'error' ? '#EF4444' :
-                  toast.type === 'warning' ? '#F59E0B' : '#3B82F6',
-            borderRadius: 8,
-            paddingVertical: 12,
-            paddingHorizontal: 20,
-            flexDirection: 'row',
+      {/* Premium Notification Modal System */}
+      <Modal
+        visible={toast.visible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setToast(prev => ({ ...prev, visible: false }))}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.45)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: 20,
+            width: 420,
+            maxWidth: '92%',
+            paddingVertical: 32,
+            paddingHorizontal: 28,
             alignItems: 'center',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.15,
-            shadowRadius: 8,
-            elevation: 9999,
-            zIndex: 99999,
-            gap: 10,
-          }}
-        >
-          <Ionicons
-            name={
-              toast.type === 'success' ? 'checkmark-circle-outline' :
-                toast.type === 'error' ? 'close-circle-outline' :
-                  toast.type === 'warning' ? 'warning-outline' : 'information-circle-outline'
-            }
-            size={20}
-            color="#FFFFFF"
-          />
-          <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 14, fontFamily: 'System, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif' }}>
-            {toast.message}
-          </Text>
-          <TouchableOpacity onPress={() => setToast(prev => ({ ...prev, visible: false }))}>
-            <Ionicons name="close" size={16} color="#FFFFFF" style={{ marginLeft: 8 }} />
-          </TouchableOpacity>
+            shadowColor: '#72002A',
+            shadowOffset: { width: 0, height: 12 },
+            shadowOpacity: 0.12,
+            shadowRadius: 30,
+            elevation: 12,
+            position: 'relative'
+          }}>
+            {/* Top Right Close Button Badge */}
+            <TouchableOpacity
+              style={{ position: 'absolute', top: 16, right: 16, width: 32, height: 32, borderRadius: 16, backgroundColor: '#FFF0F2', justifyContent: 'center', alignItems: 'center', zIndex: 10 }}
+              onPress={() => setToast(prev => ({ ...prev, visible: false }))}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="close" size={18} color="#72002A" />
+            </TouchableOpacity>
+
+            {/* Concentric Circle Icon Badge with Sparkle Accents */}
+            <View style={{ position: 'relative', width: 90, height: 90, justifyContent: 'center', alignItems: 'center', marginTop: 4, marginBottom: 16 }}>
+              {/* Decorative sparkles & dots */}
+              <View style={{ position: 'absolute', top: 6, left: 10, width: 4, height: 4, borderRadius: 2, backgroundColor: '#72002A' }} />
+              <View style={{ position: 'absolute', top: 20, left: 2 }}><Text style={{ color: '#D86A1A', fontSize: 11, fontWeight: '700' }}>✦</Text></View>
+              <View style={{ position: 'absolute', bottom: 14, left: 6, width: 7, height: 7, borderRadius: 3.5, borderWidth: 1.5, borderColor: '#72002A' }} />
+              
+              <View style={{ position: 'absolute', top: 8, right: 14, width: 6, height: 6, borderRadius: 3, borderWidth: 1.5, borderColor: '#D86A1A' }} />
+              <View style={{ position: 'absolute', top: 36, right: 4 }}><Text style={{ color: '#72002A', fontSize: 10, fontWeight: '700' }}>+</Text></View>
+              <View style={{ position: 'absolute', bottom: 12, right: 12, width: 4, height: 4, borderRadius: 2, backgroundColor: '#72002A' }} />
+
+              {/* Concentric Green Circle */}
+              <View style={{
+                width: 76,
+                height: 76,
+                borderRadius: 38,
+                backgroundColor: '#F0FDF4',
+                borderWidth: 1.5,
+                borderColor: '#DCFCE7',
+                justifyContent: 'center',
+                alignItems: 'center',
+                shadowColor: '#16A34A',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.1,
+                shadowRadius: 10,
+              }}>
+                <View style={{
+                  width: 58,
+                  height: 58,
+                  borderRadius: 29,
+                  backgroundColor: '#FFFFFF',
+                  borderWidth: 1,
+                  borderColor: '#E2E8F0',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.05,
+                  shadowRadius: 6,
+                }}>
+                  <Ionicons
+                    name={
+                      toast.type === 'success' ? 'checkmark' :
+                      toast.type === 'error' ? 'close' :
+                      toast.type === 'warning' ? 'warning-outline' : 'information'
+                    }
+                    size={30}
+                    color={
+                      toast.type === 'success' ? '#16A34A' :
+                      toast.type === 'error' ? '#DC2626' :
+                      toast.type === 'warning' ? '#D97706' : '#2563EB'
+                    }
+                  />
+                </View>
+              </View>
+            </View>
+
+            {/* Title */}
+            <Text style={{ fontSize: 26, fontWeight: '800', color: '#59001F', textAlign: 'center', letterSpacing: -0.3 }}>
+              {toast.type === 'success' ? 'Success!' : toast.type === 'error' ? 'Error!' : toast.type === 'warning' ? 'Warning!' : 'Information!'}
+            </Text>
+
+            {/* Gradient Underline Accent */}
+            <View style={{ width: 44, height: 3.5, borderRadius: 2, backgroundImage: 'linear-gradient(90deg, #72002A 0%, #D86A1A 100%)', marginTop: 10, marginBottom: 18 }} />
+
+            {/* Message Text */}
+            <Text style={{ fontSize: 14, color: '#475569', textAlign: 'center', lineHeight: 21, marginBottom: 28, paddingHorizontal: 12 }}>
+              {toast.message}
+            </Text>
+
+            {/* Action OK Button */}
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                height: 46,
+                paddingHorizontal: 44,
+                borderRadius: 12,
+                backgroundImage: 'linear-gradient(90deg, #72002A 0%, #D86A1A 100%)',
+                boxShadow: '0px 6px 18px rgba(216, 106, 26, 0.35)',
+              }}
+              onPress={() => setToast(prev => ({ ...prev, visible: false }))}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
+              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15 }}>OK</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      )}
+      </Modal>
 
       {/* CHANGE PASSWORD MODAL */}
       <Modal
@@ -7025,7 +7383,12 @@ export default function DashboardScreen({ user, onSignOut }) {
                         </View>
                       )}
                     </View>
-                    {rolePermissions.length > 0 ? (
+                    {permissionsLoading ? (
+                      <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                        <ActivityIndicator size="small" color={COLORS.primary} />
+                        <Text style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 6 }}>Loading permissions...</Text>
+                      </View>
+                    ) : rolePermissions.length > 0 ? (
                       <ScrollView horizontal={true} showsHorizontalScrollIndicator={true} style={{ width: '100%' }} contentContainerStyle={{ minWidth: '100%' }}>
                         <View style={[styles.modulesTableWrapper, { minWidth: 600, borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingBottom: 10 }]}>
                           {/* Table Header Row */}
@@ -7174,7 +7537,9 @@ export default function DashboardScreen({ user, onSignOut }) {
                         </View>
                       </ScrollView>
                     ) : (
-                      <ActivityIndicator size="small" color={COLORS.primary} style={{ marginVertical: 12 }} />
+                      <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+                        <Text style={{ fontSize: 13, color: COLORS.textMuted }}>No permissions available.</Text>
+                      </View>
                     )}
                   </>
                 )}
@@ -7780,44 +8145,29 @@ export default function DashboardScreen({ user, onSignOut }) {
           {/* Header (Top Navigation Menu for Mobile/Web) */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              {/* Menu Hamburger icon visible ONLY on Mobile */}
-              {!isLargeScreen && (
-                <TouchableOpacity
-                  onPress={() => setIsMobileSidebarOpen(true)}
-                  style={styles.menuHamburger}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Ionicons name="menu-outline" size={26} color="#0F172A" />
-                </TouchableOpacity>
-              )}
+              {/* Menu Hamburger icon */}
+              <TouchableOpacity
+                onPress={() => isLargeScreen ? setIsSidebarCollapsed(prev => !prev) : setIsMobileSidebarOpen(true)}
+                style={styles.menuHamburger}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="menu-outline" size={22} color="#4A001A" />
+              </TouchableOpacity>
 
               <View style={styles.headerTitleContainer}>
-                {/* Logo visible only on Mobile Header (Web has it in sidebar) */}
-                {!isLargeScreen && (
-                  <MaterialCommunityIcons name="cube-outline" size={24} color="#0F172A" />
-                )}
                 <Text style={styles.headerTitle}>Trakio</Text>
                 <View style={styles.badge}>
-                  <Text style={styles.badgeText}>Portal</Text>
+                  <Text style={styles.badgeText}>PORTAL</Text>
                 </View>
               </View>
             </View>
 
             {/* Global Search Bar in Header */}
             <View style={styles.headerSearchBar}>
-              <Ionicons name="search-outline" size={17} color="#94A3B8" style={{ marginRight: 8 }} />
+              <Ionicons name="search-outline" size={18} color="#94A3B8" style={{ marginRight: 10 }} />
               <TextInput
                 style={styles.headerSearchInput}
-                placeholder={
-                  activeTab === 'roles' ? 'Search roles...' :
-                    activeTab === 'departments' ? 'Search departments...' :
-                      activeTab === 'smtp' ? 'Search SMTP configs...' :
-                        activeTab === 'client' ? 'Search clients...' :
-                          activeTab === 'country' ? 'Search countries...' :
-                            activeTab === 'state' ? 'Search states...' :
-                              activeTab === 'settings' ? 'Search modules...' :
-                                'Search...'
-                }
+                placeholder="Search anything..."
                 placeholderTextColor="#94A3B8"
                 value={
                   activeTab === 'roles' ? rolesSearch :
@@ -7861,21 +8211,28 @@ export default function DashboardScreen({ user, onSignOut }) {
               ) : null}
             </View>
 
-            {/* Right-side: Settings gear button */}
-            <View>
-              <TouchableOpacity
-                style={styles.headerGearBtn}
-                onPress={() => setUserMenuOpen(prev => !prev)}
-                activeOpacity={0.75}
-              >
-                <Ionicons name="settings-outline" size={20} color={userMenuOpen ? COLORS.primary : '#475569'} />
-                <View style={styles.headerAvatarBadge}>
-                  <Text style={styles.headerAvatarText}>
-                    {user.name ? user.name.split(' ').map(n => n[0]).join('').slice(0, 2) : 'JS'}
-                  </Text>
+            {/* Right-side: Notification Bell & User Avatar */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              {/* Notification Bell Button */}
+              <TouchableOpacity style={styles.headerNotificationBtn} activeOpacity={0.75}>
+                <Ionicons name="notifications-outline" size={19} color="#4A001A" />
+                <View style={styles.headerNotifBadge}>
+                  <Text style={styles.headerNotifBadgeText}>3</Text>
                 </View>
               </TouchableOpacity>
+
+              {/* User Profile Avatar */}
+              <TouchableOpacity
+                style={styles.headerUserAvatar}
+                onPress={() => setUserMenuOpen(prev => !prev)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.headerUserAvatarText}>
+                  {user.name ? user.name.split(' ').map(n => n[0]).join('').slice(0, 2) : 'JS'}
+                </Text>
+              </TouchableOpacity>
             </View>
+          </View>
 
             {/* ADD/EDIT COMPANY MODAL OVERLAY */}
             <Modal
@@ -7963,6 +8320,11 @@ export default function DashboardScreen({ user, onSignOut }) {
                           <View style={styles.modalInputGroup}>
                             <Text style={styles.modalLabel}>Short Code</Text>
                             <TextInput style={styles.modalInput} placeholder="Short Code" placeholderTextColor={COLORS.textMuted} value={companyShortCode} onChangeText={setCompanyShortCode} />
+                          </View>
+
+                          <View style={styles.modalInputGroup}>
+                            <Text style={styles.modalLabel}>Traffic File No</Text>
+                            <TextInput style={styles.modalInput} placeholder="Traffic File No" placeholderTextColor={COLORS.textMuted} value={companyTrafficFileNumber} onChangeText={setCompanyTrafficFileNumber} />
                           </View>
 
 
@@ -8784,14 +9146,6 @@ export default function DashboardScreen({ user, onSignOut }) {
               </Modal>
             )}
 
-            {/* Logout button in header visible ONLY on Mobile (Web has it in sidebar) */}
-            {!isLargeScreen && (
-              <TouchableOpacity onPress={onSignOut} style={styles.signOutBtn} activeOpacity={0.7}>
-                <Ionicons name="log-out-outline" size={20} color="#FF8A8A" />
-              </TouchableOpacity>
-            )}
-          </View>
-
           {/* Main Dashboard Panel Content */}
           <ScrollView
             contentContainerStyle={styles.scrollContainer}
@@ -8818,10 +9172,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   sidebar: {
-    backgroundColor: COLORS.primary,
-    borderRightWidth: 1,
-    borderRightColor: '#254E3E',
-    transition: 'width 0.3s ease', // Smooth CSS transition for Web!
+    backgroundColor: '#4A001A',
+    backgroundImage: 'linear-gradient(180deg, #4A001A 0%, #6E0F28 35%, #8A1830 70%, #D86A1A 100%)',
+    borderRightWidth: 0,
+    transition: 'width 0.3s ease',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  brandLogoBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 9,
+    backgroundColor: '#E65C19',
+    backgroundImage: 'linear-gradient(135deg, #E65C19 0%, #9C3807 100%)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    boxShadow: '0px 2px 8px rgba(230, 92, 25, 0.4)',
+  },
+  brandLogoInnerSquare: {
+    width: 16,
+    height: 16,
+    borderWidth: 2.5,
+    borderColor: '#FFFFFF',
+    borderRadius: 3,
+  },
+  sidebarBrandSubtitle: {
+    color: 'rgba(255, 255, 255, 0.75)',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 2.2,
+    marginTop: 0,
   },
   sidebarSearchWrapper: {
     flexDirection: 'row',
@@ -8851,7 +9233,7 @@ const styles = StyleSheet.create({
   sidebarMenuItemCollapsed: {
     width: 44,
     height: 44,
-    borderRadius: 8,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative', // so tooltips can be positioned relative to this!
@@ -8859,8 +9241,8 @@ const styles = StyleSheet.create({
   sidebarSignOutCollapsed: {
     width: 44,
     height: 44,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
@@ -8961,122 +9343,167 @@ const styles = StyleSheet.create({
   sidebarLogoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
-    marginBottom: SPACING.xl,
-    gap: SPACING.sm,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 16,
+    gap: 12,
   },
   sidebarBrandName: {
-    color: COLORS.white,
+    color: '#FFFFFF',
     fontSize: 22,
     fontWeight: 'bold',
     letterSpacing: 0.5,
+    lineHeight: 24,
   },
   sidebarMenuItems: {
-    paddingHorizontal: SPACING.md,
-    gap: SPACING.xs,
+    paddingHorizontal: 16,
+    gap: 16,
   },
   sidebarMenuSection: {
-    marginBottom: 4,
+    marginBottom: 0,
   },
   sidebarMenuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: SPACING.md - 2,
-    paddingHorizontal: SPACING.md,
-    borderRadius: 8,
-    gap: SPACING.sm,
+    height: 48,
+    paddingLeft: 20,
+    paddingRight: 16,
+    borderRadius: 14,
+    gap: 12,
+    transition: 'all 250ms ease-in-out',
   },
   sidebarMenuItemActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 14,
   },
   sidebarMenuText: {
-    color: 'rgba(255, 255, 255, 0.65)',
+    color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
+    fontFamily: 'Inter, system-ui, sans-serif',
   },
   sidebarMenuTextActive: {
-    color: COLORS.white,
+    color: '#F9C62A',
     fontWeight: '700',
   },
   sidebarSubMenuContainer: {
-    paddingLeft: 14,
-    marginTop: 4,
-    gap: 4,
-    borderLeftWidth: 1,
-    borderLeftColor: 'rgba(255, 255, 255, 0.12)',
-    marginLeft: 22,
+    paddingLeft: 16,
+    marginTop: 6,
+    gap: 6,
+    borderLeftWidth: 1.5,
+    borderLeftColor: 'rgba(255, 255, 255, 0.2)',
+    marginLeft: 24,
+    position: 'relative',
   },
   sidebarSubMenuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: SPACING.sm,
-    borderRadius: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    position: 'relative',
   },
   sidebarSubMenuItemActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    borderRadius: 8,
   },
   sidebarSubMenuText: {
-    color: 'rgba(255, 255, 255, 0.55)',
-    fontSize: 13,
+    color: '#FFFFFF',
+    fontSize: 12.5,
     fontWeight: '500',
   },
   sidebarSubMenuTextActive: {
-    color: COLORS.white,
+    color: '#F9C62A',
     fontWeight: '700',
   },
-  sidebarFooter: {
-    paddingHorizontal: SPACING.md,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
-    paddingTop: SPACING.lg,
+  treeDot: {
+    position: 'absolute',
+    left: -19,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    zIndex: 2,
   },
-  sidebarUserCard: {
+  treeDotActive: {
+    position: 'absolute',
+    left: -20,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#F9C62A',
+    boxShadow: '0 0 8px #F9C62A',
+    zIndex: 3,
+  },
+  sidebarFooter: {
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+    paddingTop: 12,
+    zIndex: 2,
+  },
+  sidebarUserSection: {
+    width: '100%',
+    backgroundColor: 'rgba(74, 0, 26, 0.75)',
+    backdropFilter: 'blur(12px)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 18,
+    padding: 16,
+    boxShadow: '0px 8px 24px rgba(0, 0, 0, 0.3)',
+    elevation: 6,
+  },
+  sidebarUserCardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
-    marginBottom: SPACING.md,
+    gap: 12,
   },
   sidebarAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#6E0F28',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
   sidebarAvatarText: {
-    color: COLORS.white,
-    fontSize: 13,
+    color: '#FFFFFF',
+    fontSize: 15,
     fontWeight: 'bold',
   },
   sidebarUserInfo: {
     flex: 1,
   },
   sidebarUserName: {
-    color: COLORS.white,
-    fontSize: 13,
+    color: '#FFFFFF',
+    fontSize: 14,
     fontWeight: '700',
   },
-  sidebarUserEmail: {
-    color: 'rgba(255, 255, 255, 0.5)',
-    fontSize: 11,
-    marginTop: 1,
+  sidebarUserRole: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 12,
+    marginTop: 2,
   },
-  sidebarSignOut: {
+  sidebarUserDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    marginVertical: 12,
+  },
+  sidebarSignOutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    paddingVertical: SPACING.sm,
-    borderRadius: 6,
-    gap: SPACING.xs,
   },
   sidebarSignOutText: {
-    color: '#FF8A8A',
-    fontSize: 13,
+    color: '#FFFFFF',
+    fontSize: 14,
     fontWeight: '600',
   },
   contentArea: {
@@ -9086,97 +9513,112 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   header: {
-    backgroundColor: COLORS.white,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0', // subtle grey border
+    borderBottomColor: '#F1F5F9',
+    height: 64,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.md,
+    gap: 16,
   },
   menuHamburger: {
-    padding: SPACING.xs,
+    padding: 4,
   },
   headerTitleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
+    gap: 8,
   },
   headerTitle: {
-    color: '#0F172A', // elegant dark slate title text
+    color: '#4A001A',
     fontSize: 20,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    fontFamily: 'Inter, system-ui, sans-serif',
   },
   badge: {
-    backgroundColor: '#F1F5F9', // light slate grey background
+    backgroundColor: '#FFF4E5',
     borderRadius: 12,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 2,
-    marginLeft: SPACING.xs,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginLeft: 4,
   },
   badgeText: {
-    color: '#475569', // slate grey text
+    color: '#D86A1A',
     fontSize: 10,
-    fontWeight: 'bold',
+    fontWeight: '800',
+    letterSpacing: 1.2,
     textTransform: 'uppercase',
-  },
-  signOutBtn: {
-    backgroundColor: 'rgba(255, 138, 138, 0.15)', // light red background
-    borderRadius: 8,
-    padding: SPACING.sm,
   },
   headerSearchBar: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1.5,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    marginHorizontal: 24,
-    maxWidth: 480,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    marginHorizontal: 32,
+    maxWidth: 440,
   },
   headerSearchInput: {
     flex: 1,
-    fontSize: 14,
-    color: '#0F172A',
-    fontWeight: '500',
+    fontSize: 13.5,
+    color: '#1E293B',
+    fontWeight: '400',
     padding: 0,
     outlineStyle: 'none',
   },
-  headerGearBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
-    borderWidth: 1.5,
+  headerNotificationBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
     borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
   },
-  headerAvatarBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: COLORS.primary,
+  headerNotifBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#991B1B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  headerNotifBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  headerUserAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#4A001A',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerAvatarText: {
-    color: COLORS.white,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.3,
+  headerUserAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
   userMenuBackdrop: {
     position: 'fixed',

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, TouchableOpacity, Modal, Switch, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, TouchableOpacity, Modal, Switch, useWindowDimensions, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CustomDropdown, SearchableDropdown } from './CustomFieldsTab';
 import { API_URL } from '../config';
@@ -23,6 +23,7 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
   const isLargeScreen = width > 768;
   const isEmployee = user && String(user.roleId) !== '1' && String(user.roleId) !== '2' && String(user.roleId) !== '5' && String(user.roleId) !== '8';
 
+  const isSuperAdmin = !user || String(user.roleId) === '1';
   const canCreate = !user || String(user.roleId) === '1' || (permissions && (permissions.can_create || permissions.full_control));
   const canEdit = !user || String(user.roleId) === '1' || (permissions && (permissions.can_edit || permissions.full_control));
   const canDelete = !user || String(user.roleId) === '1' || (permissions && (permissions.can_delete || permissions.full_control));
@@ -39,7 +40,7 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
   // Table state
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 5;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Edit state
   const [editingRecord, setEditingRecord] = useState(null);
@@ -204,7 +205,8 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
           console.warn('Could not fetch field values', e);
         }
 
-        const fetchDynamicOptions = async (path) => {
+        const fetchDynamicOptions = async (path, fieldName = '') => {
+          if (!path) return [];
           try {
             let processedPath = (path || '').trim();
             // Automatically append clientId if the path is designed for client lookup
@@ -238,12 +240,53 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
             if (!res.ok) return [];
             const data = await res.json();
             if (!Array.isArray(data)) return [];
+
+            const fNameLower = (fieldName || '').toLowerCase();
+
             return data.map(item => {
-              if (typeof item === 'string') return { label: item, value: item };
-              if (item && typeof item === 'object') {
-                if (item.vehicle_display_name) {
-                  return { label: String(item.vehicle_display_name), value: String(item.vehicle_display_name) };
+              if (typeof item === 'string') {
+                let val = item.trim();
+                if (fNameLower.includes('plate') && val.includes(' - ')) {
+                  val = val.split(' - ')[1].trim();
+                } else if (fNameLower.includes('vehicle') && fNameLower.includes('name') && val.includes(' - ')) {
+                  val = val.split(' - ')[0].trim();
                 }
+                return { label: val, value: val };
+              }
+
+              if (item && typeof item === 'object') {
+                // If field is Plate No / Plate Number
+                if (fNameLower.includes('plate')) {
+                  if (item.plate_no && String(item.plate_no).trim() && !/^\d{4}-\d{2}-\d{2}/.test(String(item.plate_no))) {
+                    const p = String(item.plate_no).trim();
+                    return { label: p, value: p };
+                  }
+                  if (item.vehicle_display_name && item.vehicle_display_name.includes(' - ')) {
+                    const p = item.vehicle_display_name.split(' - ')[1].trim();
+                    return { label: p, value: p };
+                  }
+                }
+
+                // If field is Vehicle Name
+                if (fNameLower.includes('vehicle') && fNameLower.includes('name')) {
+                  if (item.vehicle_name && String(item.vehicle_name).trim()) {
+                    const n = String(item.vehicle_name).trim();
+                    return { label: n, value: n };
+                  }
+                  if (item.vehicle_display_name && item.vehicle_display_name.includes(' - ')) {
+                    const n = item.vehicle_display_name.split(' - ')[0].trim();
+                    return { label: n, value: n };
+                  }
+                }
+
+                if (item.vehicle_display_name) {
+                  let disp = String(item.vehicle_display_name);
+                  if (fNameLower.includes('plate') && disp.includes(' - ')) {
+                    disp = disp.split(' - ')[1].trim();
+                  }
+                  return { label: disp, value: disp };
+                }
+
                 const nameKey = Object.keys(item).find(key =>
                   key.toLowerCase().includes('name') ||
                   key.toLowerCase().includes('label') ||
@@ -255,14 +298,22 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
                   key.toLowerCase().includes('department')
                 );
                 const idVal = item.id !== undefined ? item.id : (item.Id !== undefined ? item.Id : item.vehicle_id);
-                if (nameKey && idVal !== undefined) {
-                  return { label: String(item[nameKey]), value: String(item[nameKey]) };
-                }
                 if (nameKey) {
-                  return { label: String(item[nameKey]), value: String(item[nameKey]) };
+                  let val = String(item[nameKey]);
+                  if (fNameLower.includes('plate') && val.includes(' - ')) {
+                    val = val.split(' - ')[1].trim();
+                  }
+                  return { label: val, value: val };
                 }
                 const firstKey = Object.keys(item)[0];
-                return firstKey ? { label: String(item[firstKey]), value: String(item[firstKey]) } : null;
+                if (firstKey) {
+                  let val = String(item[firstKey]);
+                  if (fNameLower.includes('plate') && val.includes(' - ')) {
+                    val = val.split(' - ')[1].trim();
+                  }
+                  return { label: val, value: val };
+                }
+                return null;
               }
               return { label: String(item), value: String(item) };
             }).filter(Boolean);
@@ -274,9 +325,11 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
 
         const processField = async (f) => {
           let updatedField = { ...f };
+          const fieldNameLower = (f.name || f.label || '').toLowerCase();
+
           if (['Dropdown', 'Searchable Dropdown', 'Radio Button', 'Checkbox'].includes(f.type)) {
             if (f.optionSource === 'dynamic' && f.dynamicPath) {
-              const dynOptions = await fetchDynamicOptions(f.dynamicPath);
+              const dynOptions = await fetchDynamicOptions(f.dynamicPath, f.name || f.label || '');
               updatedField.allowedOptions = dynOptions;
               // Auto-select if there is only 1 option and field is 'Company'
               if (f.name && f.name.toLowerCase().includes('company') && dynOptions.length === 1) {
@@ -287,11 +340,32 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
               const fallback = f.optionsArr && f.optionsArr.length > 0
                 ? f.optionsArr
                 : (f.options || '').split(',').map(o => o.trim()).filter(Boolean);
-              updatedField.allowedOptions = (dbOptions && dbOptions.length > 0) ? dbOptions : fallback;
-              // Auto-select if there is only 1 option and field is 'Company'
-              if (f.name && f.name.toLowerCase().includes('company') && updatedField.allowedOptions.length === 1) {
-                setFormData(prev => ({ ...prev, [f.id]: updatedField.allowedOptions[0] }));
+              let rawOptions = (dbOptions && dbOptions.length > 0) ? dbOptions : fallback;
+              if (fieldNameLower.includes('plate')) {
+                rawOptions = rawOptions.map(opt => {
+                  const optStr = typeof opt === 'object' ? (opt.label || opt.value || '') : String(opt);
+                  if (optStr.includes(' - ')) {
+                    const p = optStr.split(' - ')[1].trim();
+                    return typeof opt === 'object' ? { label: p, value: p } : p;
+                  }
+                  return opt;
+                });
               }
+              updatedField.allowedOptions = rawOptions;
+            }
+
+            // Auto-fetch Account Numbers for any "Acc No" dropdown when options are empty
+            if ((!updatedField.allowedOptions || updatedField.allowedOptions.length === 0) &&
+                (fieldNameLower.includes('acc no') || fieldNameLower.includes('account no') || fieldNameLower.includes('acc_no'))) {
+              const accOptions = await fetchDynamicOptions('/api/vehicle-tolls/account-numbers', f.name || f.label || '');
+              if (accOptions && accOptions.length > 0) {
+                updatedField.allowedOptions = accOptions;
+              }
+            }
+            
+            // Auto-select if there is only 1 option and field is 'Company'
+            if (f.name && f.name.toLowerCase().includes('company') && updatedField.allowedOptions.length === 1) {
+              setFormData(prev => ({ ...prev, [f.id]: updatedField.allowedOptions[0] }));
             }
           }
           if (f.subsections && f.subsections.length > 0) {
@@ -526,19 +600,34 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
     switch (field.type) {
       case 'Dropdown':
       case 'Searchable Dropdown': {
+        const fNameLower = (field.name || field.label || '').toLowerCase();
         const options = (field.allowedOptions && field.allowedOptions.length > 0)
           ? field.allowedOptions
           : (field.options || '').split(',').map(o => o.trim()).filter(Boolean);
         const dropdownData = options.map(opt => {
-          if (opt && typeof opt === 'object' && opt.label !== undefined && opt.value !== undefined) {
-            return opt;
+          let label = typeof opt === 'object' ? (opt.label !== undefined ? opt.label : opt.value) : String(opt);
+          let value = typeof opt === 'object' ? (opt.value !== undefined ? opt.value : opt.label) : String(opt);
+          if (fNameLower.includes('plate') && String(label).includes(' - ')) {
+            label = String(label).split(' - ')[1].trim();
+            value = String(value).includes(' - ') ? String(value).split(' - ')[1].trim() : label;
+          } else if (fNameLower.includes('vehicle') && fNameLower.includes('name') && String(label).includes(' - ')) {
+            label = String(label).split(' - ')[0].trim();
+            value = String(value).includes(' - ') ? String(value).split(' - ')[0].trim() : label;
           }
-          return { label: opt, value: opt };
+          return { label, value };
         });
+
+        let currentValue = formData[field.id] || '';
+        if (fNameLower.includes('plate') && String(currentValue).includes(' - ')) {
+          currentValue = String(currentValue).split(' - ')[1].trim();
+        } else if (fNameLower.includes('vehicle') && fNameLower.includes('name') && String(currentValue).includes(' - ')) {
+          currentValue = String(currentValue).split(' - ')[0].trim();
+        }
+
         return (
           <SearchableDropdown
             data={dropdownData}
-            value={formData[field.id] || ''}
+            value={currentValue}
             onChange={(val) => handleInputChange(field.id, val)}
             placeholder={`-- Select ${field.name} --`}
             searchPlaceholder={`Search ${field.name}...`}
@@ -911,238 +1000,361 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
 
   return (
     <View style={styles.container}>
-      {/* MAIN HEADER */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Vehicle Insurance</Text>
-          <Text style={styles.headerSubtitle}>Manage your vehicle insurance records.</Text>
+      {/* MODERN VEHICLE INSURANCE HEADER BANNER */}
+      <View style={styles.bannerContainer}>
+        {/* Background Decorative Gradient Wave & Watermark */}
+        <View style={[styles.bannerWatermarkContainer, { pointerEvents: 'none' }]}>
+          <View style={styles.bannerOrangeGlow} />
+          <View style={styles.bannerWaveOuter} />
+          <View style={styles.bannerWaveInner} />
+          <View style={styles.bannerWatermarkIconBox}>
+            <Ionicons name="shield-outline" size={135} color="rgba(241, 118, 22, 0.08)" />
+          </View>
         </View>
-        {canCreate && (
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={handleAddNewRecord}
-          >
-            <Ionicons name="add-circle" size={20} color="#FFFFFF" />
-            <Text style={styles.addButtonText}>Add Insurance</Text>
-          </TouchableOpacity>
-        )}
+
+        {/* Banner Content Layout */}
+        <View style={styles.bannerContent}>
+          {/* Left Group: Icon Badge & Titles */}
+          <View style={styles.bannerTitleGroup}>
+            <View style={styles.bannerIconBadge}>
+              <View style={styles.bannerIconInner}>
+                <Ionicons name="shield-checkmark" size={26} color="#72002A" />
+                <View style={styles.iconOrangeDot} />
+              </View>
+            </View>
+
+            <View style={styles.bannerTextStack}>
+              <Text style={styles.bannerTitle}>Vehicle Insurance</Text>
+              <Text style={styles.bannerSubtitle}>Manage your vehicle insurance records.</Text>
+            </View>
+          </View>
+
+          {/* Right Group: Action Button */}
+          {canCreate && (
+            <TouchableOpacity
+              style={styles.bannerAddButton}
+              onPress={handleAddNewRecord}
+              activeOpacity={0.88}
+            >
+              <View style={styles.bannerAddIconBadge}>
+                <Ionicons name="add" size={14} color="#72002A" />
+              </View>
+              <Text style={styles.bannerAddButtonText}>Add Insurance</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
-      {/* MAIN CONTENT */}
+      {/* MAIN CONTENT TABLE & CONTROLS */}
       <View style={styles.mainContent}>
         {insuranceRecords.length === 0 && !searchQuery ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="document-text-outline" size={48} color={COLORS.textMuted} />
-              <Text style={styles.emptyStateText}>No insurance records found.</Text>
-              <Text style={styles.emptyStateSubtext}>Click 'Add Insurance' to create a new record.</Text>
+          <View style={styles.emptyState}>
+            <Ionicons name="document-text-outline" size={48} color={COLORS.textMuted} />
+            <Text style={styles.emptyStateText}>No insurance records found.</Text>
+            <Text style={styles.emptyStateSubtext}>Click 'Add Insurance' to create a new record.</Text>
+          </View>
+        ) : (
+          <View style={{ flex: 1, gap: 16 }}>
+            {/* Separate Top Search & Filter Bar */}
+            <View style={styles.standaloneToolbarCard}>
+              <View style={styles.tableSearchBox}>
+                <Ionicons name="search-outline" size={16} color="#475569" />
+                <TextInput
+                  style={styles.tableSearchInput}
+                  placeholder="Search by ID or Client..."
+                  placeholderTextColor="#94A3B8"
+                  value={searchQuery}
+                  onChangeText={(text) => { setSearchQuery(text); setCurrentPage(1); }}
+                />
+              </View>
+
+              <TouchableOpacity style={styles.tableFilterBtn} activeOpacity={0.8}>
+                <Ionicons name="funnel-outline" size={15} color="#FF5500" />
+                <Text style={styles.tableFilterBtnText}>Filter</Text>
+              </TouchableOpacity>
             </View>
-          ) : (
-            <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#F1F5F9', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1, overflow: 'hidden' }}>
-              {/* Top Toolbar */}
-              <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: '#E2E8F0', width: 300 }}>
-                  <Ionicons name="search" size={16} color="#94A3B8" />
-                  <TextInput
-                    style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 8, fontSize: 13, color: '#334155', outlineStyle: 'none', outlineWidth: 0 }}
-                    placeholder="Search by ID or Client..."
-                    placeholderTextColor="#94A3B8"
-                    value={searchQuery}
-                    onChangeText={(text) => { setSearchQuery(text); setCurrentPage(1); }}
-                  />
-                </View>
+
+            {/* Main Data Table Card */}
+            <View style={styles.tableCardContainer}>
+              {/* Table Header Columns */}
+              <View style={styles.tableHeaderRow}>
+              <Text style={[styles.tableHeaderCell, { flex: 0.6 }]}>ID</Text>
+              {isSuperAdmin && (
+                <Text style={[styles.tableHeaderCell, { flex: 1.8 }]}>CLIENT INFO</Text>
+              )}
+              <Text style={[styles.tableHeaderCell, { flex: 1.5 }]}>VEHICLE NAME</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1.5 }]}>COMPANY NAME</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1.1 }]}>INSURER</Text>
+              <View style={{ flex: 1.3, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={styles.tableHeaderCell}>START DATE</Text>
+                <Ionicons name="swap-vertical" size={12} color="#FFE4D6" />
               </View>
+              <Text style={[styles.tableHeaderCell, { flex: 1.3 }]}>EXPIRY DATE</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1.6 }]}>SUBMITTED BY</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1.1 }]}>STATUS</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1.2, textAlign: 'center' }]}>ACTION</Text>
+            </View>
 
-              {/* Table Header */}
-              <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20 }}>
-                <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>ID</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Company Name</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Insurer</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Expiry Date</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Submitted By</Text>
-                <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
-                <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>ACTION</Text>
-              </View>
-
-              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true}>
-                {(() => {
-                  const filtered = insuranceRecords.filter(r => {
-                    if (user && String(user.roleId) !== '1' && user.clientid) {
-                      if (String(r.clientid) !== String(user.clientid)) return false;
-                    }
-                    if (!searchQuery) return true;
-                    const cObj = clients.find(c => String(c.id) === String(r.clientid));
-                    const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
-                    return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
-                  });
-                  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-                  const paginated = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
-
-                  if (filtered.length === 0) {
-                    return (
-                      <View style={{ padding: 40, alignItems: 'center' }}>
-                        <Text style={{ color: '#94A3B8', fontSize: 14 }}>No matches found</Text>
-                      </View>
-                    );
-                  }
-
-                  return (
-                    <View style={{ flex: 1 }}>
-                      {paginated.map((record) => {
-                        let parsedData = {};
-                        if (record.field_data) {
-                          try {
-                            parsedData = typeof record.field_data === 'string' ? JSON.parse(record.field_data) : record.field_data;
-                          } catch (e) { }
-                        }
-                        const clientObj = clients.find(c => String(c.id) === String(record.clientid));
-                        const clientName = clientObj ? (clientObj.client_name || clientObj.name) : `Client ${record.clientid}`;
-                        const countryObj = countries.find(c => String(c.id) === String(record.country_id));
-                        const countryName = countryObj ? countryObj.name : `Country ${record.country_id}`;
-                        const moduleObj = modules.find(m => String(m.id) === String(record.moduleid));
-                        const moduleName = moduleObj ? moduleObj.module_name : `Module ${record.moduleid}`;
-
-                        const rawFirstValue = Object.values(parsedData)[0];
-                        let firstValue = '-';
-                        if (rawFirstValue && typeof rawFirstValue === 'object') {
-                          if (Array.isArray(rawFirstValue)) {
-                            firstValue = rawFirstValue.map(f => f.name || 'File').join(', ');
-                          } else {
-                            firstValue = rawFirstValue.name || 'File';
-                          }
-                        } else if (rawFirstValue !== undefined && rawFirstValue !== null) {
-                          const valStr = String(rawFirstValue);
-                          if (/^\d{4}-\d{2}-\d{2}$/.test(valStr)) {
-                            const [year, month, day] = valStr.split('-');
-                            firstValue = `${day}/${month}/${year}`;
-                          } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(valStr)) {
-                            const [datePart, timePart] = valStr.split('T');
-                            const [year, month, day] = datePart.split('-');
-                            firstValue = `${day}/${month}/${year} ${timePart}`;
-                          } else {
-                            firstValue = valStr;
-                          }
-                        }
-                        const firstKey = Object.keys(parsedData)[0] ? Object.keys(parsedData)[0].replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()) : 'No Data';
-
-                        return (
-                          <View key={record.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
-                            <Text style={{ flex: 0.5, fontSize: 12, color: '#334155', fontWeight: '700' }}>#{record.id}</Text>
-
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{clientName}</Text>
-                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Country: {countryName}</Text>
-                            </View>
-
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600' }} numberOfLines={1}>{record.company_name || 'N/A'}</Text>
-                            </View>
-
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500' }} numberOfLines={1}>{record.insurer || 'N/A'}</Text>
-                            </View>
-
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500' }} numberOfLines={1}>
-                                {record.expiry_date && record.expiry_date !== 'N/A' ? (() => {
-                                  const valStr = String(record.expiry_date);
-                                  if (/^\d{4}-\d{2}-\d{2}$/.test(valStr)) {
-                                    const [year, month, day] = valStr.split('-');
-                                    return `${day}/${month}/${year}`;
-                                  } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(valStr)) {
-                                    const [datePart, timePart] = valStr.split('T');
-                                    const [year, month, day] = datePart.split('-');
-                                    return `${day}/${month}/${year} ${timePart}`;
-                                  }
-                                  return valStr;
-                                })() : 'N/A'}
-                              </Text>
-                            </View>
-
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{record.role_name || (record.roleid ? `Role: ${record.roleid}` : 'N/A')}</Text>
-                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>{record.employee_name || 'N/A'}</Text>
-                            </View>
-
-                            <View style={{ flex: 1, alignItems: 'flex-start' }}>
-                              <View style={{ backgroundColor: '#F0FDF4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
-                                <Text style={{ fontSize: 11, fontWeight: '700', color: '#166534' }}>Active</Text>
-                              </View>
-                            </View>
-
-                            <View style={{ flex: 1.2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-                              <TouchableOpacity style={{ padding: 4 }} onPress={() => handleView(record)}>
-                                <Ionicons name="eye-outline" size={18} color="#0F172A" />
-                              </TouchableOpacity>
-
-                              {(checkRowPermission ? checkRowPermission(record.company_id || record.companyid, 'edit') : canEdit) && (
-                                <TouchableOpacity style={{ padding: 4 }} onPress={() => handleEdit(record)}>
-                                  <Ionicons name="pencil" size={18} color="#166534" />
-                                </TouchableOpacity>
-                              )}
-
-                              {(checkRowPermission ? checkRowPermission(record.company_id || record.companyid, 'delete') : canDelete) && (
-                                <TouchableOpacity style={{ padding: 4 }} onPress={() => handleDelete(record)}>
-                                  <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                                </TouchableOpacity>
-                              )}
-                            </View>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  );
-                })()}
-              </ScrollView>
-
-              {/* Pagination Footer */}
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true}>
               {(() => {
                 const filtered = insuranceRecords.filter(r => {
                   if (user && String(user.roleId) !== '1' && user.clientid) {
                     if (String(r.clientid) !== String(user.clientid)) return false;
                   }
                   if (!searchQuery) return true;
+                  const queryLower = searchQuery.toLowerCase();
                   const cObj = clients.find(c => String(c.id) === String(r.clientid));
                   const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
-                  return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
+                  const vehName = r.vehicle_display_name || '';
+                  return String(r.id).includes(searchQuery) ||
+                    (cName && cName.toLowerCase().includes(queryLower)) ||
+                    (vehName && vehName.toLowerCase().includes(queryLower));
                 });
-                const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-                const startEntry = filtered.length === 0 ? 0 : ((currentPage - 1) * ITEMS_PER_PAGE) + 1;
-                const endEntry = Math.min(currentPage * ITEMS_PER_PAGE, filtered.length);
+                const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+                const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+                if (filtered.length === 0) {
+                  return (
+                    <View style={{ padding: 40, alignItems: 'center' }}>
+                      <Text style={{ color: '#94A3B8', fontSize: 14 }}>No matches found</Text>
+                    </View>
+                  );
+                }
+
+                const getInitials = (name) => {
+                  if (!name) return 'NR';
+                  const parts = String(name).trim().split(' ');
+                  if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+                  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+                };
 
                 return (
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC' }}>
-                    <Text style={{ fontSize: 12, color: '#64748B' }}>
-                      Showing <Text style={{ fontWeight: '600', color: '#334155' }}>{startEntry}</Text> to <Text style={{ fontWeight: '600', color: '#334155' }}>{endEntry}</Text> of <Text style={{ fontWeight: '600', color: '#334155' }}>{filtered.length}</Text> entries
-                    </Text>
+                  <View style={{ flex: 1 }}>
+                    {paginated.map((record, index) => {
+                      let parsedData = {};
+                      if (record.field_data) {
+                        try {
+                          parsedData = typeof record.field_data === 'string' ? JSON.parse(record.field_data) : record.field_data;
+                        } catch (e) { }
+                      }
+                      const clientObj = clients.find(c => String(c.id) === String(record.clientid));
+                      const clientName = clientObj ? (clientObj.client_name || clientObj.name) : `Client ${record.clientid}`;
+                      const countryObj = countries.find(c => String(c.id) === String(record.country_id));
+                      const countryName = countryObj ? countryObj.name : `Country ${record.country_id}`;
 
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                      <TouchableOpacity
-                        style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: currentPage > 1 ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
-                        disabled={currentPage === 1}
-                        onPress={() => setCurrentPage(p => p - 1)}
-                      >
-                        <Text style={{ fontSize: 12, color: currentPage > 1 ? '#475569' : '#94A3B8', fontWeight: '500' }}>{'< Prev'}</Text>
-                      </TouchableOpacity>
+                      const valuesList = Object.values(parsedData).filter(v => typeof v === 'string' && v.trim());
+                      const matchedVehicleVal = valuesList.find(v => v.includes(' - ')) || valuesList[0];
 
-                      <Text style={{ fontSize: 12, color: '#64748B' }}>
-                        Page <Text style={{ fontWeight: '600', color: '#334155' }}>{currentPage}</Text> of {totalPages}
-                      </Text>
+                      const vehicleDisplayName = record.vehicle_display_name && record.vehicle_display_name !== 'N/A'
+                        ? record.vehicle_display_name
+                        : (matchedVehicleVal || 'N/A');
 
-                      <TouchableOpacity
-                        style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: currentPage < totalPages ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
-                        disabled={currentPage === totalPages}
-                        onPress={() => setCurrentPage(p => p + 1)}
-                      >
-                        <Text style={{ fontSize: 12, color: currentPage < totalPages ? '#475569' : '#94A3B8', fontWeight: '500' }}>{'Next >'}</Text>
-                      </TouchableOpacity>
-                    </View>
+                      const startDateVal = record.start_date && record.start_date !== 'N/A'
+                        ? record.start_date
+                        : (() => {
+                            const entries = Object.entries(parsedData);
+                            const match = entries.find(([k, v]) => k.toLowerCase().includes('start') || k.toLowerCase().includes('issue') || k.toLowerCase().includes('effective'));
+                            return match ? match[1] : 'N/A';
+                          })();
+
+                      const formatDateStr = (valStr) => {
+                        if (!valStr || valStr === 'N/A') return 'N/A';
+                        const str = String(valStr);
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+                          const [year, month, day] = str.split('-');
+                          return `${day}/${month}/${year}`;
+                        } else if (/^\d{4}-\d{2}-\d{2}T/.test(str)) {
+                          const datePart = str.split('T')[0];
+                          const [year, month, day] = datePart.split('-');
+                          return `${day}/${month}/${year}`;
+                        }
+                        return str;
+                      };
+
+                      const isOddRow = index % 2 === 1;
+                      const isLastRow = index === paginated.length - 1;
+
+                      return (
+                        <View key={record.id} style={[styles.tableRowContainer, isOddRow && { backgroundColor: '#FFF8F2' }, isLastRow && { borderBottomWidth: 0 }]}>
+
+                          {/* ID Column */}
+                          <Text style={[styles.rowCellText, { flex: 0.6, color: '#72002A', fontWeight: '600', fontSize: 13.5 }]}>
+                            #{record.id}
+                          </Text>
+
+                          {/* CLIENT INFO Column */}
+                          {isSuperAdmin && (
+                            <View style={{ flex: 1.8, paddingRight: 10 }}>
+                              <Text style={styles.clientNameText} numberOfLines={1}>{clientName}</Text>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 }}>
+                                <Ionicons name="location-sharp" size={10} color="#94A3B8" />
+                                <Text style={styles.clientCountryText} numberOfLines={1}>{countryName || 'United Arab Emirates'}</Text>
+                              </View>
+                            </View>
+                          )}
+
+                          {/* VEHICLE NAME Column */}
+                          <View style={{ flex: 1.5, paddingRight: 10 }}>
+                            <Text style={styles.vehicleNameText} numberOfLines={1}>{vehicleDisplayName}</Text>
+                          </View>
+
+                          {/* COMPANY NAME Column */}
+                          <View style={{ flex: 1.5, paddingRight: 10 }}>
+                            <Text style={styles.companyNameText} numberOfLines={1}>{record.company_name || 'N/A'}</Text>
+                          </View>
+
+                          {/* INSURER Column */}
+                          <View style={{ flex: 1.1, paddingRight: 10 }}>
+                            <Text style={styles.mutedCellText} numberOfLines={1}>{record.insurer || 'N/A'}</Text>
+                          </View>
+
+                          {/* START DATE Column */}
+                          <View style={{ flex: 1.3, paddingRight: 10 }}>
+                            <Text style={styles.mutedCellText} numberOfLines={1}>{formatDateStr(startDateVal)}</Text>
+                          </View>
+
+                          {/* EXPIRY DATE Column */}
+                          <View style={{ flex: 1.3, paddingRight: 10 }}>
+                            <Text style={styles.mutedCellText} numberOfLines={1}>{formatDateStr(record.expiry_date)}</Text>
+                          </View>
+
+                          {/* SUBMITTED BY Column */}
+                          <View style={{ flex: 1.6, paddingRight: 10 }}>
+                            <Text style={styles.submitterRoleText} numberOfLines={1}>
+                              {record.role_name || (record.roleid ? `Role: ${record.roleid}` : 'Client')}
+                            </Text>
+                            <Text style={styles.submitterSubtext} numberOfLines={1}>
+                              {record.employee_name || 'nirmalrajs2023@gmail.com'}
+                            </Text>
+                          </View>
+
+                          {/* STATUS Column */}
+                          <View style={{ flex: 1.1, alignItems: 'flex-start' }}>
+                            <View style={styles.statusPillBadge}>
+                              <View style={styles.statusDotGreen} />
+                              <Text style={styles.statusPillText}>Active</Text>
+                            </View>
+                          </View>
+
+                          {/* ACTION Column */}
+                          <View style={{ flex: 1.2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                            <TouchableOpacity style={styles.actionBtnView} onPress={() => handleView(record)} activeOpacity={0.8}>
+                              <Ionicons name="eye-outline" size={16} color="rgb(158, 46, 42)" />
+                            </TouchableOpacity>
+
+                            {(checkRowPermission ? checkRowPermission(record.company_id || record.companyid, 'edit') : canEdit) && (
+                              <TouchableOpacity style={styles.actionBtnEdit} onPress={() => handleEdit(record)} activeOpacity={0.8}>
+                                <Ionicons name="pencil" size={15} color="#166534" />
+                              </TouchableOpacity>
+                            )}
+
+                            {(checkRowPermission ? checkRowPermission(record.company_id || record.companyid, 'delete') : canDelete) && (
+                              <TouchableOpacity style={styles.actionBtnDelete} onPress={() => handleDelete(record)} activeOpacity={0.8}>
+                                <Ionicons name="trash-outline" size={15} color="#EF4444" />
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        </View>
+                      );
+                    })}
                   </View>
                 );
               })()}
-            </View>
-          )}
-      </View>
+            </ScrollView>
+
+            {/* Pagination Footer */}
+            {(() => {
+              const filtered = insuranceRecords.filter(r => {
+                if (user && String(user.roleId) !== '1' && user.clientid) {
+                  if (String(r.clientid) !== String(user.clientid)) return false;
+                }
+                if (!searchQuery) return true;
+                const cObj = clients.find(c => String(c.id) === String(r.clientid));
+                const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
+                return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
+              });
+              const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+              const startEntry = filtered.length === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1;
+              const endEntry = Math.min(currentPage * itemsPerPage, filtered.length);
+
+              const pageNumbers = [];
+              for (let i = 1; i <= Math.min(4, totalPages); i++) {
+                pageNumbers.push(i);
+              }
+
+              return (
+                <View style={styles.paginationFooter}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                    <Text style={styles.paginationInfoText}>
+                      Showing <Text style={{ fontWeight: '600', color: '#1E293B' }}>{startEntry}</Text> to <Text style={{ fontWeight: '600', color: '#1E293B' }}>{endEntry}</Text> of <Text style={{ fontWeight: '600', color: '#1E293B' }}>{filtered.length}</Text> entries
+                    </Text>
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ fontSize: 13, color: '#64748B' }}>Rows per page:</Text>
+                      <select
+                        value={itemsPerPage}
+                        onChange={(e) => {
+                          setItemsPerPage(Number(e.target.value));
+                          setCurrentPage(1);
+                        }}
+                        style={{
+                          padding: '4px 8px',
+                          borderRadius: 6,
+                          borderColor: '#CBD5E1',
+                          borderWidth: 1,
+                          borderStyle: 'solid',
+                          fontSize: 12,
+                          color: '#1E293B',
+                          backgroundColor: '#FFFFFF',
+                          outline: 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value={10}>10</option>
+                        <option value={20}>20</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                      </select>
+                    </View>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <TouchableOpacity
+                      style={[styles.pageNavBtn, currentPage === 1 && { opacity: 0.5 }]}
+                      disabled={currentPage === 1}
+                      onPress={() => setCurrentPage(p => p - 1)}
+                    >
+                      <Ionicons name="chevron-back" size={14} color="#64748B" />
+                    </TouchableOpacity>
+
+                    {pageNumbers.map(pNum => (
+                      <TouchableOpacity
+                        key={pNum}
+                        style={[styles.pageNumberBtn, currentPage === pNum && styles.pageNumberBtnActive]}
+                        onPress={() => setCurrentPage(pNum)}
+                      >
+                        <Text style={[styles.pageNumberText, currentPage === pNum && styles.pageNumberTextActive]}>
+                          {pNum}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+
+                    <TouchableOpacity
+                      style={[styles.pageNavBtn, currentPage === totalPages && { opacity: 0.5 }]}
+                      disabled={currentPage === totalPages}
+                      onPress={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    >
+                      <Ionicons name="chevron-forward" size={14} color="#64748B" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })()}
+          </View>
+        </View>
+      )}
+    </View>
 
       {/* DELETE CONFIRMATION MODAL */}
       <Modal
@@ -1151,52 +1363,71 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
         animationType="fade"
         onRequestClose={() => setDeleteModalVisible(false)}
       >
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' }}>
-          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 12, width: 450, padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 5 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#FEE2E2' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Ionicons name="warning" size={24} color="#EF4444" />
-                <Text style={{ fontSize: 20, fontWeight: '700', color: '#EF4444' }}>Confirm Deletion</Text>
+        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.45)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, width: 480, maxWidth: '95%', padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 20, elevation: 8 }}>
+            
+            {/* Modal Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#FFF0F0', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#FEE2E2' }}>
+                  <Ionicons name="trash-outline" size={22} color="#DC2626" />
+                </View>
+                <Text style={{ fontSize: 20, fontWeight: '700', color: '#DC2626' }}>Confirm Deletion</Text>
               </View>
-              <TouchableOpacity onPress={() => setDeleteModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#64748B" />
+              <TouchableOpacity onPress={() => setDeleteModalVisible(false)} activeOpacity={0.7} style={{ padding: 4 }}>
+                <Ionicons name="close" size={20} color="#64748B" />
               </TouchableOpacity>
             </View>
 
-            <Text style={{ fontSize: 16, color: '#334155', marginBottom: 16 }}>
-              Are you sure you want to delete <Text style={{ fontWeight: '700' }}>Record #{recordToDelete?.id}</Text>?
-            </Text>
+            {/* Warning Banner Card */}
+            <View style={{ backgroundColor: '#FFF5F5', borderRadius: 12, borderWidth: 1, borderColor: '#FEE2E2', padding: 18, flexDirection: 'row', gap: 14, marginBottom: 22 }}>
+              <Ionicons name="warning" size={26} color="#E11D48" style={{ marginTop: 1 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: '#1E293B', lineHeight: 22 }}>
+                  Are you sure you want to delete <Text style={{ color: '#DC2626', fontWeight: '700' }}>Record #{recordToDelete?.id}</Text>?
+                </Text>
+                <Text style={{ fontSize: 13, color: '#64748B', marginTop: 8, lineHeight: 19 }}>
+                  This will permanently delete the selected insurance record. This action cannot be undone and will be completely removed from the database.
+                </Text>
+              </View>
+            </View>
 
-            <Text style={{ fontSize: 14, color: '#64748B', marginBottom: 24, lineHeight: 20 }}>
-              This will permanently delete the selected insurance record. This action cannot be undone and will be completely removed from the database.
-            </Text>
+            {/* Confirmation Field */}
+            <View style={{ marginBottom: 24 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#1E293B', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                TYPE <Text style={{ color: '#DC2626', fontWeight: '800' }}>YES</Text> TO CONFIRM <Text style={{ color: '#EF4444' }}>*</Text>
+              </Text>
 
-            <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 8, textTransform: 'uppercase' }}>
-              TYPE <Text style={{ color: '#EF4444' }}>YES</Text> TO CONFIRM *
-            </Text>
+              <TextInput
+                style={{ height: 48, borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 10, paddingHorizontal: 16, fontSize: 14, color: '#0F172A', backgroundColor: '#FFFFFF', outlineStyle: 'none' }}
+                placeholder="YES"
+                placeholderTextColor="#94A3B8"
+                value={deleteConfirmationText}
+                onChangeText={setDeleteConfirmationText}
+                autoCapitalize="characters"
+              />
+            </View>
 
-            <TextInput
-              style={{ borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 6, padding: 12, fontSize: 14, color: '#334155', marginBottom: 24, outlineStyle: 'none' }}
-              placeholder="Type YES here"
-              placeholderTextColor="#94A3B8"
-              value={deleteConfirmationText}
-              onChangeText={setDeleteConfirmationText}
-              autoCapitalize="characters"
-            />
-
-            <View style={{ borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 20, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 16 }}>
-              <TouchableOpacity onPress={() => setDeleteModalVisible(false)}>
+            {/* Modal Actions */}
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 12, paddingTop: 4 }}>
+              <TouchableOpacity
+                onPress={() => setDeleteModalVisible(false)}
+                style={{ height: 42, paddingHorizontal: 20, justifyContent: 'center', alignItems: 'center', borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#FFFFFF' }}
+                activeOpacity={0.8}
+              >
                 <Text style={{ fontSize: 14, fontWeight: '600', color: '#475569' }}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={{ backgroundColor: deleteConfirmationText === 'YES' ? '#FECACA' : '#F1F5F9', paddingVertical: 10, paddingHorizontal: 24, borderRadius: 6 }}
+                style={[{ height: 42, paddingHorizontal: 24, justifyContent: 'center', alignItems: 'center', borderRadius: 10, backgroundColor: '#DC2626' }, deleteConfirmationText !== 'YES' && { opacity: 0.5 }]}
                 disabled={deleteConfirmationText !== 'YES'}
                 onPress={handleConfirmDelete}
+                activeOpacity={0.85}
               >
-                <Text style={{ fontSize: 14, fontWeight: '700', color: '#FFFFFF' }}>YES</Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: '#FFFFFF' }}>Delete Record</Text>
               </TouchableOpacity>
             </View>
+
           </View>
         </View>
       </Modal>
@@ -1211,106 +1442,238 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
         <View style={[styles.modalOverlay, isLargeScreen && { marginLeft: isSidebarCollapsed ? 78 : 260 }]}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Ionicons name="document-text" size={24} color={COLORS.primary} />
-                <Text style={styles.modalTitle}>{isViewOnly ? `View Insurance Record #${editingRecord?.id}` : (editingRecord ? `Edit Insurance Record #${editingRecord.id}` : 'Add Vehicle Insurance')}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: '#FFF0F2', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#FCE7F3', position: 'relative' }}>
+                  <Ionicons name="document-text" size={26} color="#72002A" />
+                  <View style={{ position: 'absolute', bottom: 4, right: 4, backgroundColor: '#72002A', borderRadius: 8, width: 16, height: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: '#FFF0F2' }}>
+                    <Ionicons name="shield-checkmark" size={10} color="#FFFFFF" />
+                  </View>
+                </View>
+                <View>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: '#0F172A', letterSpacing: -0.2 }}>
+                    {isViewOnly ? `View Insurance Record #${editingRecord?.id}` : (editingRecord ? `Edit Insurance Record #${editingRecord.id}` : 'Add Vehicle Insurance')}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>
+                    {isViewOnly
+                      ? 'Viewing vehicle insurance record details.'
+                      : (editingRecord ? 'Update the details below for this insurance record.' : 'Fill in the details below to continue adding a new insurance record.')}
+                  </Text>
+                </View>
               </View>
-              <TouchableOpacity onPress={() => { setIsFormOpen(false); setEditingRecord(null); setFormData({}); setIsViewOnly(false); }} style={styles.closeButton}>
-                <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+              <TouchableOpacity onPress={() => { setIsFormOpen(false); setEditingRecord(null); setFormData({}); setIsViewOnly(false); }} style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' }}>
+                <Ionicons name="close" size={18} color="#64748B" />
               </TouchableOpacity>
             </View>
             {/* WIZARD PROGRESS BAR */}
             {!isViewOnly && (
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, backgroundColor: '#F8FAFC', borderBottomWidth: 1, borderBottomColor: '#E2E8F0' }}>
-                {[
-                  { id: 1, label: 'Configuration', icon: 'settings-outline' },
-                  { id: 2, label: 'Form Data', icon: 'document-text-outline' }
-                ].map((step, index, arr) => {
-                  const isActive = wizardStep === step.id;
-                  const isPast = wizardStep > step.id;
-
-                  return (
-                    <React.Fragment key={step.id}>
-                      <View style={{ alignItems: 'center', flexDirection: 'row', gap: 8, paddingHorizontal: 4 }}>
-                        <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: isActive || isPast ? '#0F172A' : '#E2E8F0', justifyContent: 'center', alignItems: 'center' }}>
-                          <Ionicons name={step.icon} size={14} color={isActive || isPast ? '#FFFFFF' : '#64748B'} />
-                        </View>
-                        <Text style={{ fontSize: 13, fontWeight: '600', color: isActive || isPast ? '#0F172A' : '#64748B' }}>{step.label}</Text>
-                      </View>
-                      {index < arr.length - 1 && (
-                        <View style={{ flex: 1, height: 2, backgroundColor: wizardStep > step.id ? '#0F172A' : '#E2E8F0', marginHorizontal: 4 }} />
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36, paddingVertical: 18, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
+                {/* Step 1: Configuration */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={{ position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
+                    <View style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 20,
+                      borderWidth: wizardStep === 1 ? 2 : (wizardStep > 1 ? 0 : 1),
+                      borderColor: wizardStep === 1 ? '#72002A' : '#CBD5E1',
+                      backgroundColor: wizardStep > 1 ? '#72002A' : '#FFFFFF',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                    }}>
+                      {wizardStep > 1 ? (
+                        <Ionicons name="checkmark" size={18} color="#FFFFFF" />
+                      ) : (
+                        <Text style={{ fontSize: 16, fontWeight: '700', color: wizardStep === 1 ? '#72002A' : '#64748B' }}>1</Text>
                       )}
-                    </React.Fragment>
-                  );
-                })}
+                    </View>
+                    {wizardStep === 1 && (
+                      <View style={{
+                        position: 'absolute',
+                        bottom: -5,
+                        width: 0,
+                        height: 0,
+                        borderLeftWidth: 6,
+                        borderRightWidth: 6,
+                        borderTopWidth: 6,
+                        borderLeftColor: 'transparent',
+                        borderRightColor: 'transparent',
+                        borderTopColor: '#72002A',
+                      }} />
+                    )}
+                  </View>
+
+                  <View>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: wizardStep >= 1 ? '#72002A' : '#475569' }}>Configuration</Text>
+                    <Text style={{ fontSize: 11.5, color: '#64748B', marginTop: 1 }}>Select client and company details</Text>
+                  </View>
+                </View>
+
+                {/* Connecting Line */}
+                <View style={{ flex: 1, maxWidth: 180, height: 1, backgroundColor: wizardStep > 1 ? '#72002A' : '#E2E8F0', marginHorizontal: 24 }} />
+
+                {/* Step 2: Form Data */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={{ position: 'relative', alignItems: 'center', justifyContent: 'center' }}>
+                    <View style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 20,
+                      backgroundColor: wizardStep === 2 ? '#72002A' : '#F1F5F9',
+                      borderWidth: wizardStep === 2 ? 0 : 1,
+                      borderColor: '#E2E8F0',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                    }}>
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: wizardStep === 2 ? '#FFFFFF' : '#64748B' }}>2</Text>
+                    </View>
+                    {wizardStep === 2 && (
+                      <View style={{
+                        position: 'absolute',
+                        bottom: -5,
+                        width: 0,
+                        height: 0,
+                        borderLeftWidth: 6,
+                        borderRightWidth: 6,
+                        borderTopWidth: 6,
+                        borderLeftColor: 'transparent',
+                        borderRightColor: 'transparent',
+                        borderTopColor: '#72002A',
+                      }} />
+                    )}
+                  </View>
+
+                  <View>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: wizardStep === 2 ? '#0F172A' : '#64748B' }}>Form Data</Text>
+                    <Text style={{ fontSize: 11.5, color: '#94A3B8', marginTop: 1 }}>Enter insurance information</Text>
+                  </View>
+                </View>
               </View>
             )}
 
             {wizardStep === 1 ? (
-              <ScrollView style={{ flex: 1, backgroundColor: '#FFFFFF', padding: 24 }}>
-                <View style={{ flex: 1 }}>
-                  {(!user || String(user.roleId) === '1') && (
-                    <View style={{ marginBottom: 20, zIndex: 30 }}>
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8, textTransform: 'uppercase' }}>Client *</Text>
-                      <SearchableDropdown
-                        data={clients}
-                        value={selectedClient}
-                        onChange={(val) => {
-                          setSelectedClient(val);
-                          setSelectedCompany('');
-                          fetchCompaniesForClient(val);
-                        }}
-                        placeholder="-- Select Client --"
-                        searchPlaceholder="Search Client..."
-                        displayKey="client_name"
-                        valueKey="id"
-                      />
+              <View style={{ flex: 1, backgroundColor: '#FAFAFC', paddingHorizontal: 24, paddingVertical: 20 }}>
+                <View style={{ flex: 1, flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden' }}>
+                  {/* Left Graphic Banner Panel */}
+                  <View style={{ width: 250, backgroundColor: '#FFF5F2', borderRightWidth: 1, borderRightColor: '#FEE2E2', paddingTop: 32, paddingHorizontal: 20, alignItems: 'center' }}>
+                    <View style={{ alignItems: 'center', width: '100%' }}>
+                      <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#FCE7F3', justifyContent: 'center', alignItems: 'center', marginBottom: 14 }}>
+                        <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#8A1538', justifyContent: 'center', alignItems: 'center' }}>
+                          <Ionicons name="shield-checkmark" size={22} color="#FFFFFF" />
+                        </View>
+                      </View>
+                      <Text style={{ fontSize: 11.5, fontWeight: '700', color: '#8A1538', textTransform: 'uppercase', letterSpacing: 0.5 }}>Step 1 of 2</Text>
+                      <Text style={{ fontSize: 17, fontWeight: '800', color: '#0F172A', marginTop: 6, textAlign: 'center', lineHeight: 22 }}>Choose Client{"\n"}and Company</Text>
+                      <Text style={{ fontSize: 12, color: '#64748B', marginTop: 8, textAlign: 'center', lineHeight: 18 }}>Select the client who owns the vehicle and the company under which it is registered.</Text>
                     </View>
-                  )}
 
-                  <View style={{ marginBottom: 20, zIndex: 20 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#475569', marginBottom: 8, textTransform: 'uppercase' }}>Company *</Text>
-                    <SearchableDropdown
-                      data={companies}
-                      value={selectedCompany}
-                      onChange={(val) => {
-                        setSelectedCompany(val);
-                        const selectedIds = val ? String(val).split(',').map(s => s.trim()).filter(Boolean) : [];
-                        if (selectedIds.length > 0) {
-                          const firstSelected = companies.find(c => String(c.id) === selectedIds[0]);
-                          if (firstSelected && firstSelected.country) {
-                            setSelectedCountry(String(firstSelected.country));
-                          }
-                        } else {
-                          setSelectedCountry('');
-                        }
-                      }}
-                      placeholder="-- Select Company --"
-                      searchPlaceholder="Search Company..."
-                      displayKey="company_name"
-                      valueKey="id"
-                      isMultiSelect={true}
-                      getIsOptionDisabled={(item) => {
-                        const selectedIds = selectedCompany ? String(selectedCompany).split(',').map(s => s.trim()).filter(Boolean) : [];
-                        if (selectedIds.length === 0) return false;
-                        const firstSelected = companies.find(c => String(c.id) === selectedIds[0]);
-                        if (!firstSelected) return false;
-                        return item.country !== firstSelected.country;
-                      }}
+                    {/* Bottom Illustration Image */}
+                    <Image 
+                      source={require('../../assets/vehicle_insurance_illustration.png')} 
+                      style={{ width: '100%', height: 145, resizeMode: 'contain', marginTop: 'auto', marginBottom: 0 }} 
                     />
                   </View>
 
-                  {/* Module is auto-detected in the background */}
+                  {/* Right Configuration Form Area */}
+                  <View style={{ flex: 1, paddingHorizontal: 40, paddingVertical: 32, justifyContent: 'center' }}>
+                    {(!user || String(user.roleId) === '1') && (
+                      <View style={{ marginBottom: 24, zIndex: 30 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+                          <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: '#FFF0F2', borderWidth: 1, borderColor: '#FCE7F3', justifyContent: 'center', alignItems: 'center' }}>
+                            <Ionicons name="business" size={22} color="#8A1538" />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: '#0F172A', letterSpacing: 0.3 }}>CLIENT <Text style={{ color: '#EF4444' }}>*</Text></Text>
+                            <Text style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>Choose the client who owns this vehicle.</Text>
+                          </View>
+                        </View>
+                        <SearchableDropdown
+                          data={clients}
+                          value={selectedClient}
+                          onChange={(val) => {
+                            setSelectedClient(val);
+                            setSelectedCompany('');
+                            fetchCompaniesForClient(val);
+                          }}
+                          placeholder="-- Select Client --"
+                          searchPlaceholder="Search Client..."
+                          displayKey="client_name"
+                          valueKey="id"
+                          hideClearIcon={true}
+                          selectorStyle={{ height: 48, borderRadius: 12, borderWidth: 1, borderColor: '#E28D99', backgroundColor: '#FFFFFF', paddingHorizontal: 16 }}
+                        />
+                      </View>
+                    )}
+
+                    {(!user || String(user.roleId) === '1') && (
+                      <View style={{ borderStyle: 'dashed', borderWidth: 0.8, borderColor: '#E2E8F0', marginVertical: 20 }} />
+                    )}
+
+                    <View style={{ marginBottom: 12, zIndex: 20 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+                        <View style={{ width: 48, height: 48, borderRadius: 12, backgroundColor: '#FFF4ED', borderWidth: 1, borderColor: '#FFEDD5', justifyContent: 'center', alignItems: 'center' }}>
+                          <Ionicons name="briefcase" size={22} color="#E87928" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#0F172A', letterSpacing: 0.3 }}>COMPANY <Text style={{ color: '#EF4444' }}>*</Text></Text>
+                          <Text style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>Choose the company under which the vehicle is registered.</Text>
+                        </View>
+                      </View>
+                      <SearchableDropdown
+                        data={companies}
+                        value={selectedCompany}
+                        onChange={(val) => {
+                          setSelectedCompany(val);
+                          const selectedIds = val ? String(val).split(',').map(s => s.trim()).filter(Boolean) : [];
+                          if (selectedIds.length > 0) {
+                            const firstSelected = companies.find(c => String(c.id) === selectedIds[0]);
+                            if (firstSelected && firstSelected.country) {
+                              setSelectedCountry(String(firstSelected.country));
+                            }
+                          } else {
+                            setSelectedCountry('');
+                          }
+                        }}
+                        placeholder="-- Select Company --"
+                        searchPlaceholder="Search Company..."
+                        displayKey="company_name"
+                        valueKey="id"
+                        isMultiSelect={true}
+                        hideClearIcon={true}
+                        selectorStyle={{ height: 48, borderRadius: 12, borderWidth: 1, borderColor: '#FB923C', backgroundColor: '#FFFFFF', paddingHorizontal: 16 }}
+                        getIsOptionDisabled={(item) => {
+                          const selectedIds = selectedCompany ? String(selectedCompany).split(',').map(s => s.trim()).filter(Boolean) : [];
+                          if (selectedIds.length === 0) return false;
+                          const firstSelected = companies.find(c => String(c.id) === selectedIds[0]);
+                          if (!firstSelected) return false;
+                          return item.country !== firstSelected.country;
+                        }}
+                      />
+                    </View>
+                  </View>
+                </View>
+
+                {/* Wizard Step 1 Footer Controls */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 20 }}>
+                  <TouchableOpacity
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, paddingHorizontal: 22, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#FFFFFF' }}
+                    onPress={() => setIsFormOpen(false)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="close-circle-outline" size={18} color="#475569" />
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#475569' }}>Cancel</Text>
+                  </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.submitBtn, { opacity: selectedClient ? 1 : 0.5, marginTop: 16 }]}
-                    disabled={!selectedClient}
+                    style={[{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 48, paddingHorizontal: 38, borderRadius: 12, backgroundImage: 'linear-gradient(90deg, #72002A 0%, #D86A1A 100%)', boxShadow: '0px 4px 14px rgba(216, 106, 26, 0.35)' }, (!selectedClient || !selectedCompany) && { opacity: 0.5 }]}
+                    disabled={!selectedClient || !selectedCompany}
                     onPress={() => fetchFormConfiguration(selectedClient, selectedCountry, selectedModule)}
+                    activeOpacity={0.85}
                   >
-                    <Text style={styles.submitBtnText}>Next</Text>
+                    <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '700' }}>Next</Text>
+                    <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
                   </TouchableOpacity>
                 </View>
-              </ScrollView>
+              </View>
             ) : loading ? (
               <View style={styles.centerContainer}>
                 <ActivityIndicator size="large" color={COLORS.primary} />
@@ -1338,21 +1701,38 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
               </View>
             ) : (
               <>
-                <ScrollView style={styles.formScroll} contentContainerStyle={{ padding: 24, paddingBottom: 20 }}>
+                <ScrollView style={{ flex: 1, backgroundColor: '#FAFAFC' }} contentContainerStyle={{ padding: 24, paddingBottom: 28 }}>
                   {fieldsLayout.map((section, index) => (
                     <View key={section.id} style={[styles.sectionCard, { zIndex: fieldsLayout.length - index }]}>
-                      <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>{section.name || 'Section'}</Text>
+                      {/* Section Header Banner Box */}
+                      <View style={{
+                        backgroundColor: '#FFF5F6',
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: '#FCE7F3',
+                        flexDirection: 'row',
+                        overflow: 'hidden',
+                        marginHorizontal: 16,
+                        marginTop: 16,
+                        marginBottom: 4,
+                      }}>
+                        <View style={{ width: 4, backgroundColor: '#72002A' }} />
+                        <View style={{ paddingVertical: 14, paddingHorizontal: 16, flex: 1 }}>
+                          <Text style={{ fontSize: 13, fontWeight: '800', color: '#72002A', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                            {section.name || 'INSURANCE INFO'}
+                          </Text>
+                          <Text style={{ fontSize: 12, color: '#64748B', marginTop: 3 }}>
+                            Enter the coverage details and period terms for this policy.
+                          </Text>
+                        </View>
                       </View>
 
                       <View style={styles.sectionBody}>
                         {section.fields.map((field, fieldIndex) => {
                           const visibleSubsections = (field.subsections || []).filter(sub => {
-                            // If triggerValue is not set or is empty, show it by default
                             if (!sub.triggerValue || sub.triggerValue.trim() === '') {
                               return true;
                             }
-                            // Otherwise, only show if it matches the parent field value
                             const parentValue = formData[field.id];
                             return parentValue && String(parentValue).trim().toLowerCase() === String(sub.triggerValue).trim().toLowerCase();
                           });
@@ -1393,32 +1773,37 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
                   ))}
                 </ScrollView>
 
-                <View style={{ flexDirection: 'row', justifyContent: isViewOnly ? 'flex-end' : 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#FFFFFF' }}>
+                <View style={{ flexDirection: 'row', justifyContent: isViewOnly ? 'flex-end' : 'space-between', alignItems: 'center', paddingHorizontal: 28, paddingVertical: 18, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#FFFFFF' }}>
                   {isViewOnly ? (
                     <TouchableOpacity
-                      style={{ paddingVertical: 12, paddingHorizontal: 24, backgroundColor: COLORS.primary, borderRadius: 8 }}
+                      style={{ paddingVertical: 12, paddingHorizontal: 28, backgroundColor: '#72002A', borderRadius: 10 }}
                       onPress={() => { setIsFormOpen(false); setEditingRecord(null); setFormData({}); setIsViewOnly(false); }}
                     >
-                      <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Close</Text>
+                      <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Close</Text>
                     </TouchableOpacity>
                   ) : (
                     <>
                       <TouchableOpacity
-                        style={{ paddingVertical: 12, paddingHorizontal: 20, backgroundColor: '#E2E8F0', borderRadius: 8 }}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, height: 44, paddingHorizontal: 22, borderRadius: 10, borderWidth: 1, borderColor: '#CBD5E1', backgroundColor: '#FFFFFF' }}
                         onPress={() => {
                           setWizardStep(1);
                         }}
+                        activeOpacity={0.8}
                       >
-                        <Text style={{ color: '#0F172A', fontWeight: '600' }}>Back</Text>
+                        <Ionicons name="arrow-back" size={16} color="#475569" />
+                        <Text style={{ color: '#475569', fontWeight: '600', fontSize: 14 }}>Back</Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        style={[styles.submitBtn, { marginTop: 0, marginBottom: 0 }]}
+                        style={[{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 48, paddingHorizontal: 36, borderRadius: 12, backgroundImage: 'linear-gradient(90deg, #72002A 0%, #D86A1A 100%)', boxShadow: '0px 4px 14px rgba(216, 106, 26, 0.35)' }, saving && { opacity: 0.7 }]}
                         onPress={handleSave}
-                        activeOpacity={0.8}
+                        activeOpacity={0.85}
                         disabled={saving}
                       >
-                        <Text style={styles.submitBtnText}>{saving ? 'Saving...' : 'Complete & Save'}</Text>
+                        <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '700' }}>
+                          {saving ? (editingRecord ? 'Updating...' : 'Saving...') : (editingRecord ? 'Update' : 'Save')}
+                        </Text>
+                        <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
                       </TouchableOpacity>
                     </>
                   )}
@@ -1618,6 +2003,7 @@ const styles = StyleSheet.create({
   mainContent: {
     flex: 1,
     padding: 24,
+    paddingBottom: 120,
   },
   emptyState: {
     flex: 1,
@@ -1710,5 +2096,410 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontWeight: '700',
     fontSize: 14,
+  },
+  bannerContainer: {
+    marginHorizontal: 24,
+    marginTop: 16,
+    marginBottom: 0,
+    borderRadius: 16,
+    backgroundColor: '#FFF8EF',
+    backgroundImage: 'linear-gradient(115deg, #FFFFFF 0%, #FFFDF9 45%, #FFF8EF 100%)',
+    borderWidth: 1,
+    borderColor: '#F1E7DD',
+    position: 'relative',
+    overflow: 'hidden',
+    shadowColor: '#72002A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 20,
+    elevation: 2,
+  },
+  bannerWatermarkContainer: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 340,
+    overflow: 'hidden',
+  },
+  bannerOrangeGlow: {
+    position: 'absolute',
+    right: -30,
+    bottom: -30,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(255, 180, 94, 0.15)',
+  },
+  bannerWaveOuter: {
+    position: 'absolute',
+    right: -40,
+    bottom: -50,
+    width: 290,
+    height: 190,
+    borderRadius: 145,
+    backgroundColor: 'rgba(241, 118, 22, 0.06)',
+  },
+  bannerWaveInner: {
+    position: 'absolute',
+    right: -10,
+    bottom: -70,
+    width: 210,
+    height: 160,
+    borderRadius: 105,
+    backgroundColor: 'rgba(255, 180, 94, 0.12)',
+  },
+  bannerWatermarkIconBox: {
+    position: 'absolute',
+    right: 36,
+    top: 5,
+    opacity: 0.85,
+  },
+  bannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 28,
+    paddingVertical: 20,
+    zIndex: 2,
+    flexWrap: 'wrap',
+    gap: 16,
+  },
+  bannerTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    flexShrink: 1,
+  },
+  bannerIconBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 13,
+    backgroundColor: '#FFF0E6',
+    backgroundImage: 'linear-gradient(135deg, #FFFFFF 0%, #FFF0E6 100%)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(241, 118, 22, 0.18)',
+    shadowColor: '#72002A',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+  },
+  bannerIconInner: {
+    width: 36,
+    height: 36,
+    borderRadius: 9,
+    backgroundColor: 'rgba(114, 0, 42, 0.05)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  iconOrangeDot: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 5.5,
+    height: 5.5,
+    borderRadius: 2.75,
+    backgroundColor: '#F17616',
+  },
+  bannerTextStack: {
+    gap: 3,
+    justifyContent: 'center',
+  },
+  bannerTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#59001F',
+    letterSpacing: -0.4,
+    lineHeight: 28,
+  },
+  bannerSubtitle: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '400',
+    lineHeight: 19,
+  },
+  bannerAddButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#72002A',
+    backgroundImage: 'linear-gradient(135deg, #72002A 0%, #A20E35 55%, #F17616 100%)',
+    height: 42,
+    paddingHorizontal: 20,
+    borderRadius: 11,
+    gap: 9,
+    shadowColor: '#F17616',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+    elevation: 3,
+    cursor: 'pointer',
+  },
+  bannerAddIconBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bannerAddButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 14.5,
+    letterSpacing: 0.1,
+  },
+  // TABLE & CONTROLS STYLES
+  standaloneToolbarCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    marginBottom: 16,
+  },
+  tableCardContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F1E7DD',
+    shadowColor: '#72002A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 20,
+    elevation: 2,
+    overflow: 'hidden',
+  },
+  tableSearchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 16,
+    width: 280,
+    height: 40,
+  },
+  tableSearchInput: {
+    flex: 1,
+    paddingLeft: 8,
+    fontSize: 13,
+    color: '#1E293B',
+    outlineStyle: 'none',
+  },
+  tableFilterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFF5EE',
+    borderWidth: 1,
+    borderColor: '#FFD5C0',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    height: 38,
+    cursor: 'pointer',
+  },
+  tableFilterBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#A02B00',
+  },
+  tableHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgb(158, 46, 42)',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingVertical: 25,
+    paddingHorizontal: 24,
+  },
+  tableHeaderCell: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFE4D6',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  tableRowContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 24,
+    marginVertical: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: '#CBD5E1',
+    borderStyle: 'dotted',
+    backgroundColor: '#FFFFFF',
+    position: 'relative',
+  },
+  rowOrangeAccentBar: {
+    position: 'absolute',
+    left: 0,
+    top: 10,
+    bottom: 10,
+    width: 3.5,
+    backgroundColor: '#FF5500',
+    borderTopRightRadius: 2.5,
+    borderBottomRightRadius: 2.5,
+  },
+  clientAvatarCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FF6B35',
+    backgroundImage: 'linear-gradient(135deg, #FF7E40 0%, #E65100 100%)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+    boxShadow: '0px 2px 5px rgba(241, 118, 22, 0.22)',
+  },
+  clientAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  clientNameText: {
+    fontSize: 13.5,
+    color: '#0F172A',
+    fontWeight: '600',
+  },
+  clientCountryText: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '400',
+  },
+  vehicleNameText: {
+    fontSize: 13,
+    color: '#0F172A',
+    fontWeight: '500',
+  },
+  companyNameText: {
+    fontSize: 13,
+    color: '#1E293B',
+    fontWeight: '500',
+  },
+  mutedCellText: {
+    fontSize: 13,
+    color: '#475569',
+    fontWeight: '400',
+  },
+  submitterRoleText: {
+    fontSize: 12.5,
+    color: '#0F172A',
+    fontWeight: '600',
+  },
+  submitterSubtext: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  statusPillBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+  },
+  statusDotGreen: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#16A34A',
+  },
+  statusPillText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  actionBtnView: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    cursor: 'pointer',
+  },
+  actionBtnEdit: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    cursor: 'pointer',
+  },
+  actionBtnDelete: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    cursor: 'pointer',
+  },
+  paginationFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F1E7DD',
+    backgroundColor: '#FFFFFF',
+  },
+  paginationInfoText: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '400',
+  },
+  pageNavBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    cursor: 'pointer',
+  },
+  pageNumberBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    cursor: 'pointer',
+  },
+  pageNumberBtnActive: {
+    backgroundColor: '#72002A',
+    backgroundImage: 'linear-gradient(135deg, #72002A 0%, #A20E35 50%, #F17616 100%)',
+    borderColor: 'transparent',
+    boxShadow: '0px 2px 8px rgba(241, 118, 22, 0.3)',
+  },
+  pageNumberText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  pageNumberTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
   }
 });

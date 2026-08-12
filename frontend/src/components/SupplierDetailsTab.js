@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, TouchableOpacity, Modal, Switch, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CustomDropdown, SearchableDropdown } from './CustomFieldsTab';
@@ -24,6 +24,7 @@ export default function SupplierDetailsTab({ user, showToast, isSidebarCollapsed
   const isEmployee = user && String(user.roleId) !== '1' && String(user.roleId) !== '2' && String(user.roleId) !== '5' && String(user.roleId) !== '8';
   const canCreate = !user || String(user.roleId) === '1' || (permissions && (permissions.can_create || permissions.full_control));
   const canEdit = !user || String(user.roleId) === '1' || (permissions && (permissions.can_edit || permissions.full_control));
+  const canDelete = !user || String(user.roleId) === '1' || (permissions && (permissions.can_delete || permissions.full_control));
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fieldsLayout, setFieldsLayout] = useState(null);
@@ -33,11 +34,12 @@ export default function SupplierDetailsTab({ user, showToast, isSidebarCollapsed
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isViewOnly, setIsViewOnly] = useState(false);
   const [supplierDetailsRecords, setSupplierDetailsRecords] = useState([]);
+  const [allCustomFields, setAllCustomFields] = useState([]);
 
   // Table state
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 5;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Edit state
   const [editingRecord, setEditingRecord] = useState(null);
@@ -64,22 +66,25 @@ export default function SupplierDetailsTab({ user, showToast, isSidebarCollapsed
 
   const fetchInitialData = async () => {
     try {
-      const [clientsRes, countriesRes, modulesRes, recordsRes] = await Promise.all([
+      const [clientsRes, countriesRes, modulesRes, recordsRes, cfRes] = await Promise.all([
         fetch(`${API_URL}/api/clients`),
         fetch(`${API_URL}/api/countries`),
         fetch(`${API_URL}/api/modules`),
-        fetch(`${API_URL}/api/suppliers${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`)
+        fetch(`${API_URL}/api/suppliers${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`),
+        fetch(`${API_URL}/api/custom-fields`)
       ]);
-      const [clientsData, countriesData, modulesData, recordsData] = await Promise.all([
+      const [clientsData, countriesData, modulesData, recordsData, cfData] = await Promise.all([
         clientsRes.json(),
         countriesRes.json(),
         modulesRes.json(),
-        recordsRes.ok ? recordsRes.json() : []
+        recordsRes.ok ? recordsRes.json() : [],
+        cfRes.ok ? cfRes.json() : []
       ]);
       setClients(clientsData || []);
       setCountries(countriesData || []);
       setModules(modulesData || []);
       setSupplierDetailsRecords(Array.isArray(recordsData) ? recordsData : []);
+      setAllCustomFields(Array.isArray(cfData) ? cfData : []);
 
       // Try to set defaults if available
       const clientVal = user?.client_id || user?.clientid;
@@ -855,6 +860,38 @@ export default function SupplierDetailsTab({ user, showToast, isSidebarCollapsed
     }
   };
 
+  const fieldMap = useMemo(() => {
+    const map = {};
+    if (Array.isArray(allCustomFields)) {
+      allCustomFields.forEach(cf => {
+        let layout = cf.field_data || cf.fields_layout;
+        if (typeof layout === 'string') {
+          try { layout = JSON.parse(layout); } catch (e) { layout = null; }
+        }
+        if (layout && layout.sections) {
+          layout.sections.forEach(sec => {
+            if (sec.fields) {
+              sec.fields.forEach(f => {
+                if (f.id && f.name) map[String(f.id)] = f.name;
+              });
+            }
+          });
+        } else if (Array.isArray(layout)) {
+          layout.forEach(secOrField => {
+            if (secOrField.fields && Array.isArray(secOrField.fields)) {
+              secOrField.fields.forEach(f => {
+                if (f.id && f.name) map[String(f.id)] = f.name;
+              });
+            } else if (secOrField.id && secOrField.name) {
+              map[String(secOrField.id)] = secOrField.name;
+            }
+          });
+        }
+      });
+    }
+    return map;
+  }, [allCustomFields]);
+
   return (
     <View style={styles.container}>
       {/* MAIN HEADER */}
@@ -958,13 +995,15 @@ export default function SupplierDetailsTab({ user, showToast, isSidebarCollapsed
               </View>
 
               {/* Table Header */}
-              <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20 }}>
+              <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20, backgroundColor: '#F8FAFC' }}>
                 <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>ID</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Module Info</Text>
-                <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Data Preview</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Submitted By</Text>
-                <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
+                {(!user || String(user.roleId) === '1') && (
+                  <Text style={{ flex: 1.3, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
+                )}
+                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Supplier Name</Text>
+                <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Contact Person</Text>
+                <Text style={{ flex: 1.3, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Company</Text>
+                <Text style={{ flex: 0.9, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
                 <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>ACTION</Text>
               </View>
 
@@ -975,12 +1014,44 @@ export default function SupplierDetailsTab({ user, showToast, isSidebarCollapsed
                       if (String(r.clientid) !== String(user.clientid)) return false;
                     }
                     if (!searchQuery) return true;
+                    const term = searchQuery.toLowerCase();
+                    let pData = {};
+                    if (r.field_data) {
+                      try { pData = typeof r.field_data === 'string' ? JSON.parse(r.field_data) : r.field_data; } catch (e) { }
+                    }
                     const cObj = clients.find(c => String(c.id) === String(r.clientid));
                     const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
-                    return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
+                    const compObj = companies.find(c => String(c.id) === String(r.company_id || r.companyid));
+                    const compName = r.company_name || (compObj ? (compObj.company_name || compObj.name) : '');
+
+                    let sName = 'N/A';
+                    let cpName = 'N/A';
+                    if (pData && typeof pData === 'object') {
+                      for (const [key, value] of Object.entries(pData)) {
+                        if (!value) continue;
+                        const valStr = typeof value === 'object' ? (value.name || JSON.stringify(value)) : String(value);
+                        const fName = (fieldMap[String(key)] || key).toLowerCase().trim();
+
+                        if (fName.includes('supplier name') || fName === 'supplier_name' || (sName === 'N/A' && fName.includes('supplier') && !fName.includes('type'))) {
+                          sName = valStr;
+                        }
+                        if (fName.includes('contact person') || fName === 'contact_person' || (cpName === 'N/A' && fName.includes('contact') && !fName.includes('no') && !fName.includes('num') && !fName.includes('email') && !fName.includes('phone'))) {
+                          cpName = valStr;
+                        }
+                      }
+                      if (sName === 'N/A' && Object.values(pData)[0]) sName = String(Object.values(pData)[0]);
+                    }
+
+                    return (
+                      String(r.id).includes(term) ||
+                      cName.toLowerCase().includes(term) ||
+                      compName.toLowerCase().includes(term) ||
+                      sName.toLowerCase().includes(term) ||
+                      cpName.toLowerCase().includes(term)
+                    );
                   });
-                  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-                  const paginated = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+                  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+                  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
                   if (filtered.length === 0) {
                     return (
@@ -999,57 +1070,90 @@ export default function SupplierDetailsTab({ user, showToast, isSidebarCollapsed
                             parsedData = typeof record.field_data === 'string' ? JSON.parse(record.field_data) : record.field_data;
                           } catch (e) { }
                         }
+
+                        // Client & Country
                         const clientObj = clients.find(c => String(c.id) === String(record.clientid));
                         const clientName = clientObj ? (clientObj.client_name || clientObj.name) : `Client ${record.clientid}`;
                         const countryObj = countries.find(c => String(c.id) === String(record.country_id));
                         const countryName = countryObj ? countryObj.name : `Country ${record.country_id}`;
-                        const moduleObj = modules.find(m => String(m.id) === String(record.moduleid));
-                        const moduleName = moduleObj ? moduleObj.module_name : `Module ${record.moduleid}`;
 
-                        const rawFirstValue = Object.values(parsedData)[0];
-                        let firstValue = '-';
-                        if (rawFirstValue && typeof rawFirstValue === 'object') {
-                          if (Array.isArray(rawFirstValue)) {
-                            firstValue = rawFirstValue.map(f => f.name || 'File').join(', ');
-                          } else {
-                            firstValue = rawFirstValue.name || 'File';
+                        // Supplier Name & Contact Person
+                        let supplierNameDisplay = 'N/A';
+                        let contactPersonDisplay = 'N/A';
+
+                        if (parsedData && typeof parsedData === 'object') {
+                          for (const [key, value] of Object.entries(parsedData)) {
+                            if (value === undefined || value === null || value === '') continue;
+                            const valStr = typeof value === 'object' ? (value.name || JSON.stringify(value)) : String(value);
+
+                            let fieldName = (fieldMap[String(key)] || key).toLowerCase().trim();
+                            if (fieldsLayout && fieldsLayout.sections) {
+                              for (const sec of fieldsLayout.sections) {
+                                const found = (sec.fields || []).find(f => String(f.id) === String(key));
+                                if (found) { fieldName = found.name.toLowerCase().trim(); break; }
+                              }
+                            }
+
+                            if (fieldName.includes('supplier name') || fieldName === 'supplier_name' || (supplierNameDisplay === 'N/A' && fieldName.includes('supplier') && !fieldName.includes('type'))) {
+                              supplierNameDisplay = valStr;
+                            }
+                            
+                            if (fieldName.includes('contact person') || fieldName === 'contact_person' || (contactPersonDisplay === 'N/A' && fieldName.includes('contact') && !fieldName.includes('no') && !fieldName.includes('num') && !fieldName.includes('email') && !fieldName.includes('phone'))) {
+                              contactPersonDisplay = valStr;
+                            }
                           }
-                        } else if (rawFirstValue !== undefined && rawFirstValue !== null) {
-                          firstValue = String(rawFirstValue);
+
+                          // Fallbacks if not matched by fieldMap or key name
+                          if (supplierNameDisplay === 'N/A') {
+                            const entries = Object.entries(parsedData);
+                            if (entries.length > 0 && typeof entries[0][1] === 'string') supplierNameDisplay = entries[0][1];
+                          }
+
+                          if (contactPersonDisplay === 'N/A') {
+                            for (const [k, v] of Object.entries(parsedData)) {
+                              const fName = (fieldMap[String(k)] || k).toLowerCase();
+                              if ((fName.includes('contact') || fName.includes('person')) && typeof v === 'string' && v.trim().length > 0 && !v.includes('@') && !v.match(/^\d+$/)) {
+                                contactPersonDisplay = v;
+                                break;
+                              }
+                            }
+                          }
                         }
-                        const firstKey = Object.keys(parsedData)[0] ? Object.keys(parsedData)[0].replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()) : 'No Data';
+
+                        // Company
+                        const companyObj = companies.find(c => String(c.id) === String(record.company_id || record.companyid));
+                        const companyNameDisplay = record.company_name || (companyObj ? (companyObj.company_name || companyObj.name) : null) || 'N/A';
 
                         return (
                           <View key={record.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
                             <Text style={{ flex: 0.5, fontSize: 12, color: '#334155', fontWeight: '700' }}>#{record.id}</Text>
 
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{clientName}</Text>
-                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Country: {countryName}</Text>
-                            </View>
+                            {(!user || String(user.roleId) === '1') && (
+                              <View style={{ flex: 1.3, paddingRight: 10 }}>
+                                <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 2 }} numberOfLines={1}>{clientName}</Text>
+                                <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>{countryName}</Text>
+                              </View>
+                            )}
 
                             <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{moduleName}</Text>
-                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Created: {new Date(record.created_at).toLocaleDateString()}</Text>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600' }} numberOfLines={1}>{supplierNameDisplay}</Text>
                             </View>
 
-                            <View style={{ flex: 2, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500', marginBottom: 4 }} numberOfLines={1}>{String(firstValue)}</Text>
-                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Field: {firstKey}</Text>
+                            <View style={{ flex: 1.4, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '500' }} numberOfLines={1}>{contactPersonDisplay}</Text>
                             </View>
 
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{record.role_name || `Role: ${record.roleid || 'N/A'}`}</Text>
-                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>{record.employee_name || 'N/A'}</Text>
+                            <View style={{ flex: 1.3, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '500' }} numberOfLines={1}>{companyNameDisplay}</Text>
                             </View>
 
-                            <View style={{ flex: 1, alignItems: 'flex-start' }}>
+                            <View style={{ flex: 0.9, alignItems: 'flex-start' }}>
                               <View style={{ backgroundColor: '#F0FDF4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
                                 <Text style={{ fontSize: 11, fontWeight: '700', color: '#166534' }}>Active</Text>
                               </View>
                             </View>
 
-                            <View style={{ flex: 1.2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+                            <View style={{ flex: 1.2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
                               <TouchableOpacity style={{ padding: 4 }} onPress={() => handleView(record)}>
                                 <Ionicons name="eye-outline" size={18} color="#0F172A" />
                               </TouchableOpacity>
@@ -1085,19 +1189,50 @@ export default function SupplierDetailsTab({ user, showToast, isSidebarCollapsed
                   const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
                   return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
                 });
-                const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
-                const startEntry = filtered.length === 0 ? 0 : ((currentPage - 1) * ITEMS_PER_PAGE) + 1;
-                const endEntry = Math.min(currentPage * ITEMS_PER_PAGE, filtered.length);
+                const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+                const startEntry = filtered.length === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1;
+                const endEntry = Math.min(currentPage * itemsPerPage, filtered.length);
 
                 return (
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC' }}>
-                    <Text style={{ fontSize: 12, color: '#64748B' }}>
-                      Showing <Text style={{ fontWeight: '600', color: '#334155' }}>{startEntry}</Text> to <Text style={{ fontWeight: '600', color: '#334155' }}>{endEntry}</Text> of <Text style={{ fontWeight: '600', color: '#334155' }}>{filtered.length}</Text> entries
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                      <Text style={{ fontSize: 12, color: '#64748B' }}>
+                        Showing <Text style={{ fontWeight: '600', color: '#334155' }}>{startEntry}</Text> to <Text style={{ fontWeight: '600', color: '#334155' }}>{endEntry}</Text> of <Text style={{ fontWeight: '600', color: '#334155' }}>{filtered.length}</Text> entries
+                      </Text>
+
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={{ fontSize: 12, color: '#64748B' }}>Rows per page:</Text>
+                        <select
+                          value={itemsPerPage}
+                          onChange={(e) => {
+                            setItemsPerPage(Number(e.target.value));
+                            setCurrentPage(1);
+                          }}
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: 6,
+                            borderColor: '#CBD5E1',
+                            borderWidth: 1,
+                            borderStyle: 'solid',
+                            fontSize: 12,
+                            color: '#1E293B',
+                            backgroundColor: '#FFFFFF',
+                            outline: 'none',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <option value={10}>10</option>
+                          <option value={20}>20</option>
+                          <option value={25}>25</option>
+                          <option value={50}>50</option>
+                          <option value={100}>100</option>
+                        </select>
+                      </View>
+                    </View>
 
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                       <TouchableOpacity
-                        style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: currentPage > 1 ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
+                        style={{ paddingHorizontal: 14, paddingVertical: 2, backgroundColor: currentPage > 1 ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
                         disabled={currentPage === 1}
                         onPress={() => setCurrentPage(p => p - 1)}
                       >
@@ -1109,7 +1244,7 @@ export default function SupplierDetailsTab({ user, showToast, isSidebarCollapsed
                       </Text>
 
                       <TouchableOpacity
-                        style={{ paddingHorizontal: 12, paddingVertical: 6, backgroundColor: currentPage < totalPages ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
+                        style={{ paddingHorizontal: 14, paddingVertical: 2, backgroundColor: currentPage < totalPages ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
                         disabled={currentPage === totalPages}
                         onPress={() => setCurrentPage(p => p + 1)}
                       >

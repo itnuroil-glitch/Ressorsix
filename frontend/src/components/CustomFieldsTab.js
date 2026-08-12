@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, TextInput, StyleSheet, Modal, Picker, useWindowDimensions, ActivityIndicator, Switch } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS } from '../theme';
 import { API_URL } from '../config';
 
-export const SearchableDropdown = ({ value, onChange, data, placeholder, searchPlaceholder, displayKey, valueKey, disabled, renderOption, isMultiSelect, getIsOptionDisabled }) => {
+export const SearchableDropdown = ({ value, onChange, data, placeholder, searchPlaceholder, displayKey, valueKey, disabled, renderOption, isMultiSelect, getIsOptionDisabled, selectorStyle, hideClearIcon }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const containerRef = React.useRef(null);
@@ -31,7 +31,7 @@ export const SearchableDropdown = ({ value, onChange, data, placeholder, searchP
 
   const displayText = selectedItems.length > 0 
     ? selectedItems.map(item => item[displayKey]).join(', ')
-    : placeholder;
+    : (value !== undefined && value !== null && value !== '' ? String(value) : placeholder);
 
   const spaceBelow = windowHeight - (coords.y + coords.height);
   const useBottomAlignment = false; // Always open downwards
@@ -42,24 +42,51 @@ export const SearchableDropdown = ({ value, onChange, data, placeholder, searchP
       style={{ position: 'relative', zIndex: isOpen ? 50 : 1, width: '100%' }}
     >
       <TouchableOpacity
-        style={[styles.dropdownSelector, disabled && { opacity: 0.7, backgroundColor: '#F1F5F9' }]}
+        style={[styles.dropdownSelector, selectorStyle, disabled && { opacity: 0.7, backgroundColor: '#F1F5F9' }]}
         onPress={() => {
           if (disabled) return;
           if (isOpen) {
             setIsOpen(false);
           } else {
-            containerRef.current?.measure((x, y, width, height, pageX, pageY) => {
-              setCoords({ x: pageX, y: pageY, width, height });
-              setIsOpen(true);
-            });
+            if (containerRef.current) {
+              if (typeof containerRef.current.getBoundingClientRect === 'function') {
+                const rect = containerRef.current.getBoundingClientRect();
+                setCoords({ x: rect.left, y: rect.top, width: rect.width || 250, height: rect.height || 40 });
+                setIsOpen(true);
+              } else if (containerRef.current.measure) {
+                containerRef.current.measure((x, y, width, height, pageX, pageY) => {
+                  setCoords({ x: pageX || 0, y: pageY || 0, width: width || 250, height: height || 40 });
+                  setIsOpen(true);
+                });
+              } else {
+                setCoords({ x: 0, y: 0, width: 250, height: 40 });
+                setIsOpen(true);
+              }
+            }
           }
         }}
         activeOpacity={disabled ? 1 : 0.8}
       >
-        <Text style={{ color: selectedItems.length > 0 ? COLORS.textPrimary : COLORS.textMuted, fontSize: 14 }}>
+        <Text style={{ color: (displayText !== placeholder) ? COLORS.textPrimary : COLORS.textMuted, fontSize: 13.5, flex: 1, paddingRight: 8 }} numberOfLines={1}>
           {displayText}
         </Text>
-        <Ionicons name={isOpen ? "chevron-up" : "chevron-down"} size={16} color={COLORS.textSecondary} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          {selectedItems.length > 0 && !disabled && !hideClearIcon && (
+            <TouchableOpacity
+              onPress={(e) => {
+                if (e && typeof e.stopPropagation === 'function') {
+                  e.stopPropagation();
+                }
+                onChange('');
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={{ padding: 2 }}
+            >
+              <Ionicons name="close-circle" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+          )}
+          <Ionicons name={isOpen ? "chevron-up" : "chevron-down"} size={16} color={COLORS.textSecondary} />
+        </View>
       </TouchableOpacity>
  
       {isOpen && (
@@ -83,7 +110,8 @@ export const SearchableDropdown = ({ value, onChange, data, placeholder, searchP
             position: 'absolute',
             ...(useBottomAlignment ? { bottom: windowHeight - coords.y + 2 } : { top: coords.y + coords.height + 2 }),
             left: coords.x,
-            width: coords.width,
+            width: coords.width > 50 ? coords.width : 250,
+            minWidth: 200,
             backgroundColor: '#FFFFFF',
             borderRadius: 8,
             borderWidth: 1,
@@ -94,7 +122,7 @@ export const SearchableDropdown = ({ value, onChange, data, placeholder, searchP
             shadowRadius: 12,
             elevation: 5,
             zIndex: 10000,
-            maxHeight: 200,
+            maxHeight: 250,
             overflow: 'hidden'
           }}>
             <View style={{ padding: 8, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
@@ -182,6 +210,8 @@ export const SearchableDropdown = ({ value, onChange, data, placeholder, searchP
 const FIELD_OPTIONS = [
   { label: 'Textbox', value: 'Textbox' },
   { label: 'Textarea', value: 'Textarea' },
+  { label: 'Phone Number', value: 'Phone Number' },
+  { label: 'Phone', value: 'Phone' },
   { label: 'Number', value: 'Number' },
   { label: 'Decimal', value: 'Decimal' },
   { label: 'Date', value: 'Date' },
@@ -195,7 +225,6 @@ const FIELD_OPTIONS = [
   { label: 'Single Checkbox', value: 'Single Checkbox' },
   { label: 'Email', value: 'Email' },
   { label: 'URL', value: 'URL' },
-  { label: 'Phone', value: 'Phone' },
   { label: 'File Upload', value: 'File Upload' },
   { label: 'Image Upload', value: 'Image Upload' },
   { label: 'Signature', value: 'Signature' },
@@ -340,15 +369,68 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
   const [formModuleId, setFormModuleId] = useState('');
   const [formCountryId, setFormCountryId] = useState('');
   const [formStatus, setFormStatus] = useState('Active');
+  const [validationDialog, setValidationDialog] = useState({ open: false, title: '', message: '' });
+
+  const showValidationDialog = (message, title = 'Required Fields') => {
+    setValidationDialog({ open: true, title, message });
+  };
   const [saving, setSaving] = useState(false);
   const [wizardStep, setWizardStep] = useState(1);
   const [sections, setSections] = useState([{ id: Date.now().toString(), name: '', fields: [] }]);
   const [activeSectionId, setActiveSectionId] = useState(null);
   const [activeSubsectionModal, setActiveSubsectionModal] = useState(null);
+  const [draggedSectionIndex, setDraggedSectionIndex] = useState(null);
+  const [dragOverSectionIndex, setDragOverSectionIndex] = useState(null);
+  const [draggedFieldIndex, setDraggedFieldIndex] = useState(null);
+  const [dragOverFieldIndex, setDragOverFieldIndex] = useState(null);
+
+  const isDraggingSectionRef = useRef(false);
+  const isDraggingFieldRef = useRef(false);
+
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      if (isDraggingSectionRef.current) {
+        isDraggingSectionRef.current = false;
+        setDraggedSectionIndex(null);
+      }
+      if (isDraggingFieldRef.current) {
+        isDraggingFieldRef.current = false;
+        setDraggedFieldIndex(null);
+      }
+    };
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+    return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+  }, []);
+
+  const handleLiveSectionReorder = (fromIndex, toIndex) => {
+    if (fromIndex === null || toIndex === null || fromIndex === toIndex) return;
+    setSections(prevSections => {
+      const newSections = [...prevSections];
+      const [movedSection] = newSections.splice(fromIndex, 1);
+      newSections.splice(toIndex, 0, movedSection);
+      return newSections.map((sec, idx) => ({ ...sec, sort: (idx + 1).toString() }));
+    });
+  };
+
+  const handleLiveFieldReorder = (sectionId, fromIndex, toIndex) => {
+    if (fromIndex === null || toIndex === null || fromIndex === toIndex) return;
+    setSections(prevSections => prevSections.map(s => {
+      if (s.id === sectionId) {
+        const newFields = [...s.fields];
+        const [movedField] = newFields.splice(fromIndex, 1);
+        newFields.splice(toIndex, 0, movedField);
+        return {
+          ...s,
+          fields: newFields.map((f, idx) => ({ ...f, sort: idx.toString() }))
+        };
+      }
+      return s;
+    }));
+  };
 
   const addSection = () => {
     const newId = Date.now().toString();
-    setSections([...sections, { id: newId, name: '', fields: [] }]);
+    setSections([...sections, { id: newId, name: '', sort: (sections.length + 1).toString(), fields: [] }]);
     setActiveSectionId(newId);
   };
 
@@ -364,10 +446,126 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
     setSections(sections.map(s => s.id === sectionId ? { ...s, name } : s));
   };
 
+  const updateSectionSort = (sectionId, sort) => {
+    setSections(sections.map(s => s.id === sectionId ? { ...s, sort } : s));
+  };
+
+  const handleDropSection = (targetIndex, sourceIndexParam = null) => {
+    const srcIndex = sourceIndexParam !== null && !isNaN(sourceIndexParam) ? sourceIndexParam : draggedSectionIndex;
+    if (srcIndex === null || isNaN(srcIndex) || srcIndex === targetIndex) {
+      setDraggedSectionIndex(null);
+      setDragOverSectionIndex(null);
+      return;
+    }
+    const newSections = [...sections];
+    const [movedSection] = newSections.splice(srcIndex, 1);
+    newSections.splice(targetIndex, 0, movedSection);
+
+    const updatedWithSort = newSections.map((sec, idx) => ({
+      ...sec,
+      sort: (idx + 1).toString()
+    }));
+
+    setSections(updatedWithSort);
+    setDraggedSectionIndex(null);
+    setDragOverSectionIndex(null);
+  };
+
+  const handleDropField = (sectionId, targetIndex, sourceIndexParam = null) => {
+    const srcIndex = sourceIndexParam !== null && !isNaN(sourceIndexParam) ? sourceIndexParam : draggedFieldIndex;
+    if (srcIndex === null || isNaN(srcIndex) || srcIndex === targetIndex) {
+      setDraggedFieldIndex(null);
+      setDragOverFieldIndex(null);
+      return;
+    }
+
+    setSections(sections.map(s => {
+      if (s.id === sectionId) {
+        const newFields = [...s.fields];
+        const [movedField] = newFields.splice(srcIndex, 1);
+        newFields.splice(targetIndex, 0, movedField);
+
+        const reorderedWithSort = newFields.map((f, idx) => ({
+          ...f,
+          sort: idx.toString()
+        }));
+
+        return { ...s, fields: reorderedWithSort };
+      }
+      return s;
+    }));
+
+    setDraggedFieldIndex(null);
+    setDragOverFieldIndex(null);
+  };
+
+  const moveSectionUp = (index) => {
+    if (index === 0) return;
+    const newSections = [...sections];
+    const temp = newSections[index - 1];
+    newSections[index - 1] = newSections[index];
+    newSections[index] = temp;
+    const updatedWithSort = newSections.map((sec, idx) => ({
+      ...sec,
+      sort: (idx + 1).toString()
+    }));
+    setSections(updatedWithSort);
+  };
+
+  const moveSectionDown = (index) => {
+    if (index === sections.length - 1) return;
+    const newSections = [...sections];
+    const temp = newSections[index + 1];
+    newSections[index + 1] = newSections[index];
+    newSections[index] = temp;
+    const updatedWithSort = newSections.map((sec, idx) => ({
+      ...sec,
+      sort: (idx + 1).toString()
+    }));
+    setSections(updatedWithSort);
+  };
+
+  const moveFieldUp = (sectionId, fieldIndex) => {
+    if (fieldIndex === 0) return;
+    setSections(sections.map(s => {
+      if (s.id === sectionId) {
+        const newFields = [...s.fields];
+        const temp = newFields[fieldIndex - 1];
+        newFields[fieldIndex - 1] = newFields[fieldIndex];
+        newFields[fieldIndex] = temp;
+        const reorderedWithSort = newFields.map((f, idx) => ({
+          ...f,
+          sort: idx.toString()
+        }));
+        return { ...s, fields: reorderedWithSort };
+      }
+      return s;
+    }));
+  };
+
+  const moveFieldDown = (sectionId, fieldIndex) => {
+    setSections(sections.map(s => {
+      if (s.id === sectionId) {
+        if (fieldIndex >= s.fields.length - 1) return s;
+        const newFields = [...s.fields];
+        const temp = newFields[fieldIndex + 1];
+        newFields[fieldIndex + 1] = newFields[fieldIndex];
+        newFields[fieldIndex] = temp;
+        const reorderedWithSort = newFields.map((f, idx) => ({
+          ...f,
+          sort: idx.toString()
+        }));
+        return { ...s, fields: reorderedWithSort };
+      }
+      return s;
+    }));
+  };
+
   const addFieldToSection = (sectionId) => {
     setSections(sections.map(s => {
       if (s.id === sectionId) {
-        return { ...s, fields: [...s.fields, { id: Date.now().toString(), name: '', type: 'Textbox', isRequired: false, isActive: true, isSearchable: false, sort: '0' }] };
+        const nextSort = s.fields.length.toString();
+        return { ...s, fields: [...s.fields, { id: Date.now().toString(), name: '', type: 'Textbox', isRequired: false, isActive: true, isSearchable: false, sort: nextSort }] };
       }
       return s;
     }));
@@ -376,7 +574,12 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
   const removeFieldFromSection = (sectionId, fieldId) => {
     setSections(sections.map(s => {
       if (s.id === sectionId) {
-        return { ...s, fields: s.fields.filter(f => f.id !== fieldId) };
+        const remainingFields = s.fields.filter(f => f.id !== fieldId);
+        const reorderedWithSort = remainingFields.map((f, idx) => ({
+          ...f,
+          sort: idx.toString()
+        }));
+        return { ...s, fields: reorderedWithSort };
       }
       return s;
     }));
@@ -588,7 +791,7 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
 
   const handleSave = async () => {
     if (!formModuleId || !formCountryId) {
-      showToast('Module and Country are required', 'error');
+      showValidationDialog('Module and Country are required', 'Selection Required');
       return;
     }
     setSaving(true);
@@ -654,17 +857,20 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
         parsedSections = typeof field.field_data === 'string' ? JSON.parse(field.field_data) : field.field_data;
       } catch (e) { }
       if (!Array.isArray(parsedSections) || parsedSections.length === 0) {
-        parsedSections = [{ id: Date.now().toString(), name: '', fields: [] }];
+        parsedSections = [{ id: Date.now().toString(), name: '', sort: '1', fields: [] }];
       }
-      parsedSections = parsedSections.map(s => ({
+      parsedSections = parsedSections.map((s, idx) => ({
         ...s,
-        fields: (s.fields || []).map(f => ({
+        sort: s.sort ? s.sort.toString() : (idx + 1).toString(),
+        fields: (s.fields || []).map((f, fIdx) => ({
           ...f,
+          sort: fIdx.toString(),
           optionsArr: f.options ? f.options.split(',').map(o => o.trim()) : [],
           subsections: (f.subsections || []).map(sub => ({
             ...sub,
-            fields: (sub.fields || []).map(sf => ({
+            fields: (sub.fields || []).map((sf, sfIdx) => ({
               ...sf,
+              sort: sfIdx.toString(),
               optionsArr: sf.options ? sf.options.split(',').map(o => o.trim()) : []
             }))
           }))
@@ -680,7 +886,7 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
       setFormCountryId('');
       setFormStatus('Active');
       const newId = Date.now().toString();
-      setSections([{ id: newId, name: '', fields: [] }]);
+      setSections([{ id: newId, name: '', sort: '1', fields: [] }]);
       setActiveSectionId(newId);
     }
     setWizardStep(1);
@@ -918,22 +1124,84 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
                     <View style={{ width: isLargeScreen ? 250 : '100%', borderRightWidth: isLargeScreen ? 1 : 0, borderBottomWidth: isLargeScreen ? 0 : 1, borderRightColor: '#E2E8F0', borderBottomColor: '#E2E8F0', paddingRight: isLargeScreen ? 16 : 0, paddingBottom: isLargeScreen ? 0 : 16, maxHeight: isLargeScreen ? 'none' : 200 }}>
                       <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 12, textTransform: 'uppercase' }}>Sections</Text>
                       <ScrollView style={{ flex: 1, marginBottom: 16 }} showsVerticalScrollIndicator={false}>
-                        {sections.map((section, sIndex) => (
-                          <TouchableOpacity
-                            key={section.id}
-                            style={{ padding: 12, borderRadius: 8, backgroundColor: activeSectionId === section.id ? '#F1F5F9' : 'transparent', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}
-                            onPress={() => setActiveSectionId(section.id)}
-                          >
-                            <Text style={{ fontSize: 14, fontWeight: activeSectionId === section.id ? '700' : '500', color: activeSectionId === section.id ? COLORS.primary : '#475569', flex: 1 }} numberOfLines={1}>
-                              {section.name || `Section ${sIndex + 1}`}
-                            </Text>
-                            {sections.length > 1 && (
-                              <TouchableOpacity onPress={() => removeSection(section.id)} style={{ padding: 4 }}>
-                                <Ionicons name="trash-outline" size={16} color="#EF4444" />
-                              </TouchableOpacity>
-                            )}
-                          </TouchableOpacity>
-                        ))}
+                        {sections.map((section, sIndex) => {
+                          const isBeingDragged = draggedSectionIndex === sIndex;
+                          return (
+                            <TouchableOpacity
+                              key={section.id}
+                              activeOpacity={0.9}
+                              onPress={() => setActiveSectionId(section.id)}
+                              onMouseEnter={() => {
+                                if (isDraggingSectionRef.current && draggedSectionIndex !== null && draggedSectionIndex !== sIndex) {
+                                  handleLiveSectionReorder(draggedSectionIndex, sIndex);
+                                  setDraggedSectionIndex(sIndex);
+                                }
+                              }}
+                              style={{
+                                paddingVertical: 10,
+                                paddingHorizontal: 10,
+                                borderRadius: 8,
+                                backgroundColor: isBeingDragged ? '#E2E8F0' : (activeSectionId === section.id ? '#F1F5F9' : '#FFFFFF'),
+                                borderWidth: 1,
+                                borderColor: activeSectionId === section.id ? COLORS.primary : '#E2E8F0',
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                marginBottom: 8,
+                                opacity: isBeingDragged ? 0.7 : 1,
+                                userSelect: 'none'
+                              }}
+                            >
+                              {/* Drag Handle Icon - Click & Hold to Drag */}
+                              <View
+                                style={{ marginRight: 8, padding: 4, cursor: 'grab' }}
+                                onMouseDown={(e) => {
+                                  if (e && e.preventDefault) e.preventDefault();
+                                  if (e && e.stopPropagation) e.stopPropagation();
+                                  isDraggingSectionRef.current = true;
+                                  setDraggedSectionIndex(sIndex);
+                                }}
+                              >
+                                <Ionicons name="reorder-two-outline" size={20} color={isBeingDragged ? COLORS.primary : "#94A3B8"} />
+                              </View>
+
+                              {/* Section Title */}
+                              <Text style={{ flex: 1, fontSize: 13, fontWeight: activeSectionId === section.id ? '700' : '500', color: activeSectionId === section.id ? COLORS.primary : '#475569' }} numberOfLines={1}>
+                                {section.name || `Section ${sIndex + 1}`}
+                              </Text>
+
+                              {/* Circular Stepper Badge */}
+                              <View style={{
+                                width: 22,
+                                height: 22,
+                                borderRadius: 11,
+                                backgroundColor: activeSectionId === section.id ? COLORS.primary : '#E2E8F0',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                marginRight: 6
+                              }}>
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: activeSectionId === section.id ? '#FFFFFF' : '#475569' }}>
+                                  {section.sort || (sIndex + 1)}
+                                </Text>
+                              </View>
+
+                              {/* Delete button */}
+                              {sections.length > 1 && (
+                                <TouchableOpacity 
+                                  onPress={(e) => {
+                                    if (e && e.stopPropagation) e.stopPropagation();
+                                    removeSection(section.id);
+                                  }} 
+                                  onMouseDown={(e) => {
+                                    if (e && e.stopPropagation) e.stopPropagation();
+                                  }}
+                                  style={{ padding: 4 }}
+                                >
+                                  <Ionicons name="trash-outline" size={15} color="#EF4444" />
+                                </TouchableOpacity>
+                              )}
+                            </TouchableOpacity>
+                          );
+                        })}
                       </ScrollView>
 
                       <TouchableOpacity
@@ -953,15 +1221,29 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
 
                         return (
                           <ScrollView nestedScrollEnabled={true} style={{ flex: 1, paddingRight: 8 }} showsVerticalScrollIndicator={false}>
-                            <View style={styles.modalInputGroup}>
-                              <Text style={styles.modalLabel}>Section Name *</Text>
-                              <TextInput
-                                style={styles.searchBarInputInline}
-                                placeholder="e.g. Employee Details"
-                                placeholderTextColor={COLORS.textMuted}
-                                value={activeSection.name}
-                                onChangeText={(val) => updateSectionName(activeSection.id, val)}
-                              />
+                            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+                              <View style={[styles.modalInputGroup, { flex: 3, marginBottom: 0 }]}>
+                                <Text style={styles.modalLabel}>Section Name *</Text>
+                                <TextInput
+                                  style={styles.searchBarInputInline}
+                                  placeholder="e.g. Employee Details"
+                                  placeholderTextColor={COLORS.textMuted}
+                                  value={activeSection.name}
+                                  onChangeText={(val) => updateSectionName(activeSection.id, val)}
+                                />
+                              </View>
+
+                              <View style={[styles.modalInputGroup, { flex: 1, marginBottom: 0 }]}>
+                                <Text style={styles.modalLabel}>Sort Order</Text>
+                                <TextInput
+                                  style={[styles.searchBarInputInline, { textAlign: 'center' }]}
+                                  placeholder="1"
+                                  placeholderTextColor={COLORS.textMuted}
+                                  value={activeSection.sort?.toString() || '1'}
+                                  onChangeText={(val) => updateSectionSort(activeSection.id, val)}
+                                  keyboardType="numeric"
+                                />
+                              </View>
                             </View>
 
                             <View style={{ marginTop: 8 }}>
@@ -970,26 +1252,63 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
                                 <Text style={{ color: COLORS.textMuted, fontSize: 13, marginBottom: 12, fontStyle: 'italic' }}>No fields added to this section yet.</Text>
                               )}
 
-                              {activeSection.fields.map((field, fIndex) => (
-                                <View key={field.id} style={{ zIndex: 1000 - fIndex, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 12, backgroundColor: '#F8FAFC', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                                {activeSection.fields.map((field, fIndex) => {
+                                const isBeingDragged = draggedFieldIndex === fIndex;
 
-                                  {/* Left: Flexible Inputs */}
-                                  <View style={{ flexDirection: 'row', flex: 1, minWidth: 240, gap: 8, zIndex: 10, position: 'relative' }}>
-                                    <View style={{ flex: 1, minWidth: 0 }}>
-                                      <TextInput
-                                        style={[styles.searchBarInputInline, { marginBottom: 0, backgroundColor: '#FFFFFF', paddingVertical: 0, height: 38, fontSize: 12, paddingHorizontal: 12 }]}
-                                        placeholder="Field Name"
-                                        placeholderTextColor={COLORS.textMuted}
-                                        value={field.name}
-                                        onChangeText={(val) => updateField(activeSection.id, field.id, 'name', val)}
-                                      />
+                                return (
+                                  <View
+                                    key={field.id}
+                                    onMouseEnter={() => {
+                                      if (isDraggingFieldRef.current && draggedFieldIndex !== null && draggedFieldIndex !== fIndex) {
+                                        handleLiveFieldReorder(activeSection.id, draggedFieldIndex, fIndex);
+                                        setDraggedFieldIndex(fIndex);
+                                      }
+                                    }}
+                                    style={{
+                                      zIndex: 1000 - fIndex,
+                                      flexDirection: 'row',
+                                      flexWrap: 'wrap',
+                                      alignItems: 'center',
+                                      gap: 12,
+                                      marginBottom: 12,
+                                      backgroundColor: isBeingDragged ? '#E0F2FE' : '#F8FAFC',
+                                      padding: 8,
+                                      borderRadius: 8,
+                                      borderWidth: 1,
+                                      borderColor: isBeingDragged ? COLORS.primary : '#E2E8F0',
+                                      opacity: isBeingDragged ? 0.8 : 1,
+                                    }}
+                                  >
+
+                                    {/* Left: Drag Handle Icon - Click & Hold to Drag */}
+                                    <View
+                                      style={{ cursor: 'grab', paddingRight: 8, paddingLeft: 4, paddingVertical: 4 }}
+                                      onMouseDown={(e) => {
+                                        if (e && e.preventDefault) e.preventDefault();
+                                        isDraggingFieldRef.current = true;
+                                        setDraggedFieldIndex(fIndex);
+                                      }}
+                                    >
+                                      <Ionicons name="reorder-two-outline" size={22} color={isBeingDragged ? COLORS.primary : "#94A3B8"} />
                                     </View>
-                                    <View style={{ flex: 1.3, minWidth: 160, zIndex: 10, position: 'relative' }}>
-                                      <View style={[styles.dropdownSelector, { backgroundColor: '#FFFFFF', paddingVertical: 0, height: 38 }]}>
-                                        <CustomDropdown selectedValue={field.type} onValueChange={(val) => updateField(activeSection.id, field.id, 'type', val)} options={FIELD_OPTIONS} />
+
+                                    {/* Flexible Inputs */}
+                                    <View style={{ flexDirection: 'row', flex: 1, minWidth: 240, gap: 8, zIndex: 10, position: 'relative' }}>
+                                      <View style={{ flex: 1, minWidth: 0 }}>
+                                        <TextInput
+                                          style={[styles.searchBarInputInline, { marginBottom: 0, backgroundColor: '#FFFFFF', paddingVertical: 0, height: 38, fontSize: 12, paddingHorizontal: 12 }]}
+                                          placeholder="Field Name"
+                                          placeholderTextColor={COLORS.textMuted}
+                                          value={field.name}
+                                          onChangeText={(val) => updateField(activeSection.id, field.id, 'name', val)}
+                                        />
+                                      </View>
+                                      <View style={{ flex: 1.3, minWidth: 160, zIndex: 10, position: 'relative' }}>
+                                        <View style={[styles.dropdownSelector, { backgroundColor: '#FFFFFF', paddingVertical: 0, height: 38 }]}>
+                                          <CustomDropdown selectedValue={field.type} onValueChange={(val) => updateField(activeSection.id, field.id, 'type', val)} options={FIELD_OPTIONS} />
+                                        </View>
                                       </View>
                                     </View>
-                                  </View>
 
                                   {/* Right: Fixed Action Controls */}
                                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0, paddingRight: 4 }}>
@@ -1122,8 +1441,9 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
 
 
 
-                                </View>
-                              ))}
+                                  </View>
+                                );
+                              })}
 
                               <TouchableOpacity
                                 style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, paddingVertical: 8 }}
@@ -1438,6 +1758,80 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
           </View>
         </View>
       </Modal>
+
+      {/* CUSTOM STYLED VALIDATION DIALOGUE BOX */}
+      {validationDialog.open && (
+        <Modal transparent visible animationType="fade" onRequestClose={() => setValidationDialog({ open: false, title: '', message: '' })}>
+          <View style={{
+            flex: 1,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 99999,
+            padding: 20
+          }}>
+            <View style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: 16,
+              width: '100%',
+              maxWidth: 400,
+              padding: 28,
+              alignItems: 'center',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 20 },
+              shadowOpacity: 0.25,
+              shadowRadius: 25,
+              elevation: 10,
+              borderWidth: 1,
+              borderColor: '#F1F5F9'
+            }}>
+              {/* Top Warning Icon */}
+              <View style={{
+                width: 60,
+                height: 60,
+                borderRadius: 30,
+                backgroundColor: '#FEF2F2',
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginBottom: 18,
+                borderWidth: 1,
+                borderColor: '#FEE2E2'
+              }}>
+                <Ionicons name="alert-circle" size={34} color="#EF4444" />
+              </View>
+
+              {/* Title & Description */}
+              <Text style={{ fontSize: 18, fontWeight: '700', color: '#0F172A', marginBottom: 8, textAlign: 'center' }}>
+                {validationDialog.title || 'Required Fields'}
+              </Text>
+              <Text style={{ fontSize: 14, color: '#64748B', textAlign: 'center', marginBottom: 24, lineHeight: 22 }}>
+                {validationDialog.message}
+              </Text>
+
+              {/* Action Button */}
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#0F172A',
+                  paddingVertical: 12,
+                  paddingHorizontal: 32,
+                  borderRadius: 10,
+                  width: '100%',
+                  alignItems: 'center',
+                  shadowColor: '#0F172A',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.15,
+                  shadowRadius: 8,
+                  elevation: 2
+                }}
+                onPress={() => setValidationDialog({ open: false, title: '', message: '' })}
+                activeOpacity={0.85}
+              >
+                <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '600' }}>OK, Got it</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
     </ScrollView>
   );
 }

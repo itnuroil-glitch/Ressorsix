@@ -3,13 +3,17 @@ const db = require('../config/db');
 exports.getAllSuppliers = async (req, res) => {
   try {
     const { clientid } = req.query;
-    let query = 'SELECT * FROM tbl_suppliers';
+    let query = `
+      SELECT s.*, c.company_name
+      FROM tbl_suppliers s
+      LEFT JOIN company c ON s.company_id::text = c.id::text
+    `;
     let params = [];
     if (clientid) {
-      query += ' WHERE clientid = $1';
+      query += ' WHERE s.clientid = $1';
       params.push(clientid);
     }
-    query += ' ORDER BY id DESC';
+    query += ' ORDER BY s.id DESC';
     const result = await db.query(query, params);
     res.json(result.rows);
   } catch (err) {
