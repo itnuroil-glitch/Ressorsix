@@ -149,7 +149,7 @@ exports.saveTollTransaction = async (req, res) => {
     const directionVal = req.body.direction || getFdVal(fd, ['Direction', 'direction']) || null;
     const tagNumberVal = req.body.tag_number || getFdVal(fd, ['Tag Number', 'tag_number', 'Tag No', 'tag_no', 'Tag', 'tag']) || null;
     const plateVal = req.body.plate || getFdVal(fd, ['Plate', 'plate', 'Plate Number', 'plate_number', 'Plate No', 'plate_no']) || null;
-    const rawAmount = req.body.amount !== undefined && req.body.amount !== null ? req.body.amount : getFdVal(fd, ['Amount(AED)', 'amount(aed)', 'Amount', 'amount', 'Fee', 'fee']);
+    const rawAmount = req.body.amount !== undefined && req.body.amount !== null ? req.body.amount : getFdVal(fd, ['Amount (AED)', 'Amount(AED)', 'amount (aed)', 'amount(aed)', 'Amount', 'amount', 'Fee', 'fee']);
     const amountVal = rawAmount !== null && rawAmount !== undefined && !isNaN(parseFloat(rawAmount)) ? parseFloat(rawAmount) : null;
     
     const rawVat = req.body.vat_amount !== undefined && req.body.vat_amount !== null ? req.body.vat_amount : getFdVal(fd, ['5% VAT Amount (AED)', '5% VAT Amount', 'VAT Amount', 'vat_amount', 'vat', 'VAT']);
@@ -337,7 +337,7 @@ exports.updateTollTransaction = async (req, res) => {
     const directionVal = fd['Direction'] || fd.direction || null;
     const tagNumberVal = fd['Tag Number'] || fd.tag_number || null;
     const plateVal = fd['Plate'] || fd.plate || null;
-    const rawAmount = fd['Amount(AED)'] || fd.amount || fd['Amount'] || null;
+    const rawAmount = fd['Amount (AED)'] || fd['Amount(AED)'] || fd.amount || fd['Amount'] || null;
     const amountVal = rawAmount !== null && rawAmount !== undefined && !isNaN(parseFloat(rawAmount)) ? parseFloat(rawAmount) : null;
     
     const rawVat = fd['5% VAT Amount (AED)'] || fd['5% VAT Amount'] || fd.vat_amount || fd.vat || null;
