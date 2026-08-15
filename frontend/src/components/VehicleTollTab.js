@@ -1017,7 +1017,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                 <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>TOLL GATE</Text>
                 <Text style={{ flex: 1.1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>DIRECTION</Text>
                 <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>TRIP DATE & TIME</Text>
-                <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>AMOUNT (AED)</Text>
+                <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>TOTAL AMOUNT (AED)</Text>
                 <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>ACTION</Text>
               </View>
             ) : (
@@ -1077,7 +1077,13 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                         const gate = record.toll_gate || parsedData['Toll Gate'] || parsedData['toll_name'] || 'N/A';
                         const dir = record.direction || parsedData['Direction'] || 'N/A';
                         const tripDt = (record.trip_date || parsedData['Trip Date'] || '') + ' ' + (record.trip_time || parsedData['Trip Time'] || '');
-                        const amt = record.amount !== null && record.amount !== undefined ? record.amount : (parsedData['Amount(AED)'] || parsedData['amount'] || '0.00');
+                        
+                        const rawTotalAmt = record.total_amount !== null && record.total_amount !== undefined
+                          ? record.total_amount
+                          : (record.amount !== null && record.amount !== undefined
+                              ? (parseFloat(record.amount) * 1.05)
+                              : (parsedData['Total Amount (AED) (Incl. VAT)'] || parsedData['total_amount'] || parsedData['Amount (AED)'] || parsedData['Amount(AED)'] || parsedData['amount'] || 0));
+                        const totalAmtNum = parseFloat(rawTotalAmt) || 0;
 
                         return (
                           <View key={record.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
@@ -1120,7 +1126,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                             </View>
 
                             <View style={{ flex: 1, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#166534', fontWeight: '700' }} numberOfLines={1}>AED {amt}</Text>
+                              <Text style={{ fontSize: 13, color: '#166534', fontWeight: '700' }} numberOfLines={1}>AED {totalAmtNum.toFixed(2)}</Text>
                             </View>
 
                             <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
