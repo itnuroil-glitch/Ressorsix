@@ -580,21 +580,57 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
 
   const handleDownloadTemplate = () => {
     try {
-      const templateData = [
-        {
-          "Toll Name": "Darb",
-          "Account No": "D-990"
-        },
-        {
-          "Toll Name": "Salik",
-          "Account No": "34866829"
-        }
-      ];
+      let templateData = [];
+      if (isTransaction) {
+        templateData = [
+          {
+            "Account No": "D-990",
+            "Transaction ID": "90044195184",
+            "Trip Date": "15 Aug 2026",
+            "Trip Time": "10:34:49 AM",
+            "Transaction Post Date": "15 Aug 2026",
+            "Toll Gate": "Al Mamzar South",
+            "Direction": "Sharjah",
+            "Tag Number": "13199982",
+            "Plate": "64914",
+            "Amount (AED)": "4.00",
+            "5% VAT Amount (AED)": "0.20",
+            "Total Amount (AED) (Incl. VAT)": "4.20"
+          },
+          {
+            "Account No": "34866829",
+            "Transaction ID": "90044195185",
+            "Trip Date": "15 Aug 2026",
+            "Trip Time": "11:15:00 AM",
+            "Transaction Post Date": "15 Aug 2026",
+            "Toll Gate": "Sheikh Zayed Bridge",
+            "Direction": "Abu Dhabi",
+            "Tag Number": "13101128",
+            "Plate": "59462",
+            "Amount (AED)": "4.00",
+            "5% VAT Amount (AED)": "0.20",
+            "Total Amount (AED) (Incl. VAT)": "4.20"
+          }
+        ];
+      } else {
+        templateData = [
+          {
+            "Account No": "D-990",
+            "Toll Name": "Darb"
+          },
+          {
+            "Account No": "34866829",
+            "Toll Name": "Salik"
+          }
+        ];
+      }
 
       const worksheet = XLSX.utils.json_to_sheet(templateData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Template");
-      const filename = isOverview ? "Vehicle_Toll_Overview_Template.xlsx" : "Vehicle_Toll_Template.xlsx";
+      const filename = isTransaction 
+        ? "Vehicle_Toll_Transactions_Template.xlsx" 
+        : (isOverview ? "Vehicle_Toll_Overview_Template.xlsx" : "Vehicle_Toll_Template.xlsx");
       XLSX.writeFile(workbook, filename);
       showToast && showToast('Template downloaded successfully!', 'success');
     } catch (e) {
