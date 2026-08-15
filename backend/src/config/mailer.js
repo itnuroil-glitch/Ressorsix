@@ -108,8 +108,9 @@ async function sendEmail({ to, subject, text, html, clientid = null }) {
     SELECT s.*, u.clientid, u.roleid
     FROM smtp_configuration s
     LEFT JOIN users u ON s.userid::text = u.id::text
-    WHERE s.is_deleted = false AND s.status = 1
-    ORDER BY CASE WHEN u.roleid = 2 THEN 0 ELSE 1 END ASC, s.id ASC
+    WHERE (s.is_deleted::text = 'false' OR s.is_deleted::text = '0' OR s.is_deleted = false)
+      AND (s.status::text = '1' OR s.status::text = 'true' OR s.status = 1)
+    ORDER BY CASE WHEN u.roleid::text = '2' THEN 0 ELSE 1 END ASC, s.id ASC
   `;
   const dbRes = await db.query(query);
   const allConfigs = dbRes.rows;
