@@ -21,28 +21,49 @@ const autoSyncInitialData = async () => {
 // Run initial sync on module load
 autoSyncInitialData();
 
+const sanitizeFieldData = (fd) => {
+  if (!fd || typeof fd !== 'object') return {};
+  const tollNameVal = fd['1786629185586'] || fd['Toll Name'] || fd['TOLL NAME'] || fd['toll_name'];
+  const accNoVal = fd['1786629206891'] || fd['Account No'] || fd['ACCOUNT NO'] || fd['account_no'];
+
+  const clean = {};
+  for (const [k, v] of Object.entries(fd)) {
+    if (/^\d+$/.test(k)) {
+      clean[k] = v;
+    }
+  }
+  if (tollNameVal !== undefined && tollNameVal !== null) {
+    clean['1786629185586'] = tollNameVal;
+  }
+  if (accNoVal !== undefined && accNoVal !== null) {
+    clean['1786629206891'] = accNoVal;
+  }
+  return clean;
+};
+
 exports.saveTollOverview = async (req, res) => {
   try {
     const { vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id } = req.body;
-    const jsonData = JSON.stringify(field_data || {});
+    const cleanFd = sanitizeFieldData(field_data);
+    const jsonData = JSON.stringify(cleanFd);
     
     // Extract Account No / Toll ID value from field_data to check for duplicates
     let tollIdVal = null;
-    if (field_data) {
+    if (cleanFd) {
       tollIdVal = 
-        field_data['Account No'] || 
-        field_data['ACCOUNT NO'] || 
-        field_data['account_no'] || 
-        field_data['1786629206891'] || 
-        field_data.toll_id || 
-        field_data.ID || 
-        field_data.id || 
+        cleanFd['1786629206891'] || 
+        cleanFd['Account No'] || 
+        cleanFd['ACCOUNT NO'] || 
+        cleanFd['account_no'] || 
+        cleanFd.toll_id || 
+        cleanFd.ID || 
+        cleanFd.id || 
         null;
       if (!tollIdVal) {
-        const keys = Object.keys(field_data);
+        const keys = Object.keys(cleanFd);
         for (const k of keys) {
-          if (k !== '1786629185586' && k !== 'toll_name' && String(field_data[k]).trim().length > 0) {
-            tollIdVal = field_data[k];
+          if (k !== '1786629185586' && k !== 'toll_name' && String(cleanFd[k]).trim().length > 0) {
+            tollIdVal = cleanFd[k];
             break;
           }
         }
@@ -166,7 +187,8 @@ exports.updateTollOverview = async (req, res) => {
   try {
     const { id } = req.params;
     const { custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id } = req.body;
-    const jsonData = JSON.stringify(field_data || {});
+    const cleanFd = sanitizeFieldData(field_data);
+    const jsonData = JSON.stringify(cleanFd);
 
     const query = `
       UPDATE tbl_toll_overview
