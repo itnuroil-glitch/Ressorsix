@@ -107,7 +107,7 @@ async function sendEmail({ to, subject, text, html, clientid = null }) {
   const query = `
     SELECT s.*, u.clientid, u.roleid
     FROM smtp_configuration s
-    LEFT JOIN users u ON s.userid = u.id
+    LEFT JOIN users u ON s.userid::text = u.id::text
     WHERE s.is_deleted = false AND s.status = 1
     ORDER BY CASE WHEN u.roleid = 2 THEN 0 ELSE 1 END ASC, s.id ASC
   `;
