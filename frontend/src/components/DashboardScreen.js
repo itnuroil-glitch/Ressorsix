@@ -421,6 +421,14 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [selectedNonBaseCompanyIds, setSelectedNonBaseCompanyIds] = useState([]);
   const [savingEmpCompanies, setSavingEmpCompanies] = useState(false);
 
+  // Admin Password Reset state
+  const [adminPasswordResetEmployee, setAdminPasswordResetEmployee] = useState(null);
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
+  const [adminPasswordSaving, setAdminPasswordSaving] = useState(false);
+  const [adminPasswordSuccess, setAdminPasswordSuccess] = useState('');
+  const [adminPasswordError, setAdminPasswordError] = useState('');
+
 
   // Client state variables
   const [clients, setClients] = useState([]);
@@ -1124,6 +1132,54 @@ export default function DashboardScreen({ user, onSignOut }) {
       alert('Error saving companies');
     } finally {
       setSavingEmpCompanies(false);
+    }
+  };
+
+  const handleOpenPasswordResetModal = (emp) => {
+    setAdminPasswordResetEmployee(emp);
+    setNewAdminPassword('');
+    setShowAdminPassword(false);
+    setAdminPasswordError('');
+    setAdminPasswordSuccess('');
+  };
+
+  const handleGenerateRandomPassword = () => {
+    const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$';
+    let pass = '';
+    for (let i = 0; i < 10; i++) {
+      pass += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setNewAdminPassword(pass);
+    setShowAdminPassword(true);
+    setAdminPasswordError('');
+  };
+
+  const handleSaveAdminPassword = async () => {
+    if (!newAdminPassword || newAdminPassword.length < 6) {
+      setAdminPasswordError('Password must be at least 6 characters long.');
+      return;
+    }
+    try {
+      setAdminPasswordSaving(true);
+      setAdminPasswordError('');
+      setAdminPasswordSuccess('');
+
+      const res = await fetch(`${API_URL}/api/auth/admin-change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: adminPasswordResetEmployee.email,
+          newPassword: newAdminPassword
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to update password');
+
+      setAdminPasswordSuccess(`Password for ${adminPasswordResetEmployee.full_name} updated successfully!`);
+    } catch (err) {
+      setAdminPasswordError(err.message || 'Failed to update password');
+    } finally {
+      setAdminPasswordSaving(false);
     }
   };
 
@@ -4093,7 +4149,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                             </View>
                           )}
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={() => setAdminPasswordResetEmployee(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} title="Reset Password">
+                        <TouchableOpacity onPress={() => handleOpenPasswordResetModal(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} title="Reset / Assign Password">
                           <Ionicons name="key-outline" size={18} color="#f59e0b" />
                         </TouchableOpacity>
                         <TouchableOpacity onPress={() => confirmDelete(item.id, 'employee', item.full_name)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} title="Delete User">
@@ -9542,6 +9598,29 @@ export default function DashboardScreen({ user, onSignOut }) {
                                 <Text style={{ fontSize: 13, color: '#94A3B8', fontStyle: 'italic' }}>No additional companies assigned</Text>
                               )}
                             </View>
+
+                            {/* Assigned Password / Security Key */}
+                            <View style={{ width: '100%', backgroundColor: '#FFFBEB', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#FCD34D', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                              <View style={{ flex: 1, minWidth: 200 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                  <Ionicons name="key-outline" size={14} color="#B45309" />
+                                  <Text style={{ fontSize: 11, color: '#B45309', fontWeight: '700', textTransform: 'uppercase' }}>Assigned Password / Access Key</Text>
+                                </View>
+                                <Text style={{ fontSize: 13, color: '#78350F', fontWeight: '600' }}>
+                                  •••••••• (Secured BCrypt Encryption)
+                                </Text>
+                              </View>
+                              <TouchableOpacity
+                                style={{ backgroundColor: '#F59E0B', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                                onPress={() => {
+                                  setIsEmployeeModalOpen(false);
+                                  handleOpenPasswordResetModal(editingEmployee);
+                                }}
+                              >
+                                <Ionicons name="key" size={14} color="#FFFFFF" />
+                                <Text style={{ fontSize: 12, color: '#FFFFFF', fontWeight: '700' }}>Reset / Assign Password</Text>
+                              </TouchableOpacity>
+                            </View>
                           </View>
                         </View>
                       ) : (
@@ -9923,6 +10002,102 @@ export default function DashboardScreen({ user, onSignOut }) {
                 </View>
               </Modal>
             )}
+
+          {/* Assign / Reset Password Modal */}
+          {adminPasswordResetEmployee && (
+            <Modal transparent={true} animationType="fade" visible={!!adminPasswordResetEmployee}>
+              <View style={dynamicModalOverlayStyle}>
+                <View style={[styles.modalCard, { width: width > 768 ? 520 : '95%', maxWidth: 520, padding: 24 }]}>
+                  {/* Header */}
+                  <View style={styles.modalHeader}>
+                    <View style={styles.modalTitleWrapper}>
+                      <Ionicons name="key" size={24} color="#F59E0B" />
+                      <Text style={styles.modalTitle}>Assign / Reset Password</Text>
+                    </View>
+                    <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setAdminPasswordResetEmployee(null)}>
+                      <Ionicons name="close" size={24} color={COLORS.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={{ paddingVertical: 12 }}>
+                    {/* Employee Target Info */}
+                    <View style={{ backgroundColor: '#FFFBEB', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#FCD34D', marginBottom: 16 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: '#B45309', textTransform: 'uppercase', letterSpacing: 0.5 }}>Target Employee</Text>
+                      <Text style={{ fontSize: 16, fontWeight: '700', color: '#78350F', marginTop: 2 }}>{adminPasswordResetEmployee.full_name}</Text>
+                      <Text style={{ fontSize: 13, color: '#92400E', marginTop: 1 }}>{adminPasswordResetEmployee.email}</Text>
+                    </View>
+
+                    {adminPasswordSuccess ? (
+                      <View style={{ backgroundColor: '#DCFCE7', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#86EFAC', marginBottom: 16, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Ionicons name="checkmark-circle" size={20} color="#16A34A" />
+                        <Text style={{ fontSize: 13, color: '#15803D', fontWeight: '600', flex: 1 }}>{adminPasswordSuccess}</Text>
+                      </View>
+                    ) : null}
+
+                    {adminPasswordError ? (
+                      <View style={{ backgroundColor: '#FEE2E2', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#FCA5A5', marginBottom: 16, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Ionicons name="alert-circle" size={20} color="#DC2626" />
+                        <Text style={{ fontSize: 13, color: '#B91C1C', fontWeight: '600', flex: 1 }}>{adminPasswordError}</Text>
+                      </View>
+                    ) : null}
+
+                    {/* New Password Field */}
+                    <View style={{ marginBottom: 16 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <Text style={styles.modalLabel}>Assign New Password *</Text>
+                        <TouchableOpacity onPress={handleGenerateRandomPassword} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Ionicons name="sparkles" size={13} color={COLORS.primary} />
+                          <Text style={{ fontSize: 12, color: COLORS.primary, fontWeight: '700' }}>Auto-Generate Key</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 8, backgroundColor: '#FFFFFF', paddingHorizontal: 12 }}>
+                        <TextInput
+                          style={{ flex: 1, height: 42, fontSize: 14, color: '#0F172A' }}
+                          placeholder="Enter new assigned password"
+                          value={newAdminPassword}
+                          onChangeText={setNewAdminPassword}
+                          secureTextEntry={!showAdminPassword}
+                          placeholderTextColor="#94A3B8"
+                        />
+                        <TouchableOpacity onPress={() => setShowAdminPassword(prev => !prev)} style={{ padding: 4 }}>
+                          <Ionicons name={showAdminPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color="#64748B" />
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={{ fontSize: 12, color: '#64748B', marginTop: 6 }}>
+                        Minimum 6 characters. Click the eye icon 👁️ to toggle plain text visibility.
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Footer */}
+                  <View style={[styles.modalFooter, { justifyContent: 'flex-end', gap: 12, paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', marginTop: 10 }]}>
+                    <TouchableOpacity
+                      style={[styles.modalCancelBtn, { backgroundColor: '#F1F5F9', borderWidth: 0, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }]}
+                      onPress={() => setAdminPasswordResetEmployee(null)}
+                      disabled={adminPasswordSaving}
+                    >
+                      <Text style={[styles.modalCancelText, { color: '#64748B', fontWeight: '600' }]}>Close</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.modalSaveBtn, { paddingHorizontal: 22, paddingVertical: 12, borderRadius: 8, backgroundColor: '#F59E0B', flexDirection: 'row', alignItems: 'center', gap: 6 }, adminPasswordSaving && { opacity: 0.7 }]}
+                      onPress={handleSaveAdminPassword}
+                      disabled={adminPasswordSaving}
+                    >
+                      {adminPasswordSaving ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <>
+                          <Ionicons name="key" size={16} color="#FFFFFF" />
+                          <Text style={[styles.modalSaveText, { fontWeight: '700', color: '#FFFFFF' }]}>Update Password</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            </Modal>
+          )}
 
           {/* Main Dashboard Panel Content */}
           <ScrollView
