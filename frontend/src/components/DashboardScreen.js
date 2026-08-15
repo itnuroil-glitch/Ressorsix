@@ -841,6 +841,8 @@ export default function DashboardScreen({ user, onSignOut }) {
       handleDeleteModule(id);
     } else if (type === 'company') {
       handleDeleteCompany(id);
+    } else if (type === 'employee') {
+      handleDeleteEmployee(id);
     }
   };
 
@@ -4067,7 +4069,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                         <TouchableOpacity onPress={() => setAdminPasswordResetEmployee(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} title="Reset Password">
                           <Ionicons name="key-outline" size={18} color="#f59e0b" />
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={() => handleDeleteEmployee(item.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} title="Delete User">
+                        <TouchableOpacity onPress={() => confirmDelete(item.id, 'employee', item.full_name)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} title="Delete User">
                           <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
                         </TouchableOpacity>
                       </View>

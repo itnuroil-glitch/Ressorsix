@@ -108,7 +108,7 @@
                       <TouchableOpacity onPress={() => startEditEmployee(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                         <Ionicons name="create-outline" size={18} color={COLORS.primary} />
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => handleDeleteEmployee(item.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <TouchableOpacity onPress={() => confirmDelete(item.id, 'employee', item.full_name)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                         <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
                       </TouchableOpacity>
                     </View>
