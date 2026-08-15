@@ -88,12 +88,16 @@ app.use('/api/departments', departmentRoutes);
 
 // Mounting company CRUD routes
 app.use('/api/companies', companyRoutes);
+app.use('/api/company/view/all', companyRoutes);
+app.use('/api/company', companyRoutes);
 
 // Mounting SMTP CRUD routes
 app.use('/api/smtp', smtpRoutes);
 
 // Mounting client CRUD routes
 app.use('/api/clients', clientRoutes);
+app.use('/api/client/view/all', clientRoutes);
+app.use('/api/client', clientRoutes);
 
 // Mounting country CRUD routes
 app.use('/api/countries', countryRoutes);

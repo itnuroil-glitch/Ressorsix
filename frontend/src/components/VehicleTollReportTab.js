@@ -74,8 +74,8 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
       setLoading(true);
       const [resTxn, resClient, resComp] = await Promise.all([
         fetch(`${API_URL}/api/vehicle-toll-transaction`),
-        fetch(`${API_URL}/api/client/view/all`),
-        fetch(`${API_URL}/api/company/view/all`)
+        fetch(`${API_URL}/api/clients`),
+        fetch(`${API_URL}/api/companies`)
       ]);
 
       if (resTxn.ok) {
