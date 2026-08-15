@@ -419,6 +419,7 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [isViewEmpCompaniesModalOpen, setIsViewEmpCompaniesModalOpen] = useState(false);
   const [selectedEmployeeForCompanies, setSelectedEmployeeForCompanies] = useState(null);
   const [selectedNonBaseCompanyIds, setSelectedNonBaseCompanyIds] = useState([]);
+  const [savingEmpCompanies, setSavingEmpCompanies] = useState(false);
   const [showViewCardPassword, setShowViewCardPassword] = useState(true);
 
 
