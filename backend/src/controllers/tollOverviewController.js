@@ -111,7 +111,7 @@ exports.saveTollOverview = async (req, res) => {
         jsonData,
         clientid || null,
         country_id || null,
-        moduleid || 70,
+        moduleid || 52,
         roleid || null,
         user_id || null,
         company_id || null

@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, TextInput, ActivityIndicator,
 import { Ionicons } from '@expo/vector-icons';
 import * as XLSX from 'xlsx';
 
-const API_URL = 'http://localhost:5000';
+import { API_URL } from '../config';
 
 const COLORS = {
   primary: '#1A4D3E',

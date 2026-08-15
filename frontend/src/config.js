@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
 const getApiUrl = () => {
-  // 1. Check explicitly set environment variables FIRST (for production cloud deployments like Render)
+  // 1. Check environment variables FIRST
   if (process.env.EXPO_PUBLIC_API_URL_WEB) {
     return process.env.EXPO_PUBLIC_API_URL_WEB;
   }
@@ -9,22 +9,23 @@ const getApiUrl = () => {
     return process.env.REACT_APP_API_URL;
   }
 
-  // 2. Local development dynamic hostname detection for Web
+  // 2. Dynamic environment detection for Web
   if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location && window.location.hostname) {
     const protocol = window.location.protocol && window.location.protocol.startsWith('https') ? 'https:' : 'http:';
     const hostname = window.location.hostname;
 
-    // If running on local network / localhost, route to port 5000
+    // If running locally (localhost / 127.0.0.1 / local IP), connect to port 5000
     if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) {
       return `${protocol}//${hostname}:5000`;
     }
 
-    return `${protocol}//${hostname}`;
+    // Default for live production site on Render
+    return 'https://ressoxis-backend.onrender.com';
   }
 
   return (
     process.env.EXPO_PUBLIC_API_URL_MOBILE ||
-    'http://192.168.0.14:5000'
+    'https://ressoxis-backend.onrender.com'
   );
 };
 

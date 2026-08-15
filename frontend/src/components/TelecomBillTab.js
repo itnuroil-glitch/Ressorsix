@@ -13,7 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { SearchableDropdown } from './CustomFieldsTab';
 
-const API_URL = 'http://localhost:5000';
+import { API_URL } from '../config';
 
 const COLORS = {
   primary: '#004D34',
