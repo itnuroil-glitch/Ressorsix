@@ -2056,9 +2056,16 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
 
                   {isTransaction && (
                     <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={{ fontSize: 11, fontWeight: '800', color: '#0369A1', textTransform: 'uppercase', letterSpacing: 0.5 }}>AMOUNT</Text>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: '#0369A1', textTransform: 'uppercase', letterSpacing: 0.5 }}>TOTAL AMOUNT</Text>
                       <Text style={{ fontSize: 20, fontWeight: '800', color: '#166534', marginTop: 4 }}>
-                        AED {selectedViewRecord.amount !== null && selectedViewRecord.amount !== undefined ? selectedViewRecord.amount : (selectedViewRecord.parsedData['Amount(AED)'] || selectedViewRecord.parsedData['amount'] || '0.00')}
+                        {(() => {
+                          const rawTot = selectedViewRecord.total_amount !== null && selectedViewRecord.total_amount !== undefined
+                            ? selectedViewRecord.total_amount
+                            : (selectedViewRecord.amount !== null && selectedViewRecord.amount !== undefined
+                                ? (parseFloat(selectedViewRecord.amount) * 1.05)
+                                : (selectedViewRecord.parsedData['Total Amount (AED) (Incl. VAT)'] || selectedViewRecord.parsedData['total_amount'] || selectedViewRecord.parsedData['Amount (AED)'] || selectedViewRecord.parsedData['Amount(AED)'] || selectedViewRecord.parsedData['amount'] || 0));
+                          return `AED ${(parseFloat(rawTot) || 0).toFixed(2)}`;
+                        })()}
                       </Text>
                     </View>
                   )}
