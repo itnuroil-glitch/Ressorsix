@@ -54,6 +54,7 @@ import CompanyLegalFormTab from './CompanyLegalFormTab';
 import CompanyLicenseAuthTab from './CompanyLicenseAuthTab';
 import CompanyDefCurrencyTab from './CompanyDefCurrencyTab';
 import SystemSettingsTab from './SystemSettingsTab';
+import TollGateTab from './TollGateTab';
 
 export default function DashboardScreen({ user, onSignOut }) {
   const { width, height } = useWindowDimensions();
@@ -5861,6 +5862,13 @@ export default function DashboardScreen({ user, onSignOut }) {
       case 'system-settings':
       case 'system-setting':
         return <SystemSettingsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('system_settings')} checkRowPermission={(compId, act) => checkRowPermission('system_settings', compId, act)} />;
+      case 'toll_gate':
+      case 'toll-gate':
+      case 'toll_gates':
+      case 'toll-gates':
+      case 'tollgate':
+      case 'tbl_toll_gate':
+        return <TollGateTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('toll_gate')} checkRowPermission={(compId, act) => checkRowPermission('toll_gate', compId, act)} />;
       case 'state':
         return renderStateTab();
       case 'employees':
