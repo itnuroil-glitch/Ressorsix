@@ -580,57 +580,44 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
 
   const handleDownloadTemplate = () => {
     try {
-      let templateData = [];
       if (isTransaction) {
-        templateData = [
-          {
-            "Account No": "D-990",
-            "Transaction ID": "90044195184",
-            "Trip Date": "15 Aug 2026",
-            "Trip Time": "10:34:49 AM",
-            "Transaction Post Date": "15 Aug 2026",
-            "Toll Gate": "Al Mamzar South",
-            "Direction": "Sharjah",
-            "Tag Number": "13199982",
-            "Plate": "64914",
-            "Amount (AED)": "4.00",
-            "5% VAT Amount (AED)": "0.20",
-            "Total Amount (AED) (Incl. VAT)": "4.20"
-          },
-          {
-            "Account No": "34866829",
-            "Transaction ID": "90044195185",
-            "Trip Date": "15 Aug 2026",
-            "Trip Time": "11:15:00 AM",
-            "Transaction Post Date": "15 Aug 2026",
-            "Toll Gate": "Sheikh Zayed Bridge",
-            "Direction": "Abu Dhabi",
-            "Tag Number": "13101128",
-            "Plate": "59462",
-            "Amount (AED)": "4.00",
-            "5% VAT Amount (AED)": "0.20",
-            "Total Amount (AED) (Incl. VAT)": "4.20"
-          }
+        const templateAOA = [
+          ["Trips Report"],
+          [""],
+          ["Account No: 34866829"],
+          ["Trip(s) From 01-05-2026 To 16-05-2026"],
+          ["Trip(s) Type: All types of trips"],
+          ["All Vehicle(s)"],
+          [""],
+          ["Trips Details"],
+          ["Transaction ID", "Trip Date", "Trip Time", "Transaction Post Date", "Toll Gate", "Direction", "Tag Number", "Plate", "Amount (AED)", "5% VAT Amount (AED)", "Total Amount (AED) (Incl. VAT)"],
+          ["90044195184", "15 Aug 2026", "10:34:49 AM", "15 Aug 2026", "Al Mamzar South", "Sharjah", "13199982", "64914", "4.00", "0.20", "4.20"],
+          ["90044195185", "15 Aug 2026", "11:15:00 AM", "15 Aug 2026", "Sheikh Zayed Bridge", "Abu Dhabi", "13101128", "59462", "4.00", "0.20", "4.20"]
         ];
-      } else {
-        templateData = [
-          {
-            "Account No": "D-990",
-            "Toll Name": "Darb"
-          },
-          {
-            "Account No": "34866829",
-            "Toll Name": "Salik"
-          }
-        ];
+
+        const worksheet = XLSX.utils.aoa_to_sheet(templateAOA);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Template");
+        XLSX.writeFile(workbook, "Vehicle_Toll_Transactions_Template.xlsx");
+        showToast && showToast('Template downloaded successfully!', 'success');
+        return;
       }
+
+      const templateData = [
+        {
+          "Account No": "D-990",
+          "Toll Name": "Darb"
+        },
+        {
+          "Account No": "34866829",
+          "Toll Name": "Salik"
+        }
+      ];
 
       const worksheet = XLSX.utils.json_to_sheet(templateData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Template");
-      const filename = isTransaction 
-        ? "Vehicle_Toll_Transactions_Template.xlsx" 
-        : (isOverview ? "Vehicle_Toll_Overview_Template.xlsx" : "Vehicle_Toll_Template.xlsx");
+      const filename = isOverview ? "Vehicle_Toll_Overview_Template.xlsx" : "Vehicle_Toll_Template.xlsx";
       XLSX.writeFile(workbook, filename);
       showToast && showToast('Template downloaded successfully!', 'success');
     } catch (e) {
