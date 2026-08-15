@@ -1,9 +1,13 @@
 const db = require('../config/db');
 
-// Ensure columns exist in tbl_vehicle_toll_transaction
+// Ensure columns and sequence exist in tbl_vehicle_toll_transaction
 const initTable = async () => {
   try {
     await db.query(`
+      CREATE SEQUENCE IF NOT EXISTS tbl_vehicle_toll_transaction_id_seq;
+      ALTER TABLE tbl_vehicle_toll_transaction ALTER COLUMN id SET DEFAULT nextval('tbl_vehicle_toll_transaction_id_seq');
+      SELECT setval('tbl_vehicle_toll_transaction_id_seq', COALESCE((SELECT MAX(id) FROM tbl_vehicle_toll_transaction), 0) + 1, false);
+
       ALTER TABLE tbl_vehicle_toll_transaction 
       ADD COLUMN IF NOT EXISTS transaction_post_date VARCHAR(100),
       ADD COLUMN IF NOT EXISTS vat_amount NUMERIC(10,2) DEFAULT 0.00,
