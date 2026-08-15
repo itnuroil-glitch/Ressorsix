@@ -104,8 +104,11 @@
                         </Text>
                       </View>
                     </View>
-                    <View style={[styles.tdCell, { flex: 1.0, flexDirection: 'row', justifyContent: 'center', gap: 12 }]}>
-                      <TouchableOpacity onPress={() => startEditEmployee(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <View style={[styles.tdCell, { flex: 1.2, flexDirection: 'row', justifyContent: 'center', gap: 10 }]}>
+                      <TouchableOpacity onPress={() => startViewEmployee(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} title="View User">
+                        <Ionicons name="eye-outline" size={18} color="#059669" />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => startEditEmployee(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} title="Edit User">
                         <Ionicons name="create-outline" size={18} color={COLORS.primary} />
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => confirmDelete(item.id, 'employee', item.full_name)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>

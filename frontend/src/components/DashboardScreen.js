@@ -397,6 +397,7 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [employeesLoading, setEmployeesLoading] = useState(false);
   const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState(null);
+  const [isViewOnlyEmployee, setIsViewOnlyEmployee] = useState(false);
   const [empFullName, setEmpFullName] = useState('');
   const [empEmail, setEmpEmail] = useState('');
   const [empPhone, setEmpPhone] = useState('');
@@ -1126,7 +1127,28 @@ export default function DashboardScreen({ user, onSignOut }) {
     }
   };
 
+  const startViewEmployee = (emp) => {
+    setIsViewOnlyEmployee(true);
+    setEditingEmployee(emp);
+    setEmpFullName(emp.full_name || '');
+    setEmpEmail(emp.email || '');
+    setEmpPhone(emp.phone || '');
+    setEmpRoleId(emp.roleid || '');
+    const parsedRoleIds = emp.roleid ? String(emp.roleid).split(',').map(id => parseInt(id.trim(), 10)).filter(Boolean) : [];
+    setEmpRoleIds(parsedRoleIds);
+    setEmpStatus(emp.status !== undefined ? emp.status : 1);
+    setEmpDepartmentId(emp.department_id || '');
+    setEmpBaseCompanyId(emp.basecompany_id || '');
+    setEmpAssociatedCompanies(emp.companies ? emp.companies.map(c => c.id) : []);
+    setEmpAutoGeneratePassword(false);
+    setEmployeeFormError('');
+    setEmpCompanyDropdownOpen(false);
+    setIsEmpRoleDropdownOpen(false);
+    setIsEmployeeModalOpen(true);
+  };
+
   const startEditEmployee = (emp) => {
+    setIsViewOnlyEmployee(false);
     setEditingEmployee(emp);
     setEmpFullName(emp.full_name || '');
     setEmpEmail(emp.email || '');
@@ -3973,6 +3995,7 @@ export default function DashboardScreen({ user, onSignOut }) {
             <TouchableOpacity
               style={styles.addModuleBtn}
               onPress={() => {
+                setIsViewOnlyEmployee(false);
                 setEditingEmployee(null);
                 setEmpFullName('');
                 setEmpEmail('');
@@ -4012,7 +4035,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                     <Text style={[styles.thCell, { flex: 1.5 }]}>ROLE</Text>
                     <Text style={[styles.thCell, { flex: 1.5 }]}>DEPARTMENT</Text>
                     <Text style={[styles.thCell, { flex: 1, textAlign: 'center' }]}>STATUS</Text>
-                    <Text style={[styles.thCell, { flex: 1.5, textAlign: 'center' }]}>ACTIONS</Text>
+                    <Text style={[styles.thCell, { flex: 1.8, textAlign: 'center' }]}>ACTIONS</Text>
                   </View>
 
                   {paginated.map((item) => (
@@ -4040,7 +4063,10 @@ export default function DashboardScreen({ user, onSignOut }) {
                           </Text>
                         </View>
                       </View>
-                      <View style={[styles.tdCell, { flex: 1.5, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 }]}>
+                      <View style={[styles.tdCell, { flex: 1.8, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 }]}>
+                        <TouchableOpacity onPress={() => startViewEmployee(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} title="View User">
+                          <Ionicons name="eye-outline" size={18} color="#059669" />
+                        </TouchableOpacity>
                         <TouchableOpacity onPress={() => startEditEmployee(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} title="Edit User">
                           <Ionicons name="pencil" size={18} color={COLORS.primary} />
                         </TouchableOpacity>
@@ -9379,8 +9405,8 @@ export default function DashboardScreen({ user, onSignOut }) {
                     {/* Modal Header */}
                     <View style={styles.modalHeader}>
                       <View style={styles.modalTitleWrapper}>
-                        <Ionicons name={editingEmployee ? 'pencil-outline' : 'person-add-outline'} size={24} color={COLORS.primary} />
-                        <Text style={styles.modalTitle}>{editingEmployee ? 'Edit User' : 'Create User'}</Text>
+                        <Ionicons name={isViewOnlyEmployee ? 'eye-outline' : (editingEmployee ? 'pencil-outline' : 'person-add-outline')} size={24} color={COLORS.primary} />
+                        <Text style={styles.modalTitle}>{isViewOnlyEmployee ? 'View User Details' : (editingEmployee ? 'Edit User' : 'Create User')}</Text>
                       </View>
                       <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setIsEmployeeModalOpen(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                         <Ionicons name="close" size={24} color={COLORS.textSecondary} />
@@ -9396,35 +9422,38 @@ export default function DashboardScreen({ user, onSignOut }) {
                         <View style={{ marginBottom: 16 }}>
                           <Text style={styles.modalLabel}>Full Name</Text>
                           <TextInput
-                            style={styles.modalInput}
+                            style={[styles.modalInput, isViewOnlyEmployee && { backgroundColor: '#F1F5F9', color: '#64748B' }]}
                             placeholder="Full Name *"
                             value={empFullName}
                             onChangeText={setEmpFullName}
                             placeholderTextColor={COLORS.textMuted}
+                            editable={!isViewOnlyEmployee}
                           />
                         </View>
 
                         <View style={{ marginBottom: 16 }}>
                           <Text style={styles.modalLabel}>Email</Text>
                           <TextInput
-                            style={styles.modalInput}
+                            style={[styles.modalInput, isViewOnlyEmployee && { backgroundColor: '#F1F5F9', color: '#64748B' }]}
                             placeholder="Email Address"
                             value={empEmail}
                             onChangeText={setEmpEmail}
                             keyboardType="email-address"
                             placeholderTextColor={COLORS.textMuted}
+                            editable={!isViewOnlyEmployee}
                           />
                         </View>
 
                         <View style={{ marginBottom: 16 }}>
                           <Text style={styles.modalLabel}>Phone</Text>
                           <TextInput
-                            style={styles.modalInput}
+                            style={[styles.modalInput, isViewOnlyEmployee && { backgroundColor: '#F1F5F9', color: '#64748B' }]}
                             placeholder="Phone Number"
                             value={empPhone}
                             onChangeText={setEmpPhone}
                             keyboardType="phone-pad"
                             placeholderTextColor={COLORS.textMuted}
+                            editable={!isViewOnlyEmployee}
                           />
                         </View>
 
@@ -9433,7 +9462,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                             {/* Label row */}
                             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                               <Text style={styles.modalLabel}>System Permissions Role</Text>
-                              {empRoleIds.length > 0 && (
+                              {empRoleIds.length > 0 && !isViewOnlyEmployee && (
                                 <TouchableOpacity onPress={() => setEmpRoleIds([])} style={{ marginLeft: 'auto' }}>
                                   <Text style={{ fontSize: 12, color: '#EF4444', fontWeight: '600' }}>Clear</Text>
                                 </TouchableOpacity>
@@ -9442,14 +9471,15 @@ export default function DashboardScreen({ user, onSignOut }) {
 
                             {/* Dropdown trigger button */}
                             <TouchableOpacity
-                              onPress={() => { setIsEmpRoleDropdownOpen(prev => !prev); setEmpRoleError(''); }}
+                              onPress={() => { if (!isViewOnlyEmployee) { setIsEmpRoleDropdownOpen(prev => !prev); setEmpRoleError(''); } }}
                               style={[styles.modalInput, {
                                 flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                                 height: 42, paddingHorizontal: 12, cursor: 'pointer', marginBottom: 0,
                                 borderColor: empRoleError ? '#EF4444' : undefined,
-                              }]}
+                              }, isViewOnlyEmployee && { backgroundColor: '#F1F5F9' }]}
+                              disabled={isViewOnlyEmployee}
                             >
-                              <Text style={{ color: empRoleIds.length > 0 ? COLORS.textPrimary : '#94A3B8', fontSize: 14, flex: 1 }} numberOfLines={1}>
+                              <Text style={{ color: empRoleIds.length > 0 ? (isViewOnlyEmployee ? '#64748B' : COLORS.textPrimary) : '#94A3B8', fontSize: 14, flex: 1 }} numberOfLines={1}>
                                 {empRoleIds.length > 0
                                   ? roles.filter(r => empRoleIds.includes(r.id)).map(r => r.role).join(', ')
                                   : 'Select Role'}
@@ -9459,7 +9489,9 @@ export default function DashboardScreen({ user, onSignOut }) {
                                   <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{empRoleIds.length}</Text>
                                 </View>
                               )}
-                              <Ionicons name={isEmpRoleDropdownOpen ? 'chevron-up' : 'chevron-down'} size={16} color={isEmpRoleDropdownOpen ? COLORS.primary : '#94A3B8'} />
+                              {!isViewOnlyEmployee && (
+                                <Ionicons name={isEmpRoleDropdownOpen ? 'chevron-up' : 'chevron-down'} size={16} color={isEmpRoleDropdownOpen ? COLORS.primary : '#94A3B8'} />
+                              )}
                             </TouchableOpacity>
                             {empRoleError ? (
                               <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4, marginLeft: 2 }}>
@@ -9468,7 +9500,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                             ) : null}
 
                             {/* Dropdown checklist panel */}
-                            {isEmpRoleDropdownOpen && (
+                            {isEmpRoleDropdownOpen && !isViewOnlyEmployee && (
                               <View style={{
                                 borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10,
                                 backgroundColor: '#FFFFFF', marginTop: 4,
@@ -9535,9 +9567,10 @@ export default function DashboardScreen({ user, onSignOut }) {
                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 4 }}>
                               <Switch
                                 value={empStatus === 1}
-                                onValueChange={(val) => setEmpStatus(val ? 1 : 0)}
+                                onValueChange={(val) => !isViewOnlyEmployee && setEmpStatus(val ? 1 : 0)}
                                 trackColor={{ false: '#CBD5E1', true: '#34D399' }}
                                 thumbColor={COLORS.white}
+                                disabled={isViewOnlyEmployee}
                               />
                               <Text style={{ marginLeft: 8, fontSize: 13, color: empStatus === 1 ? '#10B981' : COLORS.textSecondary, fontWeight: '500' }}>
                                 {empStatus === 1 ? 'Active' : 'Inactive'}
@@ -9568,6 +9601,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                             searchPlaceholder="Search Base Company..."
                             displayKey="company_name"
                             valueKey="id"
+                            disabled={isViewOnlyEmployee}
                           />
                         </View>
 
@@ -9583,7 +9617,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                               {/* Label row */}
                               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                                 <Text style={styles.modalLabel}>Company</Text>
-                                {empAssociatedCompanies.length > 0 && (
+                                {empAssociatedCompanies.length > 0 && !isViewOnlyEmployee && (
                                   <TouchableOpacity onPress={() => setEmpAssociatedCompanies([])} style={{ marginLeft: 'auto' }}>
                                     <Text style={{ fontSize: 12, color: '#EF4444', fontWeight: '600' }}>Clear</Text>
                                   </TouchableOpacity>
@@ -9592,14 +9626,15 @@ export default function DashboardScreen({ user, onSignOut }) {
 
                               {/* Dropdown trigger button */}
                               <TouchableOpacity
-                                onPress={() => { setEmpCompanyDropdownOpen(prev => !prev); setEmpCompanyError(''); }}
+                                onPress={() => { if (!isViewOnlyEmployee) { setEmpCompanyDropdownOpen(prev => !prev); setEmpCompanyError(''); } }}
                                 style={[styles.modalInput, {
                                   flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                                   height: 42, paddingHorizontal: 12, cursor: 'pointer', marginBottom: 0,
                                   borderColor: empCompanyError ? '#EF4444' : undefined,
-                                }]}
+                                }, isViewOnlyEmployee && { backgroundColor: '#F1F5F9' }]}
+                                disabled={isViewOnlyEmployee}
                               >
-                                <Text style={{ color: selectedNames ? COLORS.textPrimary : '#94A3B8', fontSize: 14, flex: 1 }} numberOfLines={1}>
+                                <Text style={{ color: selectedNames ? (isViewOnlyEmployee ? '#64748B' : COLORS.textPrimary) : '#94A3B8', fontSize: 14, flex: 1 }} numberOfLines={1}>
                                   {selectedNames || 'Select Company'}
                                 </Text>
                                 {empAssociatedCompanies.length > 0 && (
@@ -9607,7 +9642,9 @@ export default function DashboardScreen({ user, onSignOut }) {
                                     <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{empAssociatedCompanies.length}</Text>
                                   </View>
                                 )}
-                                <Ionicons name={empCompanyDropdownOpen ? 'chevron-up' : 'chevron-down'} size={16} color={empCompanyDropdownOpen ? COLORS.primary : '#94A3B8'} />
+                                {!isViewOnlyEmployee && (
+                                  <Ionicons name={empCompanyDropdownOpen ? 'chevron-up' : 'chevron-down'} size={16} color={empCompanyDropdownOpen ? COLORS.primary : '#94A3B8'} />
+                                )}
                               </TouchableOpacity>
                               {empCompanyError ? (
                                 <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4, marginLeft: 2 }}>
@@ -9617,7 +9654,7 @@ export default function DashboardScreen({ user, onSignOut }) {
 
 
                               {/* Dropdown checklist panel */}
-                              {empCompanyDropdownOpen && (
+                              {empCompanyDropdownOpen && !isViewOnlyEmployee && (
                                 <View style={{
                                   borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10,
                                   backgroundColor: '#FFFFFF', marginTop: 0,
@@ -9691,10 +9728,11 @@ export default function DashboardScreen({ user, onSignOut }) {
                             searchPlaceholder="Search Department..."
                             displayKey="department_name"
                             valueKey="id"
+                            disabled={isViewOnlyEmployee}
                           />
                         </View>
 
-                        {true && (
+                        {!isViewOnlyEmployee && (
                           <View style={{ backgroundColor: '#F8FAFC', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 }}>
                             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -9722,25 +9760,36 @@ export default function DashboardScreen({ user, onSignOut }) {
                       </View>
                     </ScrollView>
 
-                    <View style={[styles.modalFooter, { justifyContent: 'space-between', paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', marginTop: 20 }]}>
-                      <TouchableOpacity
-                        style={[styles.modalCancelBtn, { backgroundColor: '#F1F5F9', borderWidth: 0, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }]}
-                        onPress={() => setIsEmployeeModalOpen(false)}
-                        disabled={employeeFormSaving}
-                      >
-                        <Text style={[styles.modalCancelText, { color: '#64748B' }]}>Cancel</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.modalSaveBtn, { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, backgroundColor: '#0F172A' }, employeeFormSaving && { opacity: 0.7 }]}
-                        onPress={handleSaveEmployee}
-                        disabled={employeeFormSaving}
-                      >
-                        {employeeFormSaving ? (
-                          <ActivityIndicator size="small" color={COLORS.white} />
-                        ) : (
-                          <Text style={[styles.modalSaveText, { fontWeight: '600', color: '#FFFFFF' }]}>{editingEmployee ? 'Save Changes' : 'Create User'}</Text>
-                        )}
-                      </TouchableOpacity>
+                    <View style={[styles.modalFooter, { justifyContent: isViewOnlyEmployee ? 'flex-end' : 'space-between', paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', marginTop: 20 }]}>
+                      {isViewOnlyEmployee ? (
+                        <TouchableOpacity
+                          style={[styles.modalSaveBtn, { paddingHorizontal: 28, paddingVertical: 12, borderRadius: 8, backgroundColor: '#0F172A' }]}
+                          onPress={() => setIsEmployeeModalOpen(false)}
+                        >
+                          <Text style={[styles.modalSaveText, { fontWeight: '600', color: '#FFFFFF' }]}>Close</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <>
+                          <TouchableOpacity
+                            style={[styles.modalCancelBtn, { backgroundColor: '#F1F5F9', borderWidth: 0, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }]}
+                            onPress={() => setIsEmployeeModalOpen(false)}
+                            disabled={employeeFormSaving}
+                          >
+                            <Text style={[styles.modalCancelText, { color: '#64748B' }]}>Cancel</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.modalSaveBtn, { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, backgroundColor: '#0F172A' }, employeeFormSaving && { opacity: 0.7 }]}
+                            onPress={handleSaveEmployee}
+                            disabled={employeeFormSaving}
+                          >
+                            {employeeFormSaving ? (
+                              <ActivityIndicator size="small" color={COLORS.white} />
+                            ) : (
+                              <Text style={[styles.modalSaveText, { fontWeight: '600', color: '#FFFFFF' }]}>{editingEmployee ? 'Save Changes' : 'Create User'}</Text>
+                            )}
+                          </TouchableOpacity>
+                        </>
+                      )}
                     </View>
                   </View>
                 </View>
