@@ -946,7 +946,7 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
                         <Text style={{ fontSize: 12, color: '#0F172A' }}>{row.trip_date || 'N/A'}</Text>
                         <Text style={{ fontSize: 10, color: '#94A3B8' }}>{row.trip_time || ''}</Text>
                       </View>
-                      <Text style={{ flex: 1.2, fontSize: 11, color: '#64748B' }}>{row.created_at ? new Date(row.created_at).toLocaleDateString() : 'N/A'}</Text>
+                      <Text style={{ flex: 1.2, fontSize: 11, color: '#64748B' }}>{row.transaction_post_date || (row.created_at ? new Date(row.created_at).toLocaleDateString() : 'N/A')}</Text>
                       <Text style={{ flex: 1.1, fontSize: 12, fontWeight: '700', color: '#0F172A' }}>{row.plate || 'N/A'}</Text>
                       <View style={{ flex: 1.3 }}>
                         {row.vehicle_name ? (

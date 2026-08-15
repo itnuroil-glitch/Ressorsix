@@ -1,5 +1,19 @@
 const db = require('../config/db');
 
+// Ensure transaction_post_date column exists in tbl_vehicle_toll_transaction
+const initTable = async () => {
+  try {
+    await db.query(`
+      ALTER TABLE tbl_vehicle_toll_transaction 
+      ADD COLUMN IF NOT EXISTS transaction_post_date VARCHAR(100);
+    `);
+  } catch (err) {
+    console.error('Error adding transaction_post_date column to tbl_vehicle_toll_transaction:', err);
+  }
+};
+
+initTable();
+
 const resolveVehicleId = async (fieldData, clientId, plateVal, tagNumberVal) => {
   try {
     const cleanPlate = plateVal ? String(plateVal).trim().toLowerCase() : null;
@@ -128,6 +142,7 @@ exports.saveTollTransaction = async (req, res) => {
     const transactionIdVal = req.body.transaction_id || getFdVal(fd, ['Transaction ID', 'transaction_id', 'Toll ID', 'toll_id', 'Trip ID', 'trip_id', 'ID', 'id']) || null;
     const tripDateVal = req.body.trip_date || getFdVal(fd, ['Trip Date', 'trip_date', 'Date', 'date']) || null;
     const tripTimeVal = req.body.trip_time || getFdVal(fd, ['Trip Time', 'trip_time', 'Time', 'time']) || null;
+    const transactionPostDateVal = req.body.transaction_post_date || getFdVal(fd, ['Transaction Post Date', 'transaction_post_date', 'Post Date', 'post_date', 'Posting Date', 'posting_date', 'Trans Post Date']) || null;
     const tollGateVal = req.body.toll_gate || getFdVal(fd, ['Toll Gate', 'toll_gate', 'Gate', 'gate', 'Toll Name', 'toll_name']) || null;
     const directionVal = req.body.direction || getFdVal(fd, ['Direction', 'direction']) || null;
     const tagNumberVal = req.body.tag_number || getFdVal(fd, ['Tag Number', 'tag_number', 'Tag No', 'tag_no', 'Tag', 'tag']) || null;
@@ -166,10 +181,10 @@ exports.saveTollTransaction = async (req, res) => {
     const insertQuery = `
       INSERT INTO tbl_vehicle_toll_transaction (
         vehicle_id, custom_field_id, clientid, country_id, moduleid, roleid, user_id, company_id,
-        transaction_id, trip_date, trip_time, toll_gate, direction, tag_number, plate, amount, toll_name, toll_overview_id,
+        transaction_id, trip_date, trip_time, transaction_post_date, toll_gate, direction, tag_number, plate, amount, toll_name, toll_overview_id,
         created_at, updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *
     `;
       const insertValues = [
@@ -184,6 +199,7 @@ exports.saveTollTransaction = async (req, res) => {
         transactionIdVal ? String(transactionIdVal).trim() : null,
         tripDateVal ? String(tripDateVal).trim() : null,
         tripTimeVal ? String(tripTimeVal).trim() : null,
+        transactionPostDateVal ? String(transactionPostDateVal).trim() : null,
         tollGateVal ? String(tollGateVal).trim() : null,
         directionVal ? String(directionVal).trim() : null,
         tagNumberVal ? String(tagNumberVal).trim() : null,
@@ -305,6 +321,7 @@ exports.updateTollTransaction = async (req, res) => {
     const transactionIdVal = fd['Transaction ID'] || fd.transaction_id || fd['Toll ID'] || fd.toll_id || fd['Tag Number'] || fd.trip_id || fd.ID || fd.id || null;
     const tripDateVal = fd['Trip Date'] || fd.trip_date || null;
     const tripTimeVal = fd['Trip Time'] || fd.trip_time || null;
+    const transactionPostDateVal = fd['Transaction Post Date'] || fd.transaction_post_date || fd['Post Date'] || fd.post_date || null;
     const tollGateVal = fd['Toll Gate'] || fd.toll_gate || null;
     const directionVal = fd['Direction'] || fd.direction || null;
     const tagNumberVal = fd['Tag Number'] || fd.tag_number || null;
@@ -317,10 +334,10 @@ exports.updateTollTransaction = async (req, res) => {
       UPDATE tbl_vehicle_toll_transaction
       SET vehicle_id = $1, custom_field_id = $2,
           clientid = $3, country_id = $4, moduleid = $5, roleid = $6, user_id = $7, company_id = $8,
-          transaction_id = $9, trip_date = $10, trip_time = $11, toll_gate = $12, direction = $13,
-          tag_number = $14, plate = $15, amount = $16, toll_name = $17, toll_overview_id = $18,
+          transaction_id = $9, trip_date = $10, trip_time = $11, transaction_post_date = $12, toll_gate = $13, direction = $14,
+          tag_number = $15, plate = $16, amount = $17, toll_name = $18, toll_overview_id = $19,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $19
+      WHERE id = $20
       RETURNING *
     `;
 
@@ -336,6 +353,7 @@ exports.updateTollTransaction = async (req, res) => {
       transactionIdVal ? String(transactionIdVal).trim() : null,
       tripDateVal ? String(tripDateVal).trim() : null,
       tripTimeVal ? String(tripTimeVal).trim() : null,
+      transactionPostDateVal ? String(transactionPostDateVal).trim() : null,
       tollGateVal ? String(tollGateVal).trim() : null,
       directionVal ? String(directionVal).trim() : null,
       tagNumberVal ? String(tagNumberVal).trim() : null,
