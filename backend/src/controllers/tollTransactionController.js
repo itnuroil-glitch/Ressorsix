@@ -1,6 +1,6 @@
 const db = require('../config/db');
 
-// Ensure columns and sequence exist in tbl_vehicle_toll_transaction
+// Ensure columns, defaults, and sequence exist in tbl_vehicle_toll_transaction
 const initTable = async () => {
   try {
     await db.query(`
@@ -11,7 +11,12 @@ const initTable = async () => {
       ALTER TABLE tbl_vehicle_toll_transaction 
       ADD COLUMN IF NOT EXISTS transaction_post_date VARCHAR(100),
       ADD COLUMN IF NOT EXISTS vat_amount NUMERIC(10,2) DEFAULT 0.00,
-      ADD COLUMN IF NOT EXISTS total_amount NUMERIC(10,2) DEFAULT 0.00;
+      ADD COLUMN IF NOT EXISTS total_amount NUMERIC(10,2) DEFAULT 0.00,
+      ALTER COLUMN status SET DEFAULT 1,
+      ALTER COLUMN is_deleted SET DEFAULT false;
+
+      UPDATE tbl_vehicle_toll_transaction SET status = 1 WHERE status IS NULL;
+      UPDATE tbl_vehicle_toll_transaction SET is_deleted = false WHERE is_deleted IS NULL;
     `);
   } catch (err) {
     console.error('Error modifying tbl_vehicle_toll_transaction schema:', err);
@@ -195,9 +200,9 @@ exports.saveTollTransaction = async (req, res) => {
       INSERT INTO tbl_vehicle_toll_transaction (
         vehicle_id, custom_field_id, clientid, country_id, moduleid, roleid, user_id, company_id,
         transaction_id, trip_date, trip_time, transaction_post_date, toll_gate, direction, tag_number, plate, amount, vat_amount, total_amount, toll_name, toll_overview_id,
-        created_at, updated_at
+        status, is_deleted, created_at, updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, 1, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *
     `;
       const insertValues = [
