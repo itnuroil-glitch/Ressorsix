@@ -927,6 +927,8 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
               <TouchableOpacity style={{ flex: 1, textAlign: 'right' }} onPress={() => handleSort('amount')}>
                 <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'right' }}>AMOUNT (AED) ⇕</Text>
               </TouchableOpacity>
+              <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'right' }}>5% VAT (AED)</Text>
+              <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'right' }}>TOTAL AMOUNT ⇕</Text>
             </View>
 
             {paginatedData.length === 0 ? (
@@ -938,6 +940,8 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
                 {paginatedData.map((row, idx) => {
                   const amt = parseFloat(row.amount) || 0;
                   const isZero = amt === 0;
+                  const vatAmt = row.vat_amount !== undefined && row.vat_amount !== null ? parseFloat(row.vat_amount) : (amt * 0.05);
+                  const totalAmt = row.total_amount !== undefined && row.total_amount !== null ? parseFloat(row.total_amount) : (amt + vatAmt);
 
                   return (
                     <View key={row.id || idx} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
@@ -977,6 +981,16 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
                           </Text>
                         </View>
                       </View>
+
+                      {/* 5% VAT Amount */}
+                      <Text style={{ flex: 1, fontSize: 12, color: '#64748B', textAlign: 'right', fontWeight: '500' }}>
+                        AED {vatAmt.toFixed(2)}
+                      </Text>
+
+                      {/* Total Amount (Incl. VAT) */}
+                      <Text style={{ flex: 1.2, fontSize: 12, color: '#166534', textAlign: 'right', fontWeight: '700' }}>
+                        AED {totalAmt.toFixed(2)}
+                      </Text>
                     </View>
                   );
                 })}

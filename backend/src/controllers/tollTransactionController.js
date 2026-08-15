@@ -1,14 +1,16 @@
 const db = require('../config/db');
 
-// Ensure transaction_post_date column exists in tbl_vehicle_toll_transaction
+// Ensure columns exist in tbl_vehicle_toll_transaction
 const initTable = async () => {
   try {
     await db.query(`
       ALTER TABLE tbl_vehicle_toll_transaction 
-      ADD COLUMN IF NOT EXISTS transaction_post_date VARCHAR(100);
+      ADD COLUMN IF NOT EXISTS transaction_post_date VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS vat_amount NUMERIC(10,2) DEFAULT 0.00,
+      ADD COLUMN IF NOT EXISTS total_amount NUMERIC(10,2) DEFAULT 0.00;
     `);
   } catch (err) {
-    console.error('Error adding transaction_post_date column to tbl_vehicle_toll_transaction:', err);
+    console.error('Error modifying tbl_vehicle_toll_transaction schema:', err);
   }
 };
 
@@ -149,6 +151,13 @@ exports.saveTollTransaction = async (req, res) => {
     const plateVal = req.body.plate || getFdVal(fd, ['Plate', 'plate', 'Plate Number', 'plate_number', 'Plate No', 'plate_no']) || null;
     const rawAmount = req.body.amount !== undefined && req.body.amount !== null ? req.body.amount : getFdVal(fd, ['Amount(AED)', 'amount(aed)', 'Amount', 'amount', 'Fee', 'fee']);
     const amountVal = rawAmount !== null && rawAmount !== undefined && !isNaN(parseFloat(rawAmount)) ? parseFloat(rawAmount) : null;
+    
+    const rawVat = req.body.vat_amount !== undefined && req.body.vat_amount !== null ? req.body.vat_amount : getFdVal(fd, ['5% VAT Amount (AED)', '5% VAT Amount', 'VAT Amount', 'vat_amount', 'vat', 'VAT']);
+    const vatAmountVal = rawVat !== null && rawVat !== undefined && !isNaN(parseFloat(rawVat)) ? parseFloat(rawVat) : (amountVal !== null ? parseFloat((amountVal * 0.05).toFixed(2)) : 0.00);
+
+    const rawTotal = req.body.total_amount !== undefined && req.body.total_amount !== null ? req.body.total_amount : getFdVal(fd, ['Total Amount (AED) (Incl. VAT)', 'Total Amount (AED)', 'Total Amount', 'total_amount', 'Total', 'total']);
+    const totalAmountVal = rawTotal !== null && rawTotal !== undefined && !isNaN(parseFloat(rawTotal)) ? parseFloat(rawTotal) : (amountVal !== null ? parseFloat((amountVal + vatAmountVal).toFixed(2)) : 0.00);
+
     const tollNameVal = req.body.toll_name || getFdVal(fd, ['Toll Name', 'toll_name', 'Toll Type', 'toll_type', '1786629185586']) || null;
 
     // Ignore Excel summary/total footer rows
@@ -181,10 +190,10 @@ exports.saveTollTransaction = async (req, res) => {
     const insertQuery = `
       INSERT INTO tbl_vehicle_toll_transaction (
         vehicle_id, custom_field_id, clientid, country_id, moduleid, roleid, user_id, company_id,
-        transaction_id, trip_date, trip_time, transaction_post_date, toll_gate, direction, tag_number, plate, amount, toll_name, toll_overview_id,
+        transaction_id, trip_date, trip_time, transaction_post_date, toll_gate, direction, tag_number, plate, amount, vat_amount, total_amount, toll_name, toll_overview_id,
         created_at, updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *
     `;
       const insertValues = [
@@ -205,6 +214,8 @@ exports.saveTollTransaction = async (req, res) => {
         tagNumberVal ? String(tagNumberVal).trim() : null,
         plateVal ? String(plateVal).trim() : null,
         amountVal,
+        vatAmountVal,
+        totalAmountVal,
         tollNameVal ? String(tollNameVal).trim() : null,
         finalOverviewId
       ];
@@ -328,6 +339,13 @@ exports.updateTollTransaction = async (req, res) => {
     const plateVal = fd['Plate'] || fd.plate || null;
     const rawAmount = fd['Amount(AED)'] || fd.amount || fd['Amount'] || null;
     const amountVal = rawAmount !== null && rawAmount !== undefined && !isNaN(parseFloat(rawAmount)) ? parseFloat(rawAmount) : null;
+    
+    const rawVat = fd['5% VAT Amount (AED)'] || fd['5% VAT Amount'] || fd.vat_amount || fd.vat || null;
+    const vatAmountVal = rawVat !== null && rawVat !== undefined && !isNaN(parseFloat(rawVat)) ? parseFloat(rawVat) : (amountVal !== null ? parseFloat((amountVal * 0.05).toFixed(2)) : 0.00);
+
+    const rawTotal = fd['Total Amount (AED) (Incl. VAT)'] || fd['Total Amount (AED)'] || fd.total_amount || fd.total || null;
+    const totalAmountVal = rawTotal !== null && rawTotal !== undefined && !isNaN(parseFloat(rawTotal)) ? parseFloat(rawTotal) : (amountVal !== null ? parseFloat((amountVal + vatAmountVal).toFixed(2)) : 0.00);
+
     const tollNameVal = fd['Toll Name'] || fd.toll_name || fd['Toll Type'] || null;
 
     const query = `
@@ -335,9 +353,9 @@ exports.updateTollTransaction = async (req, res) => {
       SET vehicle_id = $1, custom_field_id = $2,
           clientid = $3, country_id = $4, moduleid = $5, roleid = $6, user_id = $7, company_id = $8,
           transaction_id = $9, trip_date = $10, trip_time = $11, transaction_post_date = $12, toll_gate = $13, direction = $14,
-          tag_number = $15, plate = $16, amount = $17, toll_name = $18, toll_overview_id = $19,
+          tag_number = $15, plate = $16, amount = $17, vat_amount = $18, total_amount = $19, toll_name = $20, toll_overview_id = $21,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $20
+      WHERE id = $22
       RETURNING *
     `;
 
@@ -359,6 +377,8 @@ exports.updateTollTransaction = async (req, res) => {
       tagNumberVal ? String(tagNumberVal).trim() : null,
       plateVal ? String(plateVal).trim() : null,
       amountVal,
+      vatAmountVal,
+      totalAmountVal,
       tollNameVal ? String(tollNameVal).trim() : null,
       toll_overview_id || null,
       id
