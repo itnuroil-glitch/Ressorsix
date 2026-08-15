@@ -419,7 +419,7 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [isViewEmpCompaniesModalOpen, setIsViewEmpCompaniesModalOpen] = useState(false);
   const [selectedEmployeeForCompanies, setSelectedEmployeeForCompanies] = useState(null);
   const [selectedNonBaseCompanyIds, setSelectedNonBaseCompanyIds] = useState([]);
-  const [savingEmpCompanies, setSavingEmpCompanies] = useState(false);
+  const [showViewCardPassword, setShowViewCardPassword] = useState(true);
 
 
   // Client state variables
@@ -9576,9 +9576,18 @@ export default function DashboardScreen({ user, onSignOut }) {
                                   <Ionicons name="key-outline" size={14} color="#B45309" />
                                   <Text style={{ fontSize: 11, color: '#B45309', fontWeight: '700', textTransform: 'uppercase' }}>Assigned Password / Access Key</Text>
                                 </View>
-                                <Text style={{ fontSize: 13, color: '#78350F', fontWeight: '600' }}>
-                                  •••••••• (Secured BCrypt Encryption)
-                                </Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                                  <Text style={{ fontSize: 15, color: '#78350F', fontWeight: '700', letterSpacing: showViewCardPassword ? 0.5 : 2 }}>
+                                    {editingEmployee?.assigned_password || editingEmployee?.tempPassword
+                                      ? (showViewCardPassword ? (editingEmployee.assigned_password || editingEmployee.tempPassword) : '••••••••')
+                                      : 'No Password Set'}
+                                  </Text>
+                                  {(editingEmployee?.assigned_password || editingEmployee?.tempPassword) && (
+                                    <TouchableOpacity onPress={() => setShowViewCardPassword(prev => !prev)} style={{ padding: 2 }}>
+                                      <Ionicons name={showViewCardPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#B45309" />
+                                    </TouchableOpacity>
+                                  )}
+                                </View>
                               </View>
                               <TouchableOpacity
                                 style={{ backgroundColor: '#F59E0B', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}

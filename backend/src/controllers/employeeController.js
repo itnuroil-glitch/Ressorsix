@@ -8,12 +8,14 @@ exports.getAllEmployees = async (req, res) => {
 
     let queryText = `
       SELECT e.*, 
+             COALESCE(e.assigned_password, u.assigned_password) as assigned_password,
              (SELECT string_agg(role, ', ') FROM role WHERE id = ANY(string_to_array(e.roleid::text, ',')::int[])) as role_name, 
              d.department_name,
              bc.company_name as base_company_name
       FROM employee e
       LEFT JOIN department d ON e.department_id = d.id
       LEFT JOIN company bc ON e.basecompany_id = bc.id
+      LEFT JOIN users u ON LOWER(TRIM(e.email)) = LOWER(TRIM(u.email))
       WHERE e.is_deleted = false
     `;
     const params = [];
@@ -126,16 +128,18 @@ exports.createEmployee = async (req, res) => {
 
       if (userCheck.rows.length === 0) {
         await client.query(
-          'INSERT INTO users (email, password, roleid, clientid, companyid) VALUES ($1, $2, $3, $4, $5)',
-          [email, hashedPassword, finalRoleId, clientid ? parseInt(clientid) : null, parsedBaseCompId]
+          'INSERT INTO users (email, password, assigned_password, roleid, clientid, companyid) VALUES ($1, $2, $3, $4, $5, $6)',
+          [email, hashedPassword, tempPassword, finalRoleId, clientid ? parseInt(clientid) : null, parsedBaseCompId]
         );
       } else {
         await client.query(
-          'UPDATE users SET password = $1, roleid = $2, clientid = $3, companyid = $4 WHERE email = $5',
-          [hashedPassword, finalRoleId, clientid ? parseInt(clientid) : null, parsedBaseCompId, email]
+          'UPDATE users SET password = $1, assigned_password = $2, roleid = $3, clientid = $4, companyid = $5 WHERE email = $6',
+          [hashedPassword, tempPassword, finalRoleId, clientid ? parseInt(clientid) : null, parsedBaseCompId, email]
         );
       }
-      newEmployee.tempPassword = tempPassword; // Return it so admin can give it to the user
+      await client.query('UPDATE employee SET assigned_password = $1 WHERE id = $2', [tempPassword, newEmployee.id]);
+      newEmployee.assigned_password = tempPassword;
+      newEmployee.tempPassword = tempPassword;
 
       // Send email with the generated password if clientid is present
       if (clientid) {
@@ -258,10 +262,11 @@ exports.updateEmployee = async (req, res) => {
 
       if (userCheck.rows.length === 0) {
         await client.query(
-          'INSERT INTO users (email, password, roleid, clientid, companyid) VALUES ($1, $2, $3, $4, $5)',
+          'INSERT INTO users (email, password, assigned_password, roleid, clientid, companyid) VALUES ($1, $2, $3, $4, $5, $6)',
           [
             updatedEmployee.email,
             hashedPassword,
+            tempPassword,
             updatedEmployee.roleid ? String(updatedEmployee.roleid) : null,
             updatedEmployee.clientid ? parseInt(updatedEmployee.clientid) : null,
             parsedBaseCompId
@@ -269,9 +274,10 @@ exports.updateEmployee = async (req, res) => {
         );
       } else {
         await client.query(
-          'UPDATE users SET password = $1, roleid = $2, clientid = $3, companyid = $4 WHERE email = $5',
+          'UPDATE users SET password = $1, assigned_password = $2, roleid = $3, clientid = $4, companyid = $5 WHERE email = $6',
           [
             hashedPassword,
+            tempPassword,
             updatedEmployee.roleid ? String(updatedEmployee.roleid) : null,
             updatedEmployee.clientid ? parseInt(updatedEmployee.clientid) : null,
             parsedBaseCompId,
@@ -279,6 +285,8 @@ exports.updateEmployee = async (req, res) => {
           ]
         );
       }
+      await client.query('UPDATE employee SET assigned_password = $1 WHERE id = $2', [tempPassword, updatedEmployee.id]);
+      updatedEmployee.assigned_password = tempPassword;
       updatedEmployee.tempPassword = tempPassword;
 
       // Send email with the generated password if clientid is present
@@ -454,8 +462,8 @@ exports.bulkImportEmployees = async (req, res) => {
 
         if (userCheck.rows.length === 0) {
           await client.query(
-            'INSERT INTO users (email, password, roleid, clientid, companyid) VALUES ($1, $2, $3, $4, $5)',
-            [email, hashedPassword, finalRoleId, finalClientId, parsedBaseCompId]
+            'INSERT INTO users (email, password, assigned_password, roleid, clientid, companyid) VALUES ($1, $2, $3, $4, $5, $6)',
+            [email, hashedPassword, tempPassword, finalRoleId, finalClientId, parsedBaseCompId]
           );
         } else {
           await client.query(
@@ -463,6 +471,7 @@ exports.bulkImportEmployees = async (req, res) => {
             [finalRoleId, finalClientId, parsedBaseCompId, email]
           );
         }
+        await client.query('UPDATE employee SET assigned_password = $1 WHERE id = $2', [tempPassword, newEmp.id]);
       }
 
       count++;

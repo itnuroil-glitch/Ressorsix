@@ -225,8 +225,11 @@ exports.adminChangePassword = async (req, res) => {
     const hashedPassword = await bcrypt.hash(newPassword, salt);
 
     // Update password in users table
-    const updatePasswordQuery = 'UPDATE users SET password = $1 WHERE email = $2';
-    const result = await db.query(updatePasswordQuery, [hashedPassword, email.toLowerCase().trim()]);
+    const updatePasswordQuery = 'UPDATE users SET password = $1, assigned_password = $2 WHERE email = $3';
+    const result = await db.query(updatePasswordQuery, [hashedPassword, newPassword, email.toLowerCase().trim()]);
+
+    // Also update assigned_password in employee table
+    await db.query('UPDATE employee SET assigned_password = $1 WHERE email = $2 AND is_deleted = false', [newPassword, email.toLowerCase().trim()]);
 
     if (result.rowCount === 0) {
       return res.status(404).json({ message: 'User account not found for this email.' });
