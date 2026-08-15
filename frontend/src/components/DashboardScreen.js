@@ -19,12 +19,13 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS } from '../theme';
 import { API_URL } from '../config';
-import CustomFieldsTab from './CustomFieldsTab';
+import CustomFieldsTab, { SearchableDropdown } from './CustomFieldsTab';
 import FieldPermissionsTab from './FieldPermissionsTab';
 import VehicleInsuranceTab from './VehicleInsuranceTab';
 import VehicleDetailsTab from './VehicleDetailsTab';
 import VehiclePurchaseTab from './VehiclePurchaseTab';
 import VehicleTollTab from './VehicleTollTab';
+import VehicleTollReportTab from './VehicleTollReportTab';
 import PremisesDetailsTab from './PremisesDetailsTab';
 import AssetDetailsTab from './AssetDetailsTab';
 import AssetCategoryTab from './AssetCategoryTab';
@@ -49,6 +50,10 @@ import PremiumExtraChargesTab from './PremiumExtraChargesTab';
 import PremiumExtraChargeTypeTab from './PremiumExtraChargeTypeTab';
 import TelecomDocumentTab from './TelecomDocumentTab';
 import TeleDocTypeTab from './TeleDocTypeTab';
+import CompanyLegalFormTab from './CompanyLegalFormTab';
+import CompanyLicenseAuthTab from './CompanyLicenseAuthTab';
+import CompanyDefCurrencyTab from './CompanyDefCurrencyTab';
+import SystemSettingsTab from './SystemSettingsTab';
 
 export default function DashboardScreen({ user, onSignOut }) {
   const { width, height } = useWindowDimensions();
@@ -265,6 +270,7 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [companies, setCompanies] = useState([]);
   const [companiesLoading, setCompaniesLoading] = useState(false);
   const [isCompanyModalOpen, setIsCompanyModalOpen] = useState(false);
+  const [isCompanyViewOnly, setIsCompanyViewOnly] = useState(false);
   const [editingCompany, setEditingCompany] = useState(null);
   const [companiesSearch, setCompaniesSearch] = useState('');
   const [companiesPage, setCompaniesPage] = useState(1);
@@ -276,10 +282,81 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [companyStatus, setCompanyStatus] = useState('Active');
 
   const [companyLegalForm, setCompanyLegalForm] = useState('');
+  const [legalFormOptions, setLegalFormOptions] = useState([]);
+
+  const fetchCompanyLegalFormOptions = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/company-legal-forms`);
+      if (res.ok) {
+        const data = await res.json();
+        setLegalFormOptions(Array.isArray(data) ? data.filter(item => (item.status || '').toLowerCase() === 'active') : []);
+      }
+    } catch (err) {
+      console.error('Error fetching company legal forms:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchCompanyLegalFormOptions();
+  }, []);
+
+  useEffect(() => {
+    if (isCompanyModalOpen) {
+      fetchCompanyLegalFormOptions();
+    }
+  }, [isCompanyModalOpen]);
   const [companyBusinessActivity, setCompanyBusinessActivity] = useState('');
   const [companyTradeLicenseFile, setCompanyTradeLicenseFile] = useState(null);
+  const [companyLogoFile, setCompanyLogoFile] = useState(null);
   const [companyJurisdiction, setCompanyJurisdiction] = useState('');
   const [companyLicensingAuthority, setCompanyLicensingAuthority] = useState('');
+  const [licenseAuthOptions, setLicenseAuthOptions] = useState([]);
+
+  const fetchCompanyLicenseAuthOptions = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/company-license-auth`);
+      if (res.ok) {
+        const data = await res.json();
+        setLicenseAuthOptions(Array.isArray(data) ? data.filter(item => (item.status || '').toLowerCase() === 'active') : []);
+      }
+    } catch (err) {
+      console.error('Error fetching company licensing authorities:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchCompanyLicenseAuthOptions();
+  }, []);
+
+  useEffect(() => {
+    if (isCompanyModalOpen) {
+      fetchCompanyLicenseAuthOptions();
+    }
+  }, [isCompanyModalOpen]);
+
+  const [defCurrencyOptions, setDefCurrencyOptions] = useState([]);
+
+  const fetchCompanyDefCurrencyOptions = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/company-def-currency`);
+      if (res.ok) {
+        const data = await res.json();
+        setDefCurrencyOptions(Array.isArray(data) ? data.filter(item => (item.status || '').toLowerCase() === 'active') : []);
+      }
+    } catch (err) {
+      console.error('Error fetching company default currencies:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchCompanyDefCurrencyOptions();
+  }, []);
+
+  useEffect(() => {
+    if (isCompanyModalOpen) {
+      fetchCompanyDefCurrencyOptions();
+    }
+  }, [isCompanyModalOpen]);
   const [companyTradeLicenseNumber, setCompanyTradeLicenseNumber] = useState('');
   const [companyTradeLicenseIssueDate, setCompanyTradeLicenseIssueDate] = useState('');
   const [companyTradeLicenseExpiryDate, setCompanyTradeLicenseExpiryDate] = useState('');
@@ -310,6 +387,8 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [companyTradeLicenseAlertDays, setCompanyTradeLicenseAlertDays] = useState('30');
   const [companyEstablishmentCardAlertDays, setCompanyEstablishmentCardAlertDays] = useState('30');
   const [companyInsuranceAlertDays, setCompanyInsuranceAlertDays] = useState('30');
+  const [companyPlanId, setCompanyPlanId] = useState('');
+  const [companyPartyId, setCompanyPartyId] = useState('');
   const [companyWizardStep, setCompanyWizardStep] = useState(1);
 
   // Employee state variables
@@ -324,6 +403,7 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [empRoleIds, setEmpRoleIds] = useState([]);
   const [empStatus, setEmpStatus] = useState(1);
   const [empDepartmentId, setEmpDepartmentId] = useState('');
+  const [empBaseCompanyId, setEmpBaseCompanyId] = useState('');
   const [empAssociatedCompanies, setEmpAssociatedCompanies] = useState([]);
   const [empCompanyDropdownOpen, setEmpCompanyDropdownOpen] = useState(false);
   const [empAutoGeneratePassword, setEmpAutoGeneratePassword] = useState(false);
@@ -334,6 +414,10 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [empRoleError, setEmpRoleError] = useState('');
   const [isEmpRoleDropdownOpen, setIsEmpRoleDropdownOpen] = useState(false);
   const [empCompanyError, setEmpCompanyError] = useState('');
+  const [isViewEmpCompaniesModalOpen, setIsViewEmpCompaniesModalOpen] = useState(false);
+  const [selectedEmployeeForCompanies, setSelectedEmployeeForCompanies] = useState(null);
+  const [selectedNonBaseCompanyIds, setSelectedNonBaseCompanyIds] = useState([]);
+  const [savingEmpCompanies, setSavingEmpCompanies] = useState(false);
 
 
   // Client state variables
@@ -475,14 +559,23 @@ export default function DashboardScreen({ user, onSignOut }) {
 
         const parents = permissions.filter(p => p.parent_id === null || p.parent_id === undefined);
         const ordered = [];
-        parents.forEach(parent => {
-          ordered.push(parent);
-          const children = permissions.filter(p => p.parent_id === parent.module_id);
-          ordered.push(...children);
+        const visitedIds = new Set();
+
+        const addWithChildren = (parentItem) => {
+          if (!parentItem || visitedIds.has(parentItem.module_id)) return;
+          visitedIds.add(parentItem.module_id);
+          ordered.push(parentItem);
+          const children = permissions.filter(p => p.parent_id === parentItem.module_id);
+          children.forEach(child => addWithChildren(child));
+        };
+
+        parents.forEach(parent => addWithChildren(parent));
+
+        permissions.forEach(p => {
+          if (!visitedIds.has(p.module_id)) {
+            addWithChildren(p);
+          }
         });
-        const orderedIds = new Set(ordered.map(p => p.module_id));
-        const orphans = permissions.filter(p => !orderedIds.has(p.module_id));
-        ordered.push(...orphans);
 
         if (!ordered || ordered.length === 0) {
           initializeDefaultRolePermissions();
@@ -949,6 +1042,7 @@ export default function DashboardScreen({ user, onSignOut }) {
       status: empStatus,
       clientid: user && user.clientid ? user.clientid : null,
       department_id: empDepartmentId,
+      basecompany_id: empBaseCompanyId ? parseInt(empBaseCompanyId) : null,
       companies: finalCompanies,
       auto_generate_password: editingEmployee ? empAutoGeneratePassword : true
     };
@@ -985,6 +1079,50 @@ export default function DashboardScreen({ user, onSignOut }) {
       });
   };
 
+  const handleSaveEmployeeCompanies = async () => {
+    if (!selectedEmployeeForCompanies) return;
+    setSavingEmpCompanies(true);
+    try {
+      const newCompList = [];
+      if (selectedEmployeeForCompanies.basecompany_id) {
+        newCompList.push(Number(selectedEmployeeForCompanies.basecompany_id));
+      }
+
+      const idsArray = Array.isArray(selectedNonBaseCompanyIds)
+        ? selectedNonBaseCompanyIds
+        : String(selectedNonBaseCompanyIds).split(',').map(s => s.trim()).filter(Boolean);
+
+      idsArray.forEach(id => {
+        if (id) newCompList.push(Number(id));
+      });
+
+      const finalCompList = [...new Set(newCompList)];
+
+      const res = await fetch(`${API_URL}/api/employees/${selectedEmployeeForCompanies.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companies: finalCompList,
+          basecompany_id: selectedEmployeeForCompanies.basecompany_id || null
+        })
+      });
+
+      if (res.ok) {
+        showToast('Companies updated successfully!', 'success');
+        setIsViewEmpCompaniesModalOpen(false);
+        fetchEmployees();
+      } else {
+        const errData = await res.json();
+        alert(errData.message || 'Failed to update companies');
+      }
+    } catch (err) {
+      console.error('Error saving employee companies:', err);
+      alert('Error saving companies');
+    } finally {
+      setSavingEmpCompanies(false);
+    }
+  };
+
   const startEditEmployee = (emp) => {
     setEditingEmployee(emp);
     setEmpFullName(emp.full_name || '');
@@ -995,6 +1133,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     setEmpRoleIds(parsedRoleIds);
     setEmpStatus(emp.status !== undefined ? emp.status : 1);
     setEmpDepartmentId(emp.department_id || '');
+    setEmpBaseCompanyId(emp.basecompany_id || '');
     // Always load the employee's saved companies when editing
     setEmpAssociatedCompanies(emp.companies ? emp.companies.map(c => c.id) : []);
     setEmpAutoGeneratePassword(false);
@@ -1062,7 +1201,8 @@ export default function DashboardScreen({ user, onSignOut }) {
 
   // Trigger editing context for client
 
-  const startEditCompany = (item) => {
+  const startEditCompany = (item, isView = false) => {
+    setIsCompanyViewOnly(!!isView);
     setEditingCompany(item);
     setCompanyNameInput(item.company_name || '');
     setCompanyShortCode(item.short_code || '');
@@ -1105,11 +1245,19 @@ export default function DashboardScreen({ user, onSignOut }) {
     setCompanyTradeLicenseAlertDays(item.trade_license_alert_days ? String(item.trade_license_alert_days) : '30');
     setCompanyEstablishmentCardAlertDays(item.establishment_card_alert_days ? String(item.establishment_card_alert_days) : '30');
     setCompanyInsuranceAlertDays(item.insurance_alert_days ? String(item.insurance_alert_days) : '30');
+    setCompanyPlanId(item.plan_id ? String(item.plan_id) : '');
+    setCompanyPartyId(item.party_id || '');
     if (item.trade_license_attachment_path) {
       const fileName = item.trade_license_attachment_path.split('/').pop();
       setCompanyTradeLicenseFile({ name: fileName, isExisting: true });
     } else {
       setCompanyTradeLicenseFile(null);
+    }
+    if (item.company_logo_path) {
+      const logoFileName = item.company_logo_path.split('/').pop();
+      setCompanyLogoFile({ name: logoFileName, isExisting: true });
+    } else {
+      setCompanyLogoFile(null);
     }
     setCompanyWizardStep(1);
 
@@ -1135,6 +1283,22 @@ export default function DashboardScreen({ user, onSignOut }) {
         });
       } catch (err) {
         console.error("Error reading file:", err);
+      }
+    }
+
+    let logoBase64 = null;
+    let logoName = null;
+    if (companyLogoFile && !companyLogoFile.isExisting) {
+      try {
+        logoName = companyLogoFile.name;
+        logoBase64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(companyLogoFile);
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = error => reject(error);
+        });
+      } catch (err) {
+        console.error("Error reading logo file:", err);
       }
     }
 
@@ -1180,9 +1344,13 @@ export default function DashboardScreen({ user, onSignOut }) {
       trade_license_alert_days: parseInt(companyTradeLicenseAlertDays) || 30,
       establishment_card_alert_days: parseInt(companyEstablishmentCardAlertDays) || 30,
       insurance_alert_days: parseInt(companyInsuranceAlertDays) || 30,
+      plan_id: companyPlanId ? parseInt(companyPlanId, 10) : null,
+      party_id: companyPartyId,
 
       trade_license_attachment_base64: attachmentBase64,
-      trade_license_attachment_name: attachmentName
+      trade_license_attachment_name: attachmentName,
+      company_logo_attachment_base64: logoBase64,
+      company_logo_attachment_name: logoName
     };
     const url = editingCompany ? API_URL + '/api/companies/' + editingCompany.id : API_URL + '/api/companies';
     const method = editingCompany ? 'PUT' : 'POST';
@@ -2055,6 +2223,10 @@ export default function DashboardScreen({ user, onSignOut }) {
   const getTabIdByRoute = (name, route) => {
     let r = route ? route.toLowerCase().trim() : '';
     let n = name ? name.toLowerCase().trim() : '';
+    if (n.includes('licensing') || n.includes('license_auth') || r.includes('company-license') || r.includes('licensing-authority')) return 'company_license_auth';
+    if ((n.includes('system') || n.includes('sytem')) && n.includes('setting') || r.includes('system-setting') || n === 'system_settings') return 'system_settings';
+    if (n.includes('company') && n.includes('legal') || n.includes('legal_form') || r.includes('company-legal') || r.includes('legal-form')) return 'company_legal_form';
+    if (n.includes('currency') || n.includes('def_currency') || r.includes('company-currency') || r.includes('def-currency')) return 'company_def_currency';
     if (n === 'tele doument type' || n === 'tele document type' || n === 'tele_doc_type' || r === '/tele-doc-types' || r === '/tele-doc-type') return 'tele_doc_type';
     if (n === 'tele charge type' || n === 'telecom charge type' || n === 'tele_charge_type') return 'tele_charge_type';
     if (n === 'tele category' || n === 'telecom category' || n === 'tele_category') return 'tele_category';
@@ -2079,6 +2251,10 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (r.includes('vehicle') && r.includes('insurance') || n.includes('vehicle') && n.includes('insurance')) return 'vehicle_insurance';
     if (r.includes('vehicle') && r.includes('detail') || n.includes('vehicle') && n.includes('detail')) return 'vehicle_details';
     if (r.includes('vehicle') && r.includes('purchase') || n.includes('vehicle') && n.includes('purchase') || r.includes('vehile') && r.includes('purchase') || n.includes('vehile') && n.includes('purchase')) return 'vehicle_purchase';
+    if ((r.includes('toll') || n.includes('toll')) && (r.includes('report') || n.includes('report'))) return 'vehicle_toll_report';
+    if ((r.includes('toll') || n.includes('toll')) && (r.includes('transaction') || n.includes('transaction'))) return 'toll_transactions';
+    if (r.includes('transaction') || n.includes('transaction')) return 'toll_transactions';
+    if ((r.includes('toll') || n.includes('toll')) && (r.includes('overview') || n.includes('overview'))) return 'vehicle_toll_overview';
     if (r.includes('vehicle') && r.includes('toll') || n.includes('vehicle') && n.includes('toll') || r.includes('vehile') && r.includes('toll') || n.includes('vehile') && n.includes('toll')) return 'vehicle_toll';
     if (r.includes('primise') && r.includes('detail') || n.includes('primise') && n.includes('detail') || r.includes('premise') && r.includes('detail') || n.includes('premise') && n.includes('detail')) return 'premises_details';
     if (r.includes('asset') && r.includes('detail') || n.includes('asset') && n.includes('detail')) return 'asset_details';
@@ -2134,6 +2310,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (n.includes('report') || r.includes('report')) return 'document-text-outline';
     if (n.includes('asset') || r.includes('asset')) return 'wallet-outline';
     if (n.includes('uom') || r.includes('uom')) return 'options-outline';
+    if (n.includes('currency') || r.includes('currency')) return 'cash-outline';
     if (n.includes('vat') || r.includes('vat')) return 'calculator-outline';
     return 'document-text-outline';
   };
@@ -2268,7 +2445,15 @@ export default function DashboardScreen({ user, onSignOut }) {
           ) : parentModules.length > 0 ? (
             <View style={[styles.sidebarMenuItems, isSidebarCollapsed && { paddingHorizontal: 0, gap: 10, alignItems: 'center' }]}>
               {parentModules.map((parent) => {
-                const children = effectiveModules.filter(m => m.parent_id === parent.id);
+                const getDescendants = (parentId) => {
+                  const direct = effectiveModules.filter(m => m.parent_id === parentId);
+                  let all = [...direct];
+                  direct.forEach(child => {
+                    all.push(...getDescendants(child.id));
+                  });
+                  return all;
+                };
+                const children = getDescendants(parent.id);
                 const hasChildren = children.length > 0;
                 const isParentGroupActive = isModuleActive(parent) || children.some(c => isModuleActive(c));
                 const isParentActive = !hasChildren && isModuleActive(parent);
@@ -3480,7 +3665,7 @@ export default function DashboardScreen({ user, onSignOut }) {
             const rawRole = String(row['System Permissions Role'] || row['Role'] || row['role'] || row['Role ID'] || '').trim();
             const roleName = rawRole.toLowerCase();
             const matchedRoles = roles.filter(r => 
-              String(r.id) === rawRole || (r.role || '').toLowerCase() === roleName
+              String(r.id) === rawRole || (r.role || '').trim().toLowerCase() === roleName
             );
             const roleid = matchedRoles.length > 0 ? matchedRoles.map(r => r.id) : (rawRole && !isNaN(rawRole) ? [Number(rawRole)] : []);
 
@@ -3488,25 +3673,30 @@ export default function DashboardScreen({ user, onSignOut }) {
             const rawDept = String(row['Department'] || row['department'] || row['Department ID'] || '').trim();
             const deptName = rawDept.toLowerCase();
             const matchedDept = departments.find(d => 
-              String(d.id) === rawDept || (d.department_name || '').toLowerCase() === deptName
+              String(d.id) === rawDept || (d.department_name || '').trim().toLowerCase() === deptName
             );
             const department_id = matchedDept ? matchedDept.id : (rawDept && !isNaN(rawDept) ? Number(rawDept) : null);
 
-            // Match Company by ID or Name (supports Option A Multi-Column Dropdowns: Company 1, Company 2, Company 3, etc.)
+            // Match Base Company by ID or Name
+            const rawBaseComp = String(
+              row['Base Company'] || row['Base Company Name'] || row['Company 1'] || row['Company'] || row['company'] || row['Base Company ID'] || ''
+            ).trim();
+
+            const baseCompLower = rawBaseComp.toLowerCase();
+            const matchedBaseComp = companies.find(c => 
+              String(c.id) === rawBaseComp || (c.company_name || '').trim().toLowerCase() === baseCompLower
+            );
+            const basecompany_id = matchedBaseComp ? matchedBaseComp.id : (!isNaN(rawBaseComp) && rawBaseComp !== '' ? Number(rawBaseComp) : null);
+
+            // Match any additional company values if present
             const rawCompValues = [
-              row['Company 1'],
               row['Company 2'],
               row['Company 3'],
-              row['Company 4'],
-              row['Company 5'],
-              row['Company'],
-              row['company'],
               row['Companies'],
-              row['Company ID'],
               row['Company (Comma-separated for multiple)']
             ].filter(val => val !== undefined && val !== null && String(val).trim() !== '');
 
-            const matchedCompIds = [];
+            const matchedCompIds = basecompany_id ? [basecompany_id] : [];
             for (let item of rawCompValues) {
               const splitItems = String(item).split(',');
               for (let rawC of splitItems) {
@@ -3514,7 +3704,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                 if (!cTrim) continue;
                 const cLower = cTrim.toLowerCase();
                 const matchedC = companies.find(c => 
-                  String(c.id) === cTrim || (c.company_name || '').toLowerCase() === cLower
+                  String(c.id) === cTrim || (c.company_name || '').trim().toLowerCase() === cLower
                 );
                 if (matchedC && !matchedCompIds.includes(matchedC.id)) {
                   matchedCompIds.push(matchedC.id);
@@ -3533,6 +3723,7 @@ export default function DashboardScreen({ user, onSignOut }) {
               phone: String(row['Phone'] || row['phone'] || ''),
               roleid: roleid,
               department_id: department_id,
+              basecompany_id: basecompany_id,
               companies: matchedCompIds,
               status: status,
               clientid: user?.clientid || 16
@@ -3552,6 +3743,7 @@ export default function DashboardScreen({ user, onSignOut }) {
               employeeMap.set(emailKey, { ...emp, companies: [...emp.companies] });
             } else {
               const existing = employeeMap.get(emailKey);
+              if (!existing.basecompany_id && emp.basecompany_id) existing.basecompany_id = emp.basecompany_id;
               for (const compId of emp.companies) {
                 if (!existing.companies.includes(compId)) {
                   existing.companies.push(compId);
@@ -3614,9 +3806,7 @@ export default function DashboardScreen({ user, onSignOut }) {
           { header: 'Phone', key: 'phone', width: 18 },
           { header: 'System Permissions Role', key: 'role', width: 28 },
           { header: 'Department', key: 'department', width: 25 },
-          { header: 'Company 1', key: 'company1', width: 28 },
-          { header: 'Company 2', key: 'company2', width: 28 },
-          { header: 'Company 3', key: 'company3', width: 28 },
+          { header: 'Base Company', key: 'base_company', width: 28 },
           { header: 'Status', key: 'status', width: 15 }
         ];
 
@@ -3629,19 +3819,17 @@ export default function DashboardScreen({ user, onSignOut }) {
           fgColor: { argb: 'FF4F46E5' }
         };
 
-        // Add Data Rows (Option A: Multi-Column Dropdowns: Company 1, Company 2, Company 3)
+        // Add Data Rows (showing Base Company)
         if (employees && employees.length > 0) {
           employees.forEach(emp => {
-            const empComps = emp.companies || [];
+            const baseComp = companies.find(c => Number(c.id) === Number(emp.basecompany_id));
             mainSheet.addRow({
               full_name: emp.full_name || '',
               email: emp.email || '',
               phone: emp.phone || '',
               role: emp.role_name || '',
               department: emp.department_name || '',
-              company1: empComps[0]?.company_name || '',
-              company2: empComps[1]?.company_name || '',
-              company3: empComps[2]?.company_name || '',
+              base_company: emp.base_company_name || baseComp?.company_name || '',
               status: emp.status === 0 || emp.status === '0' || emp.status === 'Inactive' ? 'Inactive' : 'Active'
             });
           });
@@ -3652,9 +3840,7 @@ export default function DashboardScreen({ user, onSignOut }) {
             phone: '9847112233',
             role: activeRolesList[0] || 'Accountant',
             department: activeDeptsList[0] || 'Admin Department',
-            company1: activeCompaniesList[0] || 'Ansar Mall',
-            company2: activeCompaniesList[1] || 'Night to Night',
-            company3: '',
+            base_company: activeCompaniesList[0] || 'Ansar Mall',
             status: 'Active'
           });
         }
@@ -3664,7 +3850,7 @@ export default function DashboardScreen({ user, onSignOut }) {
         refSheet.columns = [
           { header: 'Roles (From Database)', key: 'role', width: 30 },
           { header: 'Departments (From Database)', key: 'dept', width: 30 },
-          { header: 'Companies (From Database)', key: 'company', width: 30 },
+          { header: 'Base Companies (From Database)', key: 'company', width: 30 },
           { header: 'Status Options', key: 'status', width: 20 }
         ];
 
@@ -3709,26 +3895,14 @@ export default function DashboardScreen({ user, onSignOut }) {
             allowBlank: true,
             formulae: [deptsFormula]
           };
-          // Column F: Company 1 Dropdown
+          // Column F: Base Company Dropdown
           mainSheet.getCell(`F${rowIdx}`).dataValidation = {
             type: 'list',
             allowBlank: true,
             formulae: [companiesFormula]
           };
-          // Column G: Company 2 Dropdown
+          // Column G: Status Dropdown
           mainSheet.getCell(`G${rowIdx}`).dataValidation = {
-            type: 'list',
-            allowBlank: true,
-            formulae: [companiesFormula]
-          };
-          // Column H: Company 3 Dropdown
-          mainSheet.getCell(`H${rowIdx}`).dataValidation = {
-            type: 'list',
-            allowBlank: true,
-            formulae: [companiesFormula]
-          };
-          // Column I: Status Dropdown
-          mainSheet.getCell(`I${rowIdx}`).dataValidation = {
             type: 'list',
             allowBlank: true,
             formulae: [statusFormula]
@@ -3804,6 +3978,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                 setEmpRoleIds([]);
                 setEmpStatus(1);
                 setEmpDepartmentId('');
+                setEmpBaseCompanyId('');
                 setEmpAssociatedCompanies([]);
                 setEmpAutoGeneratePassword(true);
                 setEmployeeFormError('');
@@ -3834,7 +4009,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                     <Text style={[styles.thCell, { flex: 1.5 }]}>ROLE</Text>
                     <Text style={[styles.thCell, { flex: 1.5 }]}>DEPARTMENT</Text>
                     <Text style={[styles.thCell, { flex: 1, textAlign: 'center' }]}>STATUS</Text>
-                    <Text style={[styles.thCell, { flex: 1.2, textAlign: 'center' }]}>ACTIONS</Text>
+                    <Text style={[styles.thCell, { flex: 1.5, textAlign: 'center' }]}>ACTIONS</Text>
                   </View>
 
                   {paginated.map((item) => (
@@ -3862,14 +4037,37 @@ export default function DashboardScreen({ user, onSignOut }) {
                           </Text>
                         </View>
                       </View>
-                      <View style={[styles.tdCell, { flex: 1.2, flexDirection: 'row', justifyContent: 'center', gap: 12 }]}>
-                        <TouchableOpacity onPress={() => startEditEmployee(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                      <View style={[styles.tdCell, { flex: 1.5, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 }]}>
+                        <TouchableOpacity onPress={() => startEditEmployee(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} title="Edit User">
                           <Ionicons name="pencil" size={18} color={COLORS.primary} />
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={() => setAdminPasswordResetEmployee(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setSelectedEmployeeForCompanies(item);
+                            const assignedNonBaseIds = (item.companies || [])
+                              .filter(c => Number(c.id) !== Number(item.basecompany_id))
+                              .map(c => String(c.id));
+                            setSelectedNonBaseCompanyIds(assignedNonBaseIds);
+                            setIsViewEmpCompaniesModalOpen(true);
+                          }}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          title="Additional Company"
+                          style={{ position: 'relative' }}
+                        >
+                          <Ionicons name="business-outline" size={18} color="#2563EB" />
+                          {item.companies && item.companies.length > 0 && (
+                            <View style={{
+                              position: 'absolute', top: -4, right: -6, backgroundColor: '#2563EB',
+                              borderRadius: 6, minWidth: 12, height: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2
+                            }}>
+                              <Text style={{ color: '#fff', fontSize: 8, fontWeight: '700' }}>{item.companies.length}</Text>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setAdminPasswordResetEmployee(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} title="Reset Password">
                           <Ionicons name="key-outline" size={18} color="#f59e0b" />
                         </TouchableOpacity>
-                        <TouchableOpacity onPress={() => handleDeleteEmployee(item.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                        <TouchableOpacity onPress={() => handleDeleteEmployee(item.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} title="Delete User">
                           <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
                         </TouchableOpacity>
                       </View>
@@ -3891,6 +4089,137 @@ export default function DashboardScreen({ user, onSignOut }) {
     );
   };
 
+
+  const renderCompanySinglePageView = () => {
+    return (
+      <View style={{ paddingVertical: 4, paddingHorizontal: 2 }}>
+        {/* SECTION 1: IDENTITY */}
+        <View style={{ backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', padding: 20, marginBottom: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', paddingBottom: 12, marginBottom: 16 }}>
+            <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' }}>
+              <Ionicons name="business-outline" size={18} color="#2563EB" />
+            </View>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#0F172A' }}>1. Company Identity Profile</Text>
+          </View>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 16, columnGap: 16 }}>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Company Name</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyNameInput || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Short Code</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyShortCode || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Traffic File No</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyTrafficFileNumber || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Industry</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyIndustry || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Legal Form</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyLegalForm || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Business Activity</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyBusinessActivity || '-'}</Text></View>
+            <View style={{ width: '47%' }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Company Status</Text>
+              <View style={{ alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: companyStatus === 'Active' ? '#D1FAE5' : '#F1F5F9', borderWidth: 1, borderColor: companyStatus === 'Active' ? '#A7F3D0' : '#E2E8F0' }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: companyStatus === 'Active' ? '#047857' : '#64748B' }}>{companyStatus}</Text>
+              </View>
+            </View>
+            {editingCompany?.company_logo_path && (
+              <View style={{ width: '100%', marginTop: 8 }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 6 }}>Company Logo Preview</Text>
+                <Image
+                  source={{ uri: API_URL + '/' + editingCompany.company_logo_path }}
+                  style={{ width: 90, height: 90, borderRadius: 8, borderWidth: 1, borderColor: '#CBD5E1', resizeMode: 'contain', backgroundColor: '#F8FAFC' }}
+                />
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* SECTION 2: LICENSING */}
+        <View style={{ backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', padding: 20, marginBottom: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', paddingBottom: 12, marginBottom: 16 }}>
+            <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' }}>
+              <Ionicons name="card-outline" size={18} color="#2563EB" />
+            </View>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#0F172A' }}>2. Trade Licensing & Currency</Text>
+          </View>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 16, columnGap: 16 }}>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Jurisdiction</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyJurisdiction || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Licensing Authority</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyLicensingAuthority || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Trade License No</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyTradeLicenseNumber || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Issue Date</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyTradeLicenseIssueDate ? companyTradeLicenseIssueDate.split('T')[0] : '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Expiry Date</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyTradeLicenseExpiryDate ? companyTradeLicenseExpiryDate.split('T')[0] : '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Default Currency</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyDefaultCurrency || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Trade License File</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#2563EB' }}>{companyTradeLicenseFile?.name || (editingCompany?.trade_license_attachment_path ? editingCompany.trade_license_attachment_path.split('/').pop() : 'None Attached')}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Company Logo</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#2563EB' }}>{companyLogoFile?.name || (editingCompany?.company_logo_path ? editingCompany.company_logo_path.split('/').pop() : 'None Attached')}</Text></View>
+          </View>
+        </View>
+
+        {/* SECTION 3: LOCATION & CONTACT */}
+        <View style={{ backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', padding: 20, marginBottom: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', paddingBottom: 12, marginBottom: 16 }}>
+            <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' }}>
+              <Ionicons name="location-outline" size={18} color="#2563EB" />
+            </View>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#0F172A' }}>3. Location & Contact Details</Text>
+          </View>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 16, columnGap: 16 }}>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Country</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyCountry || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Emirate / State</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyEmirate || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Registered Address</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyRegisteredAddress || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>PO Box</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyPoBox || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Contact Person</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyContactPerson || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Contact Email</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyContactEmail || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Contact Phone</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyContactPhone || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Website</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyWebsite || '-'}</Text></View>
+          </View>
+        </View>
+
+        {/* SECTION 4: MODULES & STATUTORY TAX */}
+        <View style={{ backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', padding: 20, marginBottom: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', paddingBottom: 12, marginBottom: 16 }}>
+            <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' }}>
+              <Ionicons name="grid-outline" size={18} color="#2563EB" />
+            </View>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#0F172A' }}>4. Modules & Statutory Tax</Text>
+          </View>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 16, columnGap: 16 }}>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>VAT Registered</Text><Text style={{ fontSize: 14, fontWeight: '600', color: companyVatRegistered ? '#047857' : '#64748B' }}>{companyVatRegistered ? 'Yes' : 'No'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>TRN Number</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyTrn || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Corporate Tax Reg No</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyCorporateTaxRegistrationNumber || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Establishment Card No</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyEstablishmentCardNumber || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Establishment Expiry</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyEstablishmentCardExpiryDate ? companyEstablishmentCardExpiryDate.split('T')[0] : '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>MOHRE Number</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyMohreNumber || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>WPS Registered</Text><Text style={{ fontSize: 14, fontWeight: '600', color: companyWpsRegistered ? '#047857' : '#64748B' }}>{companyWpsRegistered ? 'Yes' : 'No'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>NAFIS Emiratisation</Text><Text style={{ fontSize: 14, fontWeight: '600', color: companyNafisEmiratisationApplicable ? '#047857' : '#64748B' }}>{companyNafisEmiratisationApplicable ? 'Yes' : 'No'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>GPSSA Applicable</Text><Text style={{ fontSize: 14, fontWeight: '600', color: companyGpssaApplicable ? '#047857' : '#64748B' }}>{companyGpssaApplicable ? 'Yes' : 'No'}</Text></View>
+          </View>
+        </View>
+
+        {/* SECTION 5: LIMITS & ALERTS */}
+        <View style={{ backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', padding: 20, marginBottom: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', paddingBottom: 12, marginBottom: 16 }}>
+            <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' }}>
+              <Ionicons name="options-outline" size={18} color="#2563EB" />
+            </View>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#0F172A' }}>5. System Prefixes & Alert Settings</Text>
+          </View>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 16, columnGap: 16 }}>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Asset Prefix</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyAssetPrefix || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Vehicle Prefix</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyVehiclePrefix || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Employee Prefix</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyEmployeePrefix || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Trade License Alert</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyTradeLicenseAlertDays ? `${companyTradeLicenseAlertDays} Days` : '30 Days'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Establishment Card Alert</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyEstablishmentCardAlertDays ? `${companyEstablishmentCardAlertDays} Days` : '30 Days'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Insurance Alert</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyInsuranceAlertDays ? `${companyInsuranceAlertDays} Days` : '30 Days'}</Text></View>
+          </View>
+        </View>
+
+        {/* SECTION 6: OTHER DETAILS */}
+        <View style={{ backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', padding: 20, marginBottom: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', paddingBottom: 12, marginBottom: 16 }}>
+            <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' }}>
+              <Ionicons name="ellipsis-horizontal-outline" size={18} color="#2563EB" />
+            </View>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#0F172A' }}>6. Other Details</Text>
+          </View>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 16, columnGap: 16 }}>
+            <View style={{ width: '97%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Party ID</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyPartyId || '-'}</Text></View>
+          </View>
+        </View>
+      </View>
+    );
+  };
 
   const renderCompanyTab = () => {
     const filtered = companies.filter(c => {
@@ -3917,6 +4246,7 @@ export default function DashboardScreen({ user, onSignOut }) {
           <TouchableOpacity
             style={styles.addModuleBtn}
             onPress={() => {
+              setIsCompanyViewOnly(false);
               setEditingCompany(null);
               setCompanyNameInput('');
               setCompanyShortCode('');
@@ -3928,6 +4258,7 @@ export default function DashboardScreen({ user, onSignOut }) {
               setCompanyLegalForm('');
               setCompanyBusinessActivity('');
               setCompanyTradeLicenseFile(null);
+              setCompanyLogoFile(null);
               setCompanyJurisdiction('');
               setCompanyLicensingAuthority('');
               setCompanyTradeLicenseNumber('');
@@ -3960,6 +4291,8 @@ export default function DashboardScreen({ user, onSignOut }) {
               setCompanyTradeLicenseAlertDays('30');
               setCompanyEstablishmentCardAlertDays('30');
               setCompanyInsuranceAlertDays('30');
+              setCompanyPlanId('');
+              setCompanyPartyId('');
               setCompanyWizardStep(1);
               setIsCompanyModalOpen(true);
             }}
@@ -4003,7 +4336,10 @@ export default function DashboardScreen({ user, onSignOut }) {
                         </View>
                       </View>
                       <View style={[styles.tdCell, { flex: 0.8, flexDirection: 'row', justifyContent: 'center', gap: 12 }]}>
-                        <TouchableOpacity onPress={() => startEditCompany(item)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                        <TouchableOpacity onPress={() => startEditCompany(item, true)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                          <Ionicons name="eye-outline" size={18} color="#0284C7" />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => startEditCompany(item, false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                           <Ionicons name="pencil" size={18} color={COLORS.primary} />
                         </TouchableOpacity>
                         <TouchableOpacity onPress={() => confirmDelete(item.id, 'company', item.company_name)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -5426,6 +5762,19 @@ export default function DashboardScreen({ user, onSignOut }) {
         return <VehiclePurchaseTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_purchase')} checkRowPermission={(compId, act) => checkRowPermission('vehicle_purchase', compId, act)} />;
       case 'vehicle_toll':
         return <VehicleTollTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_toll')} checkRowPermission={(compId, act) => checkRowPermission('vehicle_toll', compId, act)} />;
+      case 'vehicle_toll_overview':
+      case 'toll_overview':
+        return <VehicleTollTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_toll')} checkRowPermission={(compId, act) => checkRowPermission('vehicle_toll', compId, act)} isOverview={true} />;
+      case 'vehicle_toll_transaction':
+      case 'vehicle_toll_transactions':
+      case 'toll_transactions':
+      case 'toll_transaction':
+        return <VehicleTollTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_toll')} checkRowPermission={(compId, act) => checkRowPermission('vehicle_toll', compId, act)} isTransaction={true} />;
+      case 'vehicle_toll_report':
+      case 'vehicle_toll_reports':
+      case 'toll_report':
+      case 'toll_reports':
+        return <VehicleTollReportTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'premises_details':
         return <PremisesDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('premises_details')} checkRowPermission={(compId, act) => checkRowPermission('premises_details', compId, act)} />;
       case 'asset_details':
@@ -5493,6 +5842,23 @@ export default function DashboardScreen({ user, onSignOut }) {
       case 'tele_doument_type':
       case 'telecom_document_type':
         return <TeleDocTypeTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('tele_doc_type')} checkRowPermission={(compId, act) => checkRowPermission('tele_doc_type', compId, act)} />;
+      case 'company_legal_form':
+      case 'company_legal_forms':
+        return <CompanyLegalFormTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('company_legal_form')} checkRowPermission={(compId, act) => checkRowPermission('company_legal_form', compId, act)} onRefreshOptions={fetchCompanyLegalFormOptions} />;
+      case 'company_license_auth':
+      case 'company_licensing_authority':
+      case 'company_license_authorities':
+        return <CompanyLicenseAuthTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('company_license_auth')} checkRowPermission={(compId, act) => checkRowPermission('company_license_auth', compId, act)} onRefreshOptions={fetchCompanyLicenseAuthOptions} />;
+      case 'company_def_currency':
+      case 'company_default_currency':
+      case 'company_default_currencies':
+      case 'company_def_currencies':
+        return <CompanyDefCurrencyTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('company_def_currency')} checkRowPermission={(compId, act) => checkRowPermission('company_def_currency', compId, act)} onRefreshOptions={fetchCompanyDefCurrencyOptions} />;
+      case 'system_settings':
+      case 'system_setting':
+      case 'system-settings':
+      case 'system-setting':
+        return <SystemSettingsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('system_settings')} checkRowPermission={(compId, act) => checkRowPermission('system_settings', compId, act)} />;
       case 'state':
         return renderStateTab();
       case 'employees':
@@ -7835,6 +8201,130 @@ export default function DashboardScreen({ user, onSignOut }) {
         </View>
       </Modal>
 
+      {/* VIEW EMPLOYEE ADDITIONAL COMPANIES MODAL */}
+      <Modal
+        visible={isViewEmpCompaniesModalOpen}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setIsViewEmpCompaniesModalOpen(false)}
+      >
+        <View style={dynamicModalOverlayStyle}>
+          <View style={[styles.modalCard, { width: width > 768 ? 540 : '95%', maxWidth: 540, maxHeight: '80%' }]}>
+
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleWrapper}>
+                <Ionicons name="business-outline" size={24} color="#2563EB" />
+                <Text style={styles.modalTitle}>
+                  Companies - {selectedEmployeeForCompanies?.full_name}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setIsViewEmpCompaniesModalOpen(false)}
+                style={styles.modalCloseBtn}
+              >
+                <Ionicons name="close" size={24} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Modal Content */}
+            <ScrollView
+              style={{ flexGrow: 0, maxHeight: height - 200, paddingVertical: 16 }}
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled={true}
+            >
+              <View style={{ paddingHorizontal: 20 }}>
+                {/* Base Company Section */}
+                <View style={{ marginBottom: 20, backgroundColor: '#F8FAFC', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: COLORS.textSecondary, textTransform: 'uppercase', marginBottom: 8 }}>
+                    Primary Base Company
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Ionicons name="location-outline" size={18} color="#2563EB" />
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: '#0F172A' }}>
+                      {selectedEmployeeForCompanies?.base_company_name ||
+                        companies.find(c => Number(c.id) === Number(selectedEmployeeForCompanies?.basecompany_id))?.company_name ||
+                        'Not Specified'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Non-Base Companies Dropdown Section */}
+                {(() => {
+                  const baseCompId = selectedEmployeeForCompanies?.basecompany_id;
+                  const clientCompanies = (!user || !user.clientid)
+                    ? companies
+                    : companies.filter(c => Number(c.clientid) === Number(user.clientid));
+                  
+                  const nonBaseCompanies = clientCompanies.filter(c => Number(c.id) !== Number(baseCompId));
+
+                  return (
+                    <View style={{ marginTop: 8 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 8, textTransform: 'uppercase' }}>
+                        Company ({nonBaseCompanies.length})
+                      </Text>
+
+                      {nonBaseCompanies.length > 0 ? (
+                        <View style={{ marginBottom: 16 }}>
+                          <SearchableDropdown
+                            data={nonBaseCompanies}
+                            value={selectedNonBaseCompanyIds}
+                            onChange={(val) => {
+                              const arr = Array.isArray(val)
+                                ? val
+                                : String(val).split(',').map(s => s.trim()).filter(Boolean);
+                              setSelectedNonBaseCompanyIds(arr);
+                            }}
+                            placeholder={`Select / View Companies (${nonBaseCompanies.length})`}
+                            searchPlaceholder="Search Company..."
+                            displayKey="company_name"
+                            valueKey="id"
+                            isMultiSelect={true}
+                          />
+                        </View>
+                      ) : (
+                        <View style={{ backgroundColor: '#F8FAFC', padding: 14, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center' }}>
+                          <Text style={{ color: COLORS.textMuted, fontSize: 13, fontStyle: 'italic' }}>
+                            No additional non-base companies available.
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })()}
+              </View>
+            </ScrollView>
+
+            {/* Modal Footer */}
+            <View style={[styles.modalFooter, { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }]}>
+              <TouchableOpacity
+                style={[styles.modalCancelBtn, { backgroundColor: '#F1F5F9', borderWidth: 0, paddingHorizontal: 20 }]}
+                onPress={() => setIsViewEmpCompaniesModalOpen(false)}
+                disabled={savingEmpCompanies}
+              >
+                <Text style={[styles.modalCancelText, { color: '#475569' }]}>Close</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalSubmitBtn, { backgroundColor: '#2563EB', paddingHorizontal: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]}
+                onPress={handleSaveEmployeeCompanies}
+                disabled={savingEmpCompanies}
+              >
+                {savingEmpCompanies ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-sharp" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={[styles.modalSubmitText, { color: '#FFFFFF', fontWeight: '600' }]}>Save</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+
+          </View>
+        </View>
+      </Modal>
+
       {/* ADD/EDIT SMTP CONFIG MODAL OVERLAY */}
       <Modal
         visible={isAddSmtpModalOpen}
@@ -8249,8 +8739,8 @@ export default function DashboardScreen({ user, onSignOut }) {
                   {/* Modal Header */}
                   <View style={styles.modalHeader}>
                     <View style={styles.modalTitleWrapper}>
-                      <Ionicons name={editingCompany ? 'pencil-outline' : 'business-outline'} size={24} color={COLORS.primary} />
-                      <Text style={styles.modalTitle}>{editingCompany ? 'Edit Company' : 'Add New Company'}</Text>
+                      <Ionicons name={isCompanyViewOnly ? 'eye-outline' : editingCompany ? 'pencil-outline' : 'business-outline'} size={24} color={isCompanyViewOnly ? '#0284C7' : COLORS.primary} />
+                      <Text style={styles.modalTitle}>{isCompanyViewOnly ? 'View Company Profile' : editingCompany ? 'Edit Company' : 'Add New Company'}</Text>
                     </View>
                     <TouchableOpacity
                       onPress={() => {
@@ -8269,29 +8759,21 @@ export default function DashboardScreen({ user, onSignOut }) {
                     nestedScrollEnabled={true}
                     keyboardShouldPersistTaps="handled"
                   >
-                    <View style={styles.modalForm}>
+                    {isCompanyViewOnly ? renderCompanySinglePageView() : (
+                      <View style={styles.modalForm}>
 
-                      {/* Wizard Header Progress */}
+                        {/* Wizard Header Progress */}
                       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, paddingHorizontal: 20, paddingVertical: 20, backgroundColor: '#F8FAFC', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 }}>
                         {[
                           { id: 1, label: 'Identity', icon: 'business-outline' },
                           { id: 2, label: 'License', icon: 'card-outline' },
                           { id: 3, label: 'Location', icon: 'location-outline' },
                           { id: 4, label: 'Modules', icon: 'grid-outline' },
-                          { id: 5, label: 'Limits', icon: 'options-outline' }
+                          { id: 5, label: 'Limits', icon: 'options-outline' },
+                          { id: 6, label: 'Other', icon: 'ellipsis-horizontal-outline' }
                         ].map((step, index, arr) => {
-                          // Map our 6 logic steps into the 5 visual steps requested
-                          // Logical Step 1 -> Visual Step 1 (Identity)
-                          // Logical Step 2 -> Visual Step 2 (License)
-                          // Logical Step 3 -> Visual Step 3 (Location)
-                          // Logical Step 4 -> Visual Step 4 (Modules / Tax)
-                          // Logical Step 5 & 6 -> Visual Step 5 (Limits / Configs)
-
-                          let mappedStep = companyWizardStep;
-                          if (mappedStep === 6) mappedStep = 5;
-
-                          const isActive = mappedStep === step.id;
-                          const isPast = mappedStep > step.id;
+                          const isActive = companyWizardStep === step.id;
+                          const isPast = companyWizardStep > step.id;
 
                           return (
                             <React.Fragment key={step.id}>
@@ -8302,7 +8784,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                                 <Text style={{ fontSize: 13, fontWeight: '600', color: isActive || isPast ? '#0F172A' : '#64748B' }}>{step.label}</Text>
                               </View>
                               {index < arr.length - 1 && (
-                                <View style={{ flex: 1, height: 2, backgroundColor: mappedStep > step.id ? '#0F172A' : '#E2E8F0', marginHorizontal: 4 }} />
+                                <View style={{ flex: 1, height: 2, backgroundColor: companyWizardStep > step.id ? '#0F172A' : '#E2E8F0', marginHorizontal: 4 }} />
                               )}
                             </React.Fragment>
                           );
@@ -8336,7 +8818,15 @@ export default function DashboardScreen({ user, onSignOut }) {
 
                           <View style={styles.modalInputGroup}>
                             <Text style={styles.modalLabel}>Legal Form</Text>
-                            <TextInput style={styles.modalInput} placeholder="Legal Form" placeholderTextColor={COLORS.textMuted} value={companyLegalForm} onChangeText={setCompanyLegalForm} />
+                            <SearchableDropdown
+                              data={legalFormOptions}
+                              value={companyLegalForm}
+                              onChange={(val) => setCompanyLegalForm(val)}
+                              placeholder="Select Legal Form"
+                              searchPlaceholder="Search Legal Form..."
+                              displayKey="legal_form_name"
+                              valueKey="legal_form_name"
+                            />
                           </View>
 
                           <View style={styles.modalInputGroup}>
@@ -8378,6 +8868,40 @@ export default function DashboardScreen({ user, onSignOut }) {
                             </TouchableOpacity>
                           </View>
 
+                          {/* Company Logo Attachment */}
+                          <View style={styles.modalInputGroup}>
+                            <Text style={styles.modalLabel}>Company Logo</Text>
+                            <TouchableOpacity
+                              style={{
+                                flexDirection: 'row', alignItems: 'center', backgroundColor: '#F1F5F9',
+                                padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0',
+                                marginTop: 4
+                              }}
+                              onPress={() => {
+                                if (typeof document !== 'undefined') {
+                                  const input = document.createElement('input');
+                                  input.type = 'file';
+                                  input.accept = 'image/*';
+                                  input.onchange = (e) => {
+                                    const file = e.target.files[0];
+                                    if (file) setCompanyLogoFile(file);
+                                  };
+                                  input.click();
+                                }
+                              }}
+                            >
+                              <Ionicons name="image-outline" size={20} color="#64748B" style={{ marginRight: 8 }} />
+                              <Text style={{ flex: 1, color: companyLogoFile ? '#334155' : '#94A3B8', fontSize: 13, fontFamily: 'Roboto' }} numberOfLines={1}>
+                                {companyLogoFile ? companyLogoFile.name : 'Upload Company Logo...'}
+                              </Text>
+                              {companyLogoFile && (
+                                <TouchableOpacity onPress={() => setCompanyLogoFile(null)} style={{ padding: 4 }}>
+                                  <Ionicons name="close-circle" size={20} color="#EF4444" />
+                                </TouchableOpacity>
+                              )}
+                            </TouchableOpacity>
+                          </View>
+
 
                           <View style={styles.modalInputGroup}>
                             <Text style={styles.modalLabel}>Company Status</Text>
@@ -8404,7 +8928,15 @@ export default function DashboardScreen({ user, onSignOut }) {
 
                           <View style={styles.modalInputGroup}>
                             <Text style={styles.modalLabel}>Licensing Authority</Text>
-                            <TextInput style={styles.modalInput} placeholder="Licensing Authority" placeholderTextColor={COLORS.textMuted} value={companyLicensingAuthority} onChangeText={setCompanyLicensingAuthority} />
+                            <SearchableDropdown
+                              data={licenseAuthOptions}
+                              value={companyLicensingAuthority}
+                              onChange={(val) => setCompanyLicensingAuthority(val)}
+                              placeholder="Select Licensing Authority"
+                              searchPlaceholder="Search Licensing Authority..."
+                              displayKey="authority_name"
+                              valueKey="authority_name"
+                            />
                           </View>
 
                           <View style={styles.modalInputGroup}>
@@ -8450,6 +8982,30 @@ export default function DashboardScreen({ user, onSignOut }) {
                                 <Ionicons name="calendar-outline" size={18} color="#64748B" />
                               </View>
                             </View>
+                          </View>
+
+                          <View style={styles.modalInputGroup}>
+                            <Text style={styles.modalLabel}>Default Currency</Text>
+                            <SearchableDropdown
+                              data={defCurrencyOptions.length > 0 ? defCurrencyOptions : [
+                                { currency_code: 'AED', currency_name: 'UAE Dirham (AED)' },
+                                { currency_code: 'USD', currency_name: 'US Dollar (USD)' },
+                                { currency_code: 'EUR', currency_name: 'Euro (EUR)' },
+                                { currency_code: 'GBP', currency_name: 'British Pound (GBP)' },
+                                { currency_code: 'SAR', currency_name: 'Saudi Riyal (SAR)' },
+                                { currency_code: 'QAR', currency_name: 'Qatari Riyal (QAR)' },
+                                { currency_code: 'KWD', currency_name: 'Kuwaiti Dinar (KWD)' },
+                                { currency_code: 'BHD', currency_name: 'Bahraini Dinar (BHD)' },
+                                { currency_code: 'OMR', currency_name: 'Omani Rial (OMR)' },
+                                { currency_code: 'INR', currency_name: 'Indian Rupee (INR)' }
+                              ]}
+                              value={companyDefaultCurrency}
+                              onChange={(val) => setCompanyDefaultCurrency(val)}
+                              placeholder="Select Default Currency"
+                              searchPlaceholder="Search Currency..."
+                              displayKey="currency_name"
+                              valueKey="currency_code"
+                            />
                           </View>
 
                         </>
@@ -8619,32 +9175,6 @@ export default function DashboardScreen({ user, onSignOut }) {
                       {companyWizardStep === 5 && (
                         <>
                           <View style={styles.modalInputGroup}>
-                            <Text style={styles.modalLabel}>Authorized Signatory Name</Text>
-                            <TextInput style={styles.modalInput} placeholder="Authorized Signatory Name" placeholderTextColor={COLORS.textMuted} value={companyAuthorizedSignatoryName} onChangeText={setCompanyAuthorizedSignatoryName} />
-                          </View>
-
-                          <View style={styles.modalInputGroup}>
-                            <Text style={styles.modalLabel}>Authorized Signatory Designation</Text>
-                            <TextInput style={styles.modalInput} placeholder="Authorized Signatory Designation" placeholderTextColor={COLORS.textMuted} value={companyAuthorizedSignatoryDesignation} onChangeText={setCompanyAuthorizedSignatoryDesignation} />
-                          </View>
-
-                          <View style={styles.modalInputGroup}>
-                            <Text style={styles.modalLabel}>Default Bank</Text>
-                            <TextInput style={styles.modalInput} placeholder="Default Bank" placeholderTextColor={COLORS.textMuted} value={companyDefaultBank} onChangeText={setCompanyDefaultBank} />
-                          </View>
-
-                          <View style={styles.modalInputGroup}>
-                            <Text style={styles.modalLabel}>Default Currency</Text>
-                            <TextInput style={styles.modalInput} placeholder="Default Currency" placeholderTextColor={COLORS.textMuted} value={companyDefaultCurrency} onChangeText={setCompanyDefaultCurrency} />
-                          </View>
-
-                        </>
-                      )}
-
-
-                      {companyWizardStep === 6 && (
-                        <>
-                          <View style={styles.modalInputGroup}>
                             <Text style={styles.modalLabel}>Asset Prefix</Text>
                             <TextInput style={styles.modalInput} placeholder="Asset Prefix" placeholderTextColor={COLORS.textMuted} value={companyAssetPrefix} onChangeText={setCompanyAssetPrefix} />
                           </View>
@@ -8677,46 +9207,85 @@ export default function DashboardScreen({ user, onSignOut }) {
                         </>
                       )}
 
-                    </View>
+
+                      {companyWizardStep === 6 && (
+                        <>
+                          <View style={styles.modalInputGroup}>
+                            <Text style={styles.modalLabel}>Party ID</Text>
+                            <TextInput
+                              style={styles.modalInput}
+                              placeholder="Party ID"
+                              placeholderTextColor={COLORS.textMuted}
+                              value={companyPartyId}
+                              onChangeText={setCompanyPartyId}
+                            />
+                          </View>
+
+                        </>
+                      )}
+
+                      </View>
+                    )}
                   </ScrollView>
 
                   {/* Modal Footer Controls */}
                   <View style={[styles.modalFooter, { justifyContent: 'space-between', paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0' }]}>
-                    <TouchableOpacity
-                      style={[styles.modalCancelBtn, { backgroundColor: '#F1F5F9', borderWidth: 0, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }]}
-                      onPress={() => {
-                        setIsCompanyModalOpen(false);
-                      }}
-                    >
-                      <Text style={[styles.modalCancelText, { color: '#64748B' }]}>Cancel</Text>
-                    </TouchableOpacity>
+                    {isCompanyViewOnly ? (
+                      <>
+                        <TouchableOpacity
+                          style={[styles.modalCancelBtn, { backgroundColor: '#F1F5F9', borderWidth: 0, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }]}
+                          onPress={() => setIsCompanyModalOpen(false)}
+                        >
+                          <Text style={[styles.modalCancelText, { color: '#64748B', fontWeight: '600' }]}>Close View</Text>
+                        </TouchableOpacity>
 
-                    <View style={{ flexDirection: 'row', gap: 16 }}>
-                      {companyWizardStep > 1 && (
+                        {editingCompany && (
+                          <TouchableOpacity
+                            style={[styles.modalSaveBtn, { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8, backgroundColor: '#2563EB', flexDirection: 'row', alignItems: 'center', gap: 8 }]}
+                            onPress={() => setIsCompanyViewOnly(false)}
+                          >
+                            <Ionicons name="pencil-outline" size={16} color="#FFFFFF" />
+                            <Text style={[styles.modalSaveText, { fontWeight: '700' }]}>Edit Company Profile</Text>
+                          </TouchableOpacity>
+                        )}
+                      </>
+                    ) : (
+                      <>
                         <TouchableOpacity
-                          style={[styles.modalCancelBtn, { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0', borderWidth: 1, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }]}
-                          onPress={() => setCompanyWizardStep(prev => prev - 1)}
+                          style={[styles.modalCancelBtn, { backgroundColor: '#F1F5F9', borderWidth: 0, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }]}
+                          onPress={() => setIsCompanyModalOpen(false)}
                         >
-                          <Text style={[styles.modalCancelText, { color: '#475569' }]}>Previous</Text>
+                          <Text style={[styles.modalCancelText, { color: '#64748B' }]}>Cancel</Text>
                         </TouchableOpacity>
-                      )}
 
-                      {companyWizardStep < 6 ? (
-                        <TouchableOpacity
-                          style={[styles.modalSaveBtn, { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, backgroundColor: '#0F172A' }]}
-                          onPress={() => setCompanyWizardStep(prev => prev + 1)}
-                        >
-                          <Text style={[styles.modalSaveText, { fontWeight: '600' }]}>Next Step</Text>
-                        </TouchableOpacity>
-                      ) : (
-                        <TouchableOpacity
-                          style={[styles.modalSaveBtn, { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, backgroundColor: '#10B981' }]}
-                          onPress={handleSaveCompany}
-                        >
-                          <Text style={[styles.modalSaveText, { fontWeight: '700' }]}>Save Company</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
+                        <View style={{ flexDirection: 'row', gap: 16 }}>
+                          {companyWizardStep > 1 && (
+                            <TouchableOpacity
+                              style={[styles.modalCancelBtn, { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0', borderWidth: 1, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }]}
+                              onPress={() => setCompanyWizardStep(prev => prev - 1)}
+                            >
+                              <Text style={[styles.modalCancelText, { color: '#475569' }]}>Previous</Text>
+                            </TouchableOpacity>
+                          )}
+
+                          {companyWizardStep < 6 ? (
+                            <TouchableOpacity
+                              style={[styles.modalSaveBtn, { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, backgroundColor: '#0F172A' }]}
+                              onPress={() => setCompanyWizardStep(prev => prev + 1)}
+                            >
+                              <Text style={[styles.modalSaveText, { fontWeight: '600' }]}>Next Step</Text>
+                            </TouchableOpacity>
+                          ) : (
+                            <TouchableOpacity
+                              style={[styles.modalSaveBtn, { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, backgroundColor: '#10B981' }]}
+                              onPress={handleSaveCompany}
+                            >
+                              <Text style={[styles.modalSaveText, { fontWeight: '700' }]}>Save Company</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      </>
+                    )}
                   </View>
 
                 </View>
@@ -8967,6 +9536,31 @@ export default function DashboardScreen({ user, onSignOut }) {
                           </View>
                         </View>
 
+                        {/* Base Company Dropdown */}
+                        <View style={{ marginBottom: 16 }}>
+                          <Text style={styles.modalLabel}>Base Company</Text>
+                          <SearchableDropdown
+                            data={(!user || !user.clientid)
+                              ? companies
+                              : companies.filter(c => Number(c.clientid) === Number(user.clientid))}
+                            value={empBaseCompanyId}
+                            onChange={(val) => {
+                              setEmpBaseCompanyId(val);
+                              if (val) {
+                                const selectedCompId = Number(val);
+                                setEmpAssociatedCompanies(prev => {
+                                  if (prev.includes(selectedCompId)) return prev;
+                                  return [...prev, selectedCompId];
+                                });
+                              }
+                            }}
+                            placeholder="Select Base Company"
+                            searchPlaceholder="Search Base Company..."
+                            displayKey="company_name"
+                            valueKey="id"
+                          />
+                        </View>
+
                         {(() => {
                           const clientCompanies = (!user || !user.clientid)
                             ? companies
@@ -9079,18 +9673,15 @@ export default function DashboardScreen({ user, onSignOut }) {
 
                         <View style={{ marginBottom: 16 }}>
                           <Text style={styles.modalLabel}>Department</Text>
-                          <View>
-                            <Picker
-                              selectedValue={empDepartmentId}
-                              onValueChange={(itemValue) => setEmpDepartmentId(itemValue)}
-                              style={[styles.modalInput, { width: '100%', height: 42, appearance: 'none', outlineStyle: 'none', cursor: 'pointer' }]}
-                            >
-                              <Picker.Item label="Select Department" value="" color={COLORS.textMuted} />
-                              {departments.map(d => (
-                                <Picker.Item key={d.id} label={d.department_name} value={d.id} />
-                              ))}
-                            </Picker>
-                          </View>
+                          <SearchableDropdown
+                            data={departments}
+                            value={empDepartmentId}
+                            onChange={(val) => setEmpDepartmentId(val)}
+                            placeholder="Select Department"
+                            searchPlaceholder="Search Department..."
+                            displayKey="department_name"
+                            valueKey="id"
+                          />
                         </View>
 
                         {true && (

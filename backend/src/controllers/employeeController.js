@@ -9,9 +9,11 @@ exports.getAllEmployees = async (req, res) => {
     let queryText = `
       SELECT e.*, 
              (SELECT string_agg(role, ', ') FROM role WHERE id = ANY(string_to_array(e.roleid::text, ',')::int[])) as role_name, 
-             d.department_name
+             d.department_name,
+             bc.company_name as base_company_name
       FROM employee e
       LEFT JOIN department d ON e.department_id = d.id
+      LEFT JOIN company bc ON e.basecompany_id = bc.id
       WHERE e.is_deleted = false
     `;
     const params = [];
@@ -69,6 +71,7 @@ exports.createEmployee = async (req, res) => {
       status,
       clientid,
       department_id,
+      basecompany_id,
       companies,
       auto_generate_password
     } = req.body;
@@ -83,8 +86,8 @@ exports.createEmployee = async (req, res) => {
 
     // Create the employee
     const insertEmployee = `
-      INSERT INTO employee (full_name, email, phone, roleid, status, clientid, department_id, is_deleted)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, false)
+      INSERT INTO employee (full_name, email, phone, roleid, status, clientid, department_id, basecompany_id, is_deleted)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false)
       RETURNING *
     `;
     const empResult = await client.query(insertEmployee, [
@@ -94,7 +97,8 @@ exports.createEmployee = async (req, res) => {
       finalRoleId,
       status !== undefined ? parseInt(status) : 1,
       clientid ? parseInt(clientid) : null,
-      department_id ? parseInt(department_id) : null
+      department_id ? parseInt(department_id) : null,
+      basecompany_id ? parseInt(basecompany_id) : null
     ]);
     const newEmployee = empResult.rows[0];
 
@@ -118,15 +122,17 @@ exports.createEmployee = async (req, res) => {
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(tempPassword, salt);
 
+      const parsedBaseCompId = basecompany_id ? parseInt(basecompany_id) : null;
+
       if (userCheck.rows.length === 0) {
         await client.query(
-          'INSERT INTO users (email, password, roleid, clientid) VALUES ($1, $2, $3, $4)',
-          [email, hashedPassword, finalRoleId, clientid ? parseInt(clientid) : null]
+          'INSERT INTO users (email, password, roleid, clientid, companyid) VALUES ($1, $2, $3, $4, $5)',
+          [email, hashedPassword, finalRoleId, clientid ? parseInt(clientid) : null, parsedBaseCompId]
         );
       } else {
         await client.query(
-          'UPDATE users SET password = $1, roleid = $2, clientid = $3 WHERE email = $4',
-          [hashedPassword, finalRoleId, clientid ? parseInt(clientid) : null, email]
+          'UPDATE users SET password = $1, roleid = $2, clientid = $3, companyid = $4 WHERE email = $5',
+          [hashedPassword, finalRoleId, clientid ? parseInt(clientid) : null, parsedBaseCompId, email]
         );
       }
       newEmployee.tempPassword = tempPassword; // Return it so admin can give it to the user
@@ -184,41 +190,50 @@ exports.updateEmployee = async (req, res) => {
       roleid,
       status,
       department_id,
+      basecompany_id,
       companies,
       auto_generate_password
     } = req.body;
 
-    const finalRoleId = roleid ? (Array.isArray(roleid) ? roleid.join(',') : String(roleid)) : null;
+    const finalRoleId = roleid !== undefined ? (roleid ? (Array.isArray(roleid) ? roleid.join(',') : String(roleid)) : null) : undefined;
 
     await client.query('BEGIN');
 
-    const updateEmployee = `
-      UPDATE employee
-      SET full_name = COALESCE($1, full_name),
-          email = COALESCE($2, email),
-          phone = COALESCE($3, phone),
-          roleid = $4,
-          status = COALESCE($5, status),
-          department_id = $6
-      WHERE id = $7 AND is_deleted = false
-      RETURNING *
-    `;
-    const empResult = await client.query(updateEmployee, [
-      full_name,
-      email,
-      phone,
-      finalRoleId,
-      status !== undefined ? parseInt(status) : null,
-      department_id ? parseInt(department_id) : null,
-      id
-    ]);
+    const setClauses = [];
+    const params = [];
+    let paramIndex = 1;
 
-    if (empResult.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ message: 'Employee not found.' });
+    if (full_name !== undefined) { setClauses.push(`full_name = $${paramIndex++}`); params.push(full_name); }
+    if (email !== undefined) { setClauses.push(`email = $${paramIndex++}`); params.push(email); }
+    if (phone !== undefined) { setClauses.push(`phone = $${paramIndex++}`); params.push(phone); }
+    if (finalRoleId !== undefined) { setClauses.push(`roleid = $${paramIndex++}`); params.push(finalRoleId); }
+    if (status !== undefined) { setClauses.push(`status = $${paramIndex++}`); params.push(parseInt(status)); }
+    if (department_id !== undefined) { setClauses.push(`department_id = $${paramIndex++}`); params.push(department_id ? parseInt(department_id) : null); }
+    if (basecompany_id !== undefined) { setClauses.push(`basecompany_id = $${paramIndex++}`); params.push(basecompany_id ? parseInt(basecompany_id) : null); }
+
+    let updatedEmployee;
+    if (setClauses.length > 0) {
+      params.push(id);
+      const updateEmployeeQuery = `
+        UPDATE employee
+        SET ${setClauses.join(', ')}
+        WHERE id = $${paramIndex} AND is_deleted = false
+        RETURNING *
+      `;
+      const empResult = await client.query(updateEmployeeQuery, params);
+      if (empResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ message: 'Employee not found.' });
+      }
+      updatedEmployee = empResult.rows[0];
+    } else {
+      const getEmpResult = await client.query('SELECT * FROM employee WHERE id = $1 AND is_deleted = false', [id]);
+      if (getEmpResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ message: 'Employee not found.' });
+      }
+      updatedEmployee = getEmpResult.rows[0];
     }
-
-    const updatedEmployee = empResult.rows[0];
 
     // Update associated companies
     if (companies && Array.isArray(companies)) {
@@ -233,6 +248,8 @@ exports.updateEmployee = async (req, res) => {
 
     // Check if a user account exists for this email
     const userCheck = await client.query('SELECT id FROM users WHERE email = $1', [updatedEmployee.email]);
+    const parsedBaseCompId = updatedEmployee.basecompany_id ? parseInt(updatedEmployee.basecompany_id) : null;
+
     if (userCheck.rows.length === 0 || auto_generate_password) {
       // Generate a random temporary password
       const tempPassword = Math.random().toString(36).slice(-8);
@@ -241,21 +258,23 @@ exports.updateEmployee = async (req, res) => {
 
       if (userCheck.rows.length === 0) {
         await client.query(
-          'INSERT INTO users (email, password, roleid, clientid) VALUES ($1, $2, $3, $4)',
+          'INSERT INTO users (email, password, roleid, clientid, companyid) VALUES ($1, $2, $3, $4, $5)',
           [
             updatedEmployee.email,
             hashedPassword,
             updatedEmployee.roleid ? String(updatedEmployee.roleid) : null,
-            updatedEmployee.clientid ? parseInt(updatedEmployee.clientid) : null
+            updatedEmployee.clientid ? parseInt(updatedEmployee.clientid) : null,
+            parsedBaseCompId
           ]
         );
       } else {
         await client.query(
-          'UPDATE users SET password = $1, roleid = $2, clientid = $3 WHERE email = $4',
+          'UPDATE users SET password = $1, roleid = $2, clientid = $3, companyid = $4 WHERE email = $5',
           [
             hashedPassword,
             updatedEmployee.roleid ? String(updatedEmployee.roleid) : null,
             updatedEmployee.clientid ? parseInt(updatedEmployee.clientid) : null,
+            parsedBaseCompId,
             updatedEmployee.email
           ]
         );
@@ -292,12 +311,13 @@ exports.updateEmployee = async (req, res) => {
         }
       }
     } else {
-      // ALWAYS sync the roleid and clientid in users table when employee is updated
+      // ALWAYS sync the roleid, clientid, and companyid in users table when employee is updated
       await client.query(
-        'UPDATE users SET roleid = $1, clientid = $2 WHERE email = $3',
+        'UPDATE users SET roleid = $1, clientid = $2, companyid = $3 WHERE email = $4',
         [
           updatedEmployee.roleid ? String(updatedEmployee.roleid) : null,
           updatedEmployee.clientid ? parseInt(updatedEmployee.clientid) : null,
+          parsedBaseCompId,
           updatedEmployee.email
         ]
       );
@@ -351,6 +371,7 @@ exports.bulkImportEmployees = async (req, res) => {
         roleid,
         status,
         department_id,
+        basecompany_id,
         companies,
         auto_generate_password = true
       } = emp;
@@ -360,35 +381,71 @@ exports.bulkImportEmployees = async (req, res) => {
       const finalClientId = emp.clientid ? parseInt(emp.clientid) : (clientid ? parseInt(clientid) : null);
       const finalRoleId = roleid ? (Array.isArray(roleid) ? roleid.join(',') : String(roleid)) : null;
 
-      // Insert into employee
-      const insertEmp = `
-        INSERT INTO employee (full_name, email, phone, roleid, status, clientid, department_id, is_deleted)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, false)
-        RETURNING *
-      `;
-      const empRes = await client.query(insertEmp, [
-        full_name,
-        email,
-        phone || '',
-        finalRoleId,
-        status !== undefined ? parseInt(status) : 1,
-        finalClientId,
-        department_id ? parseInt(department_id) : null
-      ]);
+      // Check if employee already exists by email
+      const empCheck = await client.query('SELECT id FROM employee WHERE email = $1 AND is_deleted = false', [email]);
+      let newEmp;
 
-      const newEmp = empRes.rows[0];
+      const parsedBaseCompId = basecompany_id ? parseInt(basecompany_id) : null;
 
-      // Associate companies
-      if (companies && Array.isArray(companies) && companies.length > 0) {
-        for (const compId of companies) {
+      if (empCheck.rows.length === 0) {
+        const insertEmp = `
+          INSERT INTO employee (full_name, email, phone, roleid, status, clientid, department_id, basecompany_id, is_deleted)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false)
+          RETURNING *
+        `;
+        const empRes = await client.query(insertEmp, [
+          full_name,
+          email,
+          phone || '',
+          finalRoleId,
+          status !== undefined ? parseInt(status) : 1,
+          finalClientId,
+          department_id ? parseInt(department_id) : null,
+          parsedBaseCompId
+        ]);
+        newEmp = empRes.rows[0];
+      } else {
+        newEmp = empCheck.rows[0];
+        await client.query(`
+          UPDATE employee
+          SET full_name = COALESCE($1, full_name),
+              phone = COALESCE($2, phone),
+              roleid = COALESCE($3, roleid),
+              status = COALESCE($4, status),
+              department_id = COALESCE($5, department_id),
+              basecompany_id = COALESCE($6, basecompany_id)
+          WHERE id = $7
+        `, [
+          full_name,
+          phone || null,
+          finalRoleId,
+          status !== undefined ? parseInt(status) : null,
+          department_id ? parseInt(department_id) : null,
+          parsedBaseCompId,
+          newEmp.id
+        ]);
+      }
+
+      // Associate companies (including basecompany_id) into employee_company
+      const allCompIds = [...new Set([
+        ...(parsedBaseCompId ? [parsedBaseCompId] : []),
+        ...(companies && Array.isArray(companies) ? companies.map(c => parseInt(c)).filter(Boolean) : [])
+      ])];
+
+      for (const compId of allCompIds) {
+        const compCheck = await client.query(
+          'SELECT employee_id FROM employee_company WHERE employee_id = $1 AND company_id = $2',
+          [newEmp.id, compId]
+        );
+        if (compCheck.rows.length === 0) {
           await client.query(
             'INSERT INTO employee_company (employee_id, company_id) VALUES ($1, $2)',
-            [newEmp.id, parseInt(compId)]
+            [newEmp.id, compId]
           );
         }
       }
 
-      // Generate user account if requested
+      // Generate or update user account
       if (auto_generate_password) {
         const userCheck = await client.query('SELECT id FROM users WHERE email = $1', [email]);
         const tempPassword = Math.random().toString(36).slice(-8);
@@ -397,13 +454,13 @@ exports.bulkImportEmployees = async (req, res) => {
 
         if (userCheck.rows.length === 0) {
           await client.query(
-            'INSERT INTO users (email, password, roleid, clientid) VALUES ($1, $2, $3, $4)',
-            [email, hashedPassword, finalRoleId, finalClientId]
+            'INSERT INTO users (email, password, roleid, clientid, companyid) VALUES ($1, $2, $3, $4, $5)',
+            [email, hashedPassword, finalRoleId, finalClientId, parsedBaseCompId]
           );
         } else {
           await client.query(
-            'UPDATE users SET password = $1, roleid = $2, clientid = $3 WHERE email = $4',
-            [hashedPassword, finalRoleId, finalClientId, email]
+            'UPDATE users SET roleid = COALESCE($1, roleid), clientid = COALESCE($2, clientid), companyid = COALESCE($3, companyid) WHERE email = $4',
+            [finalRoleId, finalClientId, parsedBaseCompId, email]
           );
         }
       }

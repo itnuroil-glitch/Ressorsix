@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, Touch
 import { Ionicons } from '@expo/vector-icons';
 import { SearchableDropdown } from './CustomFieldsTab';
 import { API_URL } from '../config';
+import * as XLSX from 'xlsx';
 
 const COLORS = {
   primary: '#1A4D3E',
@@ -18,7 +19,7 @@ const COLORS = {
   white: '#FFFFFF',
 };
 
-export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, permissions, checkRowPermission }) {
+export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, permissions, checkRowPermission, isOverview = false, isTransaction = false }) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width > 768;
   const isEmployee = user && String(user.roleId) !== '1' && String(user.roleId) !== '2' && String(user.roleId) !== '5' && String(user.roleId) !== '8';
@@ -36,6 +37,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isViewOnly, setIsViewOnly] = useState(false);
   const [vehicleTollRecords, setVehicleTollRecords] = useState([]);
+  const [allCustomFields, setAllCustomFields] = useState([]);
 
   // Table state
   const [searchQuery, setSearchQuery] = useState('');
@@ -50,6 +52,23 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
   const [recordToDelete, setRecordToDelete] = useState(null);
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
 
+  // View Details Modal state
+  const [viewDetailModalVisible, setViewDetailModalVisible] = useState(false);
+  const [selectedViewRecord, setSelectedViewRecord] = useState(null);
+
+  // Excel Preview & 2-Step Import Modal state
+  const [excelPreviewVisible, setExcelPreviewVisible] = useState(false);
+  const [excelPreviewRows, setExcelPreviewRows] = useState([]);
+  const [excelPreviewHeaders, setExcelPreviewHeaders] = useState([]);
+  const [isImportingExcel, setIsImportingExcel] = useState(false);
+
+  // 2-Step Import Wizard Modal State
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importStep, setImportStep] = useState(1);
+  const [importClient, setImportClient] = useState('');
+  const [importCompany, setImportCompany] = useState('');
+  const [importSummary, setImportSummary] = useState(null);
+
   // Wizard state
   const [wizardStep, setWizardStep] = useState(1);
   const [clients, setClients] = useState([]);
@@ -61,28 +80,33 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
   const [selectedModule, setSelectedModule] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
 
+  const apiRoute = isTransaction ? '/api/vehicle-toll-transaction' : (isOverview ? '/api/vehicle-toll-overview' : '/api/vehicle-toll');
+
   useEffect(() => {
     fetchInitialData();
-  }, []);
+  }, [isOverview, isTransaction]);
 
   const fetchInitialData = async () => {
     try {
-      const [clientsRes, countriesRes, modulesRes, recordsRes] = await Promise.all([
+      const [clientsRes, countriesRes, modulesRes, recordsRes, cfRes] = await Promise.all([
         fetch(`${API_URL}/api/clients`),
         fetch(`${API_URL}/api/countries`),
         fetch(`${API_URL}/api/modules`),
-        fetch(`${API_URL}/api/vehicle-toll${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`)
+        fetch(`${API_URL}${apiRoute}${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`),
+        fetch(`${API_URL}/api/custom-fields`)
       ]);
-      const [clientsData, countriesData, modulesData, recordsData] = await Promise.all([
+      const [clientsData, countriesData, modulesData, recordsData, cfData] = await Promise.all([
         clientsRes.json(),
         countriesRes.json(),
         modulesRes.json(),
-        recordsRes.ok ? recordsRes.json() : []
+        recordsRes.ok ? recordsRes.json() : [],
+        cfRes.ok ? cfRes.json() : []
       ]);
       setClients(clientsData || []);
       setCountries(countriesData || []);
       setModules(modulesData || []);
       setVehicleTollRecords(Array.isArray(recordsData) ? recordsData : []);
+      setAllCustomFields(Array.isArray(cfData) ? cfData : []);
 
       // Defaults
       const clientVal = user?.client_id || user?.clientid;
@@ -93,8 +117,14 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
       if (user?.country_id || user?.countryid) setSelectedCountry(String(user?.country_id || user?.countryid));
       if (user?.company_id || user?.companyid) setSelectedCompany(String(user?.company_id || user?.companyid));
 
-      // Target Module ID ('50' for Vehicle Toll or dynamic matching)
-      const tollModule = (modulesData || []).find(m => String(m.id) === '50' || (m.module_name && m.module_name.toLowerCase().includes('toll')));
+      // Target Module ID ('71' for Toll Transactions, '70' for Vehicle Toll Overview, '50' for Vehicle Toll)
+      const tollModule = (modulesData || []).find(m => isTransaction
+        ? (m.module_name && m.module_name.toLowerCase().includes('transaction')) || String(m.id) === '71'
+        : (isOverview
+          ? (m.module_name && m.module_name.toLowerCase().includes('vehicle toll overview')) || String(m.id) === '70'
+          : String(m.id) === '50' || (m.module_name && m.module_name.toLowerCase() === 'vehicle toll')
+        )
+      );
       if (tollModule) {
         setSelectedModule(String(tollModule.id));
       }
@@ -174,15 +204,35 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
         );
       }
 
+      // Fallback check: if no custom fields specifically for module #70 (Vehicle Toll Overview), check module #50 (Vehicle Toll)
+      if (!matchingFieldDef && (String(moduleId) === '70' || isOverview)) {
+        matchingFieldDef = customFields.find(cf =>
+          String(cf.client_id || cf.clientid) === String(clientId) &&
+          String(cf.module_id || cf.moduleid) === '50' &&
+          String(cf.country_id || cf.countryid) === String(countryId)
+        ) || customFields.find(cf =>
+          (!cf.clientid && !cf.client_id) &&
+          String(cf.module_id || cf.moduleid) === '50' &&
+          String(cf.country_id || cf.countryid) === String(countryId)
+        );
+      }
+
       // 2. Fetch permissions
       const permRes = await fetch(`${API_URL}/api/field-permissions`);
       const permissionsList = await permRes.json();
 
-      const activePerm = permissionsList.find(p =>
+      let activePerm = permissionsList.find(p =>
         String(p.clientid) === String(clientId) &&
         String(p.moduleid) === String(moduleId) &&
         String(p.countryid || p.country_id) === String(countryId)
       );
+      if (!activePerm && (String(moduleId) === '70' || isOverview)) {
+        activePerm = permissionsList.find(p =>
+          String(p.clientid) === String(clientId) &&
+          String(p.moduleid) === '50' &&
+          String(p.countryid || p.country_id) === String(countryId)
+        );
+      }
 
       let permittedFields = {};
       if (activePerm && activePerm.permitted_fields) {
@@ -351,27 +401,15 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
     setIsFormOpen(true);
   };
 
-  const handleView = async (record) => {
-    setIsViewOnly(true);
-    setEditingRecord(record);
+  const handleView = (record) => {
     let parsed = {};
     if (record.field_data) {
       try {
         parsed = typeof record.field_data === 'string' ? JSON.parse(record.field_data) : record.field_data;
       } catch (e) { }
     }
-    setFormData(parsed);
-    setSelectedClient(String(record.clientid || ''));
-    setSelectedCountry(String(record.country_id || ''));
-    setSelectedModule(String(record.moduleid || '50'));
-    await fetchCompaniesForClient(String(record.clientid || ''), 'view');
-    setSelectedCompany(record.company_id ? String(record.company_id) : '');
-    await fetchFormConfiguration(
-      String(record.clientid || ''),
-      String(record.country_id || ''),
-      String(record.moduleid || '50')
-    );
-    setIsFormOpen(true);
+    setSelectedViewRecord({ ...record, parsedData: parsed });
+    setViewDetailModalVisible(true);
   };
 
   const handleDelete = (record) => {
@@ -383,7 +421,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
   const handleConfirmDelete = async () => {
     if (deleteConfirmationText !== 'YES' || !recordToDelete) return;
     try {
-      const res = await fetch(`${API_URL}/api/vehicle-toll/${recordToDelete.id}`, {
+      const res = await fetch(`${API_URL}${apiRoute}/${recordToDelete.id}`, {
         method: 'DELETE'
       });
       if (!res.ok) throw new Error('Failed to delete vehicle toll record');
@@ -407,7 +445,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
         field_data: formData,
         clientid: configParams.clientid || selectedClient || null,
         country_id: configParams.country_id || selectedCountry || null,
-        moduleid: configParams.moduleid || selectedModule || 50,
+        moduleid: configParams.moduleid || selectedModule || (isOverview ? 70 : 50),
         company_id: selectedCompany || null,
         roleid: user ? user.roleId : null,
         user_id: user ? user.id : null
@@ -415,8 +453,8 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
 
       const isEditing = !!editingRecord;
       const url = isEditing
-        ? `${API_URL}/api/vehicle-toll/${editingRecord.id}`
-        : `${API_URL}/api/vehicle-toll`;
+        ? `${API_URL}${apiRoute}/${editingRecord.id}`
+        : `${API_URL}${apiRoute}`;
       const method = isEditing ? 'PUT' : 'POST';
 
       const res = await fetch(url, {
@@ -540,24 +578,411 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
   const totalPages = Math.ceil(filteredRecords.length / itemsPerPage) || 1;
   const paginatedRecords = filteredRecords.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
+  const handleDownloadTemplate = () => {
+    try {
+      const templateData = [
+        {
+          "Toll Name": "Darb",
+          "Account No": "D-990"
+        },
+        {
+          "Toll Name": "Salik",
+          "Account No": "34866829"
+        }
+      ];
+
+      const worksheet = XLSX.utils.json_to_sheet(templateData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Template");
+      const filename = isOverview ? "Vehicle_Toll_Overview_Template.xlsx" : "Vehicle_Toll_Template.xlsx";
+      XLSX.writeFile(workbook, filename);
+      showToast && showToast('Template downloaded successfully!', 'success');
+    } catch (e) {
+      console.error('Error downloading template:', e);
+      showToast && showToast('Error downloading template', 'error');
+    }
+  };
+
+  const handleImportExcelClick = async () => {
+    setImportStep(1);
+    const defaultClient = selectedClient || (user?.client_id || user?.clientid ? String(user?.client_id || user?.clientid) : '');
+    setImportClient(defaultClient);
+    setImportCompany('');
+    setImportSummary(null);
+    if (defaultClient) {
+      const compList = await fetchCompaniesForClient(defaultClient, 'view');
+      if (compList && compList.length > 0) {
+        setImportCompany(String(compList[0].id));
+      }
+    } else {
+      setCompanies([]);
+    }
+    setIsImportModalOpen(true);
+  };
+
+  const handleFileUploadFromModal = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    try {
+      setLoading(true);
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+
+      const rawMatrix = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+      // Scan top 20 rows for header Account No (e.g. "Account No: 34866829")
+      let extractedAccountNo = null;
+      for (let i = 0; i < Math.min(rawMatrix.length, 20); i++) {
+        const rowArr = rawMatrix[i] || [];
+        const rowStr = rowArr.map(c => String(c || '')).join(' ');
+        const match = rowStr.match(/Account\s*(?:No|Number|#)?\s*[:.-]?\s*([A-Za-z0-9-]+)/i);
+        if (match && match[1]) {
+          extractedAccountNo = match[1].trim();
+          break;
+        }
+      }
+
+      let headerRowIndex = 0;
+      for (let i = 0; i < Math.min(rawMatrix.length, 50); i++) {
+        const rowStr = JSON.stringify(rawMatrix[i] || {}).toLowerCase();
+        if (
+          rowStr.includes('transaction id') ||
+          rowStr.includes('toll id') ||
+          rowStr.includes('tag number') ||
+          rowStr.includes('toll name') ||
+          rowStr.includes('trip date') ||
+          rowStr.includes('plate')
+        ) {
+          headerRowIndex = i;
+          break;
+        }
+      }
+
+      const rows = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIndex });
+
+      const filteredRows = (rows || []).filter(r => {
+        const str = JSON.stringify(r || {}).toLowerCase();
+        return !str.includes('totalamount') && !str.includes('totaltrips');
+      }).map(r => {
+        const hasAccountKey = Object.keys(r).some(k => k.toLowerCase().includes('account'));
+        if (extractedAccountNo && !hasAccountKey) {
+          return {
+            'Account No': extractedAccountNo,
+            ...r
+          };
+        }
+        return r;
+      });
+
+      if (!filteredRows || filteredRows.length === 0) {
+        showToast && showToast('No valid transaction data found in the imported file', 'error');
+        setLoading(false);
+        return;
+      }
+
+      const headers = Object.keys(filteredRows[0] || {});
+      setExcelPreviewHeaders(headers);
+      setExcelPreviewRows(filteredRows);
+      setIsImportModalOpen(false);
+      setExcelPreviewVisible(true);
+    } catch (err) {
+      console.error('Error parsing Excel:', err);
+      showToast && showToast('Error reading Excel file: ' + err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConfirmExcelImport = async () => {
+    if (!excelPreviewRows || excelPreviewRows.length === 0) return;
+    try {
+      setIsImportingExcel(true);
+      
+      const flattenCustomFieldsList = (detailsArr) => {
+        const result = [];
+        if (!Array.isArray(detailsArr)) return result;
+        detailsArr.forEach(item => {
+          if (item && item.fields && Array.isArray(item.fields)) {
+            result.push(...flattenCustomFieldsList(item.fields));
+          } else if (item && item.id) {
+            result.push(item);
+          }
+        });
+        return result;
+      };
+
+      // Gather flat list of field definitions from all custom field records
+      const flatFields = [];
+      (allCustomFields || []).forEach(cf => {
+        if (cf.custom_field_details) {
+          let details = cf.custom_field_details;
+          if (typeof details === 'string') {
+            try { details = JSON.parse(details); } catch(e){}
+          }
+          flatFields.push(...flattenCustomFieldsList(details));
+        }
+      });
+
+      // Match Toll Name & Toll ID field IDs
+      let tollNameField = flatFields.find(f => (f.name || f.label || '').toLowerCase().trim().includes('toll name') || (f.name || f.label || '').toLowerCase().trim().includes('name'));
+      let tollIdField = flatFields.find(f => (f.name || f.label || '').toLowerCase().trim().includes('account') || (f.name || f.label || '').toLowerCase().trim().includes('toll id') || ((f.name || f.label || '').toLowerCase().trim().includes('id') && !(f.name || f.label || '').toLowerCase().trim().includes('name') && !(f.name || f.label || '').toLowerCase().trim().includes('client')));
+
+      const targetModuleId = isTransaction ? 71 : (isOverview ? 70 : 50);
+      const targetApiRoute = isTransaction ? '/api/vehicle-toll-transaction' : (isOverview ? '/api/vehicle-toll-overview' : '/api/vehicle-toll');
+
+      const uniqueBatchRows = excelPreviewRows;
+      let fileDuplicatesCount = 0;
+
+      let importedCount = 0;
+      let dbSkippedCount = 0;
+      let failedCount = 0;
+
+      const savePromises = uniqueBatchRows.map(async (row) => {
+        try {
+          const clientidVal = importClient || row['Client ID'] || row['clientid'] || selectedClient || user?.client_id || user?.clientid || 1;
+          const countryIdVal = row['Country ID'] || row['country_id'] || selectedCountry || user?.country_id || user?.countryid || 1;
+          const companyIdVal = importCompany || row['Company ID'] || row['company_id'] || selectedCompany || user?.company_id || user?.companyid || 1;
+
+          // Locate matching custom field record for this client, country & module
+          let matchingCf = (allCustomFields || []).find(cf =>
+            String(cf.client_id || cf.clientid) === String(clientidVal) &&
+            String(cf.module_id || cf.moduleid) === String(targetModuleId) &&
+            String(cf.country_id || cf.countryid) === String(countryIdVal)
+          );
+          if (!matchingCf && (String(targetModuleId) === '70' || isOverview)) {
+            matchingCf = (allCustomFields || []).find(cf =>
+              String(cf.client_id || cf.clientid) === String(clientidVal) &&
+              String(cf.module_id || cf.moduleid) === '50' &&
+              String(cf.country_id || cf.countryid) === String(countryIdVal)
+            ) || (allCustomFields || []).find(cf =>
+              (!cf.clientid && !cf.client_id) &&
+              String(cf.module_id || cf.moduleid) === '50' &&
+              String(cf.country_id || cf.countryid) === String(countryIdVal)
+            );
+          }
+          if (!matchingCf) {
+            matchingCf = (allCustomFields || []).find(cf =>
+              (!cf.clientid && !cf.client_id) &&
+              String(cf.module_id || cf.moduleid) === String(targetModuleId) &&
+              String(cf.country_id || cf.countryid) === String(countryIdVal)
+            ) || (allCustomFields || []).find(cf =>
+              String(cf.module_id || cf.moduleid) === String(targetModuleId)
+            );
+          }
+
+          let cfDetails = [];
+          if (matchingCf && matchingCf.custom_field_details) {
+            try {
+              cfDetails = typeof matchingCf.custom_field_details === 'string'
+                ? JSON.parse(matchingCf.custom_field_details)
+                : matchingCf.custom_field_details;
+            } catch(e) {}
+          }
+          const flatCfFields = flattenCustomFieldsList(cfDetails);
+
+          // Match Toll Name & Account No / Toll ID field IDs specific to matchingCf
+          let rowTollNameField = flatCfFields.find(f => (f.name || f.label || '').toLowerCase().trim().includes('toll name') || (f.name || f.label || '').toLowerCase().trim().includes('name')) || tollNameField;
+          let rowTollIdField = flatCfFields.find(f => (f.name || f.label || '').toLowerCase().trim().includes('account') || (f.name || f.label || '').toLowerCase().trim().includes('toll id') || ((f.name || f.label || '').toLowerCase().trim().includes('id') && !(f.name || f.label || '').toLowerCase().trim().includes('name') && !(f.name || f.label || '').toLowerCase().trim().includes('client'))) || tollIdField;
+
+          const fieldDataObj = {};
+          const tollNameVal = row['Toll Name'] || row['Toll Gate'] || row['Toll Type'] || row['toll_name'] || row['Name'] || Object.values(row)[0] || '';
+          const tollIdVal = row['Account No'] || row['ACCOUNT NO'] || row['account_no'] || row['Transaction ID'] || row['Toll ID'] || row['toll_id'] || row['Tag Number'] || row['ID'] || Object.values(row)[0] || '';
+
+          if (rowTollNameField) {
+            fieldDataObj[rowTollNameField.id] = tollNameVal;
+          }
+          if (rowTollIdField) {
+            fieldDataObj[rowTollIdField.id] = tollIdVal;
+          }
+          if (tollNameVal) fieldDataObj['1786629185586'] = tollNameVal;
+          if (tollIdVal) fieldDataObj['1786629206891'] = tollIdVal;
+
+          Object.keys(row).forEach(k => {
+            if (!['Client ID', 'Country ID', 'Company ID', 'clientid', 'country_id', 'company_id'].includes(k)) {
+              fieldDataObj[k] = row[k];
+              const matchedF = flatCfFields.find(f => (f.name || f.label || '').toLowerCase().trim() === k.toLowerCase().trim() || String(f.id) === String(k))
+                || flatFields.find(f => (f.name || f.label || '').toLowerCase().trim() === k.toLowerCase().trim() || String(f.id) === String(k));
+              if (matchedF) {
+                fieldDataObj[matchedF.id] = row[k];
+              }
+            }
+          });
+
+          const payload = {
+            custom_field_id: matchingCf ? matchingCf.id : null,
+            clientid: clientidVal,
+            country_id: countryIdVal,
+            company_id: companyIdVal,
+            moduleid: targetModuleId,
+            roleid: user?.roleId || user?.role_id || null,
+            user_id: user?.id || null,
+            transaction_id: row['Transaction ID'] || row['transaction_id'] || row['Toll ID'] || row['toll_id'] || row['Trip ID'] || row['trip_id'] || row['ID'] || null,
+            plate: row['Plate'] || row['plate'] || row['Plate Number'] || row['Plate No'] || null,
+            tag_number: row['Tag Number'] || row['tag_number'] || row['Tag No'] || row['Tag'] || null,
+            toll_gate: row['Toll Gate'] || row['toll_gate'] || row['Gate'] || row['Toll Name'] || null,
+            direction: row['Direction'] || row['direction'] || null,
+            trip_date: row['Trip Date'] || row['trip_date'] || row['Date'] || null,
+            trip_time: row['Trip Time'] || row['trip_time'] || row['Time'] || null,
+            amount: row['Amount(AED)'] || row['Amount'] || row['amount'] || row['Fee'] || null,
+            toll_name: row['Toll Name'] || row['toll_name'] || row['Toll Type'] || null,
+            field_data: fieldDataObj
+          };
+
+          const res = await fetch(`${API_URL}${targetApiRoute}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          const data = await res.json();
+          if (res.ok) {
+            if (data.skipped) {
+              dbSkippedCount++;
+            } else {
+              importedCount++;
+            }
+          } else {
+            failedCount++;
+          }
+        } catch (rowErr) {
+          console.error('Error importing single row:', rowErr);
+          failedCount++;
+        }
+      });
+
+      await Promise.all(savePromises);
+
+      const totalSkipped = fileDuplicatesCount + dbSkippedCount;
+
+      let titleHeader = "Import Complete!";
+      if (totalSkipped > 0) {
+        titleHeader = "Duplicate entry exists!";
+      } else if (failedCount > 0 && importedCount === 0) {
+        titleHeader = "Import Failed!";
+      }
+
+      const summaryMsg = `${titleHeader}\n\nImported: ${importedCount}\nSkipped duplicates: ${totalSkipped}\nFailed: ${failedCount}`;
+      showToast && showToast(summaryMsg, totalSkipped > 0 ? 'info' : (failedCount > 0 ? 'error' : 'success'));
+
+      setExcelPreviewVisible(false);
+      setExcelPreviewRows([]);
+      setExcelPreviewHeaders([]);
+      await fetchInitialData();
+    } catch (err) {
+      console.error('Error importing Excel:', err);
+      showToast && showToast('Error processing Excel file: ' + err.message, 'error');
+    } finally {
+      setIsImportingExcel(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       {/* MAIN HEADER */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Vehicle Toll</Text>
-          <Text style={styles.headerSubtitle}>Manage your vehicle toll records.</Text>
+        <View style={{ flex: 1, paddingRight: 16 }}>
+          <Text style={styles.headerTitle}>{isTransaction ? 'Toll Transactions' : (isOverview ? 'Vehicle Toll Overview' : 'Vehicle Toll')}</Text>
+          <Text style={styles.headerSubtitle}>
+            {isTransaction ? 'Detailed trip transaction logs imported from Salik / Darb reports.' : (isOverview ? 'Comprehensive overview and transaction summary of vehicle tolls across all client fleets.' : 'Manage your vehicle toll records.')}
+          </Text>
         </View>
-        {canCreate && (
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {/* Template Button */}
           <TouchableOpacity
-            style={styles.addButton}
-            onPress={handleAddNewRecord}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: '#475569',
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              borderRadius: 8,
+              gap: 6
+            }}
+            onPress={handleDownloadTemplate}
+            activeOpacity={0.8}
           >
-            <Ionicons name="add-circle" size={20} color="#FFFFFF" />
-            <Text style={styles.addButtonText}>Add Vehicle Toll</Text>
+            <Ionicons name="download-outline" size={18} color="#FFFFFF" />
+            <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>Template</Text>
           </TouchableOpacity>
-        )}
+
+          {/* Import Excel Button */}
+          <TouchableOpacity
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: '#16A34A',
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              borderRadius: 8,
+              gap: 6
+            }}
+            onPress={handleImportExcelClick}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
+            <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>{isTransaction || isOverview ? '+ Import Excel' : 'Import Excel'}</Text>
+          </TouchableOpacity>
+
+          {/* Add Vehicle Toll Button */}
+          {canCreate && (
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: '#14532D',
+                paddingHorizontal: 16,
+                paddingVertical: 10,
+                borderRadius: 8,
+                gap: 6
+              }}
+              onPress={handleAddNewRecord}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add" size={18} color="#FFFFFF" />
+              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>{isTransaction ? 'Add Transaction' : (isOverview ? 'Add Overview' : 'Add Vehicle Toll')}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
+
+      {/* OVERVIEW SUMMARY CARDS */}
+      {isOverview && (
+        <View style={{ flexDirection: isLargeScreen ? 'row' : 'column', gap: 16, marginBottom: 20 }}>
+          <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 18, borderWidth: 1, borderColor: '#E2E8F0', flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+            <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center' }}>
+              <Ionicons name="car-outline" size={22} color="#059669" />
+            </View>
+            <View>
+              <Text style={{ fontSize: 12, color: '#64748B', fontWeight: '600', textTransform: 'uppercase' }}>Total Toll Accounts</Text>
+              <Text style={{ fontSize: 22, fontWeight: '800', color: '#0F172A', marginTop: 2 }}>{vehicleTollRecords.length}</Text>
+            </View>
+          </View>
+
+          <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 18, borderWidth: 1, borderColor: '#E2E8F0', flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+            <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' }}>
+              <Ionicons name="location-outline" size={22} color="#2563EB" />
+            </View>
+            <View>
+              <Text style={{ fontSize: 12, color: '#64748B', fontWeight: '600', textTransform: 'uppercase' }}>Active Gateways</Text>
+              <Text style={{ fontSize: 22, fontWeight: '800', color: '#0F172A', marginTop: 2 }}>Salik / Darb</Text>
+            </View>
+          </View>
+
+          <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 18, borderWidth: 1, borderColor: '#E2E8F0', flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+            <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFF7ED', justifyContent: 'center', alignItems: 'center' }}>
+              <Ionicons name="checkmark-circle-outline" size={22} color="#D97706" />
+            </View>
+            <View>
+              <Text style={{ fontSize: 12, color: '#64748B', fontWeight: '600', textTransform: 'uppercase' }}>System Status</Text>
+              <Text style={{ fontSize: 22, fontWeight: '800', color: '#059669', marginTop: 2 }}>Active Sync</Text>
+            </View>
+          </View>
+        </View>
+      )}
 
       {/* MAIN CONTENT */}
       <View style={styles.mainContent}>
@@ -565,7 +990,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
           <View style={styles.emptyState}>
             <Ionicons name="document-text-outline" size={48} color={COLORS.textMuted} />
             <Text style={styles.emptyStateText}>No vehicle toll records found.</Text>
-            <Text style={styles.emptyStateSubtext}>Click 'Add Vehicle Toll' to create a new record.</Text>
+            <Text style={styles.emptyStateSubtext}>Click '{isOverview ? 'Add Overview' : 'Add Vehicle Toll'}' to create a new record.</Text>
           </View>
         ) : (
           <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#F1F5F9', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1, overflow: 'hidden' }}>
@@ -584,15 +1009,30 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
             </View>
 
             {/* Table Header */}
-            <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20 }}>
-              <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>ID</Text>
-              <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
-              <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Module Info</Text>
-              <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Data Preview</Text>
-              <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Submitted By</Text>
-              <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
-              <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>ACTION</Text>
-            </View>
+            {isTransaction ? (
+              <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20 }}>
+                <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>TRANSACTION ID</Text>
+                <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>TAG / PLATE</Text>
+                <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>VEHICLE NAME</Text>
+                <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>TOLL GATE</Text>
+                <Text style={{ flex: 1.1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>DIRECTION</Text>
+                <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>TRIP DATE & TIME</Text>
+                <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>AMOUNT (AED)</Text>
+                <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>ACTION</Text>
+              </View>
+            ) : (
+              <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20 }}>
+                <Text style={{ flex: isOverview ? 1.2 : 0.8, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>{isOverview ? 'ACCOUNT NO' : 'ID'}</Text>
+                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
+                {!isOverview && (
+                  <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Module Info</Text>
+                )}
+                <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>{isOverview ? 'TOLL TYPE' : 'DATA PREVIEW'}</Text>
+                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Submitted By</Text>
+                <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
+                <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>ACTION</Text>
+              </View>
+            )}
 
             <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true}>
               {(() => {
@@ -603,7 +1043,11 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                   if (!searchQuery) return true;
                   const cObj = clients.find(c => String(c.id) === String(r.clientid));
                   const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
-                  return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
+                  const txnMatch = r.transaction_id && String(r.transaction_id).toLowerCase().includes(searchQuery.toLowerCase());
+                  const tagMatch = r.tag_number && String(r.tag_number).toLowerCase().includes(searchQuery.toLowerCase());
+                  const plateMatch = r.plate && String(r.plate).toLowerCase().includes(searchQuery.toLowerCase());
+                  const gateMatch = r.toll_gate && String(r.toll_gate).toLowerCase().includes(searchQuery.toLowerCase());
+                  return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase())) || txnMatch || tagMatch || plateMatch || gateMatch;
                 });
                 const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
                 const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -625,6 +1069,80 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                           parsedData = typeof record.field_data === 'string' ? JSON.parse(record.field_data) : record.field_data;
                         } catch (e) { }
                       }
+
+                      if (isTransaction) {
+                        const txnId = record.transaction_id || parsedData['Transaction ID'] || parsedData['toll_id'] || `#${record.id}`;
+                        const tagNo = record.tag_number || parsedData['Tag Number'] || 'N/A';
+                        const plateNo = record.plate || parsedData['Plate'] || 'N/A';
+                        const gate = record.toll_gate || parsedData['Toll Gate'] || parsedData['toll_name'] || 'N/A';
+                        const dir = record.direction || parsedData['Direction'] || 'N/A';
+                        const tripDt = (record.trip_date || parsedData['Trip Date'] || '') + ' ' + (record.trip_time || parsedData['Trip Time'] || '');
+                        const amt = record.amount !== null && record.amount !== undefined ? record.amount : (parsedData['Amount(AED)'] || parsedData['amount'] || '0.00');
+
+                        return (
+                          <View key={record.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
+                            <View style={{ flex: 1.4, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700' }} numberOfLines={1}>{txnId}</Text>
+                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>DB ID: #{record.id}</Text>
+                            </View>
+
+                            <View style={{ flex: 1.2, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginBottom: 2 }} numberOfLines={1}>
+                                {plateNo}
+                              </Text>
+                              <Text style={{ fontSize: 11, color: '#64748B' }} numberOfLines={1}>
+                                Tag: {tagNo}
+                              </Text>
+                            </View>
+
+                            <View style={{ flex: 1.4, paddingRight: 10 }}>
+                              {record.vehicle_name ? (
+                                <View style={{ backgroundColor: '#E0F2FE', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start' }}>
+                                  <Text style={{ fontSize: 12, color: '#0369A1', fontWeight: '700' }} numberOfLines={1}>
+                                    🚗 {record.vehicle_name}
+                                  </Text>
+                                </View>
+                              ) : (
+                                <Text style={{ fontSize: 12, color: '#94A3B8' }}>Unassigned</Text>
+                              )}
+                            </View>
+
+                            <View style={{ flex: 1.4, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600' }} numberOfLines={1}>{gate}</Text>
+                            </View>
+
+                            <View style={{ flex: 1.1, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#475569' }} numberOfLines={1}>{dir}</Text>
+                            </View>
+
+                            <View style={{ flex: 1.4, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 12, color: '#334155' }} numberOfLines={1}>{tripDt.trim() || 'N/A'}</Text>
+                            </View>
+
+                            <View style={{ flex: 1, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#166534', fontWeight: '700' }} numberOfLines={1}>AED {amt}</Text>
+                            </View>
+
+                            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+                              <TouchableOpacity style={{ padding: 4 }} onPress={() => handleView(record)}>
+                                <Ionicons name="eye-outline" size={18} color="#0F172A" />
+                              </TouchableOpacity>
+
+                              {(checkRowPermission ? checkRowPermission(record.company_id || record.companyid, 'edit') : canEdit) && (
+                                <TouchableOpacity style={{ padding: 4 }} onPress={() => handleEdit(record)}>
+                                  <Ionicons name="pencil" size={18} color="#166534" />
+                                </TouchableOpacity>
+                              )}
+
+                              {(checkRowPermission ? checkRowPermission(record.company_id || record.companyid, 'delete') : canDelete) && (
+                                <TouchableOpacity style={{ padding: 4 }} onPress={() => handleDelete(record)}>
+                                  <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                                </TouchableOpacity>
+                              )}
+                            </View>
+                          </View>
+                        );
+                      }
                       const clientObj = clients.find(c => String(c.id) === String(record.clientid));
                       const clientName = clientObj ? (clientObj.client_name || clientObj.name) : `Client ${record.clientid}`;
                       const countryObj = countries.find(c => String(c.id) === String(record.country_id));
@@ -645,23 +1163,77 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                       }
                       const firstKey = Object.keys(parsedData)[0] ? Object.keys(parsedData)[0].replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()) : 'No Data';
 
+                      // Extract Account No and Toll Type from parsedData JSON
+                      let formAccountNoVal = '';
+                      let formTollTypeVal = '';
+
+                      if (parsedData && typeof parsedData === 'object') {
+                        // Direct key lookup for Account No / Toll ID
+                        formAccountNoVal = 
+                          parsedData['Account No'] || 
+                          parsedData['ACCOUNT NO'] || 
+                          parsedData['account_no'] || 
+                          parsedData['1786629206891'] || 
+                          parsedData['Toll ID'] || 
+                          parsedData['toll_id'] || 
+                          '';
+
+                        // Direct key lookup for Toll Name / Type
+                        formTollTypeVal = 
+                          parsedData['Toll Name'] || 
+                          parsedData['TOLL NAME'] || 
+                          parsedData['toll_name'] || 
+                          parsedData['1786629185586'] || 
+                          '';
+
+                        if (!formAccountNoVal || !formTollTypeVal) {
+                          const entries = Object.entries(parsedData);
+                          if (!formAccountNoVal && entries.length > 1) {
+                            formAccountNoVal = String(entries[1][1] || '');
+                          }
+                          if (!formTollTypeVal && entries.length > 0) {
+                            formTollTypeVal = String(entries[0][1] || '');
+                          }
+                        }
+                      }
+
+                      if (!formTollTypeVal) formTollTypeVal = firstValue !== '-' ? firstValue : 'Salik / Darb';
+                      if (!formAccountNoVal || formAccountNoVal === formTollTypeVal) {
+                        formAccountNoVal = `Acc: #${record.id}`;
+                      }
+
                       return (
                         <View key={record.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
-                          <Text style={{ flex: 0.5, fontSize: 12, color: '#334155', fontWeight: '700' }}>#{record.id}</Text>
+                          <View style={{ flex: 1.2, paddingRight: 10 }}>
+                            <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700' }} numberOfLines={1}>
+                              {isOverview ? formAccountNoVal : `#${record.id}`}
+                            </Text>
+                            {isOverview && (
+                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>
+                                Toll: {formTollTypeVal}
+                              </Text>
+                            )}
+                          </View>
 
                           <View style={{ flex: 1.5, paddingRight: 10 }}>
                             <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{clientName}</Text>
                             <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Country: {countryName}</Text>
                           </View>
 
-                          <View style={{ flex: 1.5, paddingRight: 10 }}>
-                            <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{moduleName}</Text>
-                            <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Created: {record.created_at ? new Date(record.created_at).toLocaleDateString() : 'N/A'}</Text>
-                          </View>
+                          {!isOverview && (
+                            <View style={{ flex: 1.5, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{moduleName}</Text>
+                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Created: {record.created_at ? new Date(record.created_at).toLocaleDateString() : 'N/A'}</Text>
+                            </View>
+                          )}
 
                           <View style={{ flex: 2, paddingRight: 10 }}>
-                            <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500', marginBottom: 4 }} numberOfLines={1}>{String(firstValue)}</Text>
-                            <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Field: {firstKey}</Text>
+                            <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>
+                              {isOverview ? formTollTypeVal : String(firstValue)}
+                            </Text>
+                            <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>
+                              {isOverview ? `Account: ${formAccountNoVal}` : `Field: ${firstKey}`}
+                            </Text>
                           </View>
 
                           <View style={{ flex: 1.5, paddingRight: 10 }}>
@@ -1058,6 +1630,533 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
           </View>
         </View>
       </Modal>
+
+      {/* Excel Import Preview Modal */}
+      <Modal visible={excelPreviewVisible} transparent={true} animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxWidth: 1000, maxHeight: '85%' }]}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Ionicons name="document-text" size={24} color="#16A34A" />
+                <View>
+                  <Text style={styles.modalTitle}>Excel Import Data Preview</Text>
+                  <Text style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
+                    Reviewing {excelPreviewRows.length} row(s) extracted from imported spreadsheet
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => setExcelPreviewVisible(false)} style={styles.closeButton}>
+                <Ionicons name="close" size={22} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Table Preview Body */}
+            <View style={{ flex: 1, padding: 20, backgroundColor: '#F8FAFC' }}>
+              <ScrollView
+                horizontal={true}
+                showsHorizontalScrollIndicator={true}
+                contentContainerStyle={{ minWidth: '100%' }}
+                style={{ flex: 1 }}
+              >
+                <View style={{ flex: 1, minWidth: '100%', backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden' }}>
+                  {/* Table Headers */}
+                  <View style={{ flexDirection: 'row', backgroundColor: '#F1F5F9', borderBottomWidth: 1, borderBottomColor: '#CBD5E1', paddingVertical: 12, paddingHorizontal: 16 }}>
+                    <Text style={{ width: 60, fontWeight: '700', fontSize: 12, color: '#475569' }}>#</Text>
+                    {excelPreviewHeaders.map((headerKey) => (
+                      <Text key={headerKey} style={{ flex: 1, minWidth: 160, fontWeight: '700', fontSize: 12, color: '#1E293B', textTransform: 'uppercase', paddingRight: 16 }}>
+                        {headerKey}
+                      </Text>
+                    ))}
+                  </View>
+
+                  {/* Table Rows */}
+                  <ScrollView style={{ flex: 1, maxHeight: 420 }}>
+                    {excelPreviewRows.map((row, idx) => (
+                      <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#F1F5F9', paddingVertical: 12, paddingHorizontal: 16, backgroundColor: idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC' }}>
+                        <Text style={{ width: 60, fontSize: 13, color: '#64748B', fontWeight: '600' }}>{idx + 1}</Text>
+                        {excelPreviewHeaders.map((headerKey) => (
+                          <Text key={headerKey} style={{ flex: 1, minWidth: 160, fontSize: 13, color: '#0F172A', paddingRight: 16 }} numberOfLines={1}>
+                            {row[headerKey] !== undefined && row[headerKey] !== null ? String(row[headerKey]) : '-'}
+                          </Text>
+                        ))}
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              </ScrollView>
+            </View>
+
+            {/* Modal Footer Bar */}
+            <View style={styles.modalFooterBar}>
+              <TouchableOpacity
+                style={styles.backBtn}
+                onPress={() => setExcelPreviewVisible(false)}
+                disabled={isImportingExcel}
+              >
+                <Text style={{ color: '#475569', fontWeight: '600', fontSize: 14 }}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#16A34A',
+                  borderRadius: 8,
+                  paddingVertical: 12,
+                  paddingHorizontal: 24,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                  opacity: isImportingExcel ? 0.7 : 1
+                }}
+                onPress={handleConfirmExcelImport}
+                disabled={isImportingExcel}
+              >
+                {isImportingExcel ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
+                )}
+                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>
+                  {isImportingExcel ? 'Importing Data...' : `Confirm & Import ${excelPreviewRows.length} Rows`}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 2-Step Configuration Import Wizard Modal */}
+      {isImportModalOpen && (
+        <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, width: '92%', maxWidth: 620, overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.3)', borderWidth: 1, borderColor: '#E2E8F0' }}>
+            
+            {/* Modal Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#A7F3D0' }}>
+                  <Ionicons name="cloud-upload-outline" size={22} color={COLORS.primary} />
+                </View>
+                <View>
+                  <Text style={{ fontSize: 18, fontWeight: '800', color: '#0F172A', letterSpacing: -0.3 }}>Import Toll Transactions</Text>
+                  <Text style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>Upload Salik / Darb transaction sheets into corporate asset log</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setIsImportModalOpen(false)}
+                style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}
+              >
+                <Ionicons name="close" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Stepper Header Bar */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', paddingHorizontal: 24, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#E2E8F0', gap: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: importStep === 1 ? COLORS.primary : '#10B981', justifyContent: 'center', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+                  {importStep > 1 ? (
+                    <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                  ) : (
+                    <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>1</Text>
+                  )}
+                </View>
+                <View>
+                  <Text style={{ fontSize: 11, color: '#94A3B8', fontWeight: '700', textTransform: 'uppercase' }}>STEP 1</Text>
+                  <Text style={{ fontSize: 13, fontWeight: importStep === 1 ? '700' : '600', color: importStep === 1 ? COLORS.primary : '#10B981' }}>Scope Configuration</Text>
+                </View>
+              </View>
+
+              <Ionicons name="chevron-forward" size={18} color="#CBD5E1" />
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, justifyContent: 'flex-end' }}>
+                <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: importStep === 2 ? COLORS.primary : '#E2E8F0', justifyContent: 'center', alignItems: 'center' }}>
+                  <Text style={{ color: importStep === 2 ? '#FFFFFF' : '#64748B', fontSize: 13, fontWeight: '800' }}>2</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  <Text style={{ fontSize: 11, color: '#94A3B8', fontWeight: '700', textTransform: 'uppercase' }}>STEP 2</Text>
+                  <Text style={{ fontSize: 13, fontWeight: importStep === 2 ? '700' : '500', color: importStep === 2 ? COLORS.primary : '#64748B' }}>File Upload & Import</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Modal Body */}
+            <View style={{ padding: 24, backgroundColor: '#FFFFFF' }}>
+
+              {/* STEP 1: CONFIGURATION */}
+              {importStep === 1 && (
+                <View>
+                  <View style={{ backgroundColor: '#F8FAFC', borderRadius: 10, padding: 14, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 20, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Ionicons name="information-circle-outline" size={20} color={COLORS.primary} />
+                    <Text style={{ fontSize: 12, color: '#475569', flex: 1, lineHeight: 18 }}>
+                      Select the destination <Text style={{ fontWeight: '700', color: '#0F172A' }}>Client</Text> and <Text style={{ fontWeight: '700', color: '#0F172A' }}>Company</Text>. All transactions in the uploaded sheet will be automatically assigned to this scope.
+                    </Text>
+                  </View>
+
+                  {/* Client Dropdown */}
+                  <View style={{ marginBottom: 18 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 8, letterSpacing: 0.3 }}>CLIENT <Text style={{ color: '#EF4444' }}>*</Text></Text>
+                    <div style={{ position: 'relative' }}>
+                      <select
+                        value={importClient}
+                        onChange={async (e) => {
+                          const cId = e.target.value;
+                          setImportClient(cId);
+                          setImportCompany('');
+                          if (cId) {
+                            const compList = await fetchCompaniesForClient(cId, 'view');
+                            if (compList && compList.length > 0) {
+                              setImportCompany(String(compList[0].id));
+                            }
+                          } else {
+                            setCompanies([]);
+                          }
+                        }}
+                        style={{
+                          width: '100%',
+                          padding: '12px 14px',
+                          borderRadius: 8,
+                          border: '1px solid #CBD5E1',
+                          backgroundColor: '#F8FAFC',
+                          fontSize: 14,
+                          fontWeight: '600',
+                          color: '#0F172A',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          boxSizing: 'border-box'
+                        }}
+                      >
+                        <option value="">-- Select Client --</option>
+                        {clients.map(c => (
+                          <option key={c.id} value={c.id}>{c.client_name || c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </View>
+
+                  {/* Company Dropdown */}
+                  <View style={{ marginBottom: 24 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 8, letterSpacing: 0.3 }}>COMPANY <Text style={{ color: '#EF4444' }}>*</Text></Text>
+                    <div style={{ position: 'relative' }}>
+                      <select
+                        value={importCompany}
+                        onChange={(e) => setImportCompany(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '12px 14px',
+                          borderRadius: 8,
+                          border: '1px solid #CBD5E1',
+                          backgroundColor: '#F8FAFC',
+                          fontSize: 14,
+                          fontWeight: '600',
+                          color: '#0F172A',
+                          outline: 'none',
+                          cursor: 'pointer',
+                          boxSizing: 'border-box'
+                        }}
+                      >
+                        <option value="">-- Select Company --</option>
+                        {companies.map(c => (
+                          <option key={c.id} value={c.id}>{c.company_name || c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </View>
+
+                  {/* Action Buttons */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
+                    <TouchableOpacity
+                      style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: '#CBD5E1' }}
+                      onPress={() => setIsImportModalOpen(false)}
+                    >
+                      <Text style={{ color: '#475569', fontWeight: '600', fontSize: 14 }}>Cancel</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={{ backgroundColor: COLORS.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 8, boxShadow: '0 4px 6px -1px rgba(5, 150, 105, 0.2)' }}
+                      onPress={() => {
+                        if (!importClient) {
+                          showToast && showToast('Please select a Client', 'error');
+                          return;
+                        }
+                        if (!importCompany) {
+                          showToast && showToast('Please select a Company', 'error');
+                          return;
+                        }
+                        setImportStep(2);
+                      }}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Continue to Upload</Text>
+                      <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {/* STEP 2: FILE UPLOAD */}
+              {importStep === 2 && (
+                <View>
+                  {/* Configuration Summary Badge */}
+                  {(() => {
+                    const selectedClientObj = clients.find(c => String(c.id) === String(importClient));
+                    const selectedCompObj = companies.find(c => String(c.id) === String(importCompany));
+                    return (
+                      <View style={{ backgroundColor: '#F0FDF4', borderRadius: 12, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#A7F3D0', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                        <View style={{ gap: 4 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Ionicons name="shield-checkmark" size={16} color="#059669" />
+                            <Text style={{ fontSize: 11, fontWeight: '800', color: '#047857', textTransform: 'uppercase', letterSpacing: 0.5 }}>ACTIVE CONFIGURATION SCOPE</Text>
+                          </View>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
+                            <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#6EE7B7', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Ionicons name="person-outline" size={13} color="#047857" />
+                              <Text style={{ fontSize: 12, fontWeight: '700', color: '#065F46' }}>{selectedClientObj?.client_name || selectedClientObj?.name || importClient}</Text>
+                            </View>
+                            <Ionicons name="arrow-forward" size={12} color="#059669" />
+                            <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#6EE7B7', flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Ionicons name="business-outline" size={13} color="#047857" />
+                              <Text style={{ fontSize: 12, fontWeight: '700', color: '#065F46' }}>{selectedCompObj?.company_name || selectedCompObj?.name || importCompany}</Text>
+                            </View>
+                          </View>
+                        </View>
+
+                        <TouchableOpacity
+                          onPress={() => setImportStep(1)}
+                          style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, borderWidth: 1, borderColor: '#A7F3D0' }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: '#047857' }}>Change Scope</Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })()}
+
+                  {/* Dropzone */}
+                  <View style={{ borderStyle: 'dashed', borderWidth: 2, borderColor: '#059669', borderRadius: 14, padding: 32, alignItems: 'center', backgroundColor: '#F8FAFC', marginBottom: 20, position: 'relative' }}>
+                    <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#A7F3D0' }}>
+                      <Ionicons name="cloud-upload" size={30} color={COLORS.primary} />
+                    </View>
+                    
+                    <Text style={{ fontSize: 16, fontWeight: '800', color: '#0F172A' }}>Select Excel / CSV File</Text>
+                    <Text style={{ fontSize: 12, color: '#64748B', marginTop: 4, textAlign: 'center' }}>
+                      Upload official Salik or Darb trip statement sheet (.xlsx, .xls, .csv)
+                    </Text>
+
+                    {/* Styled Custom Button with hidden overlay file input */}
+                    <div style={{ marginTop: 18, position: 'relative', display: 'inline-block' }}>
+                      <div style={{
+                        backgroundColor: COLORS.primary,
+                        color: '#FFFFFF',
+                        padding: '12px 24px',
+                        borderRadius: 8,
+                        fontWeight: '700',
+                        fontSize: 14,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        boxShadow: '0 4px 6px -1px rgba(5, 150, 105, 0.3)',
+                        cursor: 'pointer'
+                      }}>
+                        <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
+                        <span>Browse Excel File</span>
+                      </div>
+                      <input
+                        type="file"
+                        accept=".xlsx, .xls, .csv"
+                        onChange={handleFileUploadFromModal}
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          height: '100%',
+                          opacity: 0,
+                          cursor: 'pointer'
+                        }}
+                      />
+                    </div>
+                  </View>
+
+                  {/* Action Buttons */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
+                    <TouchableOpacity
+                      style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: '#CBD5E1', flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                      onPress={() => setImportStep(1)}
+                    >
+                      <Ionicons name="arrow-back" size={16} color="#475569" />
+                      <Text style={{ color: '#475569', fontWeight: '600', fontSize: 14 }}>Back to Config</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={{ backgroundColor: '#0F172A', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }}
+                      onPress={() => setIsImportModalOpen(false)}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* VIEW DETAILS MODAL */}
+      <Modal
+        visible={viewDetailModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setViewDetailModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard || {}, { maxWidth: 720, width: '90%', maxHeight: '85%', backgroundColor: '#FFFFFF', borderRadius: 12, overflow: 'hidden', padding: 0 }]}>
+            {/* Modal Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: '#E2E8F0', backgroundColor: '#F8FAFC' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#E0F2FE', justifyContent: 'center', alignItems: 'center' }}>
+                  <Ionicons name="document-text" size={22} color="#0284C7" />
+                </View>
+                <View>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#0F172A' }}>
+                    {isTransaction ? 'Toll Transaction Details' : (isOverview ? 'Vehicle Toll Account Details' : 'Vehicle Toll Details')}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
+                    {selectedViewRecord ? `DB Record ID: #${selectedViewRecord.id}` : ''}
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                onPress={() => setViewDetailModalVisible(false)}
+                style={{ padding: 6, borderRadius: 6, backgroundColor: '#F1F5F9' }}
+              >
+                <Ionicons name="close" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Modal Body */}
+            {selectedViewRecord && (
+              <ScrollView style={{ flex: 1, padding: 20 }}>
+                {/* Banner Header */}
+                <View style={{ backgroundColor: '#F0F9FF', borderRadius: 10, padding: 16, borderWidth: 1, borderColor: '#BAE6FD', marginBottom: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View>
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: '#0369A1', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      {isTransaction ? 'TRANSACTION ID' : 'ACCOUNT NUMBER'}
+                    </Text>
+                    <Text style={{ fontSize: 18, fontWeight: '800', color: '#0F172A', marginTop: 4 }}>
+                      {isTransaction
+                        ? (selectedViewRecord.transaction_id || selectedViewRecord.parsedData['Transaction ID'] || `#${selectedViewRecord.id}`)
+                        : (selectedViewRecord.parsedData['1786629206891'] || selectedViewRecord.parsedData['Account No'] || `Acc #${selectedViewRecord.id}`)}
+                    </Text>
+                  </View>
+
+                  {isTransaction && (
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: '#0369A1', textTransform: 'uppercase', letterSpacing: 0.5 }}>AMOUNT</Text>
+                      <Text style={{ fontSize: 20, fontWeight: '800', color: '#166534', marginTop: 4 }}>
+                        AED {selectedViewRecord.amount !== null && selectedViewRecord.amount !== undefined ? selectedViewRecord.amount : (selectedViewRecord.parsedData['Amount(AED)'] || selectedViewRecord.parsedData['amount'] || '0.00')}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Grid Details */}
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#475569', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  Reported Information
+                </Text>
+
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
+                  {isTransaction ? (
+                    <>
+                      <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                        <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Plate Number</Text>
+                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>{selectedViewRecord.plate || selectedViewRecord.parsedData['Plate'] || 'N/A'}</Text>
+                      </View>
+                      <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                        <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Tag Number</Text>
+                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>{selectedViewRecord.tag_number || selectedViewRecord.parsedData['Tag Number'] || 'N/A'}</Text>
+                      </View>
+                      <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                        <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Vehicle Name</Text>
+                        <Text style={{ fontSize: 13, color: selectedViewRecord.vehicle_name ? '#0369A1' : '#94A3B8', fontWeight: '700', marginTop: 2 }}>
+                          {selectedViewRecord.vehicle_name ? `🚗 ${selectedViewRecord.vehicle_name}` : 'Unassigned'}
+                        </Text>
+                      </View>
+                      <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                        <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Toll Gateway / Name</Text>
+                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>{selectedViewRecord.toll_name || selectedViewRecord.parsedData['Toll Name'] || 'Salik / Darb'}</Text>
+                      </View>
+                      <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                        <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Toll Gate</Text>
+                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>{selectedViewRecord.toll_gate || selectedViewRecord.parsedData['Toll Gate'] || 'N/A'}</Text>
+                      </View>
+                      <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                        <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Direction</Text>
+                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>{selectedViewRecord.direction || selectedViewRecord.parsedData['Direction'] || 'N/A'}</Text>
+                      </View>
+                      <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                        <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Trip Date & Time</Text>
+                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>
+                          {`${selectedViewRecord.trip_date || ''} ${selectedViewRecord.trip_time || ''}`.trim() || 'N/A'}
+                        </Text>
+                      </View>
+                      <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                        <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Linked Toll Overview ID</Text>
+                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>
+                          {selectedViewRecord.toll_overview_id ? `#${selectedViewRecord.toll_overview_id}` : 'Unlinked'}
+                        </Text>
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                        <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Account No</Text>
+                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>
+                          {selectedViewRecord.parsedData['1786629206891'] || selectedViewRecord.parsedData['Account No'] || 'N/A'}
+                        </Text>
+                      </View>
+                      <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                        <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Toll Name</Text>
+                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>
+                          {selectedViewRecord.parsedData['1786629185586'] || selectedViewRecord.parsedData['Toll Name'] || 'N/A'}
+                        </Text>
+                      </View>
+                    </>
+                  )}
+                </View>
+
+                {/* Raw JSON / Excel Key-Values */}
+                {selectedViewRecord.parsedData && Object.keys(selectedViewRecord.parsedData).length > 0 && (
+                  <View style={{ marginTop: 8 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#475569', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      Full Excel Raw Attributes
+                    </Text>
+                    <View style={{ backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden' }}>
+                      {Object.entries(selectedViewRecord.parsedData).map(([k, v], idx) => {
+                        const labelKey = k === '1786629185586' ? 'Toll Name' : (k === '1786629206891' ? 'Account No' : k);
+                        return (
+                          <View key={k} style={{ flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 16, borderBottomWidth: idx === Object.keys(selectedViewRecord.parsedData).length - 1 ? 0 : 1, borderBottomColor: '#F1F5F9', backgroundColor: idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC' }}>
+                            <Text style={{ flex: 1, fontSize: 12, fontWeight: '600', color: '#64748B' }}>{labelKey}</Text>
+                            <Text style={{ flex: 1.5, fontSize: 12, fontWeight: '700', color: '#0F172A' }}>{String(v !== null && v !== undefined ? v : '-')}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
+              </ScrollView>
+            )}
+
+            {/* Modal Footer */}
+            <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC', alignItems: 'flex-end' }}>
+              <TouchableOpacity
+                style={{ backgroundColor: '#0F172A', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 }}
+                onPress={() => setViewDetailModalVisible(false)}
+              >
+                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>Close Details</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1271,6 +2370,54 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+    overflow: 'hidden',
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  cancelBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  submitBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  submitBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   modalContent: {
     width: '100%',

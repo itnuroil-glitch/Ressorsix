@@ -51,7 +51,10 @@ app.use(cors({
   credentials: true
 }));
 
-// Serve static attachment files
+// Serve static attachment & upload files
+app.use('/upload', express.static(path.join(__dirname, '../upload')));
+app.use('/backend/upload', express.static(path.join(__dirname, '../upload')));
+app.use('/Attachment', express.static(path.join(__dirname, '../Attachment')));
 app.use('/backend/Attachment', express.static(path.join(__dirname, '../Attachment')));
 
 // Body parser
@@ -113,6 +116,14 @@ app.use('/api/vehicle-purchase', vehiclePurchaseRoutes);
 app.use('/api/vehile-purchase', vehiclePurchaseRoutes);
 app.use('/api/vehicle-toll', vehicleTollRoutes);
 app.use('/api/vehile-toll', vehicleTollRoutes);
+const tollOverviewRoutes = require('./routes/tollOverviewRoutes');
+app.use('/api/vehicle-toll-overview', tollOverviewRoutes);
+app.use('/api/toll-overview', tollOverviewRoutes);
+const tollTransactionRoutes = require('./routes/tollTransactionRoutes');
+app.use('/api/vehicle-toll-transaction', tollTransactionRoutes);
+app.use('/api/vehicle-toll-transactions', tollTransactionRoutes);
+app.use('/api/toll-transactions', tollTransactionRoutes);
+app.use('/api/toll-transaction', tollTransactionRoutes);
 app.use('/api/premises-details', premisesDetailsRoutes);
 app.use('/api/premises-types', premisesTypeRoutes);
 app.use('/api/asset-details', assetDetailsRoutes);
@@ -174,10 +185,24 @@ app.use('/api/tele-doc-types', teleDocTypeRoutes);
 app.use('/api/tele-doc-types.', teleDocTypeRoutes);
 app.use('/api/tele-doc-type', teleDocTypeRoutes);
 app.use('/api/tele-document-types', teleDocTypeRoutes);
-app.use('/api/tele-document-type', teleDocTypeRoutes);
+const companyLegalFormRoutes = require('./routes/companyLegalFormRoutes');
+app.use('/api/company-legal-forms', companyLegalFormRoutes);
+app.use('/api/company-legal-form', companyLegalFormRoutes);
+app.use('/api/company-legal-forms.', companyLegalFormRoutes);
+const companyLicenseAuthRoutes = require('./routes/companyLicenseAuthRoutes');
+app.use('/api/company-license-auth', companyLicenseAuthRoutes);
+app.use('/api/company-license-authorities', companyLicenseAuthRoutes);
+app.use('/api/company-license-auth.', companyLicenseAuthRoutes);
+const companyDefCurrencyRoutes = require('./routes/companyDefCurrencyRoutes');
+app.use('/api/company-def-currency', companyDefCurrencyRoutes);
+app.use('/api/company-default-currencies', companyDefCurrencyRoutes);
+app.use('/api/company-def-currencies', companyDefCurrencyRoutes);
 const pdfParserRoutes = require('./routes/pdfParserRoutes');
 app.use('/api/pdf', pdfParserRoutes);
 app.use('/api', pdfParserRoutes);
+const systemSettingRoutes = require('./routes/systemSettingRoutes');
+app.use('/api/system-settings', systemSettingRoutes);
+app.use('/api/system-setting', systemSettingRoutes);
 // Global Error Handler
 app.use((err, req, res, next) => {
   console.error('Unhandled Error:', err.stack);

@@ -39,16 +39,16 @@ const saveAttachmentLocally = (base64String, fileName) => {
     buffer = Buffer.from(base64String, 'base64');
   }
 
-  const attachmentDir = path.join(__dirname, '../../Attachment');
-  if (!fs.existsSync(attachmentDir)) {
-    fs.mkdirSync(attachmentDir, { recursive: true });
+  const uploadDir = path.join(__dirname, '../../upload');
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
   }
 
   const uniqueName = Date.now() + '-' + (fileName ? fileName.replace(/\s+/g, '_') : 'attachment.file');
-  const filePath = path.join(attachmentDir, uniqueName);
+  const filePath = path.join(uploadDir, uniqueName);
   
   fs.writeFileSync(filePath, buffer);
-  return `/backend/Attachment/${uniqueName}`;
+  return `upload/${uniqueName}`;
 };
 
 
@@ -57,10 +57,12 @@ exports.getAllCompanies = async (req, res) => {
   try {
     const query = `
       SELECT c.*, cl.client_name as client_name,
-             a.attachment as trade_license_attachment_path
+             a.attachment as trade_license_attachment_path,
+             COALESCE(c.company_logo, logo_att.attachment) as company_logo_path
       FROM company c
       LEFT JOIN client cl ON c.clientid = cl.id
       LEFT JOIN attachment a ON c.id = a.companyid AND a.type = 'Trade License' AND (a.is_deleted = false OR a.is_deleted IS NULL)
+      LEFT JOIN attachment logo_att ON c.id = logo_att.companyid AND logo_att.type = 'Company Logo' AND (logo_att.is_deleted = false OR logo_att.is_deleted IS NULL)
       WHERE c.is_deleted = false OR c.is_deleted IS NULL
       ORDER BY c.id DESC
     `;
@@ -85,7 +87,9 @@ exports.createCompany = async (req, res) => {
       authorized_signatory_name, authorized_signatory_designation, default_bank,
       default_currency, asset_prefix, vehicle_prefix, employee_prefix,
       trade_license_alert_days, establishment_card_alert_days, insurance_alert_days,
-      trade_license_attachment_base64, trade_license_attachment_name
+      plan_id, party_id,
+      trade_license_attachment_base64, trade_license_attachment_name,
+      company_logo_attachment_base64, company_logo_attachment_name
     } = req.body;
 
     if (!company_name) {
@@ -100,6 +104,15 @@ exports.createCompany = async (req, res) => {
       }
     }
 
+    let initialLogoPath = null;
+    if (company_logo_attachment_base64) {
+      try {
+        initialLogoPath = saveAttachmentLocally(company_logo_attachment_base64, company_logo_attachment_name);
+      } catch (e) {
+        console.error('Error saving company logo file:', e);
+      }
+    }
+
     const query = `
       INSERT INTO company (
         clientid, company_name, short_code, traffic_file_number, legal_form, industry, business_activity,
@@ -111,13 +124,14 @@ exports.createCompany = async (req, res) => {
         authorized_signatory_name, authorized_signatory_designation, default_bank,
         default_currency, asset_prefix, vehicle_prefix, employee_prefix,
         trade_license_alert_days, establishment_card_alert_days, insurance_alert_days,
+        plan_id, party_id, company_logo,
         is_deleted, created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
         $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
         $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
         $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,
-        false, NOW(), NOW()
+        $41, $42, $43, false, NOW(), NOW()
       ) RETURNING *;
     `;
 
@@ -130,7 +144,8 @@ exports.createCompany = async (req, res) => {
       mohre_number, wps_registered, nafis_emiratisation_applicable, gpssa_applicable,
       authorized_signatory_name, authorized_signatory_designation, default_bank,
       default_currency, asset_prefix, vehicle_prefix, employee_prefix,
-      trade_license_alert_days || 30, establishment_card_alert_days || 30, insurance_alert_days || 30
+      trade_license_alert_days || 30, establishment_card_alert_days || 30, insurance_alert_days || 30,
+      plan_id ? parseInt(plan_id, 10) : null, party_id || null, initialLogoPath
     ];
 
     const { rows } = await pool.query(query, values);
@@ -153,6 +168,24 @@ exports.createCompany = async (req, res) => {
         ]);
       } catch (err) {
         console.error('Error saving trade license attachment:', err);
+      }
+    }
+
+    // Save Company Logo Attachment if provided
+    if (initialLogoPath) {
+      try {
+        const insertLogoQuery = `
+          INSERT INTO attachment (clientid, companyid, attachment, type, expire_date, status, is_deleted, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, NULL, 1, false, NOW(), NOW())
+        `;
+        await pool.query(insertLogoQuery, [
+          finalClientId,
+          newCompany.id,
+          initialLogoPath,
+          'Company Logo'
+        ]);
+      } catch (err) {
+        console.error('Error saving company logo attachment:', err);
       }
     }
 
@@ -206,13 +239,25 @@ exports.updateCompany = async (req, res) => {
       authorized_signatory_name, authorized_signatory_designation, default_bank,
       default_currency, asset_prefix, vehicle_prefix, employee_prefix,
       trade_license_alert_days, establishment_card_alert_days, insurance_alert_days,
-      trade_license_attachment_base64, trade_license_attachment_name
+      plan_id, party_id,
+      trade_license_attachment_base64, trade_license_attachment_name,
+      company_logo_attachment_base64, company_logo_attachment_name
     } = req.body;
 
-    const checkQuery = 'SELECT id FROM company WHERE id = $1';
+    const checkQuery = 'SELECT * FROM company WHERE id = $1';
     const checkResult = await pool.query(checkQuery, [id]);
     if (checkResult.rowCount === 0) {
       return res.status(404).json({ message: 'Company not found' });
+    }
+    const existingCompany = checkResult.rows[0];
+
+    let updatedLogoPath = existingCompany.company_logo || null;
+    if (company_logo_attachment_base64) {
+      try {
+        updatedLogoPath = saveAttachmentLocally(company_logo_attachment_base64, company_logo_attachment_name);
+      } catch (e) {
+        console.error('Error saving updated company logo file:', e);
+      }
     }
 
     const query = `
@@ -228,8 +273,8 @@ exports.updateCompany = async (req, res) => {
         authorized_signatory_name = $31, authorized_signatory_designation = $32, default_bank = $33,
         default_currency = $34, asset_prefix = $35, vehicle_prefix = $36, employee_prefix = $37,
         trade_license_alert_days = $38, establishment_card_alert_days = $39, insurance_alert_days = $40,
-        updated_at = NOW()
-      WHERE id = $41 RETURNING *;
+        plan_id = $41, party_id = $42, company_logo = $43, updated_at = NOW()
+      WHERE id = $44 RETURNING *;
     `;
 
     const values = [
@@ -242,6 +287,7 @@ exports.updateCompany = async (req, res) => {
       authorized_signatory_name, authorized_signatory_designation, default_bank,
       default_currency, asset_prefix, vehicle_prefix, employee_prefix,
       trade_license_alert_days, establishment_card_alert_days, insurance_alert_days,
+      plan_id ? parseInt(plan_id, 10) : null, party_id || null, updatedLogoPath,
       id
     ];
 
@@ -266,6 +312,26 @@ exports.updateCompany = async (req, res) => {
         }
       } catch (err) {
         console.error('Error updating trade license attachment:', err);
+      }
+    }
+
+    // Handle logo attachment
+    if (company_logo_attachment_base64 && updatedLogoPath) {
+      try {
+        const checkLogoAtt = await pool.query('SELECT id FROM attachment WHERE companyid = $1 AND type = $2 AND (is_deleted = false OR is_deleted IS NULL)', [id, 'Company Logo']);
+        if (checkLogoAtt.rows.length > 0) {
+          await pool.query(
+            'UPDATE attachment SET attachment = $1, updated_at = NOW() WHERE id = $2',
+            [updatedLogoPath, checkLogoAtt.rows[0].id]
+          );
+        } else {
+          await pool.query(
+            'INSERT INTO attachment (clientid, companyid, attachment, type, expire_date, status, is_deleted, created_at, updated_at) VALUES ($1, $2, $3, $4, NULL, 1, false, NOW(), NOW())',
+            [updatedCompany.clientid, id, updatedLogoPath, 'Company Logo']
+          );
+        }
+      } catch (err) {
+        console.error('Error updating company logo attachment:', err);
       }
     }
 

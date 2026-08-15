@@ -71,6 +71,32 @@ function isConfigMatch(config, provider) {
  * @param {number|string|null} [params.clientid] Optional client ID for client-specific SMTP scoping
  */
 async function sendEmail({ to, subject, text, html, clientid = null }) {
+  if (process.env.DISABLE_SMTP === 'true' || process.env.ENABLE_SMTP === 'false') {
+    console.log(`[Mailer] SMTP is temporarily disabled (DISABLE_SMTP=true). Skipping email to: ${to}`);
+    return { status: 'skipped', message: 'SMTP is temporarily disabled.' };
+  }
+
+  // Check tbl_system_setting table for smtp_enabled setting scoped by clientid
+  try {
+    let settingQuery = "SELECT setting_value FROM tbl_system_setting WHERE setting_key = 'smtp_enabled'";
+    const queryParams = [];
+
+    if (clientid) {
+      settingQuery += " AND (clientid = $1 OR clientid IS NULL) ORDER BY clientid DESC NULLS LAST LIMIT 1";
+      queryParams.push(parseInt(clientid, 10));
+    } else {
+      settingQuery += " AND clientid IS NULL LIMIT 1";
+    }
+
+    const sysSettingRes = await db.query(settingQuery, queryParams);
+    if (sysSettingRes.rows.length > 0 && sysSettingRes.rows[0].setting_value === '0') {
+      console.log(`[Mailer] SMTP is disabled in System Settings for Client ID ${clientid || 'Global'} (smtp_enabled = 0). Skipping email to: ${to}`);
+      return { status: 'disabled', message: 'SMTP is disabled in System Settings for this client.' };
+    }
+  } catch (settingErr) {
+    console.warn('[Mailer] Could not query tbl_system_setting:', settingErr.message);
+  }
+
   console.log(`\n[Mailer] Initiating email sending process to: ${to}`);
 
   // 1. Detect provider
