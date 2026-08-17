@@ -270,7 +270,7 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
         if (field.optionSource === 'dynamic' && field.dynamicOptionsList) {
           optionsList = field.dynamicOptionsList.map(opt => {
             if (typeof opt === 'string') return { label: opt, value: opt };
-            const label = opt.vehicle_name || opt.vehicle_display_name || opt.name || opt.label || opt.company_name || opt.id;
+            const label = opt.vehicle_name || opt.vehicle_display_name || opt.plate_no || opt.name || opt.label || opt.company_name || opt.id;
             const value = String(opt.id || opt.vehicle_id || opt.value || label);
             return { label: String(label), value: String(value) };
           });
@@ -280,11 +280,14 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
         }
 
         return (
-          <CustomDropdown
+          <SearchableDropdown
             data={optionsList}
             value={String(formData[field.id] || '')}
-            onChange={(item) => handleInputChange(field.id, item.value)}
-            placeholder={`-- Select ${field.name} --`}
+            onChange={(val) => handleInputChange(field.id, val)}
+            placeholder="Select..."
+            searchPlaceholder={`Search ${field.name}...`}
+            displayKey="label"
+            valueKey="value"
             disabled={isViewOnly}
           />
         );
@@ -816,63 +819,74 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
               <>
                 <ScrollView style={{ flex: 1, backgroundColor: '#F8FAFC' }} contentContainerStyle={{ padding: 24, paddingBottom: 20 }}>
                   {fieldsLayout && fieldsLayout.length > 0 ? (
-                    fieldsLayout.map((section, sIdx) => (
-                      <View key={section.id || sIdx} style={{
-                        backgroundColor: '#FFFFFF',
-                        borderRadius: 12,
-                        marginBottom: 20,
-                        borderWidth: 1,
-                        borderColor: '#E2E8F0',
-                        shadowColor: '#000',
-                        shadowOffset: { width: 0, height: 2 },
-                        shadowOpacity: 0.05,
-                        shadowRadius: 10,
-                        elevation: 2,
-                        overflow: 'hidden'
-                      }}>
-                        {/* Section Header */}
-                        <View style={{
-                          backgroundColor: '#F8FAFC',
-                          paddingHorizontal: 20,
-                          paddingVertical: 16,
-                          borderBottomWidth: 1,
-                          borderBottomColor: '#E2E8F0'
-                        }}>
-                          <Text style={{
-                            fontSize: 14,
-                            fontWeight: '700',
-                            color: '#1A4D3E',
-                            textTransform: 'uppercase',
-                            letterSpacing: 0.5
-                          }}>
-                            {section.section_name || section.name || 'VEHICLE MAINTENANCE DETAILS'}
-                          </Text>
-                        </View>
+                    fieldsLayout.map((section, sIdx) => {
+                      const rawName = String(section.section_name || section.name || 'VEHICLE MAINTENANCE DETAILS');
+                      const cleanTitle = rawName.replace(/maintence/gi, 'MAINTENANCE').toUpperCase();
 
-                        {/* Section Body with 2 Columns */}
-                        <View style={{
-                          padding: 20,
-                          flexDirection: 'row',
-                          flexWrap: 'wrap',
-                          justifyContent: 'space-between'
+                      return (
+                        <View key={section.id || sIdx} style={{
+                          backgroundColor: '#FFFFFF',
+                          borderRadius: 12,
+                          marginBottom: 20,
+                          borderWidth: 1,
+                          borderColor: '#E2E8F0',
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: 0.05,
+                          shadowRadius: 10,
+                          elevation: 2,
+                          zIndex: fieldsLayout.length - sIdx,
+                          position: 'relative'
                         }}>
-                          {(section.fields || []).map(field => {
-                            const isFullWidth = field.type === 'Textarea' || field.type === 'File Upload' || field.type === 'Image Upload';
-                            return (
-                              <View key={field.id} style={{
-                                width: isFullWidth ? '100%' : '48%',
-                                marginBottom: 20
-                              }}>
-                                <Text style={styles.fieldLabel}>
-                                  {field.name} {field.isRequired && <Text style={{ color: '#EF4444' }}>*</Text>}
-                                </Text>
-                                {renderField(field)}
-                              </View>
-                            );
-                          })}
+                          {/* Section Header */}
+                          <View style={{
+                            backgroundColor: '#F8FAFC',
+                            paddingHorizontal: 20,
+                            paddingVertical: 16,
+                            borderBottomWidth: 1,
+                            borderBottomColor: '#E2E8F0',
+                            borderTopLeftRadius: 12,
+                            borderTopRightRadius: 12
+                          }}>
+                            <Text style={{
+                              fontSize: 14,
+                              fontWeight: '700',
+                              color: '#1A4D3E',
+                              textTransform: 'uppercase',
+                              letterSpacing: 0.5
+                            }}>
+                              {cleanTitle}
+                            </Text>
+                          </View>
+
+                          {/* Section Body with 2 Columns */}
+                          <View style={{
+                            padding: 20,
+                            flexDirection: 'row',
+                            flexWrap: 'wrap',
+                            justifyContent: 'space-between',
+                            position: 'relative'
+                          }}>
+                            {(section.fields || []).map((field, fIdx) => {
+                              const isFullWidth = field.type === 'Textarea' || field.type === 'File Upload' || field.type === 'Image Upload';
+                              return (
+                                <View key={field.id} style={{
+                                  width: isFullWidth ? '100%' : '48%',
+                                  marginBottom: 20,
+                                  zIndex: (section.fields || []).length - fIdx,
+                                  position: 'relative'
+                                }}>
+                                  <Text style={styles.fieldLabel}>
+                                    {field.name} {field.isRequired && <Text style={{ color: '#EF4444' }}>*</Text>}
+                                  </Text>
+                                  {renderField(field)}
+                                </View>
+                              );
+                            })}
+                          </View>
                         </View>
-                      </View>
-                    ))
+                      );
+                    })
                   ) : (
                     <View style={{ padding: 40, alignItems: 'center' }}>
                       <Text style={{ fontSize: 14, color: '#64748B' }}>No permitted maintenance fields found for this configuration.</Text>

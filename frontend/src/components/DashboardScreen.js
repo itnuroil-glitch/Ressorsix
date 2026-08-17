@@ -56,6 +56,7 @@ import CompanyLicenseAuthTab from './CompanyLicenseAuthTab';
 import CompanyDefCurrencyTab from './CompanyDefCurrencyTab';
 import SystemSettingsTab from './SystemSettingsTab';
 import TollGateTab from './TollGateTab';
+import ServiceDetailsTab from './ServiceDetailsTab';
 
 export default function DashboardScreen({ user, onSignOut }) {
   const { width, height } = useWindowDimensions();
@@ -5924,6 +5925,14 @@ export default function DashboardScreen({ user, onSignOut }) {
       case 'tollgate':
       case 'tbl_toll_gate':
         return <TollGateTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('toll_gate')} checkRowPermission={(compId, act) => checkRowPermission('toll_gate', compId, act)} />;
+      case 'service_details':
+      case 'service_detail':
+      case 'service-details':
+      case 'service-detail':
+      case 'tbl_service_details':
+      case 'servicedetails':
+      case 'service_details_tab':
+        return <ServiceDetailsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('service_details')} checkRowPermission={(compId, act) => checkRowPermission('service_details', compId, act)} />;
       case 'state':
         return renderStateTab();
       case 'employees':
