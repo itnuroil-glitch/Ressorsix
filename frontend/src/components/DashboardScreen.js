@@ -26,6 +26,7 @@ import VehicleDetailsTab from './VehicleDetailsTab';
 import VehiclePurchaseTab from './VehiclePurchaseTab';
 import VehicleTollTab from './VehicleTollTab';
 import VehicleTollReportTab from './VehicleTollReportTab';
+import VehicleMaintenanceTab from './VehicleMaintenanceTab';
 import PremisesDetailsTab from './PremisesDetailsTab';
 import AssetDetailsTab from './AssetDetailsTab';
 import AssetCategoryTab from './AssetCategoryTab';
@@ -5825,6 +5826,11 @@ export default function DashboardScreen({ user, onSignOut }) {
       case 'toll_report':
       case 'toll_reports':
         return <VehicleTollReportTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
+      case 'vehicle_maintenance':
+      case 'vehicle_maintenances':
+      case 'maintenance':
+      case 'vehicle_maintenance_details':
+        return <VehicleMaintenanceTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_maintenance')} checkRowPermission={(compId, act) => checkRowPermission('vehicle_maintenance', compId, act)} />;
       case 'premises_details':
         return <PremisesDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('premises_details')} checkRowPermission={(compId, act) => checkRowPermission('premises_details', compId, act)} />;
       case 'asset_details':
