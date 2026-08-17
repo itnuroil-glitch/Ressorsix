@@ -23,11 +23,8 @@ exports.getAllEmployees = async (req, res) => {
 
     let queryText = `
       SELECT e.*, 
-             COALESCE(
-               CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='employee' AND column_name='assigned_password') THEN e.assigned_password ELSE NULL END,
-               CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='assigned_password') THEN u.assigned_password ELSE NULL END
-             ) as assigned_password,
-             (SELECT string_agg(role, ', ') FROM role WHERE id = ANY(string_to_array(e.roleid::text, ',')::int[])) as role_name, 
+             COALESCE(e.assigned_password, u.assigned_password) as assigned_password,
+             (SELECT string_agg(role, ', ') FROM role WHERE e.roleid IS NOT NULL AND e.roleid != '' AND id::text = ANY(string_to_array(e.roleid::text, ','))) as role_name, 
              d.department_name,
              bc.company_name as base_company_name
       FROM employee e
