@@ -145,6 +145,13 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
     setIsFormOpen(true);
   };
 
+  const handleInputChange = (fieldId, value) => {
+    setFormData(prev => ({
+      ...prev,
+      [fieldId]: value
+    }));
+  };
+
   const fetchFormConfiguration = async (clientId, countryId, moduleId) => {
     setLoading(true);
     setWizardStep(2);
@@ -181,6 +188,7 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
           : activePerm.permitted_fields;
       }
 
+      let parsedSections = [];
       if (matchingFieldDef) {
         setCustomFieldId(matchingFieldDef.id);
         setConfigParams({
@@ -188,14 +196,14 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
           country_id: matchingFieldDef.countryid || matchingFieldDef.country_id || countryId,
           moduleid: matchingFieldDef.moduleid || matchingFieldDef.module_id || moduleId
         });
-        let parsedSections = typeof matchingFieldDef.field_data === 'string'
+        parsedSections = typeof matchingFieldDef.field_data === 'string'
           ? JSON.parse(matchingFieldDef.field_data)
           : matchingFieldDef.field_data;
-        setFieldsLayout(parsedSections || []);
       } else {
         // Fallback default form layout if no custom fields are defined
-        setFieldsLayout([
+        parsedSections = [
           {
+            id: 'sec_maintenance',
             section_name: 'Vehicle Maintenance Details',
             fields: [
               { id: 'vehicle_id', name: 'Select Vehicle', type: 'Dropdown', optionSource: 'dynamic', dynamicPath: '/api/vehicle-details/client-vehicles' },
@@ -211,14 +219,188 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
               { id: 'remarks', name: 'Notes / Remarks', type: 'Textarea' }
             ]
           }
-        ]);
+        ];
         setCustomFieldId(null);
       }
+
+      // Filter sections & fields by permittedFields if permissions are configured
+      if (permittedFields && Object.keys(permittedFields).length > 0) {
+        parsedSections = (parsedSections || []).map(sec => ({
+          ...sec,
+          fields: (sec.fields || []).filter(f => permittedFields[f.id] !== false && permittedFields[f.name] !== false)
+        })).filter(sec => sec.fields && sec.fields.length > 0);
+      }
+
+      // Fetch dynamic options for dropdowns if needed
+      for (const sec of (parsedSections || [])) {
+        for (const field of (sec.fields || [])) {
+          if (field.type === 'Dropdown' && field.optionSource === 'dynamic' && field.dynamicPath) {
+            let path = field.dynamicPath;
+            if (path.includes('client') && clientId) {
+              if (path.endsWith('/client') || path.endsWith('/client/')) {
+                path = `${path.replace(/\/$/, '')}/${clientId}`;
+              }
+            }
+            try {
+              const res = await fetch(`${API_URL}${path.startsWith('/') ? path : '/' + path}`);
+              if (res.ok) {
+                const data = await res.json();
+                field.dynamicOptionsList = data;
+              }
+            } catch (e) {
+              console.warn('Failed to fetch dynamic options for', field.id, e);
+            }
+          }
+        }
+      }
+
+      setFieldsLayout(parsedSections || []);
     } catch (err) {
       console.error(err);
       if (showToast) showToast('Error loading form configuration', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const renderField = (field) => {
+    switch (field.type) {
+      case 'Dropdown': {
+        let optionsList = [];
+        if (field.optionSource === 'dynamic' && field.dynamicOptionsList) {
+          optionsList = field.dynamicOptionsList.map(opt => {
+            if (typeof opt === 'string') return { label: opt, value: opt };
+            const label = opt.vehicle_name || opt.vehicle_display_name || opt.name || opt.label || opt.company_name || opt.id;
+            const value = String(opt.id || opt.vehicle_id || opt.value || label);
+            return { label: String(label), value: String(value) };
+          });
+        } else if (field.options) {
+          const rawOpts = typeof field.options === 'string' ? field.options.split(',').map(s => s.trim()) : field.options;
+          optionsList = rawOpts.map(opt => ({ label: String(opt), value: String(opt) }));
+        }
+
+        return (
+          <CustomDropdown
+            data={optionsList}
+            value={String(formData[field.id] || '')}
+            onChange={(item) => handleInputChange(field.id, item.value)}
+            placeholder={`-- Select ${field.name} --`}
+            disabled={isViewOnly}
+          />
+        );
+      }
+      case 'Number':
+        return (
+          <TextInput
+            style={[styles.modalInput, isViewOnly && { backgroundColor: '#F1F5F9', color: '#64748B' }]}
+            placeholder={`Enter ${field.name}`}
+            placeholderTextColor="#94A3B8"
+            keyboardType="numeric"
+            value={formData[field.id] !== undefined && formData[field.id] !== null ? String(formData[field.id]) : ''}
+            onChangeText={(val) => handleInputChange(field.id, val)}
+            editable={!isViewOnly}
+          />
+        );
+      case 'Textarea':
+        return (
+          <TextInput
+            style={[styles.modalInput, { height: 80, textAlignVertical: 'top' }, isViewOnly && { backgroundColor: '#F1F5F9', color: '#64748B' }]}
+            placeholder={`Enter ${field.name}`}
+            placeholderTextColor="#94A3B8"
+            value={formData[field.id] || ''}
+            onChangeText={(val) => handleInputChange(field.id, val)}
+            multiline
+            editable={!isViewOnly}
+          />
+        );
+      case 'Date': {
+        const val = formData[field.id] || new Date().toISOString().split('T')[0];
+        return (
+          <input
+            type="date"
+            style={{
+              width: '100%',
+              height: 40,
+              borderRadius: 6,
+              border: '1px solid #CBD5E1',
+              paddingLeft: 12,
+              fontSize: 14,
+              color: '#0F172A',
+              backgroundColor: isViewOnly ? '#F1F5F9' : '#FFFFFF'
+            }}
+            value={val}
+            onChange={(e) => handleInputChange(field.id, e.target.value)}
+            disabled={isViewOnly}
+          />
+        );
+      }
+      case 'File Upload':
+      case 'Image Upload': {
+        const fileData = formData[field.id];
+        const handleFileSelect = () => {
+          if (typeof document !== 'undefined') {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = field.type === 'Image Upload' ? 'image/*' : '*/*';
+            input.onchange = async (e) => {
+              const files = Array.from(e.target.files);
+              if (files.length === 0) return;
+              const processedFiles = await Promise.all(
+                files.map(file => new Promise((resolve) => {
+                  const reader = new FileReader();
+                  reader.readAsDataURL(file);
+                  reader.onload = () => resolve({ name: file.name, type: file.type, size: file.size, data: reader.result });
+                }))
+              );
+              handleInputChange(field.id, processedFiles[0]);
+            };
+            input.click();
+          }
+        };
+
+        const fileObj = typeof fileData === 'string' ? { name: fileData, data: fileData } : fileData;
+
+        return (
+          <View style={{ width: '100%' }}>
+            {!isViewOnly && (
+              <TouchableOpacity
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: '#FAFAFA',
+                  padding: 12,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: '#CBD5E1',
+                  borderStyle: 'dashed',
+                  minHeight: 44,
+                  gap: 8
+                }}
+                onPress={handleFileSelect}
+              >
+                <Ionicons name="cloud-upload-outline" size={20} color="#64748B" />
+                <Text style={{ flex: 1, color: '#94A3B8', fontSize: 14 }}>
+                  {fileObj ? fileObj.name : 'Click to upload file...'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {fileObj && isViewOnly && (
+              <Text style={{ fontSize: 14, color: '#0F172A', marginTop: 4 }}>{fileObj.name}</Text>
+            )}
+          </View>
+        );
+      }
+      default:
+        return (
+          <TextInput
+            style={[styles.modalInput, isViewOnly && { backgroundColor: '#F1F5F9', color: '#64748B' }]}
+            placeholder={`Enter ${field.name}`}
+            placeholderTextColor="#94A3B8"
+            value={formData[field.id] || ''}
+            onChangeText={(val) => handleInputChange(field.id, val)}
+            editable={!isViewOnly}
+          />
+        );
     }
   };
 
@@ -528,114 +710,155 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ flex: 1, padding: 20 }}>
-              {/* Client & Company Selectors */}
-              <View style={{ marginBottom: 16 }}>
-                <Text style={styles.fieldLabel}>Select Client</Text>
-                <CustomDropdown
-                  data={clients.map(c => ({ label: c.client_name || c.name, value: String(c.id) }))}
-                  value={selectedClient}
-                  onChange={async (item) => {
-                    setSelectedClient(item.value);
-                    await fetchCompaniesForClient(item.value);
-                  }}
-                  placeholder="-- Select Client --"
-                  disabled={isViewOnly}
-                />
+            {/* Wizard Step Indicator */}
+            {!isViewOnly && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 14, backgroundColor: '#F8FAFC', borderBottomWidth: 1, borderBottomColor: '#E2E8F0' }}>
+                {[
+                  { id: 1, label: 'Configuration', icon: 'settings-outline' },
+                  { id: 2, label: 'Form Data', icon: 'document-text-outline' }
+                ].map((step, index, arr) => {
+                  const isActive = wizardStep === step.id;
+                  const isPast = wizardStep > step.id;
+                  return (
+                    <React.Fragment key={step.id}>
+                      <View style={{ alignItems: 'center', flexDirection: 'row', gap: 8, paddingHorizontal: 4 }}>
+                        <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: isActive || isPast ? '#1A4D3E' : '#E2E8F0', justifyContent: 'center', alignItems: 'center' }}>
+                          <Ionicons name={step.icon} size={14} color={isActive || isPast ? '#FFFFFF' : '#64748B'} />
+                        </View>
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: isActive || isPast ? '#1A4D3E' : '#64748B' }}>{step.label}</Text>
+                      </View>
+                      {index < arr.length - 1 && (
+                        <View style={{ flex: 1, height: 2, backgroundColor: wizardStep > step.id ? '#1A4D3E' : '#E2E8F0', marginHorizontal: 4 }} />
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </View>
+            )}
 
-              <View style={{ marginBottom: 16 }}>
-                <Text style={styles.fieldLabel}>Select Company</Text>
-                <CustomDropdown
-                  data={companies.map(c => ({ label: c.company_name || c.name, value: String(c.id) }))}
-                  value={selectedCompany}
-                  onChange={(item) => setSelectedCompany(item.value)}
-                  placeholder="-- Select Company --"
-                  disabled={isViewOnly}
-                />
+            {wizardStep === 1 && !editingRecord && !isViewOnly ? (
+              <ScrollView style={{ flex: 1, backgroundColor: '#FFFFFF', padding: 24 }}>
+                <View style={{ gap: 20 }}>
+                  <View style={{ marginBottom: 16 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#475569', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      CLIENT <Text style={{ color: '#EF4444' }}>*</Text>
+                    </Text>
+                    <SearchableDropdown
+                      data={clients}
+                      value={selectedClient}
+                      onChange={async (val) => {
+                        setSelectedClient(val);
+                        setSelectedCompany('');
+                        await fetchCompaniesForClient(val, 'create');
+                      }}
+                      placeholder="-- Select Client --"
+                      searchPlaceholder="Search Client..."
+                      displayKey="client_name"
+                      valueKey="id"
+                    />
+                  </View>
+
+                  <View style={{ marginBottom: 16 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#475569', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      COMPANY <Text style={{ color: '#EF4444' }}>*</Text>
+                    </Text>
+                    <SearchableDropdown
+                      data={companies}
+                      value={selectedCompany}
+                      onChange={(val) => {
+                        setSelectedCompany(val);
+                        const selectedIds = val ? String(val).split(',').map(s => s.trim()).filter(Boolean) : [];
+                        if (selectedIds.length > 0) {
+                          const firstSelected = companies.find(c => String(c.id) === selectedIds[0]);
+                          if (firstSelected && (firstSelected.country || firstSelected.country_id)) {
+                            setSelectedCountry(String(firstSelected.country || firstSelected.country_id));
+                          } else {
+                            setSelectedCountry('1');
+                          }
+                        } else {
+                          setSelectedCountry('');
+                        }
+                      }}
+                      placeholder="-- Select Company --"
+                      searchPlaceholder="Search Company..."
+                      displayKey="company_name"
+                      valueKey="id"
+                    />
+                  </View>
+
+                  <View style={{ alignItems: 'flex-end', marginTop: 20 }}>
+                    <TouchableOpacity
+                      style={[{
+                        paddingHorizontal: 28,
+                        paddingVertical: 12,
+                        backgroundColor: '#1A4D3E',
+                        borderRadius: 8,
+                        justifyContent: 'center',
+                        alignItems: 'center'
+                      }, (!selectedClient || !selectedCompany) && { opacity: 0.5 }]}
+                      disabled={!selectedClient || !selectedCompany}
+                      onPress={() => {
+                        const countryToUse = selectedCountry || '1';
+                        fetchFormConfiguration(selectedClient, countryToUse, selectedModule || '60');
+                      }}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Next</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </ScrollView>
+            ) : loading ? (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 }}>
+                <ActivityIndicator size="large" color="#1A4D3E" />
+                <Text style={{ marginTop: 12, color: '#64748B', fontSize: 14 }}>Loading maintenance form fields...</Text>
               </View>
-
-              {/* Maintenance Fields */}
-              <View style={{ marginBottom: 16 }}>
-                <Text style={styles.fieldLabel}>Service Type</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="e.g. Engine Oil Change, Tire Replacement"
-                  value={formData.service_type || ''}
-                  onChangeText={(val) => setFormData(prev => ({ ...prev, service_type: val }))}
-                  editable={!isViewOnly}
-                />
-              </View>
-
-              <View style={{ marginBottom: 16 }}>
-                <Text style={styles.fieldLabel}>Total Cost (AED / $)</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="e.g. 450.00"
-                  keyboardType="numeric"
-                  value={formData.total_cost || ''}
-                  onChangeText={(val) => setFormData(prev => ({ ...prev, total_cost: val }))}
-                  editable={!isViewOnly}
-                />
-              </View>
-
-              <View style={{ marginBottom: 16 }}>
-                <Text style={styles.fieldLabel}>Service Date</Text>
-                <input
-                  type="date"
-                  style={{
-                    width: '100%',
-                    height: 40,
-                    borderRadius: 6,
-                    border: '1px solid #CBD5E1',
-                    paddingLeft: 12,
-                    fontSize: 14,
-                    color: '#0F172A'
-                  }}
-                  value={formData.service_date || ''}
-                  onChange={(e) => setFormData(prev => ({ ...prev, service_date: e.target.value }))}
-                  disabled={isViewOnly}
-                />
-              </View>
-
-              <View style={{ marginBottom: 16 }}>
-                <Text style={styles.fieldLabel}>Workshop / Vendor Name</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="e.g. Al Futtaim Motors"
-                  value={formData.vendor_name || ''}
-                  onChangeText={(val) => setFormData(prev => ({ ...prev, vendor_name: val }))}
-                  editable={!isViewOnly}
-                />
-              </View>
-
-              <View style={{ marginBottom: 16 }}>
-                <Text style={styles.fieldLabel}>Notes / Remarks</Text>
-                <TextInput
-                  style={[styles.modalInput, { height: 80, textAlignVertical: 'top' }]}
-                  placeholder="Enter any additional maintenance notes..."
-                  multiline
-                  value={formData.remarks || ''}
-                  onChangeText={(val) => setFormData(prev => ({ ...prev, remarks: val }))}
-                  editable={!isViewOnly}
-                />
-              </View>
-            </ScrollView>
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.cancelButton} onPress={() => setIsFormOpen(false)}>
-                <Text style={{ color: '#475569', fontWeight: '600' }}>Cancel</Text>
-              </TouchableOpacity>
-              {!isViewOnly && (
-                <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={saving}>
-                  {saving ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <>
+                <ScrollView style={{ flex: 1, padding: 20 }}>
+                  {fieldsLayout && fieldsLayout.length > 0 ? (
+                    fieldsLayout.map((section, sIdx) => (
+                      <View key={section.id || sIdx} style={{ marginBottom: 24, backgroundColor: '#FFFFFF', padding: 18, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: '#1A4D3E', marginBottom: 14, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                          {section.section_name || section.name}
+                        </Text>
+                        {(section.fields || []).map(field => (
+                          <View key={field.id} style={{ marginBottom: 16 }}>
+                            <Text style={styles.fieldLabel}>
+                              {field.name} {field.isRequired && <Text style={{ color: '#EF4444' }}>*</Text>}
+                            </Text>
+                            {renderField(field)}
+                          </View>
+                        ))}
+                      </View>
+                    ))
                   ) : (
-                    <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Save Maintenance Record</Text>
+                    <View style={{ padding: 30, alignItems: 'center' }}>
+                      <Text style={{ fontSize: 14, color: '#64748B' }}>No permitted maintenance fields found for this configuration.</Text>
+                    </View>
                   )}
-                </TouchableOpacity>
-              )}
-            </View>
+                </ScrollView>
+
+                <View style={styles.modalFooter}>
+                  {!editingRecord && !isViewOnly && (
+                    <TouchableOpacity style={[styles.cancelButton, { marginRight: 'auto' }]} onPress={() => setWizardStep(1)}>
+                      <Text style={{ color: '#475569', fontWeight: '600' }}>&lt; Back</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={styles.cancelButton} onPress={() => setIsFormOpen(false)}>
+                    <Text style={{ color: '#475569', fontWeight: '600' }}>Cancel</Text>
+                  </TouchableOpacity>
+                  {!isViewOnly && (
+                    <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={saving}>
+                      {saving ? (
+                        <ActivityIndicator color="#FFFFFF" size="small" />
+                      ) : (
+                        <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Save Maintenance Record</Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
