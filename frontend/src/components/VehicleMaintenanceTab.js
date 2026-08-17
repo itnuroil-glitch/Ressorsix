@@ -814,47 +814,145 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
               </View>
             ) : (
               <>
-                <ScrollView style={{ flex: 1, padding: 20 }}>
+                <ScrollView style={{ flex: 1, backgroundColor: '#F8FAFC' }} contentContainerStyle={{ padding: 24, paddingBottom: 20 }}>
                   {fieldsLayout && fieldsLayout.length > 0 ? (
                     fieldsLayout.map((section, sIdx) => (
-                      <View key={section.id || sIdx} style={{ marginBottom: 24, backgroundColor: '#FFFFFF', padding: 18, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0' }}>
-                        <Text style={{ fontSize: 14, fontWeight: '700', color: '#1A4D3E', marginBottom: 14, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                          {section.section_name || section.name}
-                        </Text>
-                        {(section.fields || []).map(field => (
-                          <View key={field.id} style={{ marginBottom: 16 }}>
-                            <Text style={styles.fieldLabel}>
-                              {field.name} {field.isRequired && <Text style={{ color: '#EF4444' }}>*</Text>}
-                            </Text>
-                            {renderField(field)}
-                          </View>
-                        ))}
+                      <View key={section.id || sIdx} style={{
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: 12,
+                        marginBottom: 20,
+                        borderWidth: 1,
+                        borderColor: '#E2E8F0',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.05,
+                        shadowRadius: 10,
+                        elevation: 2,
+                        overflow: 'hidden'
+                      }}>
+                        {/* Section Header */}
+                        <View style={{
+                          backgroundColor: '#F8FAFC',
+                          paddingHorizontal: 20,
+                          paddingVertical: 16,
+                          borderBottomWidth: 1,
+                          borderBottomColor: '#E2E8F0'
+                        }}>
+                          <Text style={{
+                            fontSize: 14,
+                            fontWeight: '700',
+                            color: '#1A4D3E',
+                            textTransform: 'uppercase',
+                            letterSpacing: 0.5
+                          }}>
+                            {section.section_name || section.name || 'VEHICLE MAINTENANCE DETAILS'}
+                          </Text>
+                        </View>
+
+                        {/* Section Body with 2 Columns */}
+                        <View style={{
+                          padding: 20,
+                          flexDirection: 'row',
+                          flexWrap: 'wrap',
+                          justifyContent: 'space-between'
+                        }}>
+                          {(section.fields || []).map(field => {
+                            const isFullWidth = field.type === 'Textarea' || field.type === 'File Upload' || field.type === 'Image Upload';
+                            return (
+                              <View key={field.id} style={{
+                                width: isFullWidth ? '100%' : '48%',
+                                marginBottom: 20
+                              }}>
+                                <Text style={styles.fieldLabel}>
+                                  {field.name} {field.isRequired && <Text style={{ color: '#EF4444' }}>*</Text>}
+                                </Text>
+                                {renderField(field)}
+                              </View>
+                            );
+                          })}
+                        </View>
                       </View>
                     ))
                   ) : (
-                    <View style={{ padding: 30, alignItems: 'center' }}>
+                    <View style={{ padding: 40, alignItems: 'center' }}>
                       <Text style={{ fontSize: 14, color: '#64748B' }}>No permitted maintenance fields found for this configuration.</Text>
                     </View>
                   )}
                 </ScrollView>
 
-                <View style={styles.modalFooter}>
-                  {!editingRecord && !isViewOnly && (
-                    <TouchableOpacity style={[styles.cancelButton, { marginRight: 'auto' }]} onPress={() => setWizardStep(1)}>
-                      <Text style={{ color: '#475569', fontWeight: '600' }}>&lt; Back</Text>
+                {/* Modal Footer Bar */}
+                <View style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  paddingHorizontal: 24,
+                  paddingVertical: 16,
+                  borderTopWidth: 1,
+                  borderTopColor: '#E2E8F0',
+                  backgroundColor: '#FFFFFF'
+                }}>
+                  {isViewOnly ? (
+                    <TouchableOpacity
+                      style={{
+                        paddingHorizontal: 24,
+                        paddingVertical: 10,
+                        borderRadius: 8,
+                        backgroundColor: '#1A4D3E',
+                        marginLeft: 'auto'
+                      }}
+                      onPress={() => setIsFormOpen(false)}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Close</Text>
                     </TouchableOpacity>
-                  )}
-                  <TouchableOpacity style={styles.cancelButton} onPress={() => setIsFormOpen(false)}>
-                    <Text style={{ color: '#475569', fontWeight: '600' }}>Cancel</Text>
-                  </TouchableOpacity>
-                  {!isViewOnly && (
-                    <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={saving}>
-                      {saving ? (
-                        <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <>
+                      {wizardStep === 2 && !editingRecord ? (
+                        <TouchableOpacity
+                          style={{
+                            paddingHorizontal: 20,
+                            paddingVertical: 10,
+                            borderRadius: 8,
+                            backgroundColor: '#E2E8F0'
+                          }}
+                          onPress={() => setWizardStep(1)}
+                        >
+                          <Text style={{ color: '#0F172A', fontWeight: '600' }}>Back</Text>
+                        </TouchableOpacity>
                       ) : (
-                        <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Save Maintenance Record</Text>
+                        <TouchableOpacity
+                          style={{
+                            paddingHorizontal: 20,
+                            paddingVertical: 10,
+                            borderRadius: 8,
+                            backgroundColor: '#E2E8F0'
+                          }}
+                          onPress={() => setIsFormOpen(false)}
+                        >
+                          <Text style={{ color: '#0F172A', fontWeight: '600' }}>Cancel</Text>
+                        </TouchableOpacity>
                       )}
-                    </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[{
+                          paddingHorizontal: 28,
+                          paddingVertical: 12,
+                          borderRadius: 8,
+                          backgroundColor: '#1A4D3E',
+                          justifyContent: 'center',
+                          alignItems: 'center'
+                        }, saving && { opacity: 0.7 }]}
+                        onPress={handleSave}
+                        disabled={saving}
+                      >
+                        {saving ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>
+                            {editingRecord ? 'Update Record' : 'Complete & Save'}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    </>
                   )}
                 </View>
               </>
@@ -1149,8 +1247,8 @@ const styles = StyleSheet.create({
   },
   modalContentCard: {
     width: '90%',
-    maxWidth: 640,
-    maxHeight: '85%',
+    maxWidth: 1000,
+    maxHeight: '90%',
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     overflow: 'hidden',
