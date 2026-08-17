@@ -353,26 +353,45 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
 
   return (
     <View style={styles.container}>
-      {/* Header Toolbar */}
-      <View style={styles.headerBar}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <View style={styles.headerIconContainer}>
-            <Ionicons name="construct" size={24} color="#1A4D3E" />
-          </View>
-          <View>
-            <Text style={styles.headerTitle}>Vehicle Maintenance</Text>
-            <Text style={styles.headerSubtitle}>Manage vehicle servicing, repairs, expenses, and service schedules</Text>
+      {/* MODERN VEHICLE MAINTENANCE HEADER BANNER */}
+      <View style={styles.bannerContainer}>
+        {/* Background Decorative Gradient Wave & Watermark */}
+        <View style={[styles.bannerWatermarkContainer, { pointerEvents: 'none' }]}>
+          <View style={styles.bannerOrangeGlow} />
+          <View style={styles.bannerWaveOuter} />
+          <View style={styles.bannerWaveInner} />
+          <View style={styles.bannerWatermarkIconBox}>
+            <Ionicons name="construct-outline" size={135} color="rgba(241, 118, 22, 0.08)" />
           </View>
         </View>
 
-        {/* Action Button: + Add Maintenance */}
-        <View style={{ flexDirection: 'row', gap: 10 }}>
+        {/* Banner Content Layout */}
+        <View style={styles.bannerContent}>
+          {/* Left Group: Icon Badge & Titles */}
+          <View style={styles.bannerTitleGroup}>
+            <View style={styles.bannerIconBadge}>
+              <View style={styles.bannerIconInner}>
+                <Ionicons name="construct" size={24} color="#72002A" />
+                <View style={styles.iconOrangeDot} />
+              </View>
+            </View>
+
+            <View style={styles.bannerTextStack}>
+              <Text style={styles.bannerTitle}>Vehicle Maintenance</Text>
+              <Text style={styles.bannerSubtitle}>Manage vehicle servicing, repairs, expenses, and service schedules.</Text>
+            </View>
+          </View>
+
+          {/* Right Group: Action Button (+ Add Maintenance only) */}
           <TouchableOpacity
-            style={styles.addButton}
+            style={styles.bannerAddButton}
             onPress={handleAddNewRecord}
+            activeOpacity={0.88}
           >
-            <Ionicons name="add-circle-outline" size={20} color="#FFFFFF" />
-            <Text style={styles.addButtonText}>+ Add Maintenance</Text>
+            <View style={styles.bannerAddIconBadge}>
+              <Ionicons name="add" size={14} color="#72002A" />
+            </View>
+            <Text style={styles.bannerAddButtonText}>+ Add Maintenance</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -659,47 +678,156 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  headerBar: {
+  bannerContainer: {
+    marginHorizontal: 24,
+    marginTop: 16,
+    marginBottom: 0,
+    borderRadius: 16,
+    backgroundColor: '#FFF8EF',
+    backgroundImage: 'linear-gradient(115deg, #FFFFFF 0%, #FFFDF9 45%, #FFF8EF 100%)',
+    borderWidth: 1,
+    borderColor: '#F1E7DD',
+    position: 'relative',
+    overflow: 'hidden',
+    shadowColor: '#72002A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 20,
+    elevation: 2,
+  },
+  bannerWatermarkContainer: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 340,
+    overflow: 'hidden',
+  },
+  bannerOrangeGlow: {
+    position: 'absolute',
+    right: -30,
+    bottom: -30,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(255, 180, 94, 0.15)',
+  },
+  bannerWaveOuter: {
+    position: 'absolute',
+    right: -40,
+    bottom: -50,
+    width: 290,
+    height: 190,
+    borderRadius: 145,
+    backgroundColor: 'rgba(241, 118, 22, 0.06)',
+  },
+  bannerWaveInner: {
+    position: 'absolute',
+    right: -10,
+    bottom: -70,
+    width: 210,
+    height: 160,
+    borderRadius: 105,
+    backgroundColor: 'rgba(255, 180, 94, 0.12)',
+  },
+  bannerWatermarkIconBox: {
+    position: 'absolute',
+    right: 36,
+    top: 5,
+    opacity: 0.85,
+  },
+  bannerContent: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 28,
+    paddingVertical: 20,
+    zIndex: 2,
+    flexWrap: 'wrap',
+    gap: 16,
+  },
+  bannerTitleGroup: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    gap: 16,
+    flexShrink: 1,
   },
-  headerIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    backgroundColor: '#E6F4F0',
-    justify: 'center',
+  bannerIconBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 13,
+    backgroundColor: '#FFF0E6',
+    backgroundImage: 'linear-gradient(135deg, #FFFFFF 0%, #FFF0E6 100%)',
+    justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(241, 118, 22, 0.18)',
+    shadowColor: '#72002A',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#0F172A',
+  bannerIconInner: {
+    width: 36,
+    height: 36,
+    borderRadius: 9,
+    backgroundColor: 'rgba(114, 0, 42, 0.05)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
   },
-  headerSubtitle: {
+  iconOrangeDot: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#F17616',
+  },
+  bannerTextStack: {
+    justifyContent: 'center',
+  },
+  bannerTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#72002A',
+    letterSpacing: -0.3,
+  },
+  bannerSubtitle: {
     fontSize: 13,
-    color: '#64748B',
+    fontWeight: '500',
+    color: '#8A5D6B',
     marginTop: 2,
   },
-  addButton: {
+  bannerAddButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#1A4D3E',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
+    backgroundColor: '#72002A',
+    backgroundImage: 'linear-gradient(135deg, #72002A 0%, #4A001A 100%)',
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: 11,
+    shadowColor: '#72002A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 4,
+    cursor: 'pointer',
   },
-  addButtonText: {
+  bannerAddIconBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bannerAddButtonText: {
     color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: 14,
+    fontWeight: '700',
+    fontSize: 13.5,
   },
   scrollContent: {
     flex: 1,
