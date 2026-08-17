@@ -2298,6 +2298,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (r.includes('vehicle') && r.includes('insurance') || n.includes('vehicle') && n.includes('insurance')) return 'vehicle_insurance';
     if (r.includes('vehicle') && r.includes('detail') || n.includes('vehicle') && n.includes('detail')) return 'vehicle_details';
     if (r.includes('vehicle') && r.includes('purchase') || n.includes('vehicle') && n.includes('purchase') || r.includes('vehile') && r.includes('purchase') || n.includes('vehile') && n.includes('purchase')) return 'vehicle_purchase';
+    if (r.includes('maintenance') || n.includes('maintenance')) return 'vehicle_maintenance';
     if ((r.includes('toll') || n.includes('toll')) && (r.includes('report') || n.includes('report'))) return 'vehicle_toll_report';
     if ((r.includes('toll') || n.includes('toll')) && (r.includes('transaction') || n.includes('transaction'))) return 'toll_transactions';
     if (r.includes('transaction') || n.includes('transaction')) return 'toll_transactions';
@@ -2334,6 +2335,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     const n = (name || '').toLowerCase();
     const r = (route || '').toLowerCase();
     if (n.includes('insurance') || r.includes('insurance')) return 'document-text-outline';
+    if (n.includes('maintenance') || r.includes('maintenance')) return 'build-outline';
     if (n.includes('purchase') || r.includes('purchase')) return 'cart-outline';
     if (n.includes('toll') || r.includes('toll')) return 'receipt-outline';
     if (n.includes('vehicle') || r.includes('vehicle')) return 'car-outline';
