@@ -2314,6 +2314,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (r.includes('supplier') || n.includes('supplier')) return 'supplier_details';
     if ((r.includes('payment') && r.includes('method')) || (n.includes('payment') && n.includes('method'))) return 'payment_method';
     if ((r.includes('purchase') && r.includes('detail')) || (n.includes('purchase') && n.includes('detail'))) return 'purchase_details';
+    if (r.includes('service') && r.includes('detail') || n.includes('service') && n.includes('detail') || r.includes('service-detail') || n === 'service details') return 'service_details';
     if (r.includes('uom') || n.includes('uom')) return 'uom';
     if (r.includes('vat') || n.includes('vat')) return 'vat';
     if ((r.includes('premium') || n.includes('premium') || r.includes('extra') || n.includes('extra')) && (r.includes('type') || n.includes('type') || r.includes('chargetype') || n.includes('chargetype'))) return 'premium_extra_charge_type';
@@ -2337,6 +2338,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     const r = (route || '').toLowerCase();
     if (n.includes('insurance') || r.includes('insurance')) return 'document-text-outline';
     if (n.includes('maintenance') || r.includes('maintenance')) return 'build-outline';
+    if (n.includes('service') || r.includes('service')) return 'construct-outline';
     if (n.includes('purchase') || r.includes('purchase')) return 'cart-outline';
     if (n.includes('toll') || r.includes('toll')) return 'receipt-outline';
     if (n.includes('vehicle') || r.includes('vehicle')) return 'car-outline';
