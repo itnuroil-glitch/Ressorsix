@@ -210,13 +210,12 @@ exports.getAllPurchases = async (req, res) => {
         ) AS company_name,
         (SELECT string_agg(role, ', ') FROM role WHERE p.roleid IS NOT NULL AND id::text = ANY(string_to_array(p.roleid::text, ','))) AS role_name, 
         COALESCE(
-          e.full_name, 
+          (SELECT full_name FROM employee e WHERE LOWER(TRIM(e.email)) = LOWER(TRIM(u.email)) AND (e.is_deleted = false OR e.is_deleted IS NULL) ORDER BY e.id DESC LIMIT 1), 
           u.email, 
-          (SELECT full_name FROM employee e_fallback WHERE e_fallback.roleid::text = p.roleid::text AND e_fallback.clientid::text = p.clientid::text LIMIT 1)
+          (SELECT full_name FROM employee e_fallback WHERE e_fallback.roleid::text = p.roleid::text AND e_fallback.clientid::text = p.clientid::text AND (e_fallback.is_deleted = false OR e_fallback.is_deleted IS NULL) ORDER BY e_fallback.id DESC LIMIT 1)
         ) AS employee_name
       FROM tbl_Purchases p
       LEFT JOIN users u ON p.user_id = u.id
-      LEFT JOIN employee e ON u.email = e.email
     `;
     let params = [];
     if (clientid) {

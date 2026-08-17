@@ -253,14 +253,13 @@ exports.getTollTransactionRecords = async (req, res) => {
         vd.field_data as vehicle_field_data,
         (SELECT string_agg(role, ', ') FROM role WHERE v.roleid IS NOT NULL AND id::text = ANY(string_to_array(v.roleid::text, ','))) AS role_name, 
         COALESCE(
-          e.full_name, 
+          (SELECT full_name FROM employee e WHERE LOWER(TRIM(e.email)) = LOWER(TRIM(u.email)) AND (e.is_deleted = false OR e.is_deleted IS NULL) ORDER BY e.id DESC LIMIT 1), 
           u.email, 
-          (SELECT full_name FROM employee e_fallback WHERE e_fallback.roleid::text = v.roleid::text AND e_fallback.clientid::text = v.clientid::text LIMIT 1)
+          (SELECT full_name FROM employee e_fallback WHERE e_fallback.roleid::text = v.roleid::text AND e_fallback.clientid::text = v.clientid::text AND (e_fallback.is_deleted = false OR e_fallback.is_deleted IS NULL) ORDER BY e_fallback.id DESC LIMIT 1)
         ) AS employee_name
       FROM tbl_vehicle_toll_transaction v
       LEFT JOIN tbl_vehicle_details vd ON (v.vehicle_id IS NOT NULL AND (v.vehicle_id = vd.vehicle_id OR v.vehicle_id = vd.id))
       LEFT JOIN users u ON v.user_id = u.id
-      LEFT JOIN employee e ON u.email = e.email
       WHERE (v.is_deleted = false OR v.is_deleted IS NULL)
     `;
     const params = [];

@@ -268,13 +268,12 @@ exports.getVehiclePurchase = async (req, res) => {
         c.company_name,
         (SELECT string_agg(role, ', ') FROM role WHERE v.roleid IS NOT NULL AND id::text = ANY(string_to_array(v.roleid::text, ','))) AS role_name, 
         COALESCE(
-          e.full_name, 
+          (SELECT full_name FROM employee e WHERE LOWER(TRIM(e.email)) = LOWER(TRIM(u.email)) AND (e.is_deleted = false OR e.is_deleted IS NULL) ORDER BY e.id DESC LIMIT 1), 
           u.email, 
-          (SELECT full_name FROM employee e_fallback WHERE e_fallback.roleid::text = v.roleid::text AND e_fallback.clientid::text = v.clientid::text LIMIT 1)
+          (SELECT full_name FROM employee e_fallback WHERE e_fallback.roleid::text = v.roleid::text AND e_fallback.clientid::text = v.clientid::text AND (e_fallback.is_deleted = false OR e_fallback.is_deleted IS NULL) ORDER BY e_fallback.id DESC LIMIT 1)
         ) AS employee_name
       FROM tbl_vehicle_purchase v
       LEFT JOIN users u ON v.user_id = u.id
-      LEFT JOIN employee e ON u.email = e.email
       LEFT JOIN company c ON v.company_id::text = c.id::text
     `;
     const params = [];
