@@ -281,8 +281,7 @@ exports.getVehicleInsurance = async (req, res) => {
         (SELECT string_agg(role, ', ') FROM role WHERE v.roleid IS NOT NULL AND id::text = ANY(string_to_array(v.roleid::text, ','))) AS role_name, 
         COALESCE(
           (SELECT full_name FROM employee e WHERE LOWER(TRIM(e.email)) = LOWER(TRIM(u.email)) AND (e.is_deleted = false OR e.is_deleted IS NULL) ORDER BY e.id DESC LIMIT 1), 
-          u.email, 
-          (SELECT full_name FROM employee e_fallback WHERE e_fallback.roleid::text = v.roleid::text AND e_fallback.clientid::text = v.clientid::text AND (e_fallback.is_deleted = false OR e_fallback.is_deleted IS NULL) ORDER BY e_fallback.id DESC LIMIT 1)
+          u.email
         ) AS employee_name
       FROM tbl_vehicle_insurance v
       LEFT JOIN company c ON CASE WHEN v.company_id::text ~ '^[0-9]+$' THEN v.company_id::text::integer ELSE NULL END = c.id
