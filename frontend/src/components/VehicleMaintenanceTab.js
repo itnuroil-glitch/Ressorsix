@@ -270,7 +270,7 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
         if (field.optionSource === 'dynamic' && field.dynamicOptionsList) {
           optionsList = field.dynamicOptionsList.map(opt => {
             if (typeof opt === 'string') return { label: opt, value: opt };
-            const label = opt.vehicle_name || opt.vehicle_display_name || opt.plate_no || opt.name || opt.label || opt.company_name || opt.id;
+            const label = opt.service_name || opt.service_details || opt.service_detail || opt.vehicle_name || opt.vehicle_display_name || opt.plate_no || opt.name || opt.label || opt.company_name || opt.id;
             const value = String(opt.id || opt.vehicle_id || opt.value || label);
             return { label: String(label), value: String(value) };
           });
