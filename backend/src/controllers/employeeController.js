@@ -24,7 +24,7 @@ exports.getAllEmployees = async (req, res) => {
     let queryText = `
       SELECT e.*, 
              COALESCE(e.assigned_password, u.assigned_password) as assigned_password,
-             (SELECT string_agg(role, ', ') FROM role WHERE e.roleid IS NOT NULL AND e.roleid != '' AND id::text = ANY(string_to_array(e.roleid::text, ','))) as role_name, 
+             (SELECT string_agg(role, ', ') FROM role WHERE e.roleid IS NOT NULL AND e.roleid::text != '' AND id::text = ANY(array_remove(string_to_array(e.roleid::text, ','), ''))) as role_name, 
              d.department_name,
              bc.company_name as base_company_name
       FROM employee e
