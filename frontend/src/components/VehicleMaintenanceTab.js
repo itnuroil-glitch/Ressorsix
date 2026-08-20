@@ -236,9 +236,11 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
         for (const field of (sec.fields || [])) {
           if (field.type === 'Dropdown' && field.optionSource === 'dynamic' && field.dynamicPath) {
             let path = field.dynamicPath;
-            if (path.includes('client') && clientId) {
+            if (path.includes(':clientId') || path.includes(':clientid')) {
+              path = path.replace(':clientId', clientId || '1').replace(':clientid', clientId || '1');
+            } else if (path.includes('client')) {
               if (path.endsWith('/client') || path.endsWith('/client/')) {
-                path = `${path.replace(/\/$/, '')}/${clientId}`;
+                path = `${path.replace(/\/$/, '')}/${clientId || '1'}`;
               }
             }
             try {
@@ -265,30 +267,62 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
 
   const renderField = (field) => {
     switch (field.type) {
-      case 'Dropdown': {
+      case 'Dropdown':
+      case 'MultiSelect Dropdown':
+      case 'Multiselect':
+      case 'Searchable Dropdown': {
+        const fNameLower = (field.name || field.label || '').toLowerCase();
+        const isMulti = !!(field.isMultiSelect || field.is_multi_select || field.type === 'MultiSelect Dropdown' || field.type === 'Multiselect' || fNameLower.includes('service detail') || fNameLower.includes('service details') || fNameLower.includes('service type'));
+
         let optionsList = [];
         if (field.optionSource === 'dynamic' && field.dynamicOptionsList) {
           optionsList = field.dynamicOptionsList.map(opt => {
-            if (typeof opt === 'string') return { label: opt, value: opt };
-            const label = opt.service_name || opt.service_details || opt.service_detail || opt.vehicle_name || opt.vehicle_display_name || opt.plate_no || opt.name || opt.label || opt.company_name || opt.id;
-            const value = String(opt.id || opt.vehicle_id || opt.value || label);
+            if (typeof opt === 'string') {
+              let labelStr = opt;
+              let valueStr = opt;
+              if (labelStr.includes(' - ')) {
+                const parts = labelStr.split(' - ');
+                labelStr = `${parts[0].trim()} - ${parts[1].trim()}`;
+              }
+              return { label: labelStr, value: valueStr };
+            }
+            let label = opt.vehicle_display_name || opt.Vehiclename || opt.vehiclename || opt.Plateno || opt.plateno || opt.plate_number || opt.plate_no || opt.service_name || opt.service_details || opt.service_detail || opt.vehicle_name || opt.name || opt.label || opt.company_name || opt.id;
+            let value = String(opt.id || opt.vehicle_id || opt.value || label);
+
+            // Combined format: Vehicle Name - Plate No
+            const vName = opt.vehicle_name || (String(label).includes(' - ') ? String(label).split(' - ')[0].trim() : null);
+            const pNo = opt.plate_no || opt.plateno || opt.plate_number || (String(label).includes(' - ') ? String(label).split(' - ')[1].trim() : null);
+
+            if (vName && pNo && vName !== pNo) {
+              label = `${vName} - ${pNo}`;
+            }
+
             return { label: String(label), value: String(value) };
           });
         } else if (field.options) {
           const rawOpts = typeof field.options === 'string' ? field.options.split(',').map(s => s.trim()) : field.options;
-          optionsList = rawOpts.map(opt => ({ label: String(opt), value: String(opt) }));
+          optionsList = rawOpts.map(opt => {
+            let label = typeof opt === 'object' ? (opt.label !== undefined ? opt.label : opt.value) : String(opt);
+            let value = typeof opt === 'object' ? (opt.value !== undefined ? opt.value : opt.label) : String(opt);
+            if (String(label).includes(' - ')) {
+              const parts = String(label).split(' - ');
+              label = `${parts[0].trim()} - ${parts[1].trim()}`;
+            }
+            return { label: String(label), value: String(value) };
+          });
         }
 
         return (
           <SearchableDropdown
             data={optionsList}
-            value={String(formData[field.id] || '')}
+            value={formData[field.id] !== undefined && formData[field.id] !== null ? String(formData[field.id]) : ''}
             onChange={(val) => handleInputChange(field.id, val)}
             placeholder="Select..."
             searchPlaceholder={`Search ${field.name}...`}
             displayKey="label"
             valueKey="value"
             disabled={isViewOnly}
+            isMultiSelect={isMulti}
           />
         );
       }
@@ -868,7 +902,8 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
                             position: 'relative'
                           }}>
                             {(section.fields || []).map((field, fIdx) => {
-                              const isFullWidth = field.type === 'Textarea' || field.type === 'File Upload' || field.type === 'Image Upload';
+                              const fNameLower = (field.name || '').toLowerCase();
+                              const isFullWidth = field.isFullWidth || field.type === 'Textarea' || (fNameLower.includes('invoice') && (field.type === 'File Upload' || field.type === 'Image Upload'));
                               return (
                                 <View key={field.id} style={{
                                   width: isFullWidth ? '100%' : '48%',

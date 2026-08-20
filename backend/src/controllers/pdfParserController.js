@@ -181,28 +181,34 @@ exports.parsePdfDocument = async (req, res) => {
 
     // C. Match Document / Bill Number Regex
     const docNoPatterns = [
+      /\b(INV[-/A-Z0-9]{4,25}|BILL[-/A-Z0-9]{4,25}|I400\d{6,12}|1400\d{6,12}|100\d{7,12})\b/i,
       /(?:bill\s*number|invoice\s*number|doc(?:ument)?\s*number|contract\s*no|ref(?:erence)?|agreement|inv\s*no|tax\s*invoice\s*no|invoice\s*#|bill\s*#|tax\s*invoice\s*#)\s*[:.-]?\s*[\r\n]*\s*([A-Z0-9/-]{4,35})/i,
-      /(?:invoice|bill|tax\s*invoice)\s*:\s*([A-Z0-9/-]{4,35})/i,
-      /\b(INV[-/A-Z0-9]{4,25}|BILL[-/A-Z0-9]{4,25}|100\d{7,12}|\d{8,14})\b/i
+      /(?:invoice|bill|tax\s*invoice)\s*:\s*([A-Z0-9/-]{4,35})/i
     ];
     for (const pat of docNoPatterns) {
       const m = rawText.match(pat);
       if (m && m[1] && m[1].trim().length > 3) {
-        matchedDocNumber = m[1].trim();
-        break;
+        const cand = m[1].trim();
+        if (!/^(your|bill|account|number|date|invoice|summary|total|period|issue)$/i.test(cand)) {
+          matchedDocNumber = cand;
+          break;
+        }
       }
     }
 
     // D. Match Account Number / Mobile Number Regex
     const accNoPatterns = [
-      /(?:account\s*number|acc\s*no|mobile\s*number|phone\s*no|customer\s*account|subscriber\s*no|cust\s*acc|service\s*no|account\s*id|service\s*id)\s*[:.-]?\s*[\r\n]*\s*([\d\s-]{7,25})/i,
+      /(?:for\s*account\s*number|customer\s*account\s*number|account\s*number|acc\s*no|mobile\s*number|phone\s*no|subscriber\s*no|cust\s*acc|service\s*no|account\s*id|service\s*id)\s*[:.-]?\s*[\r\n]*\s*([\d\s-]{7,25})/i,
       /(?:account|mobile|phone|service)\s*:\s*([\d\s-]{7,25})/i
     ];
     for (const pat of accNoPatterns) {
       const m = rawText.match(pat);
       if (m && m[1]) {
-        matchedMobileAccount = m[1].replace(/\s+/g, ' ').trim();
-        break;
+        const cand = m[1].replace(/\s+/g, ' ').trim();
+        if (!/^(your|bill|account|number|date|invoice)$/i.test(cand) && cand.length >= 7) {
+          matchedMobileAccount = cand;
+          break;
+        }
       }
     }
     if (!matchedMobileAccount) {
@@ -311,12 +317,19 @@ exports.parsePdfDocument = async (req, res) => {
       }
     }
 
-    // M. Match Telecom Provider
+    // M. Enhanced Telecom Provider Detection (Etisalat vs du vs Others)
     let matchedTelecomProvider = '';
-    if (/\b(?:etisalat|e&)\b/i.test(rawText) || /etisalat/i.test(rawText)) {
-      matchedTelecomProvider = 'Etisalat';
-    } else if (/\bdu\b/i.test(rawText)) {
+    const isDuKeywords = /\b(du|emirates integrated telecommunications|power\s*\d+\s*data\s*flexi|a closer look at your mobile plans)\b/i.test(rawText);
+    const isDuBillNo = /^I400\d+/i.test(matchedDocNumber) || /^1400\d+/i.test(matchedDocNumber);
+    const isDuAccountNo = /^28\d{8}$/.test(matchedMobileAccount.replace(/\s+/g, ''));
+
+    const isEtisalatKeywords = /\b(etisalat|e&|emirates telecommunications group|usage & services details)\b/i.test(rawText);
+    const isEtisalatBillNo = /^INV/i.test(matchedDocNumber);
+
+    if (isDuKeywords || isDuBillNo || isDuAccountNo) {
       matchedTelecomProvider = 'du';
+    } else if (isEtisalatKeywords || isEtisalatBillNo) {
+      matchedTelecomProvider = 'Etisalat';
     } else if (/\bvirgin\b/i.test(rawText)) {
       matchedTelecomProvider = 'Virgin';
     } else if (/\bvodafone\b/i.test(rawText)) {
@@ -327,18 +340,16 @@ exports.parsePdfDocument = async (req, res) => {
       matchedTelecomProvider = 'Ooredoo';
     } else if (/\bzain\b/i.test(rawText)) {
       matchedTelecomProvider = 'Zain';
-    } else if (/\bmobily\b/i.test(rawText)) {
-      matchedTelecomProvider = 'Mobily';
     } else {
       matchedTelecomProvider = 'Etisalat';
     }
 
-    // N. Match Total / Bill Amount Regex
+    // N. Match Total / Bill Amount Regex (Includes du "this month's bill" patterns)
     let matchedTotalAmount = '';
     const amountPatterns = [
+      /(?:this\s*month['’]?s\s*bill|your\s*bill\s*for\s*this\s*month)\s*[\r\n]*\s*(?:for\s*account\s*number\s*\d+)?\s*[\r\n]*\s*AED\s*([\d,]+\.\d{2})/i,
       /(?:current\s*month\s*charges|total\s*bill|net\s*amount|grand\s*total|total\s*due|amount\s*due|total\s*amount|total\s*current\s*charges|amount\s*payable|total\s*payable)\s*[:.-]?\s*[\r\n]*\s*(?:AED|USD|\$|SAR|QAR)?\s*([\d,]+\.?\d{2})/i,
-      /(?:AED|USD|\$)\s*([\d,]+\.\d{2})/i,
-      /\b([\d,]+\.\d{2})\s*(?:AED|USD|\$)/i
+      /(?:AED|USD|\$)\s*([\d,]+\.\d{2})/i
     ];
     for (const pat of amountPatterns) {
       const m = rawText.match(pat);
@@ -386,11 +397,11 @@ exports.parsePdfDocument = async (req, res) => {
     }
 
     // Universal Fallback for Document / Bill Number
-    if (!matchedDocNumber) {
+    if (!matchedDocNumber || /^(your|bill|account|number|date|invoice)$/i.test(matchedDocNumber)) {
       const allTokens = rawText.match(/\b([A-Z0-9/-]{6,25})\b/g) || [];
       for (const tok of allTokens) {
         const cleanedTok = tok.trim();
-        if (/^(?!\d+$)[A-Z0-9/-]{6,25}$/i.test(cleanedTok) && !/^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|AED|USD|TEL|FAX|HTTP|WWW)/i.test(cleanedTok)) {
+        if (/^(?!\d+$)[A-Z0-9/-]{6,25}$/i.test(cleanedTok) && !/^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|AED|USD|TEL|FAX|HTTP|WWW|YOUR|BILL|ACCOUNT|SUMMARY|TOTAL|PAGE|POWER|TAX|FEE)/i.test(cleanedTok)) {
           matchedDocNumber = cleanedTok;
           break;
         }
@@ -446,10 +457,71 @@ exports.parsePdfDocument = async (req, res) => {
       }
     }
 
-    // G. Generate Remarks Snippet
-    const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    const titleSnippet = lines.slice(0, 3).join(' | ');
-    matchedRemarks = `Auto-extracted from PDF: ${file_name || 'document'}. (${titleSnippet.slice(0, 80)})`;
+    // Helper for Layer 2: Prefix Fallback Categorization
+    const detectCategoryByPrefix = (destNum) => {
+      if (!destNum) return 'National Call';
+      const clean = destNum.trim();
+      if (/^(0600|600|800)/.test(clean)) return 'Calls to Special Number';
+      if (/^(\+971|00971|05|02|03|04|06|07|09)/.test(clean)) return 'National Call';
+      if (/^(\+|00)/.test(clean)) return 'International Call';
+      return 'National Call';
+    };
+
+    // Extract Itemized Call Logs using Dual-Layer Categorization (Primary: Section Banner | Fallback: Phone Prefix)
+    const extractedCallLogs = [];
+    const callLogRegex = /(\d{2}\/\d{2}|\d{1,2}\s+[A-Za-z]{3}(?:\s+\d{4})?)\s+(\d{2}:\d{2}(?::\d{2})?)\s+[ÌI]?([+\d]{7,20})[ÍI]?\s+(?:([A-Za-z\s]{2,20})\s+)?(\d{2}:\d{2}:\d{2})\s+([\d.]+)/i;
+
+    const rawLines = rawText.split(/\r?\n/);
+    let activeBannerCategory = null;
+
+    for (const rawLine of rawLines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+
+      // Layer 1: Detect Section Heading Banners & Update Category State
+      if (/incoming\s*roaming/i.test(line)) {
+        activeBannerCategory = 'Incoming Roaming Call';
+      } else if (/outgoing\s*roaming/i.test(line)) {
+        activeBannerCategory = 'Outgoing Roaming Call';
+      } else if (/international\s*calls?/i.test(line)) {
+        activeBannerCategory = 'International Call';
+      } else if (/special\s*numbers?/i.test(line)) {
+        activeBannerCategory = 'Calls to Special Number';
+      } else if (/premium\s*sms|sms\s*&\s*messaging|text\s*message/i.test(line)) {
+        activeBannerCategory = 'Premium SMS';
+      } else if (/national\s*calls?|calls?\s*to\s*mobile|local\s*calls?/i.test(line)) {
+        activeBannerCategory = 'National Call';
+      }
+
+      // Check if current line is a Call Log Data Row
+      const logMatch = line.match(callLogRegex);
+      if (logMatch) {
+        let callDate = logMatch[1];
+        if (callDate.includes('/') && matchedPeriodTo) {
+          const yearStr = matchedPeriodTo.slice(0, 4);
+          const [d, m] = callDate.split('/');
+          const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          const mIdx = parseInt(m, 10) - 1;
+          if (months[mIdx]) callDate = `${d} ${months[mIdx]} ${yearStr}`;
+        }
+
+        const destNum = logMatch[3];
+
+        // Combine Layer 1 (Active Banner) and Layer 2 (Prefix Fallback)
+        const finalCategory = activeBannerCategory || detectCategoryByPrefix(destNum);
+
+        extractedCallLogs.push({
+          bill_number: matchedDocNumber,
+          source_number: matchedMobileAccount,
+          call_date: callDate,
+          call_time: logMatch[2],
+          destination_number: destNum,
+          duration: logMatch[5],
+          category: finalCategory,
+          amount: parseFloat(logMatch[6] || 0)
+        });
+      }
+    }
 
     res.status(200).json({
       message: 'PDF data extracted successfully.',
@@ -472,6 +544,7 @@ exports.parsePdfDocument = async (req, res) => {
         vat: matchedVat,
         total_amount: matchedTotalAmount,
         remarks: matchedRemarks,
+        call_logs: extractedCallLogs,
         dynamic_field_map: dynamicFieldMap
       },
       rawTextSnippet: rawText.slice(0, 500)

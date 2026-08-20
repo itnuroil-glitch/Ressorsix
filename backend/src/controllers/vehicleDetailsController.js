@@ -445,10 +445,10 @@ exports.updateVehicleDetails = async (req, res) => {
 exports.getVehiclesByClient = async (req, res) => {
   try {
     let clientId = req.params.clientId || req.params.clientid || req.query.clientId || req.query.clientid;
-    if (!clientId || clientId.trim() === '') {
+    if (!clientId || clientId.trim() === '' || clientId === ':clientId' || clientId.startsWith(':')) {
       const clientRes = await db.query('SELECT id FROM client WHERE isdelete = false ORDER BY id ASC LIMIT 1');
       if (clientRes.rows.length > 0) {
-        clientId = clientRes.rows[0].id;
+        clientId = String(clientRes.rows[0].id);
       }
     }
 
@@ -505,7 +505,7 @@ exports.getVehiclesByClient = async (req, res) => {
     const query = `
       SELECT id, vehicle_id, field_data 
       FROM tbl_vehicle_details 
-      WHERE clientid = $1
+      WHERE clientid::text = $1
       ORDER BY id DESC
     `;
     const { rows } = await db.query(query, [clientId]);
@@ -594,10 +594,10 @@ exports.getVehiclesByClient = async (req, res) => {
 exports.getVehiclePlatesByClient = async (req, res) => {
   try {
     let clientId = req.params.clientId || req.params.clientid || req.query.clientId || req.query.clientid;
-    if (!clientId || clientId.trim() === '') {
+    if (!clientId || clientId.trim() === '' || clientId === ':clientId' || clientId.startsWith(':')) {
       const clientRes = await db.query('SELECT id FROM client WHERE isdelete = false ORDER BY id ASC LIMIT 1');
       if (clientRes.rows.length > 0) {
-        clientId = clientRes.rows[0].id;
+        clientId = String(clientRes.rows[0].id);
       }
     }
 
@@ -627,7 +627,7 @@ exports.getVehiclePlatesByClient = async (req, res) => {
     const query = `
       SELECT id, vehicle_id, field_data 
       FROM tbl_vehicle_details 
-      WHERE clientid = $1
+      WHERE clientid::text = $1
       ORDER BY id DESC
     `;
     const { rows } = await db.query(query, [clientId]);

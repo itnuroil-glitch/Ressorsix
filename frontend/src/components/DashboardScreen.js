@@ -42,6 +42,7 @@ import VATTab from './VATTab';
 import PlanManagementTab from './PlanManagementTab';
 import SimPlanTab from './SimPlanTab';
 import TelecomProviderTab from './TelecomProviderTab';
+import TelecomReportTab from './TelecomReportTab';
 import TeleCategoryTab from './TeleCategoryTab';
 import TeleChargeTypeTab from './TeleChargeTypeTab';
 import SimDetailsTab from './SimDetailsTab';
@@ -2271,6 +2272,7 @@ export default function DashboardScreen({ user, onSignOut }) {
   const getTabIdByRoute = (name, route) => {
     let r = route ? route.toLowerCase().trim() : '';
     let n = name ? name.toLowerCase().trim() : '';
+    if (n === 'telecome report' || n === 'telecom report' || r === '/telecome_report' || r === '/telecom_report' || r === '/telecom-report' || (n.includes('tele') && n.includes('report')) || (r.includes('tele') && r.includes('report'))) return 'telecom_report';
     if (n.includes('licensing') || n.includes('license_auth') || r.includes('company-license') || r.includes('licensing-authority')) return 'company_license_auth';
     if ((n.includes('system') || n.includes('sytem')) && n.includes('setting') || r.includes('system-setting') || n === 'system_settings') return 'system_settings';
     if (n.includes('company') && n.includes('legal') || n.includes('legal_form') || r.includes('company-legal') || r.includes('legal-form')) return 'company_legal_form';
@@ -2327,6 +2329,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (r.includes('usage') || n.includes('usage') || r.includes('charge') || n.includes('charge')) return 'usage_charges';
     if ((r.includes('type') || n.includes('type')) && (r.includes('doc') || n.includes('doc') || r.includes('doument') || n.includes('document'))) return 'tele_doc_type';
     if (r.includes('doc') || n.includes('doc') || r.includes('document') || n.includes('document')) return 'telecom_document';
+    if ((r.includes('tele') || n.includes('tele')) && (r.includes('report') || n.includes('report'))) return 'telecom_report';
     if (r.includes('telecom') || n.includes('telecom') || r.includes('telecome') || n.includes('telecome')) return 'telecom_provider';
     if (r.includes('sim') || n.includes('sim')) return 'sim_plan';
     return null; // unknown route — don't switch tab
@@ -2417,7 +2420,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (tabId === 'plans') {
       return String(user.roleId) === '1';
     }
-    if (tabId === 'dashboard' || tabId === 'profile' || tabId === 'shipments' || tabId === 'analytics' || tabId === 'tele_doc_type') {
+    if (tabId === 'dashboard' || tabId === 'profile' || tabId === 'shipments' || tabId === 'analytics' || tabId === 'tele_doc_type' || tabId === 'telecom_report' || tabId === 'telecome_report') {
       return true;
     }
     const tabModules = modules.filter(m => getTabIdByRoute(m.module_name, m.route) === tabId);
@@ -5864,6 +5867,10 @@ export default function DashboardScreen({ user, onSignOut }) {
         return <SimPlanTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('sim_plan')} checkRowPermission={(compId, act) => checkRowPermission('sim_plan', compId, act)} />;
       case 'telecom_provider':
         return <TelecomProviderTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('telecom_provider')} checkRowPermission={(compId, act) => checkRowPermission('telecom_provider', compId, act)} />;
+      case 'telecom_report':
+      case 'telecome_report':
+      case 'tele_report':
+        return <TelecomReportTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'tele_category':
         return <TeleCategoryTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('tele_category')} checkRowPermission={(compId, act) => checkRowPermission('tele_category', compId, act)} />;
       case 'tele_charge_type':
