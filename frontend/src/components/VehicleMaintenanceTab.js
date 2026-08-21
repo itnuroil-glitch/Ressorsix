@@ -206,7 +206,7 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
             id: 'sec_maintenance',
             section_name: 'Vehicle Maintenance Details',
             fields: [
-              { id: 'vehicle_id', name: 'Select Vehicle', type: 'Dropdown', optionSource: 'dynamic', dynamicPath: '/api/vehicle-details/client-vehicles' },
+              { id: 'vehicle_id', name: 'Select Vehicle', type: 'Searchable Dropdown', optionSource: 'dynamic', dynamicPath: '/api/vehicle-details/client/:clientId' },
               { id: 'service_type', name: 'Service Type', type: 'Dropdown', options: 'Oil & Filter Change, Tire Replacement, Brake Service, Battery Replacement, Transmission Repair, AC Repair, General Inspection' },
               { id: 'service_date', name: 'Service Date', type: 'Date' },
               { id: 'odometer_km', name: 'Current Odometer (KM)', type: 'Number' },
@@ -231,16 +231,24 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
         })).filter(sec => sec.fields && sec.fields.length > 0);
       }
 
+      const activeClientId = clientId || user?.client_id || user?.clientid || '1';
+
       // Fetch dynamic options for dropdowns if needed
       for (const sec of (parsedSections || [])) {
         for (const field of (sec.fields || [])) {
-          if (field.type === 'Dropdown' && field.optionSource === 'dynamic' && field.dynamicPath) {
-            let path = field.dynamicPath;
-            if (path.includes(':clientId') || path.includes(':clientid')) {
-              path = path.replace(':clientId', clientId || '1').replace(':clientid', clientId || '1');
+          const isDropdownType = field.type === 'Dropdown' || field.type === 'Searchable Dropdown' || field.type === 'MultiSelect Dropdown' || field.type === 'Multiselect' || field.type === 'Radio Button' || field.type === 'Checkbox';
+          const isDynamic = field.optionSource === 'dynamic' || field.optionSource === 'dynamicLink' || field.optionSource === 'dynamic_link' || !!field.dynamicPath || !!field.dynamicLink || !!field.apiPath;
+          const dynamicUrl = field.dynamicPath || field.dynamicLink || field.apiPath;
+
+          if (isDropdownType && isDynamic && dynamicUrl) {
+            let path = dynamicUrl;
+            if (path.includes('client-vehicles')) {
+              path = path.replace('client-vehicles', `client/${activeClientId}`);
+            } else if (path.includes(':clientId') || path.includes(':clientid')) {
+              path = path.replace(':clientId', activeClientId).replace(':clientid', activeClientId);
             } else if (path.includes('client')) {
               if (path.endsWith('/client') || path.endsWith('/client/')) {
-                path = `${path.replace(/\/$/, '')}/${clientId || '1'}`;
+                path = `${path.replace(/\/$/, '')}/${activeClientId}`;
               }
             }
             try {
@@ -275,7 +283,9 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
         const isMulti = !!(field.isMultiSelect || field.is_multi_select || field.type === 'MultiSelect Dropdown' || field.type === 'Multiselect' || fNameLower.includes('service detail') || fNameLower.includes('service details') || fNameLower.includes('service type'));
 
         let optionsList = [];
-        if (field.optionSource === 'dynamic' && field.dynamicOptionsList) {
+        const isDynamicField = field.optionSource === 'dynamic' || field.optionSource === 'dynamicLink' || field.optionSource === 'dynamic_link' || !!field.dynamicPath || !!field.dynamicLink || !!field.apiPath;
+
+        if (isDynamicField && field.dynamicOptionsList) {
           optionsList = field.dynamicOptionsList.map(opt => {
             if (typeof opt === 'string') {
               let labelStr = opt;
