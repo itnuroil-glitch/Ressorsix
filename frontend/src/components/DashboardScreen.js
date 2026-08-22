@@ -41,6 +41,7 @@ import UOMTab from './UOMTab';
 import VATTab from './VATTab';
 import PlanManagementTab from './PlanManagementTab';
 import SimPlanTab from './SimPlanTab';
+import SimConnectionTypeTab from './SimConnectionTypeTab';
 import TelecomProviderTab from './TelecomProviderTab';
 import TelecomReportTab from './TelecomReportTab';
 import TeleCategoryTab from './TeleCategoryTab';
@@ -2331,6 +2332,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (r.includes('doc') || n.includes('doc') || r.includes('document') || n.includes('document')) return 'telecom_document';
     if ((r.includes('tele') || n.includes('tele')) && (r.includes('report') || n.includes('report'))) return 'telecom_report';
     if (r.includes('telecom') || n.includes('telecom') || r.includes('telecome') || n.includes('telecome')) return 'telecom_provider';
+    if (r.includes('connection') || n.includes('connection') || r.includes('connect') || n.includes('connect')) return 'sim_connection_type';
     if (r.includes('sim') || n.includes('sim')) return 'sim_plan';
     return null; // unknown route — don't switch tab
   };
@@ -5865,6 +5867,10 @@ export default function DashboardScreen({ user, onSignOut }) {
         return <PlanManagementTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('plans')} checkRowPermission={(compId, act) => checkRowPermission('plans', compId, act)} />;
       case 'sim_plan':
         return <SimPlanTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('sim_plan')} checkRowPermission={(compId, act) => checkRowPermission('sim_plan', compId, act)} />;
+      case 'sim_connection_type':
+      case 'sim_connection':
+      case 'connection_type':
+        return <SimConnectionTypeTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('sim_connection_type')} checkRowPermission={(compId, act) => checkRowPermission('sim_connection_type', compId, act)} />;
       case 'telecom_provider':
         return <TelecomProviderTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('telecom_provider')} checkRowPermission={(compId, act) => checkRowPermission('telecom_provider', compId, act)} />;
       case 'telecom_report':

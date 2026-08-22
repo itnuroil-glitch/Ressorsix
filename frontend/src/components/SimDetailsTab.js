@@ -8,7 +8,8 @@ import {
   StyleSheet,
   Modal,
   useWindowDimensions,
-  ActivityIndicator
+  ActivityIndicator,
+  Switch
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS } from '../theme';
@@ -50,15 +51,52 @@ export default function SimDetailsTab({
   const [providers, setProviders] = useState([]);
   const [simPlans, setSimPlans] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [connectionTypes, setConnectionTypes] = useState([]);
 
   // Wizard & Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewOnly, setIsViewOnly] = useState(false);
+  const [isAddOnMode, setIsAddOnMode] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [wizardStep, setWizardStep] = useState(1); // 1: Configuration, 2: Form Data
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [successDetails, setSuccessDetails] = useState(null);
+
+  // Add On View Modal State
+  const [showAddOnViewModal, setShowAddOnViewModal] = useState(false);
+  const [addOnRecords, setAddOnRecords] = useState([]);
+  const [loadingAddOns, setLoadingAddOns] = useState(false);
+  const [addOnSearch, setAddOnSearch] = useState('');
+
+  const fetchAddOnRecords = async () => {
+    setLoadingAddOns(true);
+    try {
+      const clientId = selectedClient || user?.clientid || '';
+      const res = await fetch(`${API_URL}/api/add-ons?client_id=${clientId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setAddOnRecords(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      console.error('Error fetching add-on records:', e);
+    } finally {
+      setLoadingAddOns(false);
+    }
+  };
+
+  const deleteAddOnRecord = async (id) => {
+    if (window.confirm && !window.confirm('Are you sure you want to delete this Add-On record?')) return;
+    try {
+      const res = await fetch(`${API_URL}/api/add-ons/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        showToast('Add-On record deleted successfully', 'success');
+        fetchAddOnRecords();
+      }
+    } catch (e) {
+      showToast('Failed to delete Add-On record', 'error');
+    }
+  };
 
   // Custom Fields & Layout State
   const [fieldsLayout, setFieldsLayout] = useState(null);
@@ -102,20 +140,22 @@ export default function SimDetailsTab({
       const clientQuery = user?.clientid ? `?clientid=${user.clientid}` : '';
       const endpoint = isTelecomDataView ? 'telecom-data' : 'sim-details';
       
-      const [simRes, clientsRes, providersRes, plansRes, empRes] = await Promise.all([
+      const [simRes, clientsRes, providersRes, plansRes, empRes, connTypesRes] = await Promise.all([
         fetch(`${API_URL}/api/${endpoint}${clientQuery}`),
         fetch(`${API_URL}/api/clients`),
         fetch(`${API_URL}/api/telecom-providers${user?.clientid ? `?client_id=${user.clientid}` : ''}`),
         fetch(`${API_URL}/api/sim-plans${user?.clientid ? `?client_id=${user.clientid}` : ''}`),
-        fetch(`${API_URL}/api/employees${clientQuery}`)
+        fetch(`${API_URL}/api/employees${clientQuery}`),
+        fetch(`${API_URL}/api/sim-connection-types`)
       ]);
 
-      const [simData, clientsData, providersData, plansData, empData] = await Promise.all([
+      const [simData, clientsData, providersData, plansData, empData, connTypesData] = await Promise.all([
         simRes.ok ? simRes.json() : [],
         clientsRes.ok ? clientsRes.json() : [],
         providersRes.ok ? providersRes.json() : [],
         plansRes.ok ? plansRes.json() : [],
-        empRes.ok ? empRes.json() : []
+        empRes.ok ? empRes.json() : [],
+        connTypesRes && connTypesRes.ok ? connTypesRes.json() : []
       ]);
 
       setRecords(Array.isArray(simData) ? simData : []);
@@ -123,6 +163,7 @@ export default function SimDetailsTab({
       setProviders(Array.isArray(providersData) ? providersData : []);
       setSimPlans(Array.isArray(plansData) ? plansData : []);
       setEmployees(Array.isArray(empData) ? empData : []);
+      setConnectionTypes(Array.isArray(connTypesData) ? connTypesData : []);
 
       if (user?.clientid) {
         setSelectedClient(String(user.clientid));
@@ -171,7 +212,7 @@ export default function SimDetailsTab({
       const isSimModule = (cf) => {
         const modId = String(cf.moduleid || cf.module_id || '');
         const modName = String(cf.module_name || '').toLowerCase();
-        if (modId === '55') return true;
+        if (modId === '52' || modId === '55' || modId === '59') return true;
         if (modName.includes('document')) return false;
         return modName.includes('sim') || modName === 'telecom details' || modName.includes('telecom detail');
       };
@@ -196,8 +237,14 @@ export default function SimDetailsTab({
           if (permRes.ok) {
             const permissionsList = await permRes.json();
             const activePerm = permissionsList.find(p =>
-              (String(p.clientid) === String(clientId) || !p.clientid) &&
-              (String(p.module_name || '').toLowerCase().includes('telecom') || String(p.module_name || '').toLowerCase().includes('sim') || String(p.moduleid) === String(matchingFieldDef.moduleid || matchingFieldDef.module_id))
+              (String(p.clientid || p.client_id) === String(clientId) || !p.clientid) &&
+              (
+                String(p.moduleid || p.module_id) === '52' ||
+                String(p.moduleid || p.module_id) === '59' ||
+                String(p.moduleid || p.module_id) === String(matchingFieldDef.moduleid || matchingFieldDef.module_id) ||
+                String(p.module_name || '').toLowerCase().includes('telecom') ||
+                String(p.module_name || '').toLowerCase().includes('sim')
+              )
             );
             if (activePerm && activePerm.permitted_fields) {
               permittedFields = typeof activePerm.permitted_fields === 'string'
@@ -312,14 +359,15 @@ export default function SimDetailsTab({
     }
   };
 
-  const openModal = async (record = null, viewMode = false) => {
+  const openModal = async (record = null, viewMode = false, addOnMode = false) => {
     setIsViewOnly(viewMode);
+    setIsAddOnMode(addOnMode);
     const targetClient = record?.clientid ? String(record.clientid) : (user?.clientid ? String(user.clientid) : selectedClient);
     if (targetClient) {
       await fetchFormConfiguration(targetClient);
     }
     if (record) {
-      setEditingId(record.id);
+      setEditingId(record.tele_id || record.id);
       setSelectedClient(record.clientid ? String(record.clientid) : '');
       if (record.clientid) {
         fetchCompaniesForClient(String(record.clientid));
@@ -337,11 +385,11 @@ export default function SimDetailsTab({
         ...record,
         ...fd,
         company: record.company || record.company_id || fd.company || '',
-        telecom_provider: record.telecom_provider || fd.telecom_provider || '',
-        mobile_number: record.mobile_number || record.mobile_account || fd.mobile_number || '',
+        telecom_provider: record.telecom_provider || fd.telecom_provider || fd['Telecom Provider'] || '',
+        mobile_number: record.mobile_number || record.mobile_account || fd.mobile_number || fd['mobile_number'] || '',
         mobile_account: record.mobile_account || record.mobile_number || fd.mobile_account || '',
-        sim_number: record.sim_number || fd.sim_number || '',
-        account_number: record.account_number || record.mobile_account || fd.account_number || '',
+        sim_number: record.sim_number || fd.sim_number || fd['SIM Number / ICCID'] || fd['Sim No'] || '',
+        account_number: record.account_number || record.mobile_account || fd.account_number || fd['Account Number'] || fd['Account No '] || fd['Account No'] || '',
         bill_number: record.bill_number || record.doc_number || fd.bill_number || '',
         doc_number: record.doc_number || record.bill_number || fd.doc_number || '',
         period_from: record.period_from || fd.period_from || '',
@@ -355,20 +403,20 @@ export default function SimDetailsTab({
         other_charges: record.other_charges || fd.other_charges || '',
         vat: record.vat || fd.vat || '',
         total_amount: record.total_amount || fd.total_amount || '',
-        plan_name: record.plan_name || fd.plan_name || '',
-        monthly_plan_amount: record.monthly_plan_amount || fd.monthly_plan_amount || '',
-        data_allowance: record.data_allowance || fd.data_allowance || '',
-        local_minutes: record.local_minutes || fd.local_minutes || '',
-        international_minutes: record.international_minutes || fd.international_minutes || '',
-        local_sms_allowance: record.local_sms_allowance || fd.local_sms_allowance || '',
-        international_sms_allowance: record.international_sms_allowance || fd.international_sms_allowance || '',
-        activation_date: record.activation_date || fd.activation_date || '',
-        contract_start_date: record.contract_start_date || fd.contract_start_date || '',
-        contract_expiry_date: record.contract_expiry_date || fd.contract_expiry_date || '',
-        assigned_employee: record.assigned_employee || fd.assigned_employee || '',
-        department: record.department || fd.department || '',
-        status: record.status || fd.status || 'Active',
-        remarks: record.remarks || fd.remarks || ''
+        plan_name: record.plan_name || fd.plan_name || fd['Plan Name'] || fd['Package Plan '] || '',
+        monthly_plan_amount: record.monthly_plan_amount || fd.monthly_plan_amount || fd['Monthly Plan Amount '] || '',
+        data_allowance: record.data_allowance || fd.data_allowance || fd['Data Allowance'] || '',
+        local_minutes: record.local_minutes || fd.local_minutes || fd['Local Minutes'] || '',
+        international_minutes: record.international_minutes || fd.international_minutes || fd['International Minutes'] || '',
+        local_sms_allowance: record.local_sms_allowance || fd.local_sms_allowance || fd['Local SMS'] || '',
+        international_sms_allowance: record.international_sms_allowance || fd.international_sms_allowance || fd['International SMS'] || '',
+        activation_date: record.activation_date || fd.activation_date || fd['Activation Date'] || '',
+        contract_start_date: record.contract_start_date || fd.contract_start_date || fd['Contract Start Date'] || fd['Contract From'] || '',
+        contract_expiry_date: record.contract_expiry_date || fd.contract_expiry_date || fd['Contract Expiry Date'] || fd['Contract To'] || '',
+        assigned_employee: record.assigned_employee || fd.assigned_employee || fd['Assigned Employee'] || '',
+        department: record.department || fd.department || fd['Department'] || '',
+        status: record.status || fd.status || fd['SIM Status'] || 'Active',
+        remarks: record.remarks || fd.remarks || fd['Remarks'] || fd['Notes '] || ''
       });
       setAttachedPdfName(record.pdf_name || fd.attached_pdf || fd.invoice_pdf || '');
       setPdfBase64(record.pdf_base64 || '');
@@ -420,6 +468,45 @@ export default function SimDetailsTab({
     setWizardStep(2);
   };
 
+  const getFieldValue = (field) => {
+    if (!field) return '';
+    const id = field.id;
+    const rawName = field.name || '';
+    const trimmedName = rawName.trim();
+    const lowerName = trimmedName.toLowerCase();
+
+    if (formData[id] !== undefined && formData[id] !== null && formData[id] !== '') return String(formData[id]);
+    if (formData[rawName] !== undefined && formData[rawName] !== null && formData[rawName] !== '') return String(formData[rawName]);
+    if (formData[trimmedName] !== undefined && formData[trimmedName] !== null && formData[trimmedName] !== '') return String(formData[trimmedName]);
+
+    // Check matching key in formData case-insensitively / trimmed
+    const matchKey = Object.keys(formData).find(k => k.trim().toLowerCase() === lowerName);
+    if (matchKey && formData[matchKey] !== undefined && formData[matchKey] !== null && formData[matchKey] !== '') {
+      return String(formData[matchKey]);
+    }
+
+    // Fallback map for common telecom fields
+    if (lowerName.includes('sim no') || lowerName.includes('sim number') || lowerName.includes('iccid')) return String(formData.sim_number || formData['SIM Number / ICCID'] || formData['Sim No'] || '');
+    if (lowerName.includes('account')) return String(formData.account_number || formData['Account Number'] || formData['Account No '] || formData['Account No'] || '');
+    if (lowerName.includes('contract no')) return String(formData.contract_number || formData['Contract No'] || formData['Contract No '] || '');
+    if (lowerName.includes('country code')) return String(formData.country_code || formData['Country Code'] || formData['Country Code '] || '');
+    if (lowerName.includes('contract from')) return String(formData.contract_start_date || formData['Contract Start Date'] || formData['Contract From'] || '');
+    if (lowerName.includes('contract to')) return String(formData.contract_expiry_date || formData['Contract Expiry Date'] || formData['Contract To'] || '');
+    if (lowerName.includes('package plan') || lowerName.includes('plan name')) return String(formData.plan_name || formData['Plan Name'] || formData['Package Plan '] || '');
+    if (lowerName.includes('monthly plan') || lowerName.includes('monthly amount')) return String(formData.monthly_plan_amount || formData['Monthly Plan Amount'] || formData['Monthly Plan Amount '] || '');
+    if (lowerName.includes('data allowance')) return String(formData.data_allowance || formData['Data Allowance'] || '');
+    if (lowerName.includes('local minutes')) return String(formData.local_minutes || formData['Local Minutes'] || '');
+    if (lowerName.includes('international minutes')) return String(formData.international_minutes || formData['International Minutes'] || '');
+    if (lowerName.includes('local sms')) return String(formData.local_sms_allowance || formData['Local SMS'] || '');
+    if (lowerName.includes('international sms')) return String(formData.international_sms_allowance || formData['International SMS'] || '');
+    if (lowerName.includes('assigned employee') || lowerName.includes('employee')) return String(formData.assigned_employee || formData['Assigned Employee'] || '');
+    if (lowerName.includes('sim status') || lowerName.includes('status')) return String(formData.status || formData['SIM Status'] || formData['Status'] || '');
+    if (lowerName.includes('notes') || lowerName.includes('remarks')) return String(formData.remarks || formData['Notes'] || formData['Remarks'] || formData['Notes '] || '');
+    if (lowerName.includes('connection type')) return String(formData.connection_type || formData['Connection Type'] || formData['Connection Type '] || '');
+
+    return '';
+  };
+
   const renderCustomField = (field) => {
     switch (field.type) {
       case 'Dropdown':
@@ -444,7 +531,7 @@ export default function SimDetailsTab({
         }
 
         const dropdownData = options.map(opt => ({ label: opt, value: opt }));
-        const curVal = formData[field.id] !== undefined ? formData[field.id] : (formData[field.name] || '');
+        const curVal = getFieldValue(field);
         return (
           <SearchableDropdown
             data={dropdownData}
@@ -452,6 +539,7 @@ export default function SimDetailsTab({
             onChange={(val) => {
               handleChange(field.id, val);
               handleChange(field.name, val);
+              if (field.name && field.name.trim()) handleChange(field.name.trim(), val);
               if (fName.includes('telecom') || fName.includes('provider')) handleChange('telecom_provider', val);
               if (fName.includes('company')) handleChange('company', val);
               if (fName.includes('plan')) handleChange('plan_name', val);
@@ -467,7 +555,7 @@ export default function SimDetailsTab({
         );
       }
       case 'Date': {
-        const val = formData[field.id] || formData[field.name] || '';
+        const val = getFieldValue(field);
         return (
           <input
             type="date"
@@ -475,6 +563,7 @@ export default function SimDetailsTab({
             onChange={(e) => {
               handleChange(field.id, e.target.value);
               handleChange(field.name, e.target.value);
+              if (field.name && field.name.trim()) handleChange(field.name.trim(), e.target.value);
             }}
             style={StyleSheet.flatten([styles.htmlDateInput, isViewOnly && styles.readOnlyInput])}
             disabled={isViewOnly}
@@ -483,7 +572,8 @@ export default function SimDetailsTab({
       }
       case 'Toggle/Switch':
       case 'Single Checkbox': {
-        const val = !!(formData[field.id] || formData[field.name]);
+        const rawVal = getFieldValue(field);
+        const val = !!(rawVal && rawVal !== 'false' && rawVal !== '0');
         return (
           <View style={{ flexDirection: 'row', alignItems: 'center', height: 44 }}>
             <Switch
@@ -491,6 +581,7 @@ export default function SimDetailsTab({
               onValueChange={(newVal) => {
                 handleChange(field.id, newVal);
                 handleChange(field.name, newVal);
+                if (field.name && field.name.trim()) handleChange(field.name.trim(), newVal);
               }}
               trackColor={{ false: '#CBD5E1', true: '#C5A880' }}
               thumbColor={val ? COLORS.primary : '#F4F3F4'}
@@ -507,10 +598,11 @@ export default function SimDetailsTab({
           <TextInput
             style={[styles.input, isViewOnly && styles.readOnlyInput]}
             placeholder={`Enter ${field.name}`}
-            value={formData[field.id] !== undefined ? String(formData[field.id]) : (formData[field.name] !== undefined ? String(formData[field.name]) : '')}
+            value={getFieldValue(field)}
             onChangeText={(val) => {
               handleChange(field.id, val);
               handleChange(field.name, val);
+              if (field.name && field.name.trim()) handleChange(field.name.trim(), val);
             }}
             keyboardType="numeric"
             editable={!isViewOnly}
@@ -521,10 +613,11 @@ export default function SimDetailsTab({
           <TextInput
             style={[styles.input, { height: 80 }, isViewOnly && styles.readOnlyInput]}
             placeholder={`Enter ${field.name}`}
-            value={formData[field.id] !== undefined ? String(formData[field.id]) : (formData[field.name] !== undefined ? String(formData[field.name]) : '')}
+            value={getFieldValue(field)}
             onChangeText={(val) => {
               handleChange(field.id, val);
               handleChange(field.name, val);
+              if (field.name && field.name.trim()) handleChange(field.name.trim(), val);
             }}
             multiline
             editable={!isViewOnly}
@@ -533,7 +626,7 @@ export default function SimDetailsTab({
       case 'File Upload':
       case 'Image Upload':
       case 'File': {
-        const val = formData[field.id] !== undefined ? formData[field.id] : (formData[field.name] || '');
+        const val = getFieldValue(field);
         const handleFileSelect = () => {
           if (typeof document !== 'undefined') {
             const input = document.createElement('input');
@@ -544,6 +637,7 @@ export default function SimDetailsTab({
               if (files.length > 0) {
                 handleChange(field.id, files[0].name);
                 handleChange(field.name, files[0].name);
+                if (field.name && field.name.trim()) handleChange(field.name.trim(), files[0].name);
               }
             };
             input.click();
@@ -584,7 +678,7 @@ export default function SimDetailsTab({
                   </Text>
                 </View>
                 {!isViewOnly && (
-                  <TouchableOpacity onPress={() => { handleChange(field.id, ''); handleChange(field.name, ''); }} style={{ padding: 4 }}>
+                  <TouchableOpacity onPress={() => { handleChange(field.id, ''); handleChange(field.name, ''); if (field.name && field.name.trim()) handleChange(field.name.trim(), ''); }} style={{ padding: 4 }}>
                     <Ionicons name="close-circle" size={18} color="#EF4444" />
                   </TouchableOpacity>
                 )}
@@ -597,10 +691,11 @@ export default function SimDetailsTab({
       case 'Phone Number':
         return (
           <PhoneInputWithCountryCode
-            value={formData[field.id] !== undefined ? String(formData[field.id]) : (formData[field.name] !== undefined ? String(formData[field.name]) : '')}
+            value={getFieldValue(field)}
             onChangeText={(val) => {
               handleChange(field.id, val);
               handleChange(field.name, val);
+              if (field.name && field.name.trim()) handleChange(field.name.trim(), val);
               const fName = String(field.name || '').toLowerCase();
               if (fName.includes('mobile')) handleChange('mobile_number', val);
               if (fName.includes('account')) handleChange('account_number', val);
@@ -615,10 +710,11 @@ export default function SimDetailsTab({
           <TextInput
             style={[styles.input, isViewOnly && styles.readOnlyInput]}
             placeholder={`Enter ${field.name}`}
-            value={formData[field.id] !== undefined ? String(formData[field.id]) : (formData[field.name] !== undefined ? String(formData[field.name]) : '')}
+            value={getFieldValue(field)}
             onChangeText={(val) => {
               handleChange(field.id, val);
               handleChange(field.name, val);
+              if (field.name && field.name.trim()) handleChange(field.name.trim(), val);
               const fName = String(field.name || '').toLowerCase();
               if (fName.includes('mobile')) handleChange('mobile_number', val);
               if (fName.includes('sim number') || fName.includes('iccid')) handleChange('sim_number', val);
@@ -655,9 +751,23 @@ export default function SimDetailsTab({
       }
     }
 
-    // Validate required fields based on fieldsLayout if present, otherwise fallback defaults
+    // Validate required fields based on fieldsLayout or Addon mode
     const missingFields = [];
-    if (fieldsLayout && fieldsLayout.length > 0) {
+    if (isAddOnMode) {
+      const accNo = formData.account_number || formData['Account No'] || formData.sim_number;
+      const actDate = formData.activation_date || formData['Activation Date'];
+      const planNm = formData.plan_name || formData['Plan Name'];
+      const planAmt = formData.plan_amount || formData['Plan Amount'];
+      const subType = formData.subscription_type || formData.subscription || formData['Subscription'];
+      const addType = formData.addon_type || formData['Addon Type'] || formData.add_on;
+
+      if (!accNo) missingFields.push('Account No');
+      if (!actDate) missingFields.push('Activation Date');
+      if (!planNm) missingFields.push('Plan Name');
+      if (!planAmt) missingFields.push('Plan Amount');
+      if (!subType) missingFields.push('Subscription');
+      if (!addType) missingFields.push('Addon Type');
+    } else if (fieldsLayout && fieldsLayout.length > 0) {
       fieldsLayout.forEach(sec => {
         (sec.fields || []).forEach(f => {
           if (f.isRequired) {
@@ -681,9 +791,41 @@ export default function SimDetailsTab({
 
     setSaving(true);
     try {
-      const endpoint = isTelecomDataView ? 'telecom-data' : 'sim-details';
-      const payload = {
+      const endpoint = isAddOnMode ? 'add-ons' : (isTelecomDataView ? 'telecom-data' : 'sim-details');
+      
+      const payload = isAddOnMode ? {
+        account_number: formData.account_number || formData['Account No'] || formData.sim_number || '',
+        sim_number: formData.sim_number || formData['Sim No'] || '',
+        activation_date: formData.activation_date || formData['Activation Date'] || new Date().toISOString().split('T')[0],
+        plan_name: formData.plan_name || formData['Plan Name'] || '',
+        plan_amount: formData.plan_amount || formData['Plan Amount'] || 0,
+        subscription_type: formData.subscription_type || formData.subscription || formData['Subscription'] || 'One Time',
+        document_attachments: formData.document_attachments || [],
+        addon_type: formData.addon_type || formData['Addon Type'] || formData.add_on || 'Data',
+        voice_minute_type: formData.voice_minute_type || formData['Voice Category'] || formData['Voice Minute Type'] || null,
+        roaming_category: formData.roaming_category || formData['Roaming Category'] || null,
+        addon_details: (() => {
+          if (formData.addon_details || formData['Addon Details']) return formData.addon_details || formData['Addon Details'];
+          const detailParts = [];
+          Object.keys(formData).forEach(k => {
+            if ((k.startsWith('voice_details_') || k.startsWith('roaming_details_') || k.endsWith(' Details')) && formData[k] && typeof formData[k] === 'string' && k !== 'Addon Details' && k !== 'addon_details') {
+              let label = k.replace('voice_details_', '').replace('roaming_details_', '').replace(/_/g, ' ');
+              label = label.charAt(0).toUpperCase() + label.slice(1);
+              detailParts.push(`${label}: ${formData[k]}`);
+            }
+          });
+          return detailParts.length > 0 ? detailParts.join('; ') : null;
+        })(),
+        client_id: selectedClient || user?.clientid || null,
+        company_id: selectedCompany || null,
+        country_id: selectedCountry || user?.country_id || user?.countryid || 1,
+        user_id: user?.id || user?.userId || user?.user_id || null,
+        role_id: user?.roleId || null,
+        field_data: formData,
+        status: formData.status || 'Active'
+      } : {
         ...formData,
+        field_data: formData,
         ...extractedPdfData,
         custom_field_id: customFieldId || null,
         clientid: selectedClient || user?.clientid || null,
@@ -713,7 +855,11 @@ export default function SimDetailsTab({
         throw new Error(errData.message || errData.error || 'Failed to save record');
       }
 
-      showToast(isTelecomDataView ? 'Telecom data saved to database successfully!' : (editingId ? 'SIM details updated successfully' : 'SIM details created successfully'), 'success');
+      const successMsg = isAddOnMode
+        ? (editingId ? 'Add-On record updated successfully!' : 'Add-On saved to database successfully!')
+        : (isTelecomDataView ? 'Telecom data saved to database successfully!' : (editingId ? 'SIM details updated successfully' : 'SIM details created successfully'));
+
+      showToast(successMsg, 'success');
       setIsModalOpen(false);
       setSuccessDetails(payload);
       setShowSuccessDialog(true);
@@ -871,10 +1017,22 @@ export default function SimDetailsTab({
         </View>
 
         {canCreate && (
-          <TouchableOpacity style={styles.addBtn} onPress={() => openModal()} activeOpacity={0.8}>
-            <Ionicons name="add-circle" size={18} color={COLORS.white} />
-            <Text style={styles.addBtnText}>{buttonLabel}</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <TouchableOpacity style={styles.addBtn} onPress={() => openModal(null, false, false)} activeOpacity={0.8}>
+              <Ionicons name="add-circle" size={18} color={COLORS.white} />
+              <Text style={styles.addBtnText}>{buttonLabel}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.addBtn, { backgroundColor: '#475569' }]} onPress={() => openModal(null, false, true)} activeOpacity={0.8}>
+              <Ionicons name="add-circle-outline" size={18} color={COLORS.white} />
+              <Text style={styles.addBtnText}>+ Add On</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.addBtn, { backgroundColor: '#0284c7' }]} onPress={() => { fetchAddOnRecords(); setShowAddOnViewModal(true); }} activeOpacity={0.8}>
+              <Ionicons name="eye-outline" size={18} color={COLORS.white} />
+              <Text style={styles.addBtnText}>Add On View</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
 
@@ -892,7 +1050,7 @@ export default function SimDetailsTab({
         ) : filteredRecords.length > 0 ? (
           <>
             <ScrollView horizontal={true} showsHorizontalScrollIndicator={true} style={{ width: '100%' }} contentContainerStyle={{ minWidth: '100%' }}>
-              <View style={[styles.tableWrapper, { minWidth: isTelecomDataView ? 1500 : 900 }]}>
+              <View style={[styles.tableWrapper, { minWidth: isTelecomDataView ? 1700 : 900 }]}>
                 <View style={{ paddingBottom: 10 }}>
                   {/* Table Header Row */}
                   <View style={styles.tableHeader}>
@@ -900,6 +1058,7 @@ export default function SimDetailsTab({
                     {isTelecomDataView ? (
                       <>
                         <Text style={[styles.thCell, { flex: 1.8 }]}>COMPANY</Text>
+                        <Text style={[styles.thCell, { flex: 1.8 }]}>EMPLOYEE NAME</Text>
                         <Text style={[styles.thCell, { flex: 1.5 }]}>MOBILE SERVICE</Text>
                         <Text style={[styles.thCell, { flex: 1.5 }]}>MOBILE NO</Text>
                         <Text style={[styles.thCell, { flex: 1.6 }]}>BILL NUMBER</Text>
@@ -912,11 +1071,11 @@ export default function SimDetailsTab({
                       </>
                     ) : (
                       <>
-                        <Text style={[styles.thCell, { flex: 2.0 }]}>CLIENT INFO</Text>
-                        <Text style={[styles.thCell, { flex: 2.0 }]}>TELECOM PROVIDER</Text>
-                        <Text style={[styles.thCell, { flex: 2.0 }]}>MOBILE NUMBER</Text>
-                        <Text style={[styles.thCell, { flex: 2.0 }]}>PLAN NAME</Text>
-                        <Text style={[styles.thCell, { flex: 1.5 }]}>MONTHLY AMOUNT</Text>
+                        <Text style={[styles.thCell, { flex: 2.0 }]}>COMPANY NAME</Text>
+                        <Text style={[styles.thCell, { flex: 1.8 }]}>TELECOM PROVIDER</Text>
+                        <Text style={[styles.thCell, { flex: 2.0 }]}>USER NAME</Text>
+                        <Text style={[styles.thCell, { flex: 1.8 }]}>PLAN NAME</Text>
+                        <Text style={[styles.thCell, { flex: 1.6 }]}>MONTHLY AMOUNT</Text>
                       </>
                     )}
                     <Text style={[styles.thCell, { flex: 1.2, textAlign: 'center' }]}>STATUS</Text>
@@ -940,6 +1099,34 @@ export default function SimDetailsTab({
                     const companyName = item.company_name || item.company || fd.company || fd.company_name || item.client_name || 'N/A';
                     const mobileService = item.telecom_provider || fd.telecom_provider || ed.telecom_provider || fd.provider || 'Etisalat';
                     const mobileNo = item.mobile_number || item.mobile_account || fd.mobile_account || ed.mobile_account || fd.mobile_number || fd.phone_number || 'N/A';
+                    
+                    const registeredEmpName = 
+                      item.assigned_employee || 
+                      fd.assigned_employee || 
+                      fd['Assigned Employee'] || 
+                      fd['Employee Name'] || 
+                      fd.employee_name || 
+                      item.employee_name || 
+                      ed.assigned_employee || 
+                      ed.employee_name || 
+                      '';
+
+                    const cleanPhone = (str) => {
+                      if (!str) return '';
+                      let cleaned = String(str).replace(/[\s\+\-\(\)]/g, '');
+                      if (cleaned.startsWith('971')) cleaned = cleaned.slice(3);
+                      if (cleaned.startsWith('0')) cleaned = cleaned.slice(1);
+                      return cleaned;
+                    };
+
+                    const matchedEmp = employees.find(e => {
+                      const empP = cleanPhone(e.phone || e.mobile_number || e.phone_number);
+                      const mobP = cleanPhone(mobileNo);
+                      return empP && mobP && (empP === mobP || empP.endsWith(mobP) || mobP.endsWith(empP));
+                    });
+
+                    const employeeName = registeredEmpName || (matchedEmp ? (matchedEmp.full_name || matchedEmp.employee_name || matchedEmp.name) : 'Unassigned');
+
                     const billNo = item.bill_number || item.doc_number || fd.bill_number || ed.bill_number || fd.doc_number || 'N/A';
                     const periodFrom = item.period_from || fd.period_from || ed.period_from || fd.bill_period_from || fd.start_date || 'N/A';
                     const periodTo = item.period_to || fd.period_to || ed.period_to || fd.bill_period_to || fd.end_date || 'N/A';
@@ -957,6 +1144,11 @@ export default function SimDetailsTab({
                             {/* COMPANY */}
                             <View style={[styles.tdCell, { flex: 1.8 }]}>
                               <Text style={{ fontWeight: '600', color: COLORS.textPrimary }}>{companyName}</Text>
+                            </View>
+
+                            {/* EMPLOYEE NAME */}
+                            <View style={[styles.tdCell, { flex: 1.8 }]}>
+                              <Text style={{ fontWeight: '600', color: COLORS.textPrimary }}>{employeeName}</Text>
                             </View>
 
                             {/* MOBILE SERVICE */}
@@ -1006,31 +1198,40 @@ export default function SimDetailsTab({
                           </>
                         ) : (
                           <>
+                            {/* COMPANY NAME */}
                             <View style={[styles.tdCell, { flex: 2.0 }]}>
-                              <Text style={{ fontWeight: '600', color: COLORS.textPrimary }}>{item.client_name || 'N/A'}</Text>
-                              {item.country_name && <Text style={{ fontSize: 11, color: COLORS.textSecondary }}>{item.country_name}</Text>}
+                              <Text style={{ fontWeight: '600', color: COLORS.textPrimary }}>{companyName}</Text>
+                              {item.client_name && item.client_name !== companyName && (
+                                <Text style={{ fontSize: 11, color: COLORS.textSecondary }}>{item.client_name}</Text>
+                              )}
                             </View>
 
-                            <Text style={[styles.tdCell, { flex: 2.0, fontWeight: '600', color: COLORS.textPrimary }]}>
-                              {fd.telecom_provider || 'N/A'}
+                            {/* TELECOM PROVIDER */}
+                            <Text style={[styles.tdCell, { flex: 1.8, fontWeight: '600', color: COLORS.textPrimary }]}>
+                              {fd.telecom_provider || fd['Telecom Provider'] || fd['1786100950188'] || item.telecom_provider || 'Etisalat'}
                             </Text>
 
-                            <Text style={[styles.tdCell, { flex: 2.0, color: COLORS.textPrimary }]}>
-                              {fd.mobile_number || 'N/A'}
+                            {/* USER NAME */}
+                            <View style={[styles.tdCell, { flex: 2.0 }]}>
+                              <Text style={{ fontWeight: '600', color: COLORS.textPrimary }}>{employeeName}</Text>
+                            </View>
+
+                            {/* PLAN NAME */}
+                            <Text style={[styles.tdCell, { flex: 1.8, color: COLORS.textPrimary, fontWeight: '600' }]}>
+                              {fd.plan_name || fd['Plan Name'] || fd['Package Plan '] || fd['1786100996941'] || item.plan_name || 'N/A'}
                             </Text>
 
-                            <Text style={[styles.tdCell, { flex: 2.0, color: COLORS.textSecondary }]}>
-                              {fd.plan_name || 'N/A'}
-                            </Text>
-
-                            <Text style={[styles.tdCell, { flex: 1.5, fontWeight: '600', color: COLORS.textPrimary }]}>
-                              {fd.monthly_plan_amount ? `${fd.monthly_plan_amount} AED` : 'N/A'}
+                            {/* MONTHLY AMOUNT */}
+                            <Text style={[styles.tdCell, { flex: 1.6, fontWeight: '700', color: '#15803D' }]}>
+                              {(fd.monthly_plan_amount || fd['Monthly Plan Amount '] || fd['1786101020492'] || item.monthly_plan_amount || item.plan_amount)
+                                ? `${fd.monthly_plan_amount || fd['Monthly Plan Amount '] || fd['1786101020492'] || item.monthly_plan_amount || item.plan_amount} AED`
+                                : 'N/A'}
                             </Text>
                           </>
                         )}
 
                         {/* Status Badge */}
-                        <View style={[styles.tdCell, { flex: 1.5, alignItems: 'center' }]}>
+                        <View style={[styles.tdCell, { flex: 1.2, alignItems: 'center' }]}>
                           <View style={[styles.statusBadge, {
                             backgroundColor: isInactive ? '#FEE2E2' : '#E0F2FE',
                             borderColor: isInactive ? '#FCA5A5' : '#7DD3FC',
@@ -1224,8 +1425,438 @@ export default function SimDetailsTab({
                     </View>
                   )}
                   
-                  {/* FORM FIELDS SECTION */}
-                  {fieldsLayout && fieldsLayout.length > 0 ? (
+                  {/* STATIC ADD-ON CONFIGURATION FIELDS */}
+                  {isAddOnMode && (
+                    <View style={styles.sectionCard}>
+                      <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>ADD-ON CONFIGURATION</Text>
+                      </View>
+                      <View style={styles.sectionBody}>
+                        {/* 1. ACCOUNT NO */}
+                        <View style={styles.fieldContainer}>
+                          <Text style={styles.fieldLabel}>
+                            Account No <Text style={{ color: COLORS.error }}>*</Text>
+                          </Text>
+                          {records && records.length > 0 ? (
+                            <SearchableDropdown
+                              data={records.map(item => {
+                                let fd = {};
+                                try {
+                                  fd = typeof item.field_data === 'string' ? JSON.parse(item.field_data) : (item.field_data || {});
+                                } catch (e) {
+                                  fd = {};
+                                }
+                                const accNo = item.account_number || fd.account_number || fd['Account No'] || fd['Account Number'] || item.sim_number || fd.sim_number || fd['SIM Number / ICCID'] || item.mobile_number || `Account #${item.tele_id || item.id}`;
+                                return { label: String(accNo), value: String(accNo) };
+                              }).filter((v, i, a) => a.findIndex(t => t.value === v.value) === i)}
+                              value={formData.account_number || formData['Account No'] || formData.sim_number || ''}
+                              onChange={(val) => {
+                                handleChange('account_number', val);
+                                handleChange('Account No', val);
+                                handleChange('Account Number', val);
+                                handleChange('sim_number', val);
+                                handleChange('Sim No', val);
+                              }}
+                              placeholder="-- Select or Enter Account No --"
+                              searchPlaceholder="Search Account No..."
+                              displayKey="label"
+                              valueKey="value"
+                              disabled={isViewOnly}
+                            />
+                          ) : (
+                            <TextInput
+                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                              placeholder="Enter Account No"
+                              value={formData.account_number || formData['Account No'] || formData.sim_number || ''}
+                              onChangeText={(val) => {
+                                handleChange('account_number', val);
+                                handleChange('Account No', val);
+                                handleChange('Account Number', val);
+                                handleChange('sim_number', val);
+                                handleChange('Sim No', val);
+                              }}
+                              editable={!isViewOnly}
+                            />
+                          )}
+                        </View>
+
+                        {/* 2. ACTIVATION DATE */}
+                        <View style={styles.fieldContainer}>
+                          <Text style={styles.fieldLabel}>
+                            Activation Date <Text style={{ color: COLORS.error }}>*</Text>
+                          </Text>
+                          <View style={{ position: 'relative', width: '100%', justifyContent: 'center' }}>
+                            <input
+                              type="date"
+                              value={formData.activation_date || ''}
+                              onChange={(e) => {
+                                handleChange('activation_date', e.target.value);
+                                handleChange('Activation Date', e.target.value);
+                              }}
+                              style={StyleSheet.flatten([styles.htmlDateInput, isViewOnly && styles.readOnlyInput])}
+                              disabled={isViewOnly}
+                            />
+                            <View style={{ position: 'absolute', right: 12, pointerEvents: 'none' }}>
+                              <Ionicons name="calendar-outline" size={18} color="#64748B" />
+                            </View>
+                          </View>
+                        </View>
+
+                        {/* 3. PLAN NAME */}
+                        <View style={styles.fieldContainer}>
+                          <Text style={styles.fieldLabel}>
+                            Plan Name <Text style={{ color: COLORS.error }}>*</Text>
+                          </Text>
+                          <TextInput
+                            style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                            placeholder="Enter Plan Name (e.g. Business Freedom 150)"
+                            value={formData.plan_name || formData['Plan Name'] || formData['Package Plan '] || ''}
+                            onChangeText={(val) => {
+                              handleChange('plan_name', val);
+                              handleChange('Plan Name', val);
+                              handleChange('Package Plan ', val);
+                            }}
+                            editable={!isViewOnly}
+                          />
+                        </View>
+
+                        {/* 4. PLAN AMOUNT */}
+                        <View style={styles.fieldContainer}>
+                          <Text style={styles.fieldLabel}>
+                            Plan Amount <Text style={{ color: COLORS.error }}>*</Text>
+                          </Text>
+                          <TextInput
+                            style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                            placeholder="Enter Plan Amount (e.g. 250)"
+                            keyboardType="numeric"
+                            value={String(formData.monthly_plan_amount || '')}
+                            onChangeText={(val) => {
+                              handleChange('monthly_plan_amount', val);
+                              handleChange('Plan Amount', val);
+                              handleChange('Monthly Plan Amount ', val);
+                            }}
+                            editable={!isViewOnly}
+                          />
+                        </View>
+
+                        {/* 5. SUBSCRIPTION */}
+                        <View style={styles.fieldContainer}>
+                          <Text style={styles.fieldLabel}>
+                            Subscription <Text style={{ color: COLORS.error }}>*</Text>
+                          </Text>
+                          <SearchableDropdown
+                            data={[
+                              { label: 'One Time', value: 'One Time' },
+                              { label: 'Recurring', value: 'Recurring' }
+                            ]}
+                            value={formData.subscription_type || formData.subscription || formData['Subscription'] || ''}
+                            onChange={(val) => {
+                              handleChange('subscription_type', val);
+                              handleChange('subscription', val);
+                              handleChange('Subscription', val);
+                            }}
+                            placeholder="-- Select Subscription --"
+                            searchPlaceholder="Search Subscription..."
+                            displayKey="label"
+                            valueKey="value"
+                            disabled={isViewOnly}
+                          />
+                        </View>
+
+                        {/* 6. DOCUMENT ATTACHMENT (Multiple Files) */}
+                        <View style={styles.fieldContainer}>
+                          <Text style={styles.fieldLabel}>
+                            Document Attachment
+                          </Text>
+                          <input
+                            type="file"
+                            id="addonDocAttachmentInput"
+                            multiple
+                            style={{ display: 'none' }}
+                            disabled={isViewOnly}
+                            onChange={(e) => {
+                              const files = Array.from(e.target.files || []);
+                              if (files.length > 0) {
+                                const newFiles = files.map(f => f.name);
+                                const existing = Array.isArray(formData.attached_documents)
+                                  ? formData.attached_documents
+                                  : (formData.attached_documents ? String(formData.attached_documents).split(', ') : []);
+                                const combined = Array.from(new Set([...existing, ...newFiles]));
+                                handleChange('attached_documents', combined);
+                                handleChange('Document Attachment', combined.join(', '));
+                              }
+                            }}
+                          />
+                          <label htmlFor="addonDocAttachmentInput" style={{ cursor: isViewOnly ? 'not-allowed' : 'pointer', width: '100%' }}>
+                            <View style={[
+                              styles.input,
+                              { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: isViewOnly ? '#F1F5F9' : '#FFFFFF' }
+                            ]}>
+                              <Text style={{ fontSize: 13, color: (formData.attached_documents && formData.attached_documents.length > 0) ? COLORS.textPrimary : '#94A3B8' }} numberOfLines={1}>
+                                {formData.attached_documents && formData.attached_documents.length > 0
+                                  ? `${formData.attached_documents.length} File(s) Selected`
+                                  : 'Choose Multiple Files...'}
+                              </Text>
+                              <Ionicons name="cloud-upload-outline" size={18} color={COLORS.primary} />
+                            </View>
+                          </label>
+
+                          {/* Render File Chips below */}
+                          {Array.isArray(formData.attached_documents) && formData.attached_documents.length > 0 && (
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                              {formData.attached_documents.map((fileName, idx) => (
+                                <View key={idx} style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  backgroundColor: '#EFF6FF',
+                                  borderColor: '#BFDBFE',
+                                  borderWidth: 1,
+                                  borderRadius: 16,
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 4,
+                                  gap: 6
+                                }}>
+                                  <Ionicons name="document-text-outline" size={14} color="#2563EB" />
+                                  <Text style={{ fontSize: 12, color: '#1E40AF', maxWidth: 120 }} numberOfLines={1}>
+                                    {fileName}
+                                  </Text>
+                                  {!isViewOnly && (
+                                    <TouchableOpacity
+                                      onPress={() => {
+                                        const updated = formData.attached_documents.filter((_, i) => i !== idx);
+                                        handleChange('attached_documents', updated);
+                                        handleChange('Document Attachment', updated.join(', '));
+                                      }}
+                                    >
+                                      <Ionicons name="close-circle" size={14} color="#60A5FA" />
+                                    </TouchableOpacity>
+                                  )}
+                                </View>
+                              ))}
+                            </View>
+                          )}
+                        </View>
+
+                        {/* 6. ADDON TYPE */}
+                        <View style={styles.fieldContainer}>
+                          <Text style={styles.fieldLabel}>
+                            Addon Type <Text style={{ color: COLORS.error }}>*</Text>
+                          </Text>
+                          <SearchableDropdown
+                            data={[
+                              { label: 'Data', value: 'Data' },
+                              { label: 'Voice', value: 'Voice' },
+                              { label: 'Roaming', value: 'Roaming' }
+                            ]}
+                            value={formData.addon_type || formData['Addon Type'] || formData.add_on || ''}
+                            onChange={(val) => {
+                              handleChange('addon_type', val);
+                              handleChange('Addon Type', val);
+                              handleChange('add_on', val);
+                              if (val !== 'Voice') {
+                                handleChange('voice_minute_type', '');
+                                handleChange('Voice Minute Type', '');
+                              }
+                              if (val !== 'Roaming') {
+                                handleChange('roaming_category', '');
+                                handleChange('Roaming Category', '');
+                              }
+                            }}
+                            placeholder="-- Select Addon Type --"
+                            searchPlaceholder="Search Addon Type..."
+                            displayKey="label"
+                            valueKey="value"
+                            disabled={isViewOnly}
+                          />
+                        </View>
+
+                        {/* CONDITIONAL VOICE MINUTE TYPE (Checkboxes: Flexi Minutes, Voice Minutes, Data) */}
+                        {(formData.addon_type === 'Voice' || formData['Addon Type'] === 'Voice' || formData.add_on === 'Voice') && (
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>
+                              Voice Category <Text style={{ color: COLORS.error }}>*</Text>
+                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 6, minHeight: 40 }}>
+                              {['Flexi Minutes', 'Voice Minutes', 'Data'].map((option) => {
+                                const currentStr = formData.voice_minute_type || formData['Voice Minute Type'] || '';
+                                const currentList = currentStr ? currentStr.split(', ').map(s => s.trim()) : [];
+                                const isSelected = currentList.includes(option);
+                                return (
+                                  <TouchableOpacity
+                                    key={option}
+                                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                                    onPress={() => {
+                                      if (isViewOnly) return;
+                                      let updatedList = [...currentList];
+                                      if (isSelected) {
+                                        updatedList = updatedList.filter(o => o !== option);
+                                      } else {
+                                        updatedList.push(option);
+                                      }
+                                      const newStr = updatedList.join(', ');
+                                      handleChange('voice_minute_type', newStr);
+                                      handleChange('Voice Minute Type', newStr);
+                                    }}
+                                    activeOpacity={isViewOnly ? 1 : 0.7}
+                                  >
+                                    <View style={{
+                                      width: 18,
+                                      height: 18,
+                                      borderRadius: 4,
+                                      borderWidth: 2,
+                                      borderColor: isSelected ? (isViewOnly ? '#94A3B8' : COLORS.primary) : '#CBD5E1',
+                                      backgroundColor: isSelected ? (isViewOnly ? '#94A3B8' : COLORS.primary) : '#FFFFFF',
+                                      justifyContent: 'center',
+                                      alignItems: 'center'
+                                    }}>
+                                      {isSelected && (
+                                        <Ionicons name="checkmark-sharp" size={13} color="#FFFFFF" />
+                                      )}
+                                    </View>
+                                    <Text style={{ fontSize: 13, color: COLORS.textPrimary, fontWeight: isSelected ? '600' : '400' }}>
+                                      {option}
+                                    </Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </View>
+                          </View>
+                        )}
+
+                        {/* CONDITIONAL ROAMING CATEGORY (Checkboxes: International, National, Data) */}
+                        {(formData.addon_type === 'Roaming' || formData['Addon Type'] === 'Roaming' || formData.add_on === 'Roaming') && (
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>
+                              Roaming Category <Text style={{ color: COLORS.error }}>*</Text>
+                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 6, minHeight: 40 }}>
+                              {['International', 'National', 'Data'].map((option) => {
+                                const currentStr = formData.roaming_category || formData['Roaming Category'] || '';
+                                const currentList = currentStr ? currentStr.split(', ').map(s => s.trim()) : [];
+                                const isSelected = currentList.includes(option);
+                                return (
+                                  <TouchableOpacity
+                                    key={option}
+                                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                                    onPress={() => {
+                                      if (isViewOnly) return;
+                                      let updatedList = [...currentList];
+                                      if (isSelected) {
+                                        updatedList = updatedList.filter(o => o !== option);
+                                      } else {
+                                        updatedList.push(option);
+                                      }
+                                      const newStr = updatedList.join(', ');
+                                      handleChange('roaming_category', newStr);
+                                      handleChange('Roaming Category', newStr);
+                                    }}
+                                    activeOpacity={isViewOnly ? 1 : 0.7}
+                                  >
+                                    <View style={{
+                                      width: 18,
+                                      height: 18,
+                                      borderRadius: 4,
+                                      borderWidth: 2,
+                                      borderColor: isSelected ? (isViewOnly ? '#94A3B8' : COLORS.primary) : '#CBD5E1',
+                                      backgroundColor: isSelected ? (isViewOnly ? '#94A3B8' : COLORS.primary) : '#FFFFFF',
+                                      justifyContent: 'center',
+                                      alignItems: 'center'
+                                    }}>
+                                      {isSelected && (
+                                        <Ionicons name="checkmark-sharp" size={13} color="#FFFFFF" />
+                                      )}
+                                    </View>
+                                    <Text style={{ fontSize: 13, color: COLORS.textPrimary, fontWeight: isSelected ? '600' : '400' }}>
+                                      {option}
+                                    </Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </View>
+                          </View>
+                        )}
+
+                        {/* CONDITIONAL DYNAMIC FIELDS FOR EACH CHECKED VOICE CATEGORY */}
+                        {(formData.addon_type === 'Voice' || formData['Addon Type'] === 'Voice' || formData.add_on === 'Voice') && (() => {
+                          const currentStr = formData.voice_minute_type || formData['Voice Minute Type'] || '';
+                          const selectedCategories = currentStr ? currentStr.split(', ').map(s => s.trim()).filter(Boolean) : [];
+                          if (selectedCategories.length === 0) return null;
+
+                          return selectedCategories.map((cat) => {
+                            const keyName = `voice_details_${cat.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+                            return (
+                              <View key={cat} style={styles.fieldContainer}>
+                                <Text style={styles.fieldLabel}>
+                                  {cat} Details <Text style={{ color: COLORS.error }}>*</Text>
+                                </Text>
+                                <TextInput
+                                  style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                                  placeholder={`Enter ${cat} Details (e.g. 500 Mins / 10GB)`}
+                                  value={formData[keyName] || formData[`${cat} Details`] || ''}
+                                  onChangeText={(val) => {
+                                    handleChange(keyName, val);
+                                    handleChange(`${cat} Details`, val);
+                                  }}
+                                  editable={!isViewOnly}
+                                />
+                              </View>
+                            );
+                          });
+                        })()}
+
+                        {/* CONDITIONAL DYNAMIC FIELDS FOR EACH CHECKED ROAMING CATEGORY */}
+                        {(formData.addon_type === 'Roaming' || formData['Addon Type'] === 'Roaming' || formData.add_on === 'Roaming') && (() => {
+                          const currentStr = formData.roaming_category || formData['Roaming Category'] || '';
+                          const selectedCategories = currentStr ? currentStr.split(', ').map(s => s.trim()).filter(Boolean) : [];
+                          if (selectedCategories.length === 0) return null;
+
+                          return selectedCategories.map((cat) => {
+                            const keyName = `roaming_details_${cat.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+                            return (
+                              <View key={cat} style={styles.fieldContainer}>
+                                <Text style={styles.fieldLabel}>
+                                  {cat} Roaming Details <Text style={{ color: COLORS.error }}>*</Text>
+                                </Text>
+                                <TextInput
+                                  style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                                  placeholder={`Enter ${cat} Roaming Details (e.g. 5GB / 100 Mins)`}
+                                  value={formData[keyName] || formData[`${cat} Roaming Details`] || ''}
+                                  onChangeText={(val) => {
+                                    handleChange(keyName, val);
+                                    handleChange(`${cat} Roaming Details`, val);
+                                  }}
+                                  editable={!isViewOnly}
+                                />
+                              </View>
+                            );
+                          });
+                        })()}
+
+                        {/* STANDARD ADDON DETAILS FOR DATA OR OTHER ADDON TYPES */}
+                        {(formData.addon_type !== 'Voice' && formData['Addon Type'] !== 'Voice' && formData.add_on !== 'Voice' && formData.addon_type !== 'Roaming' && formData['Addon Type'] !== 'Roaming' && formData.add_on !== 'Roaming') && (
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>
+                              Addon Details
+                            </Text>
+                            <TextInput
+                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                              placeholder="Enter Addon Details (e.g. 10GB Data)"
+                              value={formData.addon_details || formData['Addon Details'] || ''}
+                              onChangeText={(val) => {
+                                handleChange('addon_details', val);
+                                handleChange('Addon Details', val);
+                              }}
+                              editable={!isViewOnly}
+                            />
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* FORM FIELDS SECTION (Hidden in Add On Mode) */}
+                  {!isAddOnMode && (
+                    fieldsLayout && fieldsLayout.length > 0 ? (
                     fieldsLayout.map((section, index) => (
                       <View key={section.id || index} style={[styles.sectionCard, { marginTop: index > 0 ? SPACING.md : 0 }]}>
                         <View style={styles.sectionHeader}>
@@ -1622,7 +2253,7 @@ export default function SimDetailsTab({
                         </View>
                       </View>
                     </View>
-                  )}
+                  ))}
 
                 </ScrollView>
 
@@ -1751,6 +2382,146 @@ export default function SimDetailsTab({
             >
               <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '700' }}>OK, Close</Text>
             </TouchableOpacity>
+
+          </View>
+        </View>
+      </Modal>
+
+      {/* ADD ON VIEW MODAL */}
+      <Modal
+        visible={showAddOnViewModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowAddOnViewModal(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.65)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, width: '92%', maxWidth: 1100, maxHeight: '90%', flex: 1, overflow: 'hidden', ...SHADOWS.modal }}>
+            
+            {/* Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 18, backgroundColor: '#0284c7', borderBottomWidth: 1, borderBottomColor: '#0369a1' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Ionicons name="list-circle" size={26} color="#FFFFFF" />
+                <View>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: '#FFFFFF' }}>Add-On Records View</Text>
+                  <Text style={{ fontSize: 12, color: '#E0F2FE' }}>Overview of all saved SIM Add-On subscriptions</Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => setShowAddOnViewModal(false)} style={{ padding: 6, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)' }}>
+                <Ionicons name="close" size={22} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Search & Actions Bar */}
+            <View style={{ paddingHorizontal: 24, paddingVertical: 14, backgroundColor: '#F8FAFC', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 8, paddingHorizontal: 12, width: 320, height: 38 }}>
+                <Ionicons name="search-outline" size={18} color="#64748B" style={{ marginRight: 8 }} />
+                <TextInput
+                  style={{ flex: 1, fontSize: 13, color: '#1E293B', outlineStyle: 'none' }}
+                  placeholder="Search Add-Ons..."
+                  placeholderTextColor="#94A3B8"
+                  value={addOnSearch}
+                  onChangeText={setAddOnSearch}
+                />
+              </View>
+
+              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#166534', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 }} onPress={fetchAddOnRecords}>
+                <Ionicons name="refresh" size={16} color="#FFFFFF" />
+                <Text style={{ color: '#FFFFFF', fontWeight: '600', fontSize: 13 }}>Refresh</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Add-Ons Table Body */}
+            <ScrollView style={{ flex: 1, padding: 24 }}>
+              {loadingAddOns ? (
+                <View style={{ padding: 50, alignItems: 'center' }}>
+                  <ActivityIndicator size="large" color="#0284c7" />
+                  <Text style={{ marginTop: 12, color: '#64748B', fontSize: 14 }}>Loading Add-On records...</Text>
+                </View>
+              ) : (() => {
+                const filtered = addOnRecords.filter(item => {
+                  if (!addOnSearch.trim()) return true;
+                  const q = addOnSearch.toLowerCase();
+                  return (
+                    (item.account_number && item.account_number.toLowerCase().includes(q)) ||
+                    (item.sim_number && item.sim_number.toLowerCase().includes(q)) ||
+                    (item.plan_name && item.plan_name.toLowerCase().includes(q)) ||
+                    (item.addon_type && item.addon_type.toLowerCase().includes(q)) ||
+                    (item.addon_details && item.addon_details.toLowerCase().includes(q))
+                  );
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <View style={{ alignItems: 'center', paddingVertical: 60 }}>
+                      <Ionicons name="document-text-outline" size={48} color="#94A3B8" />
+                      <Text style={{ marginTop: 12, fontSize: 15, fontWeight: '600', color: '#64748B' }}>No Add-On Records Found</Text>
+                      <Text style={{ fontSize: 13, color: '#94A3B8', marginTop: 4 }}>Click "+ Add On" to add a new subscription</Text>
+                    </View>
+                  );
+                }
+
+                return (
+                  <View style={{ borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, overflow: 'hidden' }}>
+                    {/* Header */}
+                    <View style={{ flexDirection: 'row', backgroundColor: '#F1F5F9', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#CBD5E1' }}>
+                      <Text style={{ flex: 1.2, fontSize: 12, fontWeight: '700', color: '#334155' }}>Account / SIM No</Text>
+                      <Text style={{ flex: 1.5, fontSize: 12, fontWeight: '700', color: '#334155' }}>Plan Name</Text>
+                      <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: '#334155' }}>Amount</Text>
+                      <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: '#334155' }}>Sub Type</Text>
+                      <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: '#334155' }}>Addon Type</Text>
+                      <Text style={{ flex: 2, fontSize: 12, fontWeight: '700', color: '#334155' }}>Details</Text>
+                      <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: '#334155' }}>Document</Text>
+                      <Text style={{ width: 80, fontSize: 12, fontWeight: '700', color: '#334155', textAlign: 'center' }}>Actions</Text>
+                    </View>
+
+                    {/* Rows */}
+                    {filtered.map((item, idx) => {
+                      const docList = Array.isArray(item.document_attachments)
+                        ? item.document_attachments
+                        : (typeof item.document_attachments === 'string' && item.document_attachments.startsWith('[')
+                            ? JSON.parse(item.document_attachments)
+                            : (item.document_attachments ? [item.document_attachments] : []));
+                      const docPath = docList.length > 0 ? docList[0] : null;
+
+                      return (
+                        <View key={item.id || idx} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC' }}>
+                          <Text style={{ flex: 1.2, fontSize: 13, fontWeight: '600', color: '#0F172A' }}>{item.account_number || item.sim_number || 'N/A'}</Text>
+                          <Text style={{ flex: 1.5, fontSize: 13, color: '#334155' }}>{item.plan_name || 'N/A'}</Text>
+                          <Text style={{ flex: 1, fontSize: 13, fontWeight: '600', color: '#15803D' }}>{item.plan_amount ? `${item.plan_amount} AED` : '0 AED'}</Text>
+                          <Text style={{ flex: 1, fontSize: 13, color: '#475569' }}>{item.subscription_type || 'N/A'}</Text>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 12, fontWeight: '600', color: '#0284c7', backgroundColor: '#E0F2FE', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, alignSelf: 'flex-start' }}>{item.addon_type || 'Data'}</Text>
+                          </View>
+                          <Text style={{ flex: 2, fontSize: 12, color: '#475569' }}>{item.addon_details || item.voice_minute_type || item.roaming_category || 'N/A'}</Text>
+                          <View style={{ flex: 1 }}>
+                            {docPath ? (
+                              <TouchableOpacity onPress={() => window.open(docPath.startsWith('http') ? docPath : `${API_URL}${docPath.startsWith('/') ? '' : '/'}${docPath}`, '_blank')} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                                <Ionicons name="document-attach" size={16} color="#2563EB" />
+                                <Text style={{ fontSize: 12, color: '#2563EB', fontWeight: '500' }}>View PDF</Text>
+                              </TouchableOpacity>
+                            ) : (
+                              <Text style={{ fontSize: 12, color: '#94A3B8' }}>None</Text>
+                            )}
+                          </View>
+                          <View style={{ width: 80, flexDirection: 'row', justifyContent: 'center', gap: 10 }}>
+                            <TouchableOpacity onPress={() => deleteAddOnRecord(item.id)} style={{ padding: 4 }}>
+                              <Ionicons name="trash-outline" size={18} color="#DC2626" />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              })()}
+            </ScrollView>
+
+            {/* Modal Footer */}
+            <View style={{ paddingHorizontal: 24, paddingVertical: 14, backgroundColor: '#F8FAFC', borderTopWidth: 1, borderTopColor: '#E2E8F0', alignItems: 'flex-end' }}>
+              <TouchableOpacity style={{ backgroundColor: '#64748B', borderRadius: 8, paddingVertical: 9, paddingHorizontal: 20 }} onPress={() => setShowAddOnViewModal(false)}>
+                <Text style={{ color: '#FFFFFF', fontWeight: '600', fontSize: 13 }}>Close View</Text>
+              </TouchableOpacity>
+            </View>
 
           </View>
         </View>

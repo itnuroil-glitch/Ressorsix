@@ -158,6 +158,9 @@ app.use('/api/plans', planRoutes);
 const simPlanRoutes = require('./routes/simPlanRoutes');
 app.use('/api/sim-plans', simPlanRoutes);
 app.use('/api/sim-plan', simPlanRoutes);
+const simConnectionTypeRoutes = require('./routes/simConnectionTypeRoutes');
+app.use('/api/sim-connection-types', simConnectionTypeRoutes);
+app.use('/api/sim-connection-type', simConnectionTypeRoutes);
 const telecomProviderRoutes = require('./routes/telecomProviderRoutes');
 app.use('/api/telecom-providers', telecomProviderRoutes);
 app.use('/api/telecom-provider', telecomProviderRoutes);
@@ -218,6 +221,12 @@ app.use('/api', pdfParserRoutes);
 const systemSettingRoutes = require('./routes/systemSettingRoutes');
 app.use('/api/system-settings', systemSettingRoutes);
 app.use('/api/system-setting', systemSettingRoutes);
+const addOnRoutes = require('./routes/addOnRoutes');
+app.use('/api/add-ons', addOnRoutes);
+app.use('/api/add-on', addOnRoutes);
+app.use('/api/addons', addOnRoutes);
+app.use('/api/addon', addOnRoutes);
+
 // Global Error Handler
 app.use((err, req, res, next) => {
   console.error('Unhandled Error:', err.stack);

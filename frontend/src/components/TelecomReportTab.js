@@ -284,20 +284,20 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
 
         <View style={[styles.kpiCard, { borderLeftColor: '#D86A1A' }]}>
           <View style={styles.kpiHeader}>
-            <Text style={styles.kpiLabel}>Total Itemized Calls</Text>
+            <Text style={styles.kpiLabel}>Total Records (Calls & SMS)</Text>
             <Ionicons name="call-outline" size={20} color="#D86A1A" />
           </View>
-          <Text style={styles.kpiValue}>{(stats.total_call_logs || 0).toLocaleString()} Calls</Text>
+          <Text style={styles.kpiValue}>{(stats.total_call_logs || 0).toLocaleString()} Logs</Text>
           <Text style={styles.kpiSub}>Parsed from PDF statements</Text>
         </View>
 
         <View style={[styles.kpiCard, { borderLeftColor: COLORS.info }]}>
           <View style={styles.kpiHeader}>
-            <Text style={styles.kpiLabel}>International Calls</Text>
-            <Ionicons name="globe-outline" size={20} color={COLORS.info} />
+            <Text style={styles.kpiLabel}>Total SMS Logs</Text>
+            <MaterialCommunityIcons name="message-text-outline" size={20} color={COLORS.info} />
           </View>
-          <Text style={styles.kpiValue}>{(stats.total_intl_calls || 0).toLocaleString()} Calls</Text>
-          <Text style={styles.kpiSub}>Cost: AED {parseFloat(stats.total_intl_cost || 0).toFixed(2)}</Text>
+          <Text style={styles.kpiValue}>{(stats.total_sms_logs || 0).toLocaleString()} SMS</Text>
+          <Text style={styles.kpiSub}>Itemized SMS logs</Text>
         </View>
 
         <View style={[styles.kpiCard, { borderLeftColor: COLORS.purple }]}>
@@ -802,7 +802,7 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
 
         {/* Category Filters Pill Row */}
         <View style={styles.filterPillsRow}>
-          {['All', 'National Call', 'International Call', 'Calls to Special Number', 'Outgoing Roaming Call', 'Incoming Roaming Call'].map((cat, i) => (
+          {['All', 'National Call', 'International Call', 'Calls to Special Number', 'National SMS', 'International SMS', 'Premium SMS', 'Roaming SMS', 'Outgoing Roaming Call', 'Incoming Roaming Call'].map((cat, i) => (
             <TouchableOpacity
               key={i}
               style={[styles.filterPill, selectedCategoryFilter === cat && styles.filterPillActive]}
@@ -857,11 +857,13 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
                 <View style={{ flex: 1.2 }}>
                   <Text style={[
                     styles.categoryBadge,
-                    log.category === 'International Call' && { backgroundColor: '#EFF6FF', color: COLORS.info },
+                    log.category.includes('International') && { backgroundColor: '#EFF6FF', color: COLORS.info },
+                    log.category.includes('Premium') && { backgroundColor: '#FEE2E2', color: '#991B1B' },
+                    log.category.includes('SMS') && !log.category.includes('Premium') && !log.category.includes('International') && { backgroundColor: '#E0F2FE', color: '#0369A1' },
                     log.category === 'Calls to Special Number' && { backgroundColor: '#FFFBEB', color: COLORS.warning },
                     log.category.includes('Roaming') && { backgroundColor: '#F3E8FF', color: COLORS.purple }
                   ]}>
-                    {log.category}
+                    {log.sub_heading && log.sub_heading !== log.category ? `${log.category} (${log.sub_heading})` : log.category}
                   </Text>
                 </View>
                 <Text style={[styles.tdCell, { flex: 0.8 }]}>{log.duration}</Text>

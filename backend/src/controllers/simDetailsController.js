@@ -56,7 +56,10 @@ exports.getSimDetailById = async (req, res) => {
 
 exports.createSimDetail = async (req, res) => {
   try {
-    const { custom_field_id, field_data, clientid, country_id, moduleid, user_id, company_id, status } = req.body;
+    const { custom_field_id, field_data, clientid, country_id, moduleid, user_id, company_id, status, ...rest } = req.body;
+
+    // Use field_data if provided, or build field_data from remaining request body properties
+    const finalFieldData = field_data || rest || {};
 
     const result = await db.query(
       `INSERT INTO tbl_sim_details 
@@ -65,7 +68,7 @@ exports.createSimDetail = async (req, res) => {
        RETURNING *, tele_id AS id`,
       [
         custom_field_id || null,
-        field_data ? JSON.stringify(field_data) : '{}',
+        JSON.stringify(finalFieldData),
         clientid ? String(clientid) : null,
         country_id ? parseInt(country_id, 10) : null,
         moduleid || 52,
@@ -85,7 +88,9 @@ exports.createSimDetail = async (req, res) => {
 exports.updateSimDetail = async (req, res) => {
   try {
     const { id } = req.params;
-    const { custom_field_id, field_data, clientid, country_id, moduleid, user_id, company_id, status } = req.body;
+    const { custom_field_id, field_data, clientid, country_id, moduleid, user_id, company_id, status, ...rest } = req.body;
+
+    const finalFieldData = field_data || (Object.keys(rest).length > 0 ? rest : null);
 
     const result = await db.query(
       `UPDATE tbl_sim_details 
@@ -102,7 +107,7 @@ exports.updateSimDetail = async (req, res) => {
        RETURNING *, tele_id AS id`,
       [
         custom_field_id || null,
-        field_data ? JSON.stringify(field_data) : null,
+        finalFieldData ? JSON.stringify(finalFieldData) : null,
         clientid ? String(clientid) : null,
         country_id ? parseInt(country_id, 10) : null,
         moduleid || null,

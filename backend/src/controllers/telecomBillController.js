@@ -155,7 +155,7 @@ exports.createTelecomBill = async (req, res) => {
     const mobile_number = body.mobile_number || fd['Mobile Number / Account'] || fd.f_account || '';
     const company_name = body.company_name || body.company_id || fd.Company || fd.f_company || '';
     const telecom_provider = body.telecom_provider || fd['Telecom Provider'] || fd.f_provider || '';
-    
+
     const total_bill = parseFloat(body.total_bill || fd['Total Bill'] || fd.f_total || 0) || 0;
     const plan_rental = parseFloat(body.plan_rental || fd['Service Rental'] || fd['Monthly Plan Amount'] || fd.f_rental || 0) || 0;
     const usage_charges = parseFloat(body.usage_charges || fd['Usage Charges'] || fd.f_usage || 0) || 0;
@@ -273,6 +273,14 @@ exports.createTelecomBill = async (req, res) => {
       }
     }
 
+    // 4. Link tele_bill_id in tbl_telecome_sms_logs for this bill_number
+    if (parentId && bill_number) {
+      await db.query(
+        'UPDATE tbl_telecome_sms_logs SET tele_bill_id = $1 WHERE bill_number = $2 AND tele_bill_id IS NULL',
+        [parentId, bill_number]
+      ).catch(err => console.error('Error linking tele_bill_id in tbl_telecome_sms_logs:', err));
+    }
+
     res.status(201).json({
       ...parentRow,
       items: insertedItems,
@@ -363,10 +371,10 @@ exports.updateTelecomBill = async (req, res) => {
 exports.deleteTelecomBill = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     // Delete child items and call logs first
-    await db.query('DELETE FROM tbl_telecome_bill_items WHERE tele_bill_id = $1', [id]).catch(() => {});
-    await db.query('DELETE FROM tbl_telecome_call_logs WHERE tele_bill_id = $1', [id]).catch(() => {});
+    await db.query('DELETE FROM tbl_telecome_bill_items WHERE tele_bill_id = $1', [id]).catch(() => { });
+    await db.query('DELETE FROM tbl_telecome_call_logs WHERE tele_bill_id = $1', [id]).catch(() => { });
 
     // Delete parent bill
     const result = await db.query(
@@ -391,28 +399,44 @@ exports.getTelecomReportAnalytics = async (req, res) => {
       SELECT 
         (SELECT COUNT(*) FROM tbl_telecome_bill) AS total_bills,
         (SELECT COALESCE(SUM(total_bill), 0) FROM tbl_telecome_bill) AS total_expenses,
-        (SELECT COUNT(*) FROM tbl_telecome_call_logs) AS total_call_logs,
+        (
+          (SELECT COUNT(*) FROM tbl_telecome_call_logs) + 
+          (SELECT COUNT(*) FROM tbl_telecome_sms_logs)
+        ) AS total_call_logs,
+        (SELECT COUNT(*) FROM tbl_telecome_sms_logs) AS total_sms_logs,
         (SELECT COUNT(*) FROM tbl_telecome_call_logs WHERE category = 'International Call') AS total_intl_calls,
         (SELECT COALESCE(SUM(amount), 0) FROM tbl_telecome_call_logs WHERE category = 'International Call') AS total_intl_cost
     `);
 
     const categoryRes = await db.query(`
       SELECT category, COUNT(*) as count, SUM(amount) as total_amount 
-      FROM tbl_telecome_call_logs 
+      FROM (
+        SELECT category, amount FROM tbl_telecome_call_logs
+        UNION ALL
+        SELECT sms_type AS category, amount FROM tbl_telecome_sms_logs
+      ) combined_cats
       GROUP BY category 
       ORDER BY count DESC
     `);
 
     const topCallersRes = await db.query(`
       SELECT source_number, COUNT(*) as call_count, SUM(amount) as total_spent 
-      FROM tbl_telecome_call_logs 
+      FROM (
+        SELECT source_number, amount FROM tbl_telecome_call_logs
+        UNION ALL
+        SELECT source_number, amount FROM tbl_telecome_sms_logs
+      ) combined_sources
       GROUP BY source_number 
       ORDER BY call_count DESC
     `);
 
     const topDestRes = await db.query(`
       SELECT destination_number, category, COUNT(*) as call_count, SUM(amount) as total_spent 
-      FROM tbl_telecome_call_logs 
+      FROM (
+        SELECT destination_number, category, amount FROM tbl_telecome_call_logs
+        UNION ALL
+        SELECT destination_number, sms_type AS category, amount FROM tbl_telecome_sms_logs
+      ) combined_dests
       GROUP BY destination_number, category 
       ORDER BY call_count DESC 
       LIMIT 10
@@ -422,6 +446,10 @@ exports.getTelecomReportAnalytics = async (req, res) => {
       SELECT destination_number, amount 
       FROM tbl_telecome_call_logs 
       WHERE category = 'International Call'
+      UNION ALL
+      SELECT destination_number, amount
+      FROM tbl_telecome_sms_logs
+      WHERE sms_type = 'International SMS'
     `);
 
     const countryMap = {};
@@ -454,18 +482,71 @@ exports.getTelecomReportAnalytics = async (req, res) => {
     const countryBreakdown = Object.values(countryMap).sort((a, b) => b.call_count - a.call_count);
 
     const providerRes = await db.query(`
-      SELECT COALESCE(b.telecom_provider, 'Etisalat') AS provider, COUNT(*) as call_count, SUM(c.amount) as total_spent
-      FROM tbl_telecome_call_logs c
-      LEFT JOIN tbl_telecome_bill b ON c.tele_bill_id = b.tele_bill_id
-      GROUP BY COALESCE(b.telecom_provider, 'Etisalat')
+      SELECT provider, COUNT(*) as call_count, SUM(amount) as total_spent
+      FROM (
+        SELECT 
+          CASE 
+            WHEN c.bill_number = 'I4008352339' OR b.telecom_provider ILIKE 'du%' THEN 'du Telecom'
+            ELSE 'Etisalat'
+          END AS provider, 
+          c.amount
+        FROM tbl_telecome_call_logs c
+        LEFT JOIN tbl_telecome_bill b ON c.tele_bill_id = b.tele_bill_id
+        UNION ALL
+        SELECT 
+          CASE 
+            WHEN s.bill_number = 'I4008352339' OR s.provider ILIKE 'du%' OR b.telecom_provider ILIKE 'du%' THEN 'du Telecom'
+            ELSE 'Etisalat'
+          END AS provider, 
+          s.amount
+        FROM tbl_telecome_sms_logs s
+        LEFT JOIN tbl_telecome_bill b ON s.tele_bill_id = b.tele_bill_id
+      ) combined_providers
+      GROUP BY provider
       ORDER BY call_count DESC
     `);
 
     const recentLogsRes = await db.query(`
-      SELECT c.*, COALESCE(b.telecom_provider, 'Etisalat') AS provider 
-      FROM tbl_telecome_call_logs c 
-      LEFT JOIN tbl_telecome_bill b ON c.tele_bill_id = b.tele_bill_id 
-      ORDER BY c.log_id DESC LIMIT 1000
+      SELECT 
+        c.log_id,
+        c.tele_bill_id,
+        c.bill_number,
+        c.source_number,
+        c.call_date,
+        c.call_time,
+        c.destination_number,
+        c.duration,
+        c.category,
+        c.category AS sub_heading,
+        c.amount,
+        c.created_at,
+        CASE 
+          WHEN c.bill_number = 'I4008352339' OR b.telecom_provider ILIKE 'du%' THEN 'du'
+          ELSE 'Etisalat'
+        END AS provider
+      FROM tbl_telecome_call_logs c
+      LEFT JOIN tbl_telecome_bill b ON c.tele_bill_id = b.tele_bill_id
+      UNION ALL
+      SELECT 
+        s.sms_log_id AS log_id,
+        s.tele_bill_id,
+        s.bill_number,
+        s.source_number,
+        s.sms_date AS call_date,
+        s.sms_time AS call_time,
+        s.destination_number,
+        '00:00:00' AS duration,
+        s.sms_type AS category,
+        COALESCE(s.sub_heading, s.sms_type) AS sub_heading,
+        s.amount,
+        s.created_at,
+        CASE 
+          WHEN s.bill_number = 'I4008352339' OR s.provider ILIKE 'du%' OR b.telecom_provider ILIKE 'du%' THEN 'du'
+          ELSE 'Etisalat'
+        END AS provider
+      FROM tbl_telecome_sms_logs s
+      LEFT JOIN tbl_telecome_bill b ON s.tele_bill_id = b.tele_bill_id
+      ORDER BY log_id DESC LIMIT 5000
     `);
 
     res.status(200).json({
