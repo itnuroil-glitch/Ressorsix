@@ -3,21 +3,21 @@ const db = require('../config/db');
 exports.getAllSimPlans = async (req, res) => {
   try {
     const clientId = req.query.client_id || req.query.clientid;
-    let queryText = `
-      SELECT * FROM tbl_sim_plan 
-      WHERE is_deleted = 0 
-    `;
-    let params = [];
+    let result;
     if (clientId) {
-      queryText += ` AND (client_id = $1 OR client_id IS NULL)`;
-      params.push(clientId);
+      result = await db.query(
+        `SELECT * FROM tbl_sim_plan WHERE is_deleted = 0 AND (client_id::text = $1 OR client_id IS NULL) ORDER BY id ASC`,
+        [String(clientId)]
+      ).catch(async () => {
+        return db.query(`SELECT * FROM tbl_sim_plan WHERE is_deleted = 0 ORDER BY id ASC`);
+      });
+    } else {
+      result = await db.query(`SELECT * FROM tbl_sim_plan WHERE is_deleted = 0 ORDER BY id ASC`);
     }
-    queryText += ` ORDER BY id ASC`;
-    const result = await db.query(queryText, params);
-    res.status(200).json(result.rows);
+    res.status(200).json(result.rows || []);
   } catch (error) {
     console.error('Error fetching SIM plan names:', error);
-    res.status(500).json({ message: 'Internal Server Error' });
+    res.status(500).json({ message: error.message || 'Internal Server Error' });
   }
 };
 

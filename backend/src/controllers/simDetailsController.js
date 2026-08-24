@@ -26,7 +26,81 @@ exports.getAllSimDetails = async (req, res) => {
     }
     query += ' ORDER BY sd.tele_id DESC';
     const result = await db.query(query, params);
-    res.status(200).json(result.rows);
+
+    const formattedRows = result.rows.map(row => {
+      let fd = row.field_data;
+      if (typeof fd === 'string') {
+        try { fd = JSON.parse(fd); } catch (e) { fd = {}; }
+      }
+      if (!fd || typeof fd !== 'object') fd = {};
+
+      if (fd && typeof fd.field_data === 'string') {
+        try { fd = { ...fd, ...JSON.parse(fd.field_data) }; } catch (e) {}
+      } else if (fd && typeof fd.field_data === 'object' && fd.field_data !== null) {
+        fd = { ...fd, ...fd.field_data };
+      }
+
+      let planName =
+        row.plan_name ||
+        fd.plan_name ||
+        fd['Plan Name'] ||
+        fd['Package Plan'] ||
+        fd['Package Plan '] ||
+        fd.package_plan ||
+        fd.sim_plan ||
+        fd['1786100996941'] ||
+        null;
+
+      if (!planName) {
+        for (const [k, v] of Object.entries(fd)) {
+          if (!v || typeof v === 'object') continue;
+          const lk = k.trim().toLowerCase();
+          if ((lk.includes('plan') || lk.includes('package')) && !lk.includes('amount') && !lk.includes('cost') && !lk.includes('rental')) {
+            const sv = String(v).trim();
+            if (sv && sv !== 'null' && sv !== 'undefined') {
+              planName = sv;
+              break;
+            }
+          }
+        }
+      }
+
+      let monthlyAmount =
+        row.monthly_plan_amount ||
+        row.monthly_amount ||
+        row.plan_amount ||
+        fd.monthly_plan_amount ||
+        fd.monthly_amount ||
+        fd['Monthly Plan Amount'] ||
+        fd['Monthly Plan Amount '] ||
+        fd['Monthly Amount'] ||
+        fd['Plan Amount'] ||
+        fd['Monthly Rental'] ||
+        fd['1786101020492'] ||
+        null;
+
+      if (!monthlyAmount) {
+        for (const [k, v] of Object.entries(fd)) {
+          if (v === undefined || v === null || typeof v === 'object') continue;
+          const lk = k.trim().toLowerCase();
+          if (lk.includes('monthly') || lk.includes('rental') || (lk.includes('plan') && (lk.includes('amount') || lk.includes('cost') || lk.includes('price')))) {
+            const sv = String(v).trim();
+            if (sv && sv !== 'null' && sv !== 'undefined') {
+              monthlyAmount = sv;
+              break;
+            }
+          }
+        }
+      }
+
+      return {
+        ...row,
+        plan_name: planName || row.plan_name || null,
+        monthly_plan_amount: monthlyAmount || row.monthly_plan_amount || null
+      };
+    });
+
+    res.status(200).json(formattedRows);
   } catch (err) {
     console.error('Error fetching SIM details:', err);
     res.status(500).json({ error: err.message || 'Internal Server Error' });
