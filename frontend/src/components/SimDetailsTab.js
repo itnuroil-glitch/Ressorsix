@@ -212,7 +212,7 @@ export default function SimDetailsTab({
       const isSimModule = (cf) => {
         const modId = String(cf.moduleid || cf.module_id || '');
         const modName = String(cf.module_name || '').toLowerCase();
-        if (modId === '52' || modId === '55' || modId === '59') return true;
+        if (modId === '52' || modId === '58' || modId === '59') return true;
         if (modName.includes('document')) return false;
         return modName.includes('sim') || modName === 'telecom details' || modName.includes('telecom detail');
       };
