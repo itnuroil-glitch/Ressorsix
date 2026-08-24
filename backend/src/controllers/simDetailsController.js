@@ -54,12 +54,44 @@ exports.getSimDetailById = async (req, res) => {
   }
 };
 
+const sanitizeFieldData = (data) => {
+  if (!data || typeof data !== 'object') return data || {};
+  const cleanData = {};
+
+  for (let [key, val] of Object.entries(data)) {
+    // 1. Skip numeric timestamp keys (e.g. "1786100933533")
+    if (/^\d{10,}$/.test(key)) continue;
+
+    // 2. Trim leading/trailing spaces from key name
+    const trimmedKey = key.trim();
+
+    // 3. Skip empty snake_case keys (e.g. "local_minutes": "", "monthly_plan_amount": "")
+    const isSnakeCase = /^[a-z0-9_]+$/.test(trimmedKey) && trimmedKey.includes('_');
+    if (isSnakeCase && (val === '' || val === null || val === undefined)) {
+      continue;
+    }
+
+    // 4. Preserve non-empty value if duplicate key encountered
+    if (Object.prototype.hasOwnProperty.call(cleanData, trimmedKey)) {
+      const existingVal = cleanData[trimmedKey];
+      if ((existingVal === '' || existingVal === null || existingVal === undefined) && (val !== '' && val !== null && val !== undefined)) {
+        cleanData[trimmedKey] = val;
+      }
+    } else {
+      cleanData[trimmedKey] = val;
+    }
+  }
+
+  return cleanData;
+};
+
 exports.createSimDetail = async (req, res) => {
   try {
     const { custom_field_id, field_data, clientid, country_id, moduleid, user_id, company_id, status, ...rest } = req.body;
 
     // Use field_data if provided, or build field_data from remaining request body properties
-    const finalFieldData = field_data || rest || {};
+    const rawFieldData = field_data || (Object.keys(rest).length > 0 ? rest : {});
+    const finalFieldData = sanitizeFieldData(rawFieldData);
 
     const result = await db.query(
       `INSERT INTO tbl_sim_details 
@@ -90,7 +122,8 @@ exports.updateSimDetail = async (req, res) => {
     const { id } = req.params;
     const { custom_field_id, field_data, clientid, country_id, moduleid, user_id, company_id, status, ...rest } = req.body;
 
-    const finalFieldData = field_data || (Object.keys(rest).length > 0 ? rest : null);
+    const rawFieldData = field_data || (Object.keys(rest).length > 0 ? rest : null);
+    const finalFieldData = rawFieldData ? sanitizeFieldData(rawFieldData) : null;
 
     const result = await db.query(
       `UPDATE tbl_sim_details 
