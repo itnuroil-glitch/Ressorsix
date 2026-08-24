@@ -1088,6 +1088,11 @@ export default function SimDetailsTab({
                     let ed = {};
                     try {
                       fd = typeof item.field_data === 'string' ? JSON.parse(item.field_data) : (item.field_data || {});
+                      if (fd && typeof fd.field_data === 'string') {
+                        try { fd = { ...fd, ...JSON.parse(fd.field_data) }; } catch (e) {}
+                      } else if (fd && typeof fd.field_data === 'object' && fd.field_data !== null) {
+                        fd = { ...fd, ...fd.field_data };
+                      }
                       ed = typeof item.extracted_data === 'string' ? JSON.parse(item.extracted_data) : (item.extracted_data || {});
                     } catch (e) {
                       fd = {};
