@@ -46,7 +46,7 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
   const [activeDatePreset, setActiveDatePreset] = useState('Custom Range');
   const [fromDateInput, setFromDateInput] = useState('2026-07-01');
   const [toDateInput, setToDateInput] = useState('2026-07-31');
-  const [appliedDateRange, setAppliedDateRange] = useState({ from: '2026-07-01', to: '2026-07-31' });
+  const [appliedDateRange, setAppliedDateRange] = useState({ from: null, to: null });
 
   // Helper to format YYYY-MM-DD or date strings into readable "01 Jul 2026"
   const formatDisplayDate = (isoStr) => {
@@ -204,10 +204,13 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
   };
 
   // Extract unique months from call logs
+  const julLogs = recentLogs.filter(l => l.call_date && (l.call_date.includes('Jul') || l.call_date.includes('07')));
+  const augLogs = recentLogs.filter(l => l.call_date && (l.call_date.includes('Aug') || l.call_date.includes('08')));
+
   const availableMonths = [
-    { key: 'All', label: `All Months (${recentLogs.length})` },
-    { key: 'Jul 2026', label: `July 2026 (${recentLogs.filter(l => l.call_date && l.call_date.includes('Jul 2026')).length || recentLogs.length})` },
-    { key: 'Aug 2026', label: `August 2026 (${recentLogs.filter(l => l.call_date && l.call_date.includes('Aug 2026')).length})` }
+    { key: 'All', label: `All Months (${recentLogs.length.toLocaleString()})` },
+    { key: 'Jul', label: `July 2026 (${julLogs.length.toLocaleString()})` },
+    { key: 'Aug', label: `August 2026 (${augLogs.length.toLocaleString()})` }
   ];
 
   // Filter logs by category, provider, month, date range, search query AND sort by date
@@ -215,7 +218,7 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
     .filter(log => {
       const matchesCat = selectedCategoryFilter === 'All' || log.category === selectedCategoryFilter;
       const matchesProv = selectedProviderFilter === 'All' || (log.provider && log.provider.toLowerCase() === selectedProviderFilter.toLowerCase());
-      const matchesMonth = selectedMonthFilter === 'All' || (log.call_date && log.call_date.includes(selectedMonthFilter));
+      const matchesMonth = selectedMonthFilter === 'All' || (log.call_date && log.call_date.toLowerCase().includes(selectedMonthFilter.toLowerCase()));
       
       // Date Range Filter
       let matchesDateRange = true;
@@ -474,7 +477,7 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
                 onPress={() => setSelectedProviderFilter('All')}
               >
                 <Text style={[styles.providerTabText, selectedProviderFilter === 'All' && styles.providerTabTextActive]}>
-                  All Providers ({recentLogs.length})
+                  All Providers ({recentLogs.length.toLocaleString()})
                 </Text>
               </TouchableOpacity>
 
@@ -483,7 +486,7 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
                 onPress={() => setSelectedProviderFilter('Etisalat')}
               >
                 <Text style={[styles.providerTabText, selectedProviderFilter === 'Etisalat' && { color: '#FFF' }]}>
-                  Etisalat (551)
+                  Etisalat ({recentLogs.filter(l => l.provider && l.provider.toLowerCase().includes('etisalat')).length.toLocaleString()})
                 </Text>
               </TouchableOpacity>
 
@@ -492,7 +495,7 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
                 onPress={() => setSelectedProviderFilter('du')}
               >
                 <Text style={[styles.providerTabText, selectedProviderFilter === 'du' && { color: '#FFF' }]}>
-                  du (1,314)
+                  du ({recentLogs.filter(l => l.provider && l.provider.toLowerCase().includes('du')).length.toLocaleString()})
                 </Text>
               </TouchableOpacity>
             </View>
