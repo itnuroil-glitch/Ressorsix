@@ -530,12 +530,14 @@ exports.deleteTelecomBill = async (req, res) => {
     const billRes = await db.query(`SELECT * FROM tbl_telecome_bill WHERE ${pkCol} = $1`, [id]).catch(() => ({ rows: [] }));
     const billNum = billRes.rows[0]?.bill_number;
 
-    // Delete child items and call logs first by FK and bill_number
+    // Delete child items, call logs, and SMS logs first by FK and bill_number
     await db.query(`DELETE FROM tbl_telecome_bill_items WHERE ${itemFk} = $1 OR tele_bill_id = $1 OR bill_id = $1`, [id]).catch(() => { });
     await db.query(`DELETE FROM tbl_telecome_call_logs WHERE ${logFk} = $1 OR tele_bill_id = $1 OR bill_id = $1`, [id]).catch(() => { });
+    await db.query(`DELETE FROM tbl_telecome_sms_logs WHERE ${logFk} = $1 OR tele_bill_id = $1 OR bill_id = $1`, [id]).catch(() => { });
     if (billNum) {
       await db.query(`DELETE FROM tbl_telecome_bill_items WHERE bill_number = $1`, [billNum]).catch(() => { });
       await db.query(`DELETE FROM tbl_telecome_call_logs WHERE bill_number = $1`, [billNum]).catch(() => { });
+      await db.query(`DELETE FROM tbl_telecome_sms_logs WHERE bill_number = $1`, [billNum]).catch(() => { });
     }
 
     // Delete parent bill
@@ -552,6 +554,7 @@ exports.deleteTelecomBill = async (req, res) => {
     const countRes = await db.query('SELECT COUNT(*) FROM tbl_telecome_bill').catch(() => ({ rows: [{ count: '1' }] }));
     if (parseInt(countRes.rows[0]?.count || 0) === 0) {
       await db.query('DELETE FROM tbl_telecome_call_logs').catch(() => { });
+      await db.query('DELETE FROM tbl_telecome_sms_logs').catch(() => { });
       await db.query('DELETE FROM tbl_telecome_bill_items').catch(() => { });
     }
 
