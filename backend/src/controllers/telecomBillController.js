@@ -7,8 +7,7 @@ exports.getAllTelecomBills = async (req, res) => {
       SELECT 
         tb.*, 
         tb.tele_bill_id AS id,
-        c.client_name,
-        co.name as country_name
+        c.client_name
       FROM tbl_telecome_bill tb
       LEFT JOIN client c ON (
         CASE 
@@ -16,7 +15,6 @@ exports.getAllTelecomBills = async (req, res) => {
           ELSE false 
         END
       )
-      LEFT JOIN country co ON tb.country_id = co.id
       WHERE 1=1
     `;
     let params = [];
@@ -91,7 +89,7 @@ exports.getTelecomBillById = async (req, res) => {
   try {
     const { id } = req.params;
     const query = `
-      SELECT tb.*, tb.tele_bill_id AS id, c.client_name, co.name as country_name
+      SELECT tb.*, tb.tele_bill_id AS id, c.client_name
       FROM tbl_telecome_bill tb
       LEFT JOIN client c ON (
         CASE 
@@ -99,7 +97,6 @@ exports.getTelecomBillById = async (req, res) => {
           ELSE false 
         END
       )
-      LEFT JOIN country co ON tb.country_id = co.id
       WHERE tb.tele_bill_id = $1
     `;
     const result = await db.query(query, [id]);
@@ -174,7 +171,6 @@ exports.createTelecomBill = async (req, res) => {
     const roaming_data = parseFloat(body.roaming_data || 0.00) || 0;
 
     const clientid = body.clientid ? String(body.clientid) : null;
-    const country_id = body.country_id ? parseInt(body.country_id, 10) : 1;
     const status = body.status || fd['Payment Status'] || fd.f_status || 'Pending';
     const pdf_filename = body.pdf_filename || fd['Invoice PDF'] || null;
 
@@ -185,14 +181,14 @@ exports.createTelecomBill = async (req, res) => {
         total_bill, plan_rental, usage_charges, special_number, premium_sms, mparking_total,
         vat_current_period, previous_bill, payment_received, balance_carried_forward,
         local_mobile_call, local_telephone_call, international_call, incoming_roaming_call,
-        local_data, roaming_data, clientid, country_id, status, pdf_filename,
+        local_data, roaming_data, clientid, status, pdf_filename,
         created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4,
         $5, $6, $7, $8, $9, $10,
         $11, $12, $13, $14,
         $15, $16, $17, $18,
-        $19, $20, $21, $22, $23, $24,
+        $19, $20, $21, $22, $23,
         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       ) RETURNING *, tele_bill_id AS id
     `;
@@ -202,7 +198,7 @@ exports.createTelecomBill = async (req, res) => {
       total_bill, plan_rental, usage_charges, special_number, premium_sms, mparking_total,
       vat_current_period, previous_bill, payment_received, balance_carried_forward,
       local_mobile_call, local_telephone_call, international_call, incoming_roaming_call,
-      local_data, roaming_data, clientid, country_id, status, pdf_filename
+      local_data, roaming_data, clientid, status, pdf_filename
     ];
 
     const result = await db.query(query, params);
