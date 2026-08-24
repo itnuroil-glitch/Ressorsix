@@ -2502,15 +2502,15 @@ export default function SimDetailsTab({
                 return (
                   <View style={{ borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, overflow: 'hidden' }}>
                     {/* Header */}
-                    <View style={{ flexDirection: 'row', backgroundColor: '#F1F5F9', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#CBD5E1' }}>
-                      <Text style={{ flex: 1.2, fontSize: 12, fontWeight: '700', color: '#334155' }}>Account / SIM No</Text>
-                      <Text style={{ flex: 1.5, fontSize: 12, fontWeight: '700', color: '#334155' }}>Plan Name</Text>
-                      <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: '#334155' }}>Amount</Text>
-                      <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: '#334155' }}>Sub Type</Text>
-                      <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: '#334155' }}>Addon Type</Text>
-                      <Text style={{ flex: 2, fontSize: 12, fontWeight: '700', color: '#334155' }}>Details</Text>
-                      <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: '#334155' }}>Document</Text>
-                      <Text style={{ width: 80, fontSize: 12, fontWeight: '700', color: '#334155', textAlign: 'center' }}>Actions</Text>
+                    <View style={{ flexDirection: 'row', backgroundColor: '#F8FAFC', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#CBD5E1' }}>
+                      <Text style={{ width: 50, fontSize: 12, fontWeight: '700', color: '#64748B' }}>ID</Text>
+                      <Text style={{ flex: 2.0, fontSize: 12, fontWeight: '700', color: '#64748B' }}>COMPANY NAME</Text>
+                      <Text style={{ flex: 1.8, fontSize: 12, fontWeight: '700', color: '#64748B' }}>TELECOM PROVIDER</Text>
+                      <Text style={{ flex: 2.0, fontSize: 12, fontWeight: '700', color: '#64748B' }}>USER NAME</Text>
+                      <Text style={{ flex: 1.8, fontSize: 12, fontWeight: '700', color: '#64748B' }}>PLAN NAME</Text>
+                      <Text style={{ flex: 1.6, fontSize: 12, fontWeight: '700', color: '#64748B' }}>MONTHLY AMOUNT</Text>
+                      <Text style={{ width: 80, fontSize: 12, fontWeight: '700', color: '#64748B', textAlign: 'center' }}>STATUS</Text>
+                      <Text style={{ width: 100, fontSize: 12, fontWeight: '700', color: '#64748B', textAlign: 'center' }}>ACTION</Text>
                     </View>
 
                     {/* Rows */}
@@ -2522,27 +2522,52 @@ export default function SimDetailsTab({
                             : (item.document_attachments ? [item.document_attachments] : []));
                       const docPath = docList.length > 0 ? docList[0] : null;
 
+                      const cName = item.company_name || item.client_name || 'N/A';
+                      const pName = item.plan_name || item.addon_type || 'N/A';
+                      const amt = item.plan_amount ? (String(item.plan_amount).toLowerCase().includes('aed') ? item.plan_amount : `${item.plan_amount} AED`) : '0 AED';
+                      const statusVal = item.status || 'Active';
+
                       return (
                         <View key={item.id || idx} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC' }}>
-                          <Text style={{ flex: 1.2, fontSize: 13, fontWeight: '600', color: '#0F172A' }}>{item.account_number || item.sim_number || 'N/A'}</Text>
-                          <Text style={{ flex: 1.5, fontSize: 13, color: '#334155' }}>{item.plan_name || 'N/A'}</Text>
-                          <Text style={{ flex: 1, fontSize: 13, fontWeight: '600', color: '#15803D' }}>{item.plan_amount ? `${item.plan_amount} AED` : '0 AED'}</Text>
-                          <Text style={{ flex: 1, fontSize: 13, color: '#475569' }}>{item.subscription_type || 'N/A'}</Text>
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 12, fontWeight: '600', color: '#0284c7', backgroundColor: '#E0F2FE', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, alignSelf: 'flex-start' }}>{item.addon_type || 'Data'}</Text>
-                          </View>
-                          <Text style={{ flex: 2, fontSize: 12, color: '#475569' }}>{item.addon_details || item.voice_minute_type || item.roaming_category || 'N/A'}</Text>
-                          <View style={{ flex: 1 }}>
-                            {docPath ? (
-                              <TouchableOpacity onPress={() => window.open(docPath.startsWith('http') ? docPath : `${API_URL}${docPath.startsWith('/') ? '' : '/'}${docPath}`, '_blank')} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                                <Ionicons name="document-attach" size={16} color="#2563EB" />
-                                <Text style={{ fontSize: 12, color: '#2563EB', fontWeight: '500' }}>View PDF</Text>
-                              </TouchableOpacity>
-                            ) : (
-                              <Text style={{ fontSize: 12, color: '#94A3B8' }}>None</Text>
+                          <Text style={{ width: 50, fontSize: 13, fontWeight: '600', color: '#64748B' }}>#{item.id}</Text>
+                          
+                          <View style={{ flex: 2.0 }}>
+                            <Text style={{ fontWeight: '600', color: '#0F172A', fontSize: 13 }}>{cName}</Text>
+                            {item.client_name && item.client_name !== cName && (
+                              <Text style={{ fontSize: 11, color: '#64748B' }}>{item.client_name}</Text>
                             )}
                           </View>
-                          <View style={{ width: 80, flexDirection: 'row', justifyContent: 'center', gap: 10 }}>
+
+                          <Text style={{ flex: 1.8, fontSize: 13, fontWeight: '600', color: '#0F172A' }}>
+                            {item.telecom_provider || 'e& (Etisalat)'}
+                          </Text>
+
+                          <Text style={{ flex: 2.0, fontSize: 13, fontWeight: '600', color: '#0F172A' }}>
+                            {item.user_name || item.assigned_employee || 'N/A'}
+                          </Text>
+
+                          <Text style={{ flex: 1.8, fontSize: 13, fontWeight: '600', color: '#0F172A' }}>
+                            {pName}
+                          </Text>
+
+                          <Text style={{ flex: 1.6, fontSize: 13, fontWeight: '700', color: '#15803D' }}>
+                            {amt}
+                          </Text>
+
+                          <View style={{ width: 80, alignItems: 'center' }}>
+                            <View style={{ backgroundColor: statusVal === 'Active' ? '#E0F2FE' : '#F3F4F6', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 }}>
+                              <Text style={{ fontSize: 11, fontWeight: '700', color: statusVal === 'Active' ? '#0284C7' : '#6B7280' }}>
+                                {statusVal.toUpperCase()}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View style={{ width: 100, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
+                            {docPath && (
+                              <TouchableOpacity onPress={() => window.open(docPath.startsWith('http') ? docPath : `${API_URL}${docPath.startsWith('/') ? '' : '/'}${docPath}`, '_blank')} style={{ padding: 4 }}>
+                                <Ionicons name="document-text-outline" size={18} color="#0284c7" />
+                              </TouchableOpacity>
+                            )}
                             <TouchableOpacity onPress={() => deleteAddOnRecord(item.id)} style={{ padding: 4 }}>
                               <Ionicons name="trash-outline" size={18} color="#DC2626" />
                             </TouchableOpacity>
