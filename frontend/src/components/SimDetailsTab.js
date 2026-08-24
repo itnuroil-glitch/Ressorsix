@@ -1216,16 +1216,50 @@ export default function SimDetailsTab({
                               <Text style={{ fontWeight: '600', color: COLORS.textPrimary }}>{employeeName}</Text>
                             </View>
 
-                            {/* PLAN NAME */}
+                             {/* PLAN NAME */}
                             <Text style={[styles.tdCell, { flex: 1.8, color: COLORS.textPrimary, fontWeight: '600' }]}>
-                              {fd.plan_name || fd['Plan Name'] || fd['Package Plan '] || fd['1786100996941'] || item.plan_name || 'N/A'}
+                              {(() => {
+                                const directItem = item.plan_name;
+                                if (directItem && String(directItem).trim()) return String(directItem).trim();
+                                if (!fd || typeof fd !== 'object') return 'N/A';
+                                const direct = fd.plan_name || fd['Plan Name'] || fd['Package Plan'] || fd['Package Plan '] || fd.package_plan || fd.sim_plan || fd['1786100996941'];
+                                if (direct && String(direct).trim() && String(direct).trim() !== 'null') return String(direct).trim();
+                                for (const [k, v] of Object.entries(fd)) {
+                                  if (!v || typeof v === 'object') continue;
+                                  const lk = k.trim().toLowerCase();
+                                  if ((lk.includes('plan') || lk.includes('package')) && !lk.includes('amount') && !lk.includes('cost') && !lk.includes('rental')) {
+                                    const sv = String(v).trim();
+                                    if (sv && sv !== 'null' && sv !== 'undefined') return sv;
+                                  }
+                                }
+                                return 'N/A';
+                              })()}
                             </Text>
 
                             {/* MONTHLY AMOUNT */}
                             <Text style={[styles.tdCell, { flex: 1.6, fontWeight: '700', color: '#15803D' }]}>
-                              {(fd.monthly_plan_amount || fd['Monthly Plan Amount '] || fd['1786101020492'] || item.monthly_plan_amount || item.plan_amount)
-                                ? `${fd.monthly_plan_amount || fd['Monthly Plan Amount '] || fd['1786101020492'] || item.monthly_plan_amount || item.plan_amount} AED`
-                                : 'N/A'}
+                              {(() => {
+                                const directItem = item.monthly_plan_amount || item.monthly_amount || item.plan_amount || item.rental_amount;
+                                if (directItem && String(directItem).trim()) {
+                                  const s = String(directItem).trim();
+                                  return s.toLowerCase().includes('aed') ? s : `${s} AED`;
+                                }
+                                if (!fd || typeof fd !== 'object') return 'N/A';
+                                const direct = fd.monthly_plan_amount || fd.monthly_amount || fd['Monthly Plan Amount'] || fd['Monthly Plan Amount '] || fd['Monthly Amount'] || fd['Plan Amount'] || fd['Monthly Rental'] || fd['1786101020492'];
+                                if (direct !== undefined && direct !== null && String(direct).trim() !== '' && String(direct).trim() !== 'null') {
+                                  const s = String(direct).trim();
+                                  return s.toLowerCase().includes('aed') ? s : `${s} AED`;
+                                }
+                                for (const [k, v] of Object.entries(fd)) {
+                                  if (v === undefined || v === null || typeof v === 'object') continue;
+                                  const lk = k.trim().toLowerCase();
+                                  if (lk.includes('monthly') || lk.includes('rental') || (lk.includes('plan') && (lk.includes('amount') || lk.includes('cost') || lk.includes('price')))) {
+                                    const sv = String(v).trim();
+                                    if (sv && sv !== 'null' && sv !== 'undefined') return sv.toLowerCase().includes('aed') ? sv : `${sv} AED`;
+                                  }
+                                }
+                                return 'N/A';
+                              })()}
                             </Text>
                           </>
                         )}
