@@ -498,11 +498,30 @@ const TelecomBillTab = ({
   const handleConfirmImport = async () => {
     setImporting(true);
     try {
+      const summary = pdfParsedData?.summary || {};
+      const items = pdfParsedData?.rows || pdfParsedData?.items || [];
+      const callLogs = pdfParsedData?.call_logs || [];
+
       const payload = {
+        bill_number: summary.bill_number || summary['Bill Number'] || '',
+        mobile_number: summary.mobile_number || summary['Mobile Number / Account'] || '',
+        company_name: selectedCompany || formData.Company || summary.company_name || '',
+        telecom_provider: summary.telecom_provider || summary['Telecom Provider'] || 'Etisalat',
+        total_bill: summary.total_bill || summary['Total Bill'] || 0,
+        plan_rental: summary.plan_rental || summary['Service Rental'] || summary['Monthly Plan Amount'] || 0,
+        usage_charges: summary.usage_charges || summary['Usage Charges'] || 0,
+        vat_current_period: summary.vat_current_period || summary.VAT || 0,
+        pdf_filename: pdfParsedData?.pdf_filename || summary.pdf_filename || null,
+        items: items,
+        call_logs: callLogs,
         custom_field_id: customFields?.id || null,
-        field_data: { ...formData, Company: selectedCompany || formData.Company },
+        field_data: { 
+          ...formData, 
+          Company: selectedCompany || formData.Company,
+          items,
+          call_logs: callLogs
+        },
         clientid: selectedClient || user?.clientid || null,
-        country_id: selectedCountry || 1,
         company_id: selectedCompany || formData.Company || null,
         user_id: user?.id || null,
         status: formData['Payment Status'] || formData.status || 'Pending'
