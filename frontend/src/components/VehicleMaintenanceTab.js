@@ -528,10 +528,42 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
   const handleSave = async () => {
     setSaving(true);
     try {
+      let selectedVehicleId = formData.vehicle_id || formData.vehicleId;
+      if (!selectedVehicleId && fieldsLayout && Array.isArray(fieldsLayout)) {
+        for (const sec of fieldsLayout) {
+          for (const f of (sec.fields || [])) {
+            const fName = (f.name || f.label || '').toLowerCase();
+            const dPath = (f.dynamicPath || f.dynamicLink || f.apiPath || '').toLowerCase();
+            if (f.id === 'vehicle_id' || fName.includes('vehicle') || dPath.includes('vehicle')) {
+              if (formData[f.id]) {
+                selectedVehicleId = formData[f.id];
+                break;
+              }
+            }
+          }
+          if (selectedVehicleId) break;
+        }
+      }
+      if (!selectedVehicleId && editingRecord) {
+        selectedVehicleId = editingRecord.vehicle_id;
+      }
+
+      const finalFormData = { ...formData };
+      const todayStr = new Date().toISOString().split('T')[0];
+      if (fieldsLayout && Array.isArray(fieldsLayout)) {
+        for (const sec of fieldsLayout) {
+          for (const f of (sec.fields || [])) {
+            if (f.type === 'Date' && !finalFormData[f.id]) {
+              finalFormData[f.id] = todayStr;
+            }
+          }
+        }
+      }
+
       const payload = {
-        vehicle_id: editingRecord ? (editingRecord.vehicle_id || null) : null,
+        vehicle_id: selectedVehicleId ? String(selectedVehicleId) : null,
         custom_field_id: customFieldId,
-        field_data: formData,
+        field_data: finalFormData,
         clientid: configParams.clientid || selectedClient,
         country_id: configParams.country_id || selectedCountry,
         moduleid: configParams.moduleid || selectedModule,
@@ -574,7 +606,9 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
     const fdStr = JSON.stringify(rec.field_data || {}).toLowerCase();
     const empName = (rec.employee_name || '').toLowerCase();
     const compName = (rec.company_name || '').toLowerCase();
-    return fdStr.includes(q) || empName.includes(q) || compName.includes(q) || String(rec.id).includes(q);
+    const vName = (rec.vehicle_name || '').toLowerCase();
+    const pNo = (rec.plate_no || '').toLowerCase();
+    return fdStr.includes(q) || empName.includes(q) || compName.includes(q) || vName.includes(q) || pNo.includes(q) || String(rec.id).includes(q);
   });
 
   const totalPages = Math.ceil(filteredRecords.length / itemsPerPage) || 1;
@@ -677,10 +711,10 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
               ) : (
                 paginatedRecords.map((item, idx) => {
                   const fd = item.field_data || {};
-                  const vehicleName = fd.vehicle_name || fd['Vehicle Name'] || 'Toyota Yaris';
-                  const plateNo = fd.plate_no || fd['Plate Number'] || 'DXB EE 64914';
-                  const serviceType = fd.service_type || fd['Service Type'] || 'General Service';
-                  const cost = fd.total_cost || fd['Total Cost'] || 'AED 450.00';
+                  const vehicleName = item.vehicle_name && item.vehicle_name !== 'N/A' ? item.vehicle_name : (fd.vehicle_name || fd['Vehicle Name'] || 'N/A');
+                  const plateNo = item.plate_no && item.plate_no !== 'N/A' ? item.plate_no : (fd.plate_no || fd['Plate Number'] || 'N/A');
+                  const serviceType = fd.service_type || fd['Service Type'] || fd['1786967942496'] || 'General Service';
+                  const cost = fd.total_cost || fd['Total Cost'] || fd['1786968040112'] || 'AED 0.00';
 
                   return (
                     <View key={item.id || idx} style={[styles.tableRow, idx % 2 === 1 && { backgroundColor: '#F8FAFC' }]}>

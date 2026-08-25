@@ -63,11 +63,12 @@ export default function SimDetailsTab({
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [successDetails, setSuccessDetails] = useState(null);
 
-  // Add On View Modal State
-  const [showAddOnViewModal, setShowAddOnViewModal] = useState(false);
+  // Add On View State
   const [addOnRecords, setAddOnRecords] = useState([]);
   const [loadingAddOns, setLoadingAddOns] = useState(false);
   const [addOnSearch, setAddOnSearch] = useState('');
+  const [viewMode, setViewMode] = useState('sim'); // 'sim' or 'addon'
+  const [addOnPage, setAddOnPage] = useState(1);
 
   const fetchAddOnRecords = async () => {
     setLoadingAddOns(true);
@@ -136,6 +137,7 @@ export default function SimDetailsTab({
 
   const fetchInitialData = async () => {
     setLoading(true);
+    fetchAddOnRecords();
     try {
       const clientQuery = user?.clientid ? `?clientid=${user.clientid}` : '';
       const endpoint = isTelecomDataView ? 'telecom-data' : 'sim-details';
@@ -864,6 +866,7 @@ export default function SimDetailsTab({
       setSuccessDetails(payload);
       setShowSuccessDialog(true);
       fetchInitialData();
+      fetchAddOnRecords();
     } catch (err) {
       console.error(err);
       showToast(err.message || 'Error saving record', 'error');
@@ -885,6 +888,8 @@ export default function SimDetailsTab({
       showToast('Error deleting record', 'error');
     }
   };
+
+
 
   const filteredRecords = records.filter(item => {
     let fd = {};
@@ -1028,9 +1033,21 @@ export default function SimDetailsTab({
               <Text style={styles.addBtnText}>+ Add On</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.addBtn, { backgroundColor: '#0284c7' }]} onPress={() => { fetchAddOnRecords(); setShowAddOnViewModal(true); }} activeOpacity={0.8}>
-              <Ionicons name="eye-outline" size={18} color={COLORS.white} />
-              <Text style={styles.addBtnText}>Add On View</Text>
+            <TouchableOpacity
+              style={[styles.addBtn, { backgroundColor: viewMode === 'addon' ? '#166534' : '#0284c7' }]}
+              onPress={() => {
+                if (viewMode === 'addon') {
+                  setViewMode('sim');
+                } else {
+                  fetchAddOnRecords();
+                  setViewMode('addon');
+                  setAddOnPage(1);
+                }
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name={viewMode === 'addon' ? "list-outline" : "eye-outline"} size={18} color={COLORS.white} />
+              <Text style={styles.addBtnText}>{viewMode === 'addon' ? 'SIM Records View' : 'Add On View'}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -1038,283 +1055,465 @@ export default function SimDetailsTab({
 
       {/* TABLE SECTION */}
       <View style={[styles.tableCard, { marginTop: SPACING.md }]}>
-        {renderTableToolbar
-          ? renderTableToolbar(search, setSearch, setPage, 'Search by ID, mobile number, provider...')
-          : null}
+        {/* VIEW SWITCHER PILLS */}
+        <View style={{ flexDirection: 'row', gap: 10, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', marginBottom: 12 }}>
+          <TouchableOpacity
+            onPress={() => setViewMode('sim')}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: 16,
+              paddingVertical: 8,
+              borderRadius: 8,
+              backgroundColor: viewMode === 'sim' ? '#166534' : '#F1F5F9',
+            }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="hardware-chip-outline" size={16} color={viewMode === 'sim' ? '#FFFFFF' : '#475569'} />
+            <Text style={{ fontWeight: '600', fontSize: 13, color: viewMode === 'sim' ? '#FFFFFF' : '#475569' }}>
+              {title} Records ({records.length})
+            </Text>
+          </TouchableOpacity>
 
-        {loading ? (
-          <View style={styles.tableLoaderContainer}>
-            <ActivityIndicator size="large" color="#166534" />
-            <Text style={styles.loaderText}>Loading SIM details...</Text>
-          </View>
-        ) : filteredRecords.length > 0 ? (
+          <TouchableOpacity
+            onPress={() => { fetchAddOnRecords(); setViewMode('addon'); setAddOnPage(1); }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: 16,
+              paddingVertical: 8,
+              borderRadius: 8,
+              backgroundColor: viewMode === 'addon' ? '#0284c7' : '#F1F5F9',
+            }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="list-circle-outline" size={16} color={viewMode === 'addon' ? '#FFFFFF' : '#475569'} />
+            <Text style={{ fontWeight: '600', fontSize: 13, color: viewMode === 'addon' ? '#FFFFFF' : '#475569' }}>
+              Add-On Records ({addOnRecords.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {viewMode === 'addon' ? (
           <>
-            <ScrollView horizontal={true} showsHorizontalScrollIndicator={true} style={{ width: '100%' }} contentContainerStyle={{ minWidth: '100%' }}>
-              <View style={[styles.tableWrapper, { minWidth: isTelecomDataView ? 1700 : 900 }]}>
-                <View style={{ paddingBottom: 10 }}>
-                  {/* Table Header Row */}
-                  <View style={styles.tableHeader}>
-                    <Text style={[styles.thCell, { flex: 0.8 }]}>ID</Text>
-                    {isTelecomDataView ? (
-                      <>
-                        <Text style={[styles.thCell, { flex: 1.8 }]}>COMPANY</Text>
-                        <Text style={[styles.thCell, { flex: 1.8 }]}>EMPLOYEE NAME</Text>
-                        <Text style={[styles.thCell, { flex: 1.5 }]}>MOBILE SERVICE</Text>
-                        <Text style={[styles.thCell, { flex: 1.5 }]}>MOBILE NO</Text>
-                        <Text style={[styles.thCell, { flex: 1.6 }]}>BILL NUMBER</Text>
-                        <Text style={[styles.thCell, { flex: 1.4 }]}>PERIOD FROM</Text>
-                        <Text style={[styles.thCell, { flex: 1.4 }]}>PERIOD TO</Text>
-                        <Text style={[styles.thCell, { flex: 1.4 }]}>SERVICE RENTAL</Text>
-                        <Text style={[styles.thCell, { flex: 1.4 }]}>USAGE CHARGES</Text>
-                        <Text style={[styles.thCell, { flex: 1.2 }]}>VAT</Text>
-                        <Text style={[styles.thCell, { flex: 1.5 }]}>TOTAL AMOUNT</Text>
-                      </>
-                    ) : (
-                      <>
-                        <Text style={[styles.thCell, { flex: 2.0 }]}>COMPANY NAME</Text>
-                        <Text style={[styles.thCell, { flex: 1.8 }]}>TELECOM PROVIDER</Text>
-                        <Text style={[styles.thCell, { flex: 2.0 }]}>USER NAME</Text>
-                        <Text style={[styles.thCell, { flex: 1.8 }]}>PLAN NAME</Text>
-                        <Text style={[styles.thCell, { flex: 1.6 }]}>MONTHLY AMOUNT</Text>
-                      </>
-                    )}
-                    <Text style={[styles.thCell, { flex: 1.2, textAlign: 'center' }]}>STATUS</Text>
-                    <Text style={[styles.thCell, { flex: 1.5, textAlign: 'center' }]}>ACTION</Text>
+            {renderTableToolbar
+              ? renderTableToolbar(addOnSearch, setAddOnSearch, setAddOnPage, 'Search by ID, company, provider, user, plan...')
+              : null}
+
+            {loadingAddOns ? (
+              <View style={styles.tableLoaderContainer}>
+                <ActivityIndicator size="large" color="#0284c7" />
+                <Text style={styles.loaderText}>Loading Add-On records...</Text>
+              </View>
+            ) : (() => {
+              const filteredAddOns = addOnRecords.filter(item => {
+                if (!addOnSearch.trim()) return true;
+                const q = addOnSearch.toLowerCase();
+                return (
+                  String(item.id).includes(q) ||
+                  (item.account_number && item.account_number.toLowerCase().includes(q)) ||
+                  (item.sim_number && item.sim_number.toLowerCase().includes(q)) ||
+                  (item.company_name && item.company_name.toLowerCase().includes(q)) ||
+                  (item.client_name && item.client_name.toLowerCase().includes(q)) ||
+                  (item.user_name && item.user_name.toLowerCase().includes(q)) ||
+                  (item.telecom_provider && item.telecom_provider.toLowerCase().includes(q)) ||
+                  (item.plan_name && item.plan_name.toLowerCase().includes(q)) ||
+                  (item.addon_type && item.addon_type.toLowerCase().includes(q))
+                );
+              });
+
+              const totalAddOnPages = Math.max(1, Math.ceil(filteredAddOns.length / itemsPerPage));
+              const currentAddOnPage = Math.min(addOnPage, totalAddOnPages);
+              const paginatedAddOns = filteredAddOns.slice((currentAddOnPage - 1) * itemsPerPage, currentAddOnPage * itemsPerPage);
+
+              if (filteredAddOns.length === 0) {
+                return (
+                  <View style={styles.emptyView}>
+                    <Ionicons name="document-text-outline" size={44} color={COLORS.textMuted} />
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: COLORS.textSecondary }}>No Add-On Records Found</Text>
+                    <Text style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 4 }}>Click "+ Add On" to add a new subscription</Text>
                   </View>
+                );
+              }
 
-                  {/* Table Data Rows */}
-                  {paginatedRecords.map((item, index) => {
-                    let fd = {};
-                    let ed = {};
-                    try {
-                      fd = typeof item.field_data === 'string' ? JSON.parse(item.field_data) : (item.field_data || {});
-                      if (fd && typeof fd.field_data === 'string') {
-                        try { fd = { ...fd, ...JSON.parse(fd.field_data) }; } catch (e) {}
-                      } else if (fd && typeof fd.field_data === 'object' && fd.field_data !== null) {
-                        fd = { ...fd, ...fd.field_data };
-                      }
-                      ed = typeof item.extracted_data === 'string' ? JSON.parse(item.extracted_data) : (item.extracted_data || {});
-                    } catch (e) {
-                      fd = {};
-                      ed = {};
-                    }
+              return (
+                <>
+                  <ScrollView horizontal={true} showsHorizontalScrollIndicator={true} style={{ width: '100%' }} contentContainerStyle={{ minWidth: '100%' }}>
+                    <View style={[styles.tableWrapper, { minWidth: 900 }]}>
+                      <View style={{ paddingBottom: 10 }}>
+                        {/* Table Header Row matching Image 2 */}
+                        <View style={styles.tableHeader}>
+                          <Text style={[styles.thCell, { flex: 0.8 }]}>ID</Text>
+                          <Text style={[styles.thCell, { flex: 2.0 }]}>COMPANY NAME</Text>
+                          <Text style={[styles.thCell, { flex: 1.8 }]}>TELECOM PROVIDER</Text>
+                          <Text style={[styles.thCell, { flex: 2.0 }]}>USER NAME</Text>
+                          <Text style={[styles.thCell, { flex: 1.8 }]}>PLAN NAME</Text>
+                          <Text style={[styles.thCell, { flex: 1.6 }]}>MONTHLY AMOUNT</Text>
+                          <Text style={[styles.thCell, { flex: 1.2, textAlign: 'center' }]}>STATUS</Text>
+                          <Text style={[styles.thCell, { flex: 1.5, textAlign: 'center' }]}>ACTION</Text>
+                        </View>
 
-                    const isInactive = item.status === 'Inactive' || item.status === 'Suspended' || item.status === 'Cancelled';
+                        {/* Table Data Rows matching Image 2 */}
+                        {paginatedAddOns.map((item, index) => {
+                          const cName = item.company_name || item.client_name || 'N/A';
+                          const pName = item.plan_name || item.addon_type || 'N/A';
+                          const amt = item.plan_amount ? (String(item.plan_amount).toLowerCase().includes('aed') ? item.plan_amount : `${item.plan_amount} AED`) : '0 AED';
+                          const statusVal = item.status || 'Active';
 
-                    const companyName = item.company_name || item.company || fd.company || fd.company_name || item.client_name || 'N/A';
-                    const mobileService = item.telecom_provider || fd.telecom_provider || ed.telecom_provider || fd.provider || 'Etisalat';
-                    const mobileNo = item.mobile_number || item.mobile_account || fd.mobile_account || ed.mobile_account || fd.mobile_number || fd.phone_number || 'N/A';
-                    
-                    const registeredEmpName = 
-                      item.assigned_employee || 
-                      fd.assigned_employee || 
-                      fd['Assigned Employee'] || 
-                      fd['Employee Name'] || 
-                      fd.employee_name || 
-                      item.employee_name || 
-                      ed.assigned_employee || 
-                      ed.employee_name || 
-                      '';
+                          return (
+                            <View key={item.id || index} style={[styles.tableRow, index === paginatedAddOns.length - 1 && styles.lastTableRow]}>
+                              <Text style={[styles.tdCell, { flex: 0.8, fontWeight: '700' }]}>#{item.id}</Text>
 
-                    const cleanPhone = (str) => {
-                      if (!str) return '';
-                      let cleaned = String(str).replace(/[\s\+\-\(\)]/g, '');
-                      if (cleaned.startsWith('971')) cleaned = cleaned.slice(3);
-                      if (cleaned.startsWith('0')) cleaned = cleaned.slice(1);
-                      return cleaned;
-                    };
+                              {/* COMPANY NAME */}
+                              <View style={[styles.tdCell, { flex: 2.0 }]}>
+                                <Text style={{ fontWeight: '600', color: COLORS.textPrimary }}>{cName}</Text>
+                                {item.client_name && item.client_name !== cName && (
+                                  <Text style={{ fontSize: 11, color: COLORS.textSecondary }}>{item.client_name}</Text>
+                                )}
+                              </View>
 
-                    const matchedEmp = employees.find(e => {
-                      const empP = cleanPhone(e.phone || e.mobile_number || e.phone_number);
-                      const mobP = cleanPhone(mobileNo);
-                      return empP && mobP && (empP === mobP || empP.endsWith(mobP) || mobP.endsWith(empP));
-                    });
+                              {/* TELECOM PROVIDER */}
+                              <Text style={[styles.tdCell, { flex: 1.8, fontWeight: '600', color: COLORS.textPrimary }]}>
+                                {item.telecom_provider || 'Etisalat'}
+                              </Text>
 
-                    const employeeName = registeredEmpName || (matchedEmp ? (matchedEmp.full_name || matchedEmp.employee_name || matchedEmp.name) : 'Unassigned');
+                              {/* USER NAME */}
+                              <Text style={[styles.tdCell, { flex: 2.0, fontWeight: '600', color: COLORS.textPrimary }]}>
+                                {item.user_name || item.assigned_employee || 'N/A'}
+                              </Text>
 
-                    const billNo = item.bill_number || item.doc_number || fd.bill_number || ed.bill_number || fd.doc_number || 'N/A';
-                    const periodFrom = item.period_from || fd.period_from || ed.period_from || fd.bill_period_from || fd.start_date || 'N/A';
-                    const periodTo = item.period_to || fd.period_to || ed.period_to || fd.bill_period_to || fd.end_date || 'N/A';
-                    const serviceRental = item.service_rental || fd.service_rental || ed.service_rental || '0.00';
-                    const usageCharges = item.usage_charges || fd.usage_charges || ed.usage_charges || '0.00';
-                    const vatAmt = item.vat || fd.vat || ed.vat || '0.00';
-                    const totalAmt = item.total_amount || fd.total_amount || ed.total_amount || fd.monthly_plan_amount;
+                              {/* PLAN NAME */}
+                              <Text style={[styles.tdCell, { flex: 1.8, fontWeight: '600', color: COLORS.textPrimary }]}>
+                                {pName}
+                              </Text>
 
-                    return (
-                      <View key={item.id} style={[styles.tableRow, index === paginatedRecords.length - 1 && styles.lastTableRow]}>
-                        <Text style={[styles.tdCell, { flex: 0.8, fontWeight: '700' }]}>#{item.id}</Text>
-                        
+                              {/* MONTHLY AMOUNT */}
+                              <Text style={[styles.tdCell, { flex: 1.6, fontWeight: '700', color: '#15803D' }]}>
+                                {amt}
+                              </Text>
+
+                              {/* STATUS */}
+                              <View style={[styles.tdCell, { flex: 1.2, alignItems: 'center' }]}>
+                                <View style={[styles.statusBadge, {
+                                  backgroundColor: '#E0F2FE',
+                                  borderColor: '#7DD3FC',
+                                  borderWidth: 1,
+                                }]}>
+                                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#0284C7', textTransform: 'uppercase' }}>
+                                    {statusVal.toUpperCase()}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* ACTION */}
+                              <View style={[styles.tdCell, { flex: 1.5, flexDirection: 'row', justifyContent: 'center', gap: 10 }]}>
+                                <TouchableOpacity onPress={() => openModal(item, true, true)}>
+                                  <Ionicons name="eye-outline" size={18} color="#64748B" />
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={() => openModal(item, false, true)}>
+                                  <Ionicons name="pencil-outline" size={18} color="#166534" />
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={() => deleteAddOnRecord(item.id)}>
+                                  <Ionicons name="trash-outline" size={18} color={COLORS.error} />
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  </ScrollView>
+
+                  {renderTablePagination
+                    ? renderTablePagination(filteredAddOns.length, currentAddOnPage, setAddOnPage)
+                    : null}
+                </>
+              );
+            })()}
+          </>
+        ) : (
+          <>
+            {renderTableToolbar
+              ? renderTableToolbar(search, setSearch, setPage, 'Search by ID, mobile number, provider...')
+              : null}
+
+            {loading ? (
+              <View style={styles.tableLoaderContainer}>
+                <ActivityIndicator size="large" color="#166534" />
+                <Text style={styles.loaderText}>Loading SIM details...</Text>
+              </View>
+            ) : filteredRecords.length > 0 ? (
+              <>
+                <ScrollView horizontal={true} showsHorizontalScrollIndicator={true} style={{ width: '100%' }} contentContainerStyle={{ minWidth: '100%' }}>
+                  <View style={[styles.tableWrapper, { minWidth: isTelecomDataView ? 1700 : 900 }]}>
+                    <View style={{ paddingBottom: 10 }}>
+                      {/* Table Header Row */}
+                      <View style={styles.tableHeader}>
+                        <Text style={[styles.thCell, { flex: 0.8 }]}>ID</Text>
                         {isTelecomDataView ? (
                           <>
-                            {/* COMPANY */}
-                            <View style={[styles.tdCell, { flex: 1.8 }]}>
-                              <Text style={{ fontWeight: '600', color: COLORS.textPrimary }}>{companyName}</Text>
-                            </View>
-
-                            {/* EMPLOYEE NAME */}
-                            <View style={[styles.tdCell, { flex: 1.8 }]}>
-                              <Text style={{ fontWeight: '600', color: COLORS.textPrimary }}>{employeeName}</Text>
-                            </View>
-
-                            {/* MOBILE SERVICE */}
-                            <Text style={[styles.tdCell, { flex: 1.5, fontWeight: '600', color: '#1E40AF' }]}>
-                              {mobileService}
-                            </Text>
-
-                            {/* MOBILE NO */}
-                            <Text style={[styles.tdCell, { flex: 1.5, fontWeight: '600', color: COLORS.textPrimary }]}>
-                              {mobileNo}
-                            </Text>
-
-                            {/* BILL NUMBER */}
-                            <Text style={[styles.tdCell, { flex: 1.6, fontWeight: '600', color: COLORS.textPrimary }]}>
-                              {billNo}
-                            </Text>
-
-                            {/* BILL PERIOD FROM */}
-                            <Text style={[styles.tdCell, { flex: 1.4, color: COLORS.textSecondary }]}>
-                              {periodFrom}
-                            </Text>
-
-                            {/* BILL PERIOD TO */}
-                            <Text style={[styles.tdCell, { flex: 1.4, color: COLORS.textSecondary }]}>
-                              {periodTo}
-                            </Text>
-
-                            {/* SERVICE RENTAL */}
-                            <Text style={[styles.tdCell, { flex: 1.4, color: COLORS.textPrimary }]}>
-                              {serviceRental ? `${serviceRental} AED` : '0.00 AED'}
-                            </Text>
-
-                            {/* USAGE CHARGES */}
-                            <Text style={[styles.tdCell, { flex: 1.4, color: COLORS.textPrimary }]}>
-                              {usageCharges ? `${usageCharges} AED` : '0.00 AED'}
-                            </Text>
-
-                            {/* VAT */}
-                            <Text style={[styles.tdCell, { flex: 1.2, color: COLORS.textSecondary }]}>
-                              {vatAmt ? `${vatAmt} AED` : '0.00 AED'}
-                            </Text>
-
-                            {/* TOTAL AMOUNT */}
-                            <Text style={[styles.tdCell, { flex: 1.5, fontWeight: '700', color: '#15803D' }]}>
-                              {totalAmt ? `${totalAmt} AED` : 'N/A'}
-                            </Text>
+                            <Text style={[styles.thCell, { flex: 1.8 }]}>COMPANY</Text>
+                            <Text style={[styles.thCell, { flex: 1.8 }]}>EMPLOYEE NAME</Text>
+                            <Text style={[styles.thCell, { flex: 1.5 }]}>MOBILE SERVICE</Text>
+                            <Text style={[styles.thCell, { flex: 1.5 }]}>MOBILE NO</Text>
+                            <Text style={[styles.thCell, { flex: 1.6 }]}>BILL NUMBER</Text>
+                            <Text style={[styles.thCell, { flex: 1.4 }]}>PERIOD FROM</Text>
+                            <Text style={[styles.thCell, { flex: 1.4 }]}>PERIOD TO</Text>
+                            <Text style={[styles.thCell, { flex: 1.4 }]}>SERVICE RENTAL</Text>
+                            <Text style={[styles.thCell, { flex: 1.4 }]}>USAGE CHARGES</Text>
+                            <Text style={[styles.thCell, { flex: 1.2 }]}>VAT</Text>
+                            <Text style={[styles.thCell, { flex: 1.5 }]}>TOTAL AMOUNT</Text>
                           </>
                         ) : (
                           <>
-                            {/* COMPANY NAME */}
-                            <View style={[styles.tdCell, { flex: 2.0 }]}>
-                              <Text style={{ fontWeight: '600', color: COLORS.textPrimary }}>{companyName}</Text>
-                              {item.client_name && item.client_name !== companyName && (
-                                <Text style={{ fontSize: 11, color: COLORS.textSecondary }}>{item.client_name}</Text>
-                              )}
-                            </View>
-
-                            {/* TELECOM PROVIDER */}
-                            <Text style={[styles.tdCell, { flex: 1.8, fontWeight: '600', color: COLORS.textPrimary }]}>
-                              {fd.telecom_provider || fd['Telecom Provider'] || fd['1786100950188'] || item.telecom_provider || 'Etisalat'}
-                            </Text>
-
-                            {/* USER NAME */}
-                            <View style={[styles.tdCell, { flex: 2.0 }]}>
-                              <Text style={{ fontWeight: '600', color: COLORS.textPrimary }}>{employeeName}</Text>
-                            </View>
-
-                             {/* PLAN NAME */}
-                            <Text style={[styles.tdCell, { flex: 1.8, color: COLORS.textPrimary, fontWeight: '600' }]}>
-                              {(() => {
-                                const directItem = item.plan_name;
-                                if (directItem && String(directItem).trim()) return String(directItem).trim();
-                                if (!fd || typeof fd !== 'object') return 'N/A';
-                                const direct = fd.plan_name || fd['Plan Name'] || fd['Package Plan'] || fd['Package Plan '] || fd.package_plan || fd.sim_plan || fd['1786100996941'];
-                                if (direct && String(direct).trim() && String(direct).trim() !== 'null') return String(direct).trim();
-                                for (const [k, v] of Object.entries(fd)) {
-                                  if (!v || typeof v === 'object') continue;
-                                  const lk = k.trim().toLowerCase();
-                                  if ((lk.includes('plan') || lk.includes('package')) && !lk.includes('amount') && !lk.includes('cost') && !lk.includes('rental')) {
-                                    const sv = String(v).trim();
-                                    if (sv && sv !== 'null' && sv !== 'undefined') return sv;
-                                  }
-                                }
-                                return 'N/A';
-                              })()}
-                            </Text>
-
-                            {/* MONTHLY AMOUNT */}
-                            <Text style={[styles.tdCell, { flex: 1.6, fontWeight: '700', color: '#15803D' }]}>
-                              {(() => {
-                                const directItem = item.monthly_plan_amount || item.monthly_amount || item.plan_amount || item.rental_amount;
-                                if (directItem && String(directItem).trim()) {
-                                  const s = String(directItem).trim();
-                                  return s.toLowerCase().includes('aed') ? s : `${s} AED`;
-                                }
-                                if (!fd || typeof fd !== 'object') return 'N/A';
-                                const direct = fd.monthly_plan_amount || fd.monthly_amount || fd['Monthly Plan Amount'] || fd['Monthly Plan Amount '] || fd['Monthly Amount'] || fd['Plan Amount'] || fd['Monthly Rental'] || fd['1786101020492'];
-                                if (direct !== undefined && direct !== null && String(direct).trim() !== '' && String(direct).trim() !== 'null') {
-                                  const s = String(direct).trim();
-                                  return s.toLowerCase().includes('aed') ? s : `${s} AED`;
-                                }
-                                for (const [k, v] of Object.entries(fd)) {
-                                  if (v === undefined || v === null || typeof v === 'object') continue;
-                                  const lk = k.trim().toLowerCase();
-                                  if (lk.includes('monthly') || lk.includes('rental') || (lk.includes('plan') && (lk.includes('amount') || lk.includes('cost') || lk.includes('price')))) {
-                                    const sv = String(v).trim();
-                                    if (sv && sv !== 'null' && sv !== 'undefined') return sv.toLowerCase().includes('aed') ? sv : `${sv} AED`;
-                                  }
-                                }
-                                return 'N/A';
-                              })()}
-                            </Text>
+                            <Text style={[styles.thCell, { flex: 2.0 }]}>COMPANY NAME</Text>
+                            <Text style={[styles.thCell, { flex: 1.8 }]}>TELECOM PROVIDER</Text>
+                            <Text style={[styles.thCell, { flex: 2.0 }]}>USER NAME</Text>
+                            <Text style={[styles.thCell, { flex: 1.8 }]}>PLAN NAME</Text>
+                            <Text style={[styles.thCell, { flex: 1.6 }]}>MONTHLY AMOUNT</Text>
                           </>
                         )}
-
-                        {/* Status Badge */}
-                        <View style={[styles.tdCell, { flex: 1.2, alignItems: 'center' }]}>
-                          <View style={[styles.statusBadge, {
-                            backgroundColor: isInactive ? '#FEE2E2' : '#E0F2FE',
-                            borderColor: isInactive ? '#FCA5A5' : '#7DD3FC',
-                            borderWidth: 1,
-                          }]}>
-                            <Text style={{
-                              fontSize: 10,
-                              fontWeight: '700',
-                              color: isInactive ? '#EF4444' : '#0284C7',
-                              textTransform: 'uppercase',
-                            }}>
-                              {item.status || 'ACTIVE'}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {/* Actions */}
-                        <View style={[styles.tdCell, { flex: 1.5, flexDirection: 'row', justifyContent: 'center', gap: 10 }]}>
-                          <TouchableOpacity onPress={() => openModal(item, true)}>
-                            <Ionicons name="eye-outline" size={18} color="#64748B" />
-                          </TouchableOpacity>
-                          <TouchableOpacity onPress={() => openModal(item, false)}>
-                            <Ionicons name="pencil-outline" size={18} color="#166534" />
-                          </TouchableOpacity>
-                          <TouchableOpacity onPress={() => handleDelete(item.id)}>
-                            <Ionicons name="trash-outline" size={18} color={COLORS.error} />
-                          </TouchableOpacity>
-                        </View>
+                        <Text style={[styles.thCell, { flex: 1.2, textAlign: 'center' }]}>STATUS</Text>
+                        <Text style={[styles.thCell, { flex: 1.5, textAlign: 'center' }]}>ACTION</Text>
                       </View>
-                    );
-                  })}
-                </View>
-              </View>
-            </ScrollView>
 
-            {renderTablePagination
-              ? renderTablePagination(filteredRecords.length, page, setPage)
-              : null}
+                      {/* Table Data Rows */}
+                      {paginatedRecords.map((item, index) => {
+                        let fd = {};
+                        let ed = {};
+                        try {
+                          fd = typeof item.field_data === 'string' ? JSON.parse(item.field_data) : (item.field_data || {});
+                          if (fd && typeof fd.field_data === 'string') {
+                            try { fd = { ...fd, ...JSON.parse(fd.field_data) }; } catch (e) {}
+                          } else if (fd && typeof fd.field_data === 'object' && fd.field_data !== null) {
+                            fd = { ...fd, ...fd.field_data };
+                          }
+                          ed = typeof item.extracted_data === 'string' ? JSON.parse(item.extracted_data) : (item.extracted_data || {});
+                        } catch (e) {
+                          fd = {};
+                          ed = {};
+                        }
+
+                        const isInactive = item.status === 'Inactive' || item.status === 'Suspended' || item.status === 'Cancelled';
+
+                        const companyName = item.company_name || item.company || fd.company || fd.company_name || item.client_name || 'N/A';
+                        const mobileService = item.telecom_provider || fd.telecom_provider || ed.telecom_provider || fd.provider || 'Etisalat';
+                        const mobileNo = item.mobile_number || item.mobile_account || fd.mobile_account || ed.mobile_account || fd.mobile_number || fd.phone_number || 'N/A';
+                        
+                        const registeredEmpName = 
+                          item.assigned_employee || 
+                          fd.assigned_employee || 
+                          fd['Assigned Employee'] || 
+                          fd['Employee Name'] || 
+                          fd.employee_name || 
+                          item.employee_name || 
+                          ed.assigned_employee || 
+                          ed.employee_name || 
+                          '';
+
+                        const cleanPhone = (str) => {
+                          if (!str) return '';
+                          let cleaned = String(str).replace(/[\s\+\-\(\)]/g, '');
+                          if (cleaned.startsWith('971')) cleaned = cleaned.slice(3);
+                          if (cleaned.startsWith('0')) cleaned = cleaned.slice(1);
+                          return cleaned;
+                        };
+
+                        const matchedEmp = employees.find(e => {
+                          const empP = cleanPhone(e.phone || e.mobile_number || e.phone_number);
+                          const mobP = cleanPhone(mobileNo);
+                          return empP && mobP && (empP === mobP || empP.endsWith(mobP) || mobP.endsWith(empP));
+                        });
+
+                        const employeeName = registeredEmpName || (matchedEmp ? (matchedEmp.full_name || matchedEmp.employee_name || matchedEmp.name) : 'Unassigned');
+
+                        const billNo = item.bill_number || item.doc_number || fd.bill_number || ed.bill_number || fd.doc_number || 'N/A';
+                        const periodFrom = item.period_from || fd.period_from || ed.period_from || fd.bill_period_from || fd.start_date || 'N/A';
+                        const periodTo = item.period_to || fd.period_to || ed.period_to || fd.bill_period_to || fd.end_date || 'N/A';
+                        const serviceRental = item.service_rental || fd.service_rental || ed.service_rental || '0.00';
+                        const usageCharges = item.usage_charges || fd.usage_charges || ed.usage_charges || '0.00';
+                        const vatAmt = item.vat || fd.vat || ed.vat || '0.00';
+                        const totalAmt = item.total_amount || fd.total_amount || ed.total_amount || fd.monthly_plan_amount;
+
+                        return (
+                          <View key={item.id} style={[styles.tableRow, index === paginatedRecords.length - 1 && styles.lastTableRow]}>
+                            <Text style={[styles.tdCell, { flex: 0.8, fontWeight: '700' }]}>#{item.id}</Text>
+                            
+                            {isTelecomDataView ? (
+                              <>
+                                {/* COMPANY */}
+                                <View style={[styles.tdCell, { flex: 1.8 }]}>
+                                  <Text style={{ fontWeight: '600', color: COLORS.textPrimary }}>{companyName}</Text>
+                                </View>
+
+                                {/* EMPLOYEE NAME */}
+                                <View style={[styles.tdCell, { flex: 1.8 }]}>
+                                  <Text style={{ fontWeight: '600', color: COLORS.textPrimary }}>{employeeName}</Text>
+                                </View>
+
+                                {/* MOBILE SERVICE */}
+                                <Text style={[styles.tdCell, { flex: 1.5, fontWeight: '600', color: '#1E40AF' }]}>
+                                  {mobileService}
+                                </Text>
+
+                                {/* MOBILE NO */}
+                                <Text style={[styles.tdCell, { flex: 1.5, fontWeight: '600', color: COLORS.textPrimary }]}>
+                                  {mobileNo}
+                                </Text>
+
+                                {/* BILL NUMBER */}
+                                <Text style={[styles.tdCell, { flex: 1.6, fontWeight: '600', color: COLORS.textPrimary }]}>
+                                  {billNo}
+                                </Text>
+
+                                {/* BILL PERIOD FROM */}
+                                <Text style={[styles.tdCell, { flex: 1.4, color: COLORS.textSecondary }]}>
+                                  {periodFrom}
+                                </Text>
+
+                                {/* BILL PERIOD TO */}
+                                <Text style={[styles.tdCell, { flex: 1.4, color: COLORS.textSecondary }]}>
+                                  {periodTo}
+                                </Text>
+
+                                {/* SERVICE RENTAL */}
+                                <Text style={[styles.tdCell, { flex: 1.4, color: COLORS.textPrimary }]}>
+                                  {serviceRental ? `${serviceRental} AED` : '0.00 AED'}
+                                </Text>
+
+                                {/* USAGE CHARGES */}
+                                <Text style={[styles.tdCell, { flex: 1.4, color: COLORS.textPrimary }]}>
+                                  {usageCharges ? `${usageCharges} AED` : '0.00 AED'}
+                                </Text>
+
+                                {/* VAT */}
+                                <Text style={[styles.tdCell, { flex: 1.2, color: COLORS.textSecondary }]}>
+                                  {vatAmt ? `${vatAmt} AED` : '0.00 AED'}
+                                </Text>
+
+                                {/* TOTAL AMOUNT */}
+                                <Text style={[styles.tdCell, { flex: 1.5, fontWeight: '700', color: '#15803D' }]}>
+                                  {totalAmt ? `${totalAmt} AED` : 'N/A'}
+                                </Text>
+                              </>
+                            ) : (
+                              <>
+                                {/* COMPANY NAME */}
+                                <View style={[styles.tdCell, { flex: 2.0 }]}>
+                                  <Text style={{ fontWeight: '600', color: COLORS.textPrimary }}>{companyName}</Text>
+                                  {item.client_name && item.client_name !== companyName && (
+                                    <Text style={{ fontSize: 11, color: COLORS.textSecondary }}>{item.client_name}</Text>
+                                  )}
+                                </View>
+
+                                {/* TELECOM PROVIDER */}
+                                <Text style={[styles.tdCell, { flex: 1.8, fontWeight: '600', color: COLORS.textPrimary }]}>
+                                  {fd.telecom_provider || fd['Telecom Provider'] || fd['1786100950188'] || item.telecom_provider || 'Etisalat'}
+                                </Text>
+
+                                {/* USER NAME */}
+                                <View style={[styles.tdCell, { flex: 2.0 }]}>
+                                  <Text style={{ fontWeight: '600', color: COLORS.textPrimary }}>{employeeName}</Text>
+                                </View>
+
+                                 {/* PLAN NAME */}
+                                <Text style={[styles.tdCell, { flex: 1.8, color: COLORS.textPrimary, fontWeight: '600' }]}>
+                                  {(() => {
+                                    const directItem = item.plan_name;
+                                    if (directItem && String(directItem).trim()) return String(directItem).trim();
+                                    if (!fd || typeof fd !== 'object') return 'N/A';
+                                    const direct = fd.plan_name || fd['Plan Name'] || fd['Package Plan'] || fd['Package Plan '] || fd.package_plan || fd.sim_plan || fd['1786100996941'];
+                                    if (direct && String(direct).trim() && String(direct).trim() !== 'null') return String(direct).trim();
+                                    for (const [k, v] of Object.entries(fd)) {
+                                      if (!v || typeof v === 'object') continue;
+                                      const lk = k.trim().toLowerCase();
+                                      if ((lk.includes('plan') || lk.includes('package')) && !lk.includes('amount') && !lk.includes('cost') && !lk.includes('rental')) {
+                                        const sv = String(v).trim();
+                                        if (sv && sv !== 'null' && sv !== 'undefined') return sv;
+                                      }
+                                    }
+                                    return 'N/A';
+                                  })()}
+                                </Text>
+
+                                {/* MONTHLY AMOUNT */}
+                                <Text style={[styles.tdCell, { flex: 1.6, fontWeight: '700', color: '#15803D' }]}>
+                                  {(() => {
+                                    const directItem = item.monthly_plan_amount || item.monthly_amount || item.plan_amount || item.rental_amount;
+                                    if (directItem && String(directItem).trim()) {
+                                      const s = String(directItem).trim();
+                                      return s.toLowerCase().includes('aed') ? s : `${s} AED`;
+                                    }
+                                    if (!fd || typeof fd !== 'object') return 'N/A';
+                                    const direct = fd.monthly_plan_amount || fd.monthly_amount || fd['Monthly Plan Amount'] || fd['Monthly Plan Amount '] || fd['Monthly Amount'] || fd['Plan Amount'] || fd['Monthly Rental'] || fd['1786101020492'];
+                                    if (direct !== undefined && direct !== null && String(direct).trim() !== '' && String(direct).trim() !== 'null') {
+                                      const s = String(direct).trim();
+                                      return s.toLowerCase().includes('aed') ? s : `${s} AED`;
+                                    }
+                                    for (const [k, v] of Object.entries(fd)) {
+                                      if (v === undefined || v === null || typeof v === 'object') continue;
+                                      const lk = k.trim().toLowerCase();
+                                      if (lk.includes('monthly') || lk.includes('rental') || (lk.includes('plan') && (lk.includes('amount') || lk.includes('cost') || lk.includes('price')))) {
+                                        const sv = String(v).trim();
+                                        if (sv && sv !== 'null' && sv !== 'undefined') return sv.toLowerCase().includes('aed') ? sv : `${sv} AED`;
+                                      }
+                                    }
+                                    return 'N/A';
+                                  })()}
+                                </Text>
+                              </>
+                            )}
+
+                            {/* Status Badge */}
+                            <View style={[styles.tdCell, { flex: 1.2, alignItems: 'center' }]}>
+                              <View style={[styles.statusBadge, {
+                                backgroundColor: isInactive ? '#FEE2E2' : '#E0F2FE',
+                                borderColor: isInactive ? '#FCA5A5' : '#7DD3FC',
+                                borderWidth: 1,
+                              }]}>
+                                <Text style={{
+                                  fontSize: 10,
+                                  fontWeight: '700',
+                                  color: isInactive ? '#EF4444' : '#0284C7',
+                                  textTransform: 'uppercase',
+                                }}>
+                                  {item.status || 'ACTIVE'}
+                                </Text>
+                              </View>
+                            </View>
+
+                            {/* Actions */}
+                            <View style={[styles.tdCell, { flex: 1.5, flexDirection: 'row', justifyContent: 'center', gap: 10 }]}>
+                              <TouchableOpacity onPress={() => openModal(item, true)}>
+                                <Ionicons name="eye-outline" size={18} color="#64748B" />
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={() => openModal(item, false)}>
+                                <Ionicons name="pencil-outline" size={18} color="#166534" />
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={() => handleDelete(item.id)}>
+                                <Ionicons name="trash-outline" size={18} color={COLORS.error} />
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                </ScrollView>
+
+                {renderTablePagination
+                  ? renderTablePagination(filteredRecords.length, page, setPage)
+                  : null}
+              </>
+            ) : (
+              <View style={styles.emptyView}>
+                <Ionicons name="hardware-chip-outline" size={44} color={COLORS.textMuted} />
+                <Text style={styles.emptyText}>{records.length === 0 ? "No SIM details added yet." : "No matching SIM details found."}</Text>
+              </View>
+            )}
           </>
-        ) : (
-          <View style={styles.emptyView}>
-            <Ionicons name="hardware-chip-outline" size={44} color={COLORS.textMuted} />
-            <Text style={styles.emptyText}>{records.length === 0 ? "No SIM details added yet." : "No matching SIM details found."}</Text>
-          </View>
         )}
       </View>
 
@@ -2426,170 +2625,7 @@ export default function SimDetailsTab({
         </View>
       </Modal>
 
-      {/* ADD ON VIEW MODAL */}
-      <Modal
-        visible={showAddOnViewModal}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setShowAddOnViewModal(false)}
-      >
-        <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.65)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, width: '92%', maxWidth: 1100, maxHeight: '90%', flex: 1, overflow: 'hidden', ...SHADOWS.modal }}>
-            
-            {/* Header */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 18, backgroundColor: '#0284c7', borderBottomWidth: 1, borderBottomColor: '#0369a1' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Ionicons name="list-circle" size={26} color="#FFFFFF" />
-                <View>
-                  <Text style={{ fontSize: 18, fontWeight: '700', color: '#FFFFFF' }}>Add-On Records View</Text>
-                  <Text style={{ fontSize: 12, color: '#E0F2FE' }}>Overview of all saved SIM Add-On subscriptions</Text>
-                </View>
-              </View>
-              <TouchableOpacity onPress={() => setShowAddOnViewModal(false)} style={{ padding: 6, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)' }}>
-                <Ionicons name="close" size={22} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
 
-            {/* Search & Actions Bar */}
-            <View style={{ paddingHorizontal: 24, paddingVertical: 14, backgroundColor: '#F8FAFC', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 8, paddingHorizontal: 12, width: 320, height: 38 }}>
-                <Ionicons name="search-outline" size={18} color="#64748B" style={{ marginRight: 8 }} />
-                <TextInput
-                  style={{ flex: 1, fontSize: 13, color: '#1E293B', outlineStyle: 'none' }}
-                  placeholder="Search Add-Ons..."
-                  placeholderTextColor="#94A3B8"
-                  value={addOnSearch}
-                  onChangeText={setAddOnSearch}
-                />
-              </View>
-
-              <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#166534', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 }} onPress={fetchAddOnRecords}>
-                <Ionicons name="refresh" size={16} color="#FFFFFF" />
-                <Text style={{ color: '#FFFFFF', fontWeight: '600', fontSize: 13 }}>Refresh</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Add-Ons Table Body */}
-            <ScrollView style={{ flex: 1, padding: 24 }}>
-              {loadingAddOns ? (
-                <View style={{ padding: 50, alignItems: 'center' }}>
-                  <ActivityIndicator size="large" color="#0284c7" />
-                  <Text style={{ marginTop: 12, color: '#64748B', fontSize: 14 }}>Loading Add-On records...</Text>
-                </View>
-              ) : (() => {
-                const filtered = addOnRecords.filter(item => {
-                  if (!addOnSearch.trim()) return true;
-                  const q = addOnSearch.toLowerCase();
-                  return (
-                    (item.account_number && item.account_number.toLowerCase().includes(q)) ||
-                    (item.sim_number && item.sim_number.toLowerCase().includes(q)) ||
-                    (item.plan_name && item.plan_name.toLowerCase().includes(q)) ||
-                    (item.addon_type && item.addon_type.toLowerCase().includes(q)) ||
-                    (item.addon_details && item.addon_details.toLowerCase().includes(q))
-                  );
-                });
-
-                if (filtered.length === 0) {
-                  return (
-                    <View style={{ alignItems: 'center', paddingVertical: 60 }}>
-                      <Ionicons name="document-text-outline" size={48} color="#94A3B8" />
-                      <Text style={{ marginTop: 12, fontSize: 15, fontWeight: '600', color: '#64748B' }}>No Add-On Records Found</Text>
-                      <Text style={{ fontSize: 13, color: '#94A3B8', marginTop: 4 }}>Click "+ Add On" to add a new subscription</Text>
-                    </View>
-                  );
-                }
-
-                return (
-                  <View style={{ borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, overflow: 'hidden' }}>
-                    {/* Header */}
-                    <View style={{ flexDirection: 'row', backgroundColor: '#F8FAFC', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#CBD5E1' }}>
-                      <Text style={{ width: 50, fontSize: 12, fontWeight: '700', color: '#64748B' }}>ID</Text>
-                      <Text style={{ flex: 2.0, fontSize: 12, fontWeight: '700', color: '#64748B' }}>COMPANY NAME</Text>
-                      <Text style={{ flex: 1.8, fontSize: 12, fontWeight: '700', color: '#64748B' }}>TELECOM PROVIDER</Text>
-                      <Text style={{ flex: 2.0, fontSize: 12, fontWeight: '700', color: '#64748B' }}>USER NAME</Text>
-                      <Text style={{ flex: 1.8, fontSize: 12, fontWeight: '700', color: '#64748B' }}>PLAN NAME</Text>
-                      <Text style={{ flex: 1.6, fontSize: 12, fontWeight: '700', color: '#64748B' }}>MONTHLY AMOUNT</Text>
-                      <Text style={{ width: 80, fontSize: 12, fontWeight: '700', color: '#64748B', textAlign: 'center' }}>STATUS</Text>
-                      <Text style={{ width: 100, fontSize: 12, fontWeight: '700', color: '#64748B', textAlign: 'center' }}>ACTION</Text>
-                    </View>
-
-                    {/* Rows */}
-                    {filtered.map((item, idx) => {
-                      const docList = Array.isArray(item.document_attachments)
-                        ? item.document_attachments
-                        : (typeof item.document_attachments === 'string' && item.document_attachments.startsWith('[')
-                            ? JSON.parse(item.document_attachments)
-                            : (item.document_attachments ? [item.document_attachments] : []));
-                      const docPath = docList.length > 0 ? docList[0] : null;
-
-                      const cName = item.company_name || item.client_name || 'N/A';
-                      const pName = item.plan_name || item.addon_type || 'N/A';
-                      const amt = item.plan_amount ? (String(item.plan_amount).toLowerCase().includes('aed') ? item.plan_amount : `${item.plan_amount} AED`) : '0 AED';
-                      const statusVal = item.status || 'Active';
-
-                      return (
-                        <View key={item.id || idx} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC' }}>
-                          <Text style={{ width: 50, fontSize: 13, fontWeight: '600', color: '#64748B' }}>#{item.id}</Text>
-                          
-                          <View style={{ flex: 2.0 }}>
-                            <Text style={{ fontWeight: '600', color: '#0F172A', fontSize: 13 }}>{cName}</Text>
-                            {item.client_name && item.client_name !== cName && (
-                              <Text style={{ fontSize: 11, color: '#64748B' }}>{item.client_name}</Text>
-                            )}
-                          </View>
-
-                          <Text style={{ flex: 1.8, fontSize: 13, fontWeight: '600', color: '#0F172A' }}>
-                            {item.telecom_provider || 'e& (Etisalat)'}
-                          </Text>
-
-                          <Text style={{ flex: 2.0, fontSize: 13, fontWeight: '600', color: '#0F172A' }}>
-                            {item.user_name || item.assigned_employee || 'N/A'}
-                          </Text>
-
-                          <Text style={{ flex: 1.8, fontSize: 13, fontWeight: '600', color: '#0F172A' }}>
-                            {pName}
-                          </Text>
-
-                          <Text style={{ flex: 1.6, fontSize: 13, fontWeight: '700', color: '#15803D' }}>
-                            {amt}
-                          </Text>
-
-                          <View style={{ width: 80, alignItems: 'center' }}>
-                            <View style={{ backgroundColor: statusVal === 'Active' ? '#E0F2FE' : '#F3F4F6', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 }}>
-                              <Text style={{ fontSize: 11, fontWeight: '700', color: statusVal === 'Active' ? '#0284C7' : '#6B7280' }}>
-                                {statusVal.toUpperCase()}
-                              </Text>
-                            </View>
-                          </View>
-
-                          <View style={{ width: 100, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
-                            {docPath && (
-                              <TouchableOpacity onPress={() => window.open(docPath.startsWith('http') ? docPath : `${API_URL}${docPath.startsWith('/') ? '' : '/'}${docPath}`, '_blank')} style={{ padding: 4 }}>
-                                <Ionicons name="document-text-outline" size={18} color="#0284c7" />
-                              </TouchableOpacity>
-                            )}
-                            <TouchableOpacity onPress={() => deleteAddOnRecord(item.id)} style={{ padding: 4 }}>
-                              <Ionicons name="trash-outline" size={18} color="#DC2626" />
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      );
-                    })}
-                  </View>
-                );
-              })()}
-            </ScrollView>
-
-            {/* Modal Footer */}
-            <View style={{ paddingHorizontal: 24, paddingVertical: 14, backgroundColor: '#F8FAFC', borderTopWidth: 1, borderTopColor: '#E2E8F0', alignItems: 'flex-end' }}>
-              <TouchableOpacity style={{ backgroundColor: '#64748B', borderRadius: 8, paddingVertical: 9, paddingHorizontal: 20 }} onPress={() => setShowAddOnViewModal(false)}>
-                <Text style={{ color: '#FFFFFF', fontWeight: '600', fontSize: 13 }}>Close View</Text>
-              </TouchableOpacity>
-            </View>
-
-          </View>
-        </View>
-      </Modal>
     </ScrollView>
   );
 }
