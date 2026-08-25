@@ -605,11 +605,11 @@ exports.getTelecomReportAnalytics = async (req, res) => {
         SELECT 
           (SELECT COUNT(*) FROM tbl_telecome_bill) AS total_bills,
           (SELECT COALESCE(SUM(${totalCol}), 0) FROM tbl_telecome_bill) AS total_expenses,
-          ${hasCallLogs ? `(SELECT COUNT(*) FROM tbl_telecome_call_logs c INNER JOIN tbl_telecome_bill b ON c.${logFk} = b.${pkCol})` : '0'} + 
-          ${hasSmsLogs ? `(SELECT COUNT(*) FROM tbl_telecome_sms_logs s INNER JOIN tbl_telecome_bill b ON s.${logFk} = b.${pkCol})` : '0'} AS total_call_logs,
-          ${hasSmsLogs ? `(SELECT COUNT(*) FROM tbl_telecome_sms_logs s INNER JOIN tbl_telecome_bill b ON s.${logFk} = b.${pkCol})` : '0'} AS total_sms_logs,
-          ${hasCallLogs ? `(SELECT COUNT(*) FROM tbl_telecome_call_logs c INNER JOIN tbl_telecome_bill b ON c.${logFk} = b.${pkCol} WHERE c.category = 'International Call')` : '0'} AS total_intl_calls,
-          ${hasCallLogs ? `(SELECT COALESCE(SUM(c.amount), 0) FROM tbl_telecome_call_logs c INNER JOIN tbl_telecome_bill b ON c.${logFk} = b.${pkCol} WHERE c.category = 'International Call')` : '0'} AS total_intl_cost,
+          ${hasCallLogs ? `(SELECT COUNT(*) FROM tbl_telecome_call_logs)` : '0'} + 
+          ${hasSmsLogs ? `(SELECT COUNT(*) FROM tbl_telecome_sms_logs)` : '0'} AS total_call_logs,
+          ${hasSmsLogs ? `(SELECT COUNT(*) FROM tbl_telecome_sms_logs)` : '0'} AS total_sms_logs,
+          ${hasCallLogs ? `(SELECT COUNT(*) FROM tbl_telecome_call_logs WHERE category = 'International Call')` : '0'} AS total_intl_calls,
+          ${hasCallLogs ? `(SELECT COALESCE(SUM(amount), 0) FROM tbl_telecome_call_logs WHERE category = 'International Call')` : '0'} AS total_intl_cost,
           (SELECT COUNT(DISTINCT mobile_number) FROM tbl_telecome_bill) AS total_active_lines
       `);
       if (summaryRes.rows.length > 0) {
@@ -619,33 +619,12 @@ exports.getTelecomReportAnalytics = async (req, res) => {
       console.error('Summary stats query error:', e);
     }
 
-    // If total_bills is 0, return empty zeroed analytics immediately
-    if (parseInt(summaryStats.total_bills || 0) === 0) {
-      return res.status(200).json({
-        summaryStats: {
-          total_bills: 0,
-          total_expenses: 0,
-          total_call_logs: 0,
-          total_sms_logs: 0,
-          total_intl_calls: 0,
-          total_intl_cost: 0,
-          total_active_lines: 0
-        },
-        categoryBreakdown: [],
-        topCallers: [],
-        topDestinations: [],
-        countryBreakdown: [],
-        providerBreakdown: [],
-        recentCallLogs: []
-      });
-    }
-
     // 2. Categories
     let categoryBreakdown = [];
     try {
       const catSubQueries = [];
-      if (hasCallLogs) catSubQueries.push(`SELECT c.category, c.amount FROM tbl_telecome_call_logs c INNER JOIN tbl_telecome_bill b ON c.${logFk} = b.${pkCol}`);
-      if (hasSmsLogs) catSubQueries.push(`SELECT s.sms_type AS category, s.amount FROM tbl_telecome_sms_logs s INNER JOIN tbl_telecome_bill b ON s.${logFk} = b.${pkCol}`);
+      if (hasCallLogs) catSubQueries.push(`SELECT c.category, c.amount FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number)`);
+      if (hasSmsLogs) catSubQueries.push(`SELECT s.sms_type AS category, s.amount FROM tbl_telecome_sms_logs s LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number)`);
 
       if (catSubQueries.length > 0) {
         const catRes = await db.query(`
@@ -664,8 +643,8 @@ exports.getTelecomReportAnalytics = async (req, res) => {
     let topCallers = [];
     try {
       const callerSubQueries = [];
-      if (hasCallLogs) callerSubQueries.push(`SELECT c.source_number, c.amount FROM tbl_telecome_call_logs c INNER JOIN tbl_telecome_bill b ON c.${logFk} = b.${pkCol}`);
-      if (hasSmsLogs) callerSubQueries.push(`SELECT s.source_number, s.amount FROM tbl_telecome_sms_logs s INNER JOIN tbl_telecome_bill b ON s.${logFk} = b.${pkCol}`);
+      if (hasCallLogs) callerSubQueries.push(`SELECT c.source_number, c.amount FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number)`);
+      if (hasSmsLogs) callerSubQueries.push(`SELECT s.source_number, s.amount FROM tbl_telecome_sms_logs s LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number)`);
 
       if (callerSubQueries.length > 0) {
         const callersRes = await db.query(`
@@ -684,8 +663,8 @@ exports.getTelecomReportAnalytics = async (req, res) => {
     let topDestinations = [];
     try {
       const destSubQueries = [];
-      if (hasCallLogs) destSubQueries.push(`SELECT c.destination_number, c.category, c.amount FROM tbl_telecome_call_logs c INNER JOIN tbl_telecome_bill b ON c.${logFk} = b.${pkCol}`);
-      if (hasSmsLogs) destSubQueries.push(`SELECT s.destination_number, s.sms_type AS category, s.amount FROM tbl_telecome_sms_logs s INNER JOIN tbl_telecome_bill b ON s.${logFk} = b.${pkCol}`);
+      if (hasCallLogs) destSubQueries.push(`SELECT c.destination_number, c.category, c.amount FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number)`);
+      if (hasSmsLogs) destSubQueries.push(`SELECT s.destination_number, s.sms_type AS category, s.amount FROM tbl_telecome_sms_logs s LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number)`);
 
       if (destSubQueries.length > 0) {
         const destRes = await db.query(`
@@ -721,8 +700,8 @@ exports.getTelecomReportAnalytics = async (req, res) => {
 
     try {
       const intlSubQueries = [];
-      if (hasCallLogs) intlSubQueries.push(`SELECT c.destination_number, c.amount FROM tbl_telecome_call_logs c INNER JOIN tbl_telecome_bill b ON c.${logFk} = b.${pkCol} WHERE c.category = 'International Call'`);
-      if (hasSmsLogs) intlSubQueries.push(`SELECT s.destination_number, s.amount FROM tbl_telecome_sms_logs s INNER JOIN tbl_telecome_bill b ON s.${logFk} = b.${pkCol} WHERE s.sms_type = 'International SMS'`);
+      if (hasCallLogs) intlSubQueries.push(`SELECT c.destination_number, c.amount FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number) WHERE c.category = 'International Call'`);
+      if (hasSmsLogs) intlSubQueries.push(`SELECT s.destination_number, s.amount FROM tbl_telecome_sms_logs s LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number) WHERE s.sms_type = 'International SMS'`);
 
       if (intlSubQueries.length > 0) {
         const intlLogsRes = await db.query(intlSubQueries.join(' UNION ALL '));
@@ -764,7 +743,7 @@ exports.getTelecomReportAnalytics = async (req, res) => {
             END AS provider, 
             c.amount
           FROM tbl_telecome_call_logs c
-          INNER JOIN tbl_telecome_bill b ON c.${logFk} = b.${pkCol}
+          LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number)
         `);
       }
       if (hasSmsLogs) {
@@ -776,7 +755,7 @@ exports.getTelecomReportAnalytics = async (req, res) => {
             END AS provider, 
             s.amount
           FROM tbl_telecome_sms_logs s
-          INNER JOIN tbl_telecome_bill b ON s.${logFk} = b.${pkCol}
+          LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number)
         `);
       }
 
@@ -818,7 +797,7 @@ exports.getTelecomReportAnalytics = async (req, res) => {
               ELSE 'Etisalat'
             END AS provider
           FROM tbl_telecome_call_logs c
-          INNER JOIN tbl_telecome_bill b ON c.${logFk} = b.${pkCol}
+          LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number)
         `);
       }
       if (hasSmsLogs) {
@@ -842,7 +821,7 @@ exports.getTelecomReportAnalytics = async (req, res) => {
               ELSE 'Etisalat'
             END AS provider
           FROM tbl_telecome_sms_logs s
-          INNER JOIN tbl_telecome_bill b ON s.${logFk} = b.${pkCol}
+          LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number)
         `);
       }
 

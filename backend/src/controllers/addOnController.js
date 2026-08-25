@@ -129,15 +129,30 @@ exports.getAllAddOns = async (req, res) => {
   try {
     const clientId = req.query.client_id || req.query.clientid;
     let queryText = `
-      SELECT a.*, c.client_name
+      SELECT 
+        a.*, 
+        c.client_name,
+        co.name as country_name,
+        (
+          SELECT string_agg(company_name, ', ') 
+          FROM company 
+          WHERE id = ANY(string_to_array(nullif(a.company_id, ''), ',')::integer[])
+        ) AS company_name,
+        COALESCE(
+          (SELECT first_name || ' ' || last_name FROM employee WHERE id = a.user_id LIMIT 1),
+          a.assigned_employee,
+          'N/A'
+        ) AS user_name,
+        COALESCE(a.telecom_provider, 'e& (Etisalat)') AS telecom_provider
       FROM tbl_add_on_data a
       LEFT JOIN client c ON a.client_id = c.id
+      LEFT JOIN country co ON a.country_id = co.id
       WHERE 1=1
     `;
     let params = [];
     if (clientId) {
       queryText += ` AND (a.client_id = $1 OR a.client_id IS NULL)`;
-      params.push(clientId);
+      params.push(String(clientId));
     }
     queryText += ` ORDER BY a.id DESC`;
 
