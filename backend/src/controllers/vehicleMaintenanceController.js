@@ -361,10 +361,65 @@ exports.getMaintenanceRecords = async (req, res) => {
       });
     } catch (e) {}
 
+    // Fetch all service details map for automatic on-the-fly resolution
+    const serviceRes = await db.query(
+      'SELECT id, service_name FROM tbl_service_details WHERE (isdelete = false OR isdelete IS NULL) AND (is_deleted = false OR is_deleted IS NULL)'
+    );
+    const serviceMap = {};
+    serviceRes.rows.forEach(s => {
+      serviceMap[String(s.id)] = s.service_name;
+    });
+
+    // Fetch custom fields grouped by custom_fieldsid for date backfilling on-the-fly
+    const customFieldsRes = await db.query('SELECT custom_fieldsid, field_id, field_name, field_type FROM tbl_customfield_details');
+    const fieldsBySchema = {};
+    customFieldsRes.rows.forEach(f => {
+      const schemaId = String(f.custom_fieldsid);
+      if (!fieldsBySchema[schemaId]) fieldsBySchema[schemaId] = [];
+      fieldsBySchema[schemaId].push(f);
+    });
+
+    const defaultDate = new Date().toISOString().split('T')[0];
+
     const finalRows = result.rows.map(row => {
       let rawFd = row.field_data;
       if (typeof rawFd === 'string') { try { rawFd = JSON.parse(rawFd); } catch(e) { rawFd = {}; } }
       rawFd = rawFd || {};
+
+      const schemaId = String(row.custom_field_id || '37');
+      const schemaFields = fieldsBySchema[schemaId] || fieldsBySchema['37'] || fieldsBySchema['42'] || [];
+      const dateFids = schemaFields
+        .filter(f => (f.field_name || '').toLowerCase().includes('date') || f.field_type === 'Date')
+        .map(f => String(f.field_id).trim());
+
+      let needsDbUpdate = false;
+
+      // Resolve option IDs to service detail names on-the-fly
+      Object.keys(rawFd).forEach(k => {
+        const val = rawFd[k];
+        if (val && typeof val !== 'object') {
+          const strVal = String(val).trim();
+          if (serviceMap[strVal]) {
+            rawFd[k] = serviceMap[strVal];
+            needsDbUpdate = true;
+          } else if (strVal.includes(',')) {
+            const parts = strVal.split(',').map(p => p.trim());
+            const resolved = parts.map(p => serviceMap[p] || p);
+            if (resolved.some((r, idx) => r !== parts[idx])) {
+              rawFd[k] = resolved.join(', ');
+              needsDbUpdate = true;
+            }
+          }
+        }
+      });
+
+      // Fill missing date fields on-the-fly
+      for (const dFid of dateFids) {
+        if (!rawFd[dFid]) {
+          rawFd[dFid] = defaultDate;
+          needsDbUpdate = true;
+        }
+      }
 
       // Ensure field_data only contains numeric Field IDs
       const cleanFd = sanitizeFieldDataOnlyFieldIds(rawFd);
@@ -377,9 +432,18 @@ exports.getMaintenanceRecords = async (req, res) => {
           if (val && typeof val !== 'object' && vehiclesMap[String(val)]) {
             matchedVehicle = vehiclesMap[String(val)];
             vId = matchedVehicle.vehicle_id || matchedVehicle.id;
+            needsDbUpdate = true;
             break;
           }
         }
+      }
+
+      // Background DB self-healing sync if record needed updates
+      if (needsDbUpdate || (vId && !row.vehicle_id)) {
+        db.query(
+          'UPDATE tbl_vehicle_maintenance SET vehicle_id = $1, field_data = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
+          [vId || row.vehicle_id || null, JSON.stringify(cleanFd), row.id]
+        ).catch(e => console.error('Error auto-healing record:', e));
       }
 
       return {
