@@ -589,7 +589,7 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
 
       const payload = {
         vehicle_id: selectedVehicleId ? String(selectedVehicleId) : null,
-        custom_field_id: customFieldId,
+        custom_field_id: customFieldId || editingRecord?.custom_field_id || 37,
         field_data: finalFormData,
         clientid: configParams.clientid || selectedClient,
         country_id: configParams.country_id || selectedCountry,

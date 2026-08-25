@@ -26,7 +26,11 @@ export const SearchableDropdown = ({ value, onChange, data, placeholder, searchP
   });
 
   const selectedItems = data.filter(item => 
-    item[valueKey] !== undefined && item[valueKey] !== null && selectedValues.includes(String(item[valueKey]))
+    item !== undefined && item !== null && (
+      (item[valueKey] !== undefined && item[valueKey] !== null && selectedValues.includes(String(item[valueKey]))) ||
+      (item.rawId !== undefined && item.rawId !== null && selectedValues.includes(String(item.rawId))) ||
+      (item.label !== undefined && item.label !== null && selectedValues.includes(String(item.label)))
+    )
   );
 
   const displayText = selectedItems.length > 0 
@@ -141,7 +145,11 @@ export const SearchableDropdown = ({ value, onChange, data, placeholder, searchP
             <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 130 }} keyboardShouldPersistTaps="handled">
               {filteredData.length > 0 ? (
                 filteredData.map((item, index) => {
-                  const isSelected = item[valueKey] !== undefined && item[valueKey] !== null && selectedValues.includes(String(item[valueKey]));
+                  const isSelected = item !== undefined && item !== null && (
+                    (item[valueKey] !== undefined && item[valueKey] !== null && selectedValues.includes(String(item[valueKey]))) ||
+                    (item.rawId !== undefined && item.rawId !== null && selectedValues.includes(String(item.rawId))) ||
+                    (item.label !== undefined && item.label !== null && selectedValues.includes(String(item.label)))
+                  );
                   const isOptionDisabled = getIsOptionDisabled ? getIsOptionDisabled(item) : false;
                   return (
                     <TouchableOpacity
