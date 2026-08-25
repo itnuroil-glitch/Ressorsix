@@ -91,12 +91,14 @@ async function runProductionMigration() {
         }
       });
 
-      // 4c. Fill missing date fields
-      for (const dFid of dateFids) {
-        if (!parsed[dFid]) {
-          parsed[dFid] = defaultDate;
+      // 4c. Fill missing layout fields (dates and text/number/dropdown fields)
+      schemaFields.forEach(f => {
+        const fid = String(f.field_id).trim();
+        if (fid && parsed[fid] === undefined) {
+          const isDate = (f.field_type === 'Date') || (f.field_name || '').toLowerCase().includes('date');
+          parsed[fid] = isDate ? defaultDate : '';
         }
-      }
+      });
 
       // 4d. Sanitize JSON (keep numeric or f_ keys)
       const cleanFieldData = {};

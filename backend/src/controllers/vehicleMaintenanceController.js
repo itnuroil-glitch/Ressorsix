@@ -96,6 +96,36 @@ const resolveServiceDetailsToNames = async (fieldData, custom_field_id = null) =
   return parsed;
 };
 
+// Ensure EVERY field ID in the custom field layout exists in field_data JSON
+const fillAllSchemaFieldIds = async (fieldData, custom_field_id = null) => {
+  if (!fieldData || typeof fieldData !== 'object') fieldData = {};
+  let parsed = typeof fieldData === 'string' ? JSON.parse(fieldData) : { ...fieldData };
+  if (!parsed || typeof parsed !== 'object') parsed = {};
+
+  try {
+    let query = "SELECT field_id, field_name, field_type FROM tbl_customfield_details";
+    const params = [];
+    if (custom_field_id) {
+      query += " WHERE custom_fieldsid = $1";
+      params.push(custom_field_id);
+    }
+    const res = await db.query(query, params);
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    res.rows.forEach(f => {
+      const fid = String(f.field_id).trim();
+      if (fid && parsed[fid] === undefined) {
+        const isDate = (f.field_type === 'Date') || (f.field_name || '').toLowerCase().includes('date');
+        parsed[fid] = isDate ? todayStr : '';
+      }
+    });
+  } catch (e) {
+    console.error('Error filling schema field IDs:', e);
+  }
+
+  return parsed;
+};
+
 // Sanitize field_data to keep ONLY field IDs (numeric keys)
 const sanitizeFieldDataOnlyFieldIds = (fieldData) => {
   if (!fieldData) return {};
@@ -243,7 +273,8 @@ exports.saveVehicleMaintenance = async (req, res) => {
     const processedFieldData = await processAndSyncFieldDataFiles(field_data, clientid, company_id);
     const resolvedVehicleId = await resolveVehicleId(vehicle_id, processedFieldData);
     const resolvedServiceData = await resolveServiceDetailsToNames(processedFieldData, custom_field_id);
-    const cleanFieldData = sanitizeFieldDataOnlyFieldIds(resolvedServiceData);
+    const filledFieldData = await fillAllSchemaFieldIds(resolvedServiceData, custom_field_id);
+    const cleanFieldData = sanitizeFieldDataOnlyFieldIds(filledFieldData);
     const jsonData = typeof cleanFieldData === 'object' ? JSON.stringify(cleanFieldData) : cleanFieldData;
 
     const query = `
@@ -518,7 +549,8 @@ exports.updateMaintenance = async (req, res) => {
     const processedFieldData = await processAndSyncFieldDataFiles(field_data, clientid, company_id);
     const resolvedVehicleId = await resolveVehicleId(vehicle_id, processedFieldData);
     const resolvedServiceData = await resolveServiceDetailsToNames(processedFieldData, custom_field_id);
-    const cleanFieldData = sanitizeFieldDataOnlyFieldIds(resolvedServiceData);
+    const filledFieldData = await fillAllSchemaFieldIds(resolvedServiceData, custom_field_id);
+    const cleanFieldData = sanitizeFieldDataOnlyFieldIds(filledFieldData);
     const newPaths = extractFilePaths(cleanFieldData);
 
     const removedPaths = oldPaths.filter(p => !newPaths.includes(p));
