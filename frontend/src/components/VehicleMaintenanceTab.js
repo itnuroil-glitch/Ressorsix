@@ -294,10 +294,16 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
                 const parts = labelStr.split(' - ');
                 labelStr = `${parts[0].trim()} - ${parts[1].trim()}`;
               }
-              return { label: labelStr, value: valueStr };
+              return { label: labelStr, value: valueStr, rawId: valueStr };
             }
             let label = opt.vehicle_display_name || opt.Vehiclename || opt.vehiclename || opt.Plateno || opt.plateno || opt.plate_number || opt.plate_no || opt.service_name || opt.service_details || opt.service_detail || opt.vehicle_name || opt.name || opt.label || opt.company_name || opt.id;
             let value = String(opt.id || opt.vehicle_id || opt.value || label);
+            const rawId = String(opt.id || opt.vehicle_id || opt.value || '');
+
+            const isServiceField = fNameLower.includes('service detail') || fNameLower.includes('service details') || fNameLower.includes('service type') || fNameLower.includes('service');
+            if (isServiceField) {
+              value = String(opt.service_name || opt.service_details || opt.service_detail || opt.name || label);
+            }
 
             // Combined format: Vehicle Name - Plate No
             const vName = opt.vehicle_name || (String(label).includes(' - ') ? String(label).split(' - ')[0].trim() : null);
@@ -307,7 +313,7 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
               label = `${vName} - ${pNo}`;
             }
 
-            return { label: String(label), value: String(value) };
+            return { label: String(label), value: String(value), rawId: String(rawId) };
           });
         } else if (field.options) {
           const rawOpts = typeof field.options === 'string' ? field.options.split(',').map(s => s.trim()) : field.options;
@@ -318,14 +324,35 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
               const parts = String(label).split(' - ');
               label = `${parts[0].trim()} - ${parts[1].trim()}`;
             }
-            return { label: String(label), value: String(value) };
+            return { label: String(label), value: String(value), rawId: String(value) };
           });
+        }
+
+        let currentVal = formData[field.id] !== undefined && formData[field.id] !== null ? formData[field.id] : '';
+        if (currentVal) {
+          if (Array.isArray(currentVal)) {
+            currentVal = currentVal.map(v => {
+              const m = optionsList.find(o => String(o.value) === String(v) || String(o.rawId) === String(v) || String(o.label) === String(v));
+              return m ? m.value : String(v);
+            });
+          } else if (typeof currentVal === 'string' && currentVal.includes(',')) {
+            const parts = currentVal.split(',').map(p => p.trim());
+            const resolvedParts = parts.map(p => {
+              const m = optionsList.find(o => String(o.value) === String(p) || String(o.rawId) === String(p) || String(o.label) === String(p));
+              return m ? m.value : p;
+            });
+            currentVal = resolvedParts.join(', ');
+          } else if (typeof currentVal === 'string' || typeof currentVal === 'number') {
+            const sVal = String(currentVal).trim();
+            const m = optionsList.find(o => String(o.value) === sVal || String(o.rawId) === sVal || String(o.label) === sVal);
+            if (m) currentVal = m.value;
+          }
         }
 
         return (
           <SearchableDropdown
             data={optionsList}
-            value={formData[field.id] !== undefined && formData[field.id] !== null ? String(formData[field.id]) : ''}
+            value={currentVal !== undefined && currentVal !== null ? String(currentVal) : ''}
             onChange={(val) => handleInputChange(field.id, val)}
             placeholder="Select..."
             searchPlaceholder={`Search ${field.name}...`}
