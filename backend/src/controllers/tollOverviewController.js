@@ -136,7 +136,7 @@ exports.saveTollOverview = async (req, res) => {
 
 exports.getTollOverviewRecords = async (req, res) => {
   try {
-    const { clientid } = req.query;
+    const { clientid, company_id } = req.query;
     let query = `
       SELECT 
         v.*, 
@@ -152,8 +152,12 @@ exports.getTollOverviewRecords = async (req, res) => {
     `;
     const params = [];
     if (clientid) {
-      query += ' AND v.clientid::text = $1';
       params.push(clientid);
+      query += ` AND v.clientid::text = $${params.length}`;
+    }
+    if (company_id) {
+      params.push(company_id);
+      query += ` AND v.company_id::text = $${params.length}`;
     }
     query += ' ORDER BY v.id DESC';
 
