@@ -41,8 +41,8 @@ const extractFilePaths = (val) => {
   return paths;
 };
 
-// Resolve numeric service detail IDs to text service_name in field_data
-const resolveServiceDetailsToNames = async (fieldData) => {
+// Resolve numeric service detail IDs to text service_name in field_data dynamically for any custom_field_id
+const resolveServiceDetailsToNames = async (fieldData, custom_field_id = null) => {
   if (!fieldData || typeof fieldData !== 'object') return fieldData;
   let parsed = typeof fieldData === 'string' ? JSON.parse(fieldData) : { ...fieldData };
   if (!parsed || typeof parsed !== 'object') return fieldData;
@@ -56,20 +56,36 @@ const resolveServiceDetailsToNames = async (fieldData) => {
       serviceMap[String(s.id)] = s.service_name;
     });
 
-    const serviceFid = '1786967942496';
-    if (parsed[serviceFid]) {
-      const val = parsed[serviceFid];
-      if (Array.isArray(val)) {
-        const resolved = val.map(v => serviceMap[String(v)] || v);
-        parsed[serviceFid] = resolved.join(', ');
-      } else if (typeof val === 'string' || typeof val === 'number') {
-        const strVal = String(val).trim();
-        if (serviceMap[strVal]) {
-          parsed[serviceFid] = serviceMap[strVal];
+    let targetFids = [];
+    let fieldQuery = "SELECT field_id, field_name FROM tbl_customfield_details WHERE (LOWER(field_name) LIKE '%service%')";
+    const fieldParams = [];
+    if (custom_field_id) {
+      fieldQuery += " AND custom_fieldsid = $1";
+      fieldParams.push(custom_field_id);
+    }
+    const fieldRes = await db.query(fieldQuery, fieldParams);
+    targetFids = fieldRes.rows.map(f => String(f.field_id).trim());
+
+    for (const key of Object.keys(parsed)) {
+      const trimmedKey = String(key).trim();
+      const isTarget = targetFids.includes(trimmedKey) || trimmedKey === '1786967942496';
+      
+      const val = parsed[key];
+      if (!val || typeof val === 'object') continue;
+
+      const strVal = String(val).trim();
+      if (isTarget || serviceMap[strVal]) {
+        if (Array.isArray(val)) {
+          const resolved = val.map(v => serviceMap[String(v)] || v);
+          parsed[key] = resolved.join(', ');
+        } else if (serviceMap[strVal]) {
+          parsed[key] = serviceMap[strVal];
         } else if (strVal.includes(',')) {
           const parts = strVal.split(',').map(p => p.trim());
           const resolved = parts.map(p => serviceMap[p] || p);
-          parsed[serviceFid] = resolved.join(', ');
+          if (resolved.some((r, idx) => r !== parts[idx])) {
+            parsed[key] = resolved.join(', ');
+          }
         }
       }
     }
@@ -226,7 +242,7 @@ exports.saveVehicleMaintenance = async (req, res) => {
     // Save base64 attachments locally & insert into public.attachment table
     const processedFieldData = await processAndSyncFieldDataFiles(field_data, clientid, company_id);
     const resolvedVehicleId = await resolveVehicleId(vehicle_id, processedFieldData);
-    const resolvedServiceData = await resolveServiceDetailsToNames(processedFieldData);
+    const resolvedServiceData = await resolveServiceDetailsToNames(processedFieldData, custom_field_id);
     const cleanFieldData = sanitizeFieldDataOnlyFieldIds(resolvedServiceData);
     const jsonData = typeof cleanFieldData === 'object' ? JSON.stringify(cleanFieldData) : cleanFieldData;
 
@@ -437,7 +453,7 @@ exports.updateMaintenance = async (req, res) => {
 
     const processedFieldData = await processAndSyncFieldDataFiles(field_data, clientid, company_id);
     const resolvedVehicleId = await resolveVehicleId(vehicle_id, processedFieldData);
-    const resolvedServiceData = await resolveServiceDetailsToNames(processedFieldData);
+    const resolvedServiceData = await resolveServiceDetailsToNames(processedFieldData, custom_field_id);
     const cleanFieldData = sanitizeFieldDataOnlyFieldIds(resolvedServiceData);
     const newPaths = extractFilePaths(cleanFieldData);
 
