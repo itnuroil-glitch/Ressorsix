@@ -284,7 +284,7 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
         }
       }
 
-      setFieldsLayout(parsedSections || []);
+      setFieldsLayout(JSON.parse(JSON.stringify(parsedSections || [])));
     } catch (err) {
       console.error(err);
       if (showToast) showToast('Error loading form configuration', 'error');

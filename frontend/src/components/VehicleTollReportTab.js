@@ -72,10 +72,15 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
+      let companyApiUrl = `${API_URL}/api/companies`;
+      if (user && String(user.roleId) !== '1' && user.email) {
+        companyApiUrl = `${API_URL}/api/companies?email=${encodeURIComponent(user.email)}`;
+      }
+
       const [resTxn, resClient, resComp] = await Promise.all([
-        fetch(`${API_URL}/api/vehicle-toll-transaction`),
+        fetch(`${API_URL}/api/vehicle-toll-transaction${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`),
         fetch(`${API_URL}/api/clients`),
-        fetch(`${API_URL}/api/companies`)
+        fetch(companyApiUrl)
       ]);
 
       if (resTxn.ok) {
@@ -126,26 +131,112 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
   // Master Filtered Transactions
   const filteredData = useMemo(() => {
     return records.filter(r => {
+      // 1. Company Filter
       if (activeFilters.company && activeFilters.company !== 'ALL') {
-        if (String(r.company_id || r.companyid) !== String(activeFilters.company)) return false;
+        const selectedCompId = String(activeFilters.company).toLowerCase();
+        const rCompId = String(r.company_id || r.companyid || r.field_data?.company_id || r.field_data?.companyid || '').toLowerCase();
+        const rCompName = String(r.company_name || r.field_data?.Company || r.field_data?.company_name || '').toLowerCase();
+
+        const selectedCompObj = companies.find(c => String(c.id) === String(activeFilters.company));
+        const selectedCompName = selectedCompObj ? String(selectedCompObj.company_name || selectedCompObj.name || '').toLowerCase() : '';
+
+        const isCompanyMatch = 
+          (rCompId === selectedCompId) || 
+          (selectedCompName && rCompName === selectedCompName) ||
+          (rCompName && rCompName === selectedCompId);
+
+        if (!isCompanyMatch) return false;
       }
+
+      // 2. Toll System Filter
       if (activeFilters.tollSystem && activeFilters.tollSystem !== 'ALL') {
-        const sys = (r.toll_name || r.toll_gate || '').toLowerCase();
-        if (activeFilters.tollSystem === 'Salik' && sys.includes('darb')) return false;
-        if (activeFilters.tollSystem === 'Darb' && !sys.includes('darb')) return false;
+        const sys = String(r.toll_name || r.toll_gate || r.field_data?.['Toll System'] || r.field_data?.['Toll Name'] || '').toLowerCase();
+        if (activeFilters.tollSystem === 'Salik' && (sys.includes('darb') || sys.includes('abu dhabi'))) return false;
+        if (activeFilters.tollSystem === 'Darb' && !sys.includes('darb') && !sys.includes('abu dhabi')) return false;
       }
-      if (activeFilters.accountNo && !(String(r.transaction_id || '').toLowerCase().includes(activeFilters.accountNo))) return false;
-      if (activeFilters.plate && !(String(r.plate || '').toLowerCase().includes(activeFilters.plate))) return false;
-      if (activeFilters.tag && !(String(r.tag_number || '').toLowerCase().includes(activeFilters.tag))) return false;
-      if (activeFilters.fromDate && r.trip_date) {
-        if (new Date(r.trip_date) < new Date(activeFilters.fromDate)) return false;
+
+      // 3. Account Number Filter
+      if (activeFilters.accountNo) {
+        const targetAcc = activeFilters.accountNo.toLowerCase();
+        const accHaystack = [
+          r.account_number,
+          r.account_no,
+          r.transaction_id,
+          r.toll_overview_id,
+          r.field_data?.['Account Number'],
+          r.field_data?.['Account No'],
+          r.field_data?.['Transaction ID'],
+          r.field_data?.account_number
+        ].filter(Boolean).join(' ').toLowerCase();
+
+        if (!accHaystack.includes(targetAcc)) return false;
       }
-      if (activeFilters.toDate && r.trip_date) {
-        if (new Date(r.trip_date) > new Date(activeFilters.toDate)) return false;
+
+      // 4. Plate Number Filter
+      if (activeFilters.plate) {
+        const targetPlate = activeFilters.plate.toLowerCase();
+        const plateHaystack = [
+          r.plate,
+          r.vehicle_name,
+          r.field_data?.['Plate'],
+          r.field_data?.['Plate Number'],
+          r.field_data?.['Plate No'],
+          r.field_data?.plate
+        ].filter(Boolean).join(' ').toLowerCase();
+
+        if (!plateHaystack.includes(targetPlate)) return false;
       }
+
+      // 5. Tag Number Filter
+      if (activeFilters.tag) {
+        const targetTag = activeFilters.tag.toLowerCase();
+        const tagHaystack = [
+          r.tag_number,
+          r.tag,
+          r.field_data?.['Tag Number'],
+          r.field_data?.['Tag No'],
+          r.field_data?.tag_number
+        ].filter(Boolean).join(' ').toLowerCase();
+
+        if (!tagHaystack.includes(targetTag)) return false;
+      }
+
+      // 6. From Date & To Date Filter
+      const recordRawDate = r.trip_date || r.field_data?.['Trip Date'] || r.created_at;
+      if (recordRawDate) {
+        let recordDate = null;
+        if (recordRawDate instanceof Date) {
+          recordDate = recordRawDate;
+        } else {
+          const str = String(recordRawDate).trim();
+          if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+            recordDate = new Date(str);
+          } else if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(str)) {
+            const parts = str.split('/');
+            recordDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+          } else {
+            const d = new Date(str);
+            if (!isNaN(d.getTime())) recordDate = d;
+          }
+        }
+
+        if (recordDate) {
+          if (activeFilters.fromDate) {
+            const fromD = new Date(activeFilters.fromDate);
+            fromD.setHours(0, 0, 0, 0);
+            if (recordDate < fromD) return false;
+          }
+          if (activeFilters.toDate) {
+            const toD = new Date(activeFilters.toDate);
+            toD.setHours(23, 59, 59, 999);
+            if (recordDate > toD) return false;
+          }
+        }
+      }
+
       return true;
     });
-  }, [records, activeFilters]);
+  }, [records, activeFilters, companies]);
 
   // KPI Calculations
   const totalTollAmount = useMemo(() => filteredData.reduce((acc, curr) => acc + (parseFloat(curr.amount) || 0), 0), [filteredData]);
