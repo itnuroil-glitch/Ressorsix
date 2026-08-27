@@ -322,7 +322,7 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
 
             const isServiceField = fNameLower.includes('service detail') || fNameLower.includes('service details') || fNameLower.includes('service type') || fNameLower.includes('service');
             if (isServiceField) {
-              value = String(opt.service_name || opt.service_details || opt.service_detail || opt.name || label);
+              value = String(opt.service_name || opt.service_details || opt.service_detail || opt.name || opt.label || opt.id || label);
             }
 
             // Combined format: Vehicle Name - Plate No
