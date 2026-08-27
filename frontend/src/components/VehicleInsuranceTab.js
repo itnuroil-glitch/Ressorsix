@@ -114,8 +114,15 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
       const res = await fetch(`${API_URL}/api/companies/client/${clientId}${emailParam}${actionQuery}`);
       if (res.ok) {
         const data = await res.json();
-        setCompanies(data || []);
-        return data || [];
+        const compList = data || [];
+        setCompanies(compList);
+        if (compList.length > 0) {
+          setSelectedCompany(prev => {
+            const isValid = compList.some(c => String(c.id) === String(prev));
+            return isValid ? prev : String(compList[0].id);
+          });
+        }
+        return compList;
       }
     } catch (e) {
       console.error('Error fetching companies for client:', e);
@@ -132,12 +139,16 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
     if (selectedClient) {
       currentCompanies = await fetchCompaniesForClient(selectedClient, 'create');
     }
-    if (currentCompanies.length === 1) {
-      const singleComp = currentCompanies[0];
-      setSelectedCompany(String(singleComp.id));
-      if (singleComp.country) {
-        setSelectedCountry(String(singleComp.country));
-      }
+    if (currentCompanies.length > 0) {
+      setSelectedCompany(prev => {
+        const isValid = currentCompanies.some(c => String(c.id) === String(prev));
+        if (!isValid) {
+          const firstComp = currentCompanies[0];
+          if (firstComp.country) setSelectedCountry(String(firstComp.country));
+          return String(firstComp.id);
+        }
+        return prev;
+      });
     }
     setIsFormOpen(true);
   };
