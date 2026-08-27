@@ -108,6 +108,7 @@ const TelecomBillTab = ({
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
 
+  const isSuperAdmin = !user || String(user?.roleId) === '1' || String(user?.roleid) === '1';
   const canCreate = user?.roleId === 1 || user?.roleId === '1' || permissions?.can_create || permissions?.full_control;
   const canEdit = user?.roleId === 1 || user?.roleId === '1' || permissions?.can_edit || permissions?.full_control;
   const canDelete = user?.roleId === 1 || user?.roleId === '1' || permissions?.can_delete || permissions?.full_control;
@@ -1025,7 +1026,7 @@ const TelecomBillTab = ({
             {/* TABLE HEADER ROW */}
             <View style={styles.tableHeaderRow}>
               <Text style={[styles.thCell, { flex: 0.6 }]}>ID</Text>
-              <Text style={[styles.thCell, { flex: 1.8 }]}>CLIENT INFO</Text>
+              {isSuperAdmin && <Text style={[styles.thCell, { flex: 1.8 }]}>CLIENT INFO</Text>}
               <Text style={[styles.thCell, { flex: 1.8 }]}>COMPANY</Text>
               <Text style={[styles.thCell, { flex: 1.8 }]}>TELECOM PROVIDER</Text>
               <Text style={[styles.thCell, { flex: 1.6 }]}>ACCOUNT / MOBILE</Text>
@@ -1051,14 +1052,16 @@ const TelecomBillTab = ({
                 <View key={r.tele_bill_id || r.id} style={styles.tableBodyRow}>
                   <Text style={[styles.tdCell, { flex: 0.6, fontWeight: '700', color: '#334155' }]}>#{r.tele_bill_id || r.id}</Text>
 
-                  <View style={[styles.tdCell, { flex: 1.8 }]}>
-                    <Text style={{ fontWeight: '600', color: '#0F172A', fontSize: 13, marginBottom: 2 }}>
-                      {r.client_name || user?.client_name || 'Nirmal Raj'}
-                    </Text>
-                    <Text style={{ fontSize: 11, color: '#94A3B8' }}>
-                      Country: {r.country_name || 'United Arab Emirates'}
-                    </Text>
-                  </View>
+                  {isSuperAdmin && (
+                    <View style={[styles.tdCell, { flex: 1.8 }]}>
+                      <Text style={{ fontWeight: '600', color: '#0F172A', fontSize: 13, marginBottom: 2 }}>
+                        {r.client_name || user?.client_name || 'Nirmal Raj'}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: '#94A3B8' }}>
+                        Country: {r.country_name || 'United Arab Emirates'}
+                      </Text>
+                    </View>
+                  )}
 
                   <Text style={[styles.tdCell, { flex: 1.8, color: '#0F172A', fontWeight: '500' }]}>{company}</Text>
                   <Text style={[styles.tdCell, { flex: 1.8, color: '#475569', fontWeight: '500' }]}>{provider}</Text>

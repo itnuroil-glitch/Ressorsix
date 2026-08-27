@@ -18,6 +18,12 @@ router.get('/plate-no/client', vehicleDetailsController.getVehiclePlatesByClient
 router.get('/plate-no/client/', vehicleDetailsController.getVehiclePlatesByClient);
 router.get('/plate-no/client/:clientId', vehicleDetailsController.getVehiclePlatesByClient);
 
+// GET vehicles by client ID and company ID
+router.get('/client/:clientId/company/:companyId', vehicleDetailsController.getVehiclesByClient);
+router.get('/client/:clientId/company', vehicleDetailsController.getVehiclesByClient);
+router.get('/plate-no/client/:clientId/company/:companyId', vehicleDetailsController.getVehiclePlatesByClient);
+router.get('/plate-no/client/:clientId/company', vehicleDetailsController.getVehiclePlatesByClient);
+
 // GET vehicles by client ID
 router.get('/client', vehicleDetailsController.getVehiclesByClient);
 router.get('/client/', vehicleDetailsController.getVehiclesByClient);

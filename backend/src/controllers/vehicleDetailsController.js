@@ -501,14 +501,24 @@ exports.getVehiclesByClient = async (req, res) => {
     });
     const plateFieldIds = sortedPlateFields.map(f => f.field_id);
 
-    // 2. Fetch vehicle details for this client
-    const query = `
-      SELECT id, vehicle_id, field_data 
-      FROM tbl_vehicle_details 
-      WHERE clientid::text = $1
-      ORDER BY id DESC
+    let companyId = req.params.companyId || req.params.companyid || req.query.companyId || req.query.companyid || req.query.company;
+
+    // 2. Fetch vehicle details for this client and company
+    let query = `
+      SELECT v.id, v.vehicle_id, v.field_data, v.company_id, c.company_name
+      FROM tbl_vehicle_details v
+      LEFT JOIN company c ON v.company_id::text = c.id::text
+      WHERE v.clientid::text = $1
     `;
-    const { rows } = await db.query(query, [clientId]);
+    const params = [clientId];
+
+    if (companyId && companyId.trim() !== '' && !companyId.startsWith(':')) {
+      query += ` AND (v.company_id::text = $2 OR LOWER(c.company_name) = LOWER($2) OR LOWER(v.field_data->>'Company') = LOWER($2) OR v.field_data->>'company_id' = $2)`;
+      params.push(companyId);
+    }
+    query += ` ORDER BY v.id DESC`;
+
+    const { rows } = await db.query(query, params);
 
     const formattedVehicles = rows.map(v => {
       let vehicleName = '';
@@ -623,14 +633,24 @@ exports.getVehiclePlatesByClient = async (req, res) => {
       .filter(f => !f.field_name.toLowerCase().includes('vehicle'))
       .map(f => f.field_id);
 
-    // 2. Fetch vehicle details for this client
-    const query = `
-      SELECT id, vehicle_id, field_data 
-      FROM tbl_vehicle_details 
-      WHERE clientid::text = $1
-      ORDER BY id DESC
+    let companyId = req.params.companyId || req.params.companyid || req.query.companyId || req.query.companyid || req.query.company;
+
+    // 2. Fetch vehicle details for this client and company
+    let query = `
+      SELECT v.id, v.vehicle_id, v.field_data, v.company_id, c.company_name
+      FROM tbl_vehicle_details v
+      LEFT JOIN company c ON v.company_id::text = c.id::text
+      WHERE v.clientid::text = $1
     `;
-    const { rows } = await db.query(query, [clientId]);
+    const params = [clientId];
+
+    if (companyId && companyId.trim() !== '' && !companyId.startsWith(':')) {
+      query += ` AND (v.company_id::text = $2 OR LOWER(c.company_name) = LOWER($2) OR LOWER(v.field_data->>'Company') = LOWER($2) OR v.field_data->>'company_id' = $2)`;
+      params.push(companyId);
+    }
+    query += ` ORDER BY v.id DESC`;
+
+    const { rows } = await db.query(query, params);
 
     const formattedVehicles = rows.map(v => {
       let vehicleName = '';

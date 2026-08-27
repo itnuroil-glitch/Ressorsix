@@ -220,13 +220,34 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
           if (!path) return [];
           try {
             let processedPath = (path || '').trim();
-            // Automatically append clientId if the path is designed for client lookup
-            if (processedPath.includes('client') && clientId) {
+
+            const activeCompanyId = selectedCompany
+              ? String(selectedCompany).split(',')[0].trim()
+              : '';
+
+            // Replace :clientId placeholder if present, or append clientId
+            if (processedPath.includes(':clientId')) {
+              processedPath = processedPath.replace(':clientId', clientId || '');
+            } else if (processedPath.includes('client') && clientId) {
               if (processedPath.endsWith('/client') || processedPath.endsWith('/client/')) {
                 const separator = processedPath.endsWith('/') ? '' : '/';
                 processedPath = `${processedPath}${separator}${clientId}`;
               }
             }
+
+            // Replace :companyId placeholder if present, or append companyId
+            if (processedPath.includes(':companyId')) {
+              processedPath = processedPath.replace(':companyId', activeCompanyId || '');
+            } else if (processedPath.includes('/company') && activeCompanyId) {
+              if (processedPath.endsWith('/company') || processedPath.endsWith('/company/')) {
+                const separator = processedPath.endsWith('/') ? '' : '/';
+                processedPath = `${processedPath}${separator}${activeCompanyId}`;
+              }
+            } else if (activeCompanyId && !processedPath.includes('companyId=')) {
+              const separator = processedPath.includes('?') ? '&' : '?';
+              processedPath = `${processedPath}${separator}companyId=${activeCompanyId}`;
+            }
+
             // Automatically append countryId if the path is designed for country lookup
             if (processedPath.includes('country') && countryId) {
               if (processedPath.endsWith('/country') || processedPath.endsWith('/country/')) {
@@ -1633,6 +1654,19 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
                         data={companies}
                         value={selectedCompany}
                         onChange={(val) => {
+                          if (String(selectedCompany) !== String(val)) {
+                            // Clear vehicle selections when company changes
+                            setFormData(prev => {
+                              const updated = { ...prev };
+                              Object.keys(updated).forEach(k => {
+                                const kLower = String(k).toLowerCase();
+                                if (kLower.includes('vehicle') || kLower.includes('plate')) {
+                                  delete updated[k];
+                                }
+                              });
+                              return updated;
+                            });
+                          }
                           setSelectedCompany(val);
                           const selectedIds = val ? String(val).split(',').map(s => s.trim()).filter(Boolean) : [];
                           if (selectedIds.length > 0) {

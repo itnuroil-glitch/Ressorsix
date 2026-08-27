@@ -243,6 +243,7 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
       }
 
       const activeClientId = clientId || user?.client_id || user?.clientid || '1';
+      const activeCompanyId = selectedCompany ? String(selectedCompany).split(',')[0].trim() : '';
 
       // Fetch dynamic options for dropdowns if needed
       for (const sec of (parsedSections || [])) {
@@ -262,6 +263,14 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
                 path = `${path.replace(/\/$/, '')}/${activeClientId}`;
               }
             }
+
+            if (path.includes(':companyId') || path.includes(':companyid')) {
+              path = path.replace(':companyId', activeCompanyId).replace(':companyid', activeCompanyId);
+            } else if (activeCompanyId && !path.includes('companyId=')) {
+              const separator = path.includes('?') ? '&' : '?';
+              path = `${path}${separator}companyId=${activeCompanyId}`;
+            }
+
             try {
               const res = await fetch(`${API_URL}${path.startsWith('/') ? path : '/' + path}`);
               if (res.ok) {
@@ -729,7 +738,7 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
             <View style={{ width: '100%', overflow: 'auto' }}>
               <View style={styles.tableHeader}>
                 <Text style={[styles.thCell, { flex: 0.5 }]}># ID</Text>
-                <Text style={[styles.thCell, { flex: 1.5 }]}>CLIENT INFO</Text>
+                {isSuperAdmin && <Text style={[styles.thCell, { flex: 1.5 }]}>CLIENT INFO</Text>}
                 <Text style={[styles.thCell, { flex: 1.5 }]}>VEHICLE NAME</Text>
                 <Text style={[styles.thCell, { flex: 1.2 }]}>PLATE NUMBER</Text>
                 <Text style={[styles.thCell, { flex: 1.5 }]}>COMPANY NAME</Text>
@@ -757,7 +766,7 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
                   return (
                     <View key={item.id || idx} style={[styles.tableRow, idx % 2 === 1 && { backgroundColor: '#F8FAFC' }]}>
                       <Text style={[styles.tdCell, { flex: 0.5, fontWeight: '700', color: '#0F172A' }]}>#{item.id}</Text>
-                      <Text style={[styles.tdCell, { flex: 1.5 }]}>{item.client_name || 'Krish'}</Text>
+                      {isSuperAdmin && <Text style={[styles.tdCell, { flex: 1.5 }]}>{item.client_name || 'Krish'}</Text>}
                       <Text style={[styles.tdCell, { flex: 1.5, fontWeight: '600', color: '#1A4D3E' }]}>{vehicleName}</Text>
                       <Text style={[styles.tdCell, { flex: 1.2 }]}>{plateNo}</Text>
                       <Text style={[styles.tdCell, { flex: 1.5 }]}>{item.company_name || 'Bynur Agro Trading LLC'}</Text>

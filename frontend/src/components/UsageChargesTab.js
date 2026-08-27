@@ -122,6 +122,7 @@ const UsageChargesTab = ({
   const singularTitle = pageTitle.endsWith('s') ? pageTitle.slice(0, -1) : pageTitle;
   const { width } = useWindowDimensions();
   const isLargeScreen = width > 768;
+  const isSuperAdmin = !user || String(user?.roleId) === '1' || String(user?.roleid) === '1';
 
   const canCreate = permissions.canCreate !== false;
   const canEdit = permissions.canEdit !== false;
@@ -1009,7 +1010,7 @@ const UsageChargesTab = ({
             {/* TABLE HEADER ROW */}
             <View style={styles.tableHeaderRow}>
               <Text style={[styles.thCell, { flex: 0.6 }]}>ID</Text>
-              <Text style={[styles.thCell, { flex: 1.8 }]}>CLIENT INFO</Text>
+              {isSuperAdmin && <Text style={[styles.thCell, { flex: 1.8 }]}>CLIENT INFO</Text>}
               <Text style={[styles.thCell, { flex: 1.6 }]}>{(moduleId === 61 || String(moduleId) === '61') ? 'COMPANY' : 'BILL NUMBER'}</Text>
               <Text style={[styles.thCell, { flex: 1.6 }]}>{(moduleId === 61 || String(moduleId) === '61') ? 'MOBILE / ACCOUNT' : 'MOBILE NUMBER'}</Text>
               <Text style={[styles.thCell, { flex: 1.8 }]}>{(moduleId === 61 || String(moduleId) === '61') ? 'DOCUMENT TYPE' : 'USAGE DATE & TIME'}</Text>
@@ -1046,14 +1047,16 @@ const UsageChargesTab = ({
                 <View key={r.doc_id || r.usage_id || r.id} style={styles.tableBodyRow}>
                   <Text style={[styles.tdCell, { flex: 0.6, fontWeight: '700', color: '#334155' }]}>#{r.doc_id || r.usage_id || r.id}</Text>
 
-                  <View style={[styles.tdCell, { flex: 1.8 }]}>
-                    <Text style={{ fontWeight: '600', color: '#0F172A', fontSize: 13, marginBottom: 2 }}>
-                      {r.client_name || user?.client_name || 'Nirmal Raj'}
-                    </Text>
-                    <Text style={{ fontSize: 11, color: '#94A3B8' }}>
-                      Country: {r.country_name || 'United Arab Emirates'}
-                    </Text>
-                  </View>
+                  {isSuperAdmin && (
+                    <View style={[styles.tdCell, { flex: 1.8 }]}>
+                      <Text style={{ fontWeight: '600', color: '#0F172A', fontSize: 13, marginBottom: 2 }}>
+                        {r.client_name || user?.client_name || 'Nirmal Raj'}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: '#94A3B8' }}>
+                        Country: {r.country_name || 'United Arab Emirates'}
+                      </Text>
+                    </View>
+                  )}
 
                   <Text style={[styles.tdCell, { flex: 1.6, color: '#0F172A', fontWeight: '600' }]}>{billNo}</Text>
                   <Text style={[styles.tdCell, { flex: 1.6, color: '#475569', fontWeight: '500' }]}>{mobile}</Text>
