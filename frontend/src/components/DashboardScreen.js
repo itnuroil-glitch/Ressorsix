@@ -647,7 +647,7 @@ export default function DashboardScreen({ user, onSignOut }) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           permissions: perms,
           company_ids: targetCompanyIds,
           client_id: roleClientId
@@ -886,7 +886,7 @@ export default function DashboardScreen({ user, onSignOut }) {
         // Check if any Vehicle sub-modules exist but the Vehicle parent (18) is missing
         const hasVehicleSubmodule = data.some(m => [19, 23, 24].includes(m.id) || m.parent_id === 18);
         const hasVehicleParent = data.some(m => m.id === 18);
-        
+
         if (hasVehicleSubmodule && !hasVehicleParent) {
           data.push({
             id: 18,
@@ -1097,7 +1097,7 @@ export default function DashboardScreen({ user, onSignOut }) {
           alert(`User created! Temporary Password: ${data.tempPassword}`);
         }
         setIsEmpRoleDropdownOpen(false);
-                        setIsEmployeeModalOpen(false);
+        setIsEmployeeModalOpen(false);
         fetchEmployees();
       })
       .catch(err => {
@@ -2006,14 +2006,14 @@ export default function DashboardScreen({ user, onSignOut }) {
 
           const targetCompIds = (compId && compId !== 'all')
             ? [Number(compId)]
-            : (newRoleClientIds.length > 0 ? newRoleClientIds.map(Number) : [null]);
+            : (newRoleClientIds.length > 0 ? [Number(newRoleClientIds[0])] : [null]);
 
           return fetch(`${API_URL}/api/roles/${savedRoleId}/permissions`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ 
+            body: JSON.stringify({
               permissions: perms,
               company_ids: targetCompIds
             }),
@@ -3721,7 +3721,7 @@ export default function DashboardScreen({ user, onSignOut }) {
             // Match Role by ID or Title
             const rawRole = String(row['System Permissions Role'] || row['Role'] || row['role'] || row['Role ID'] || '').trim();
             const roleName = rawRole.toLowerCase();
-            const matchedRoles = roles.filter(r => 
+            const matchedRoles = roles.filter(r =>
               String(r.id) === rawRole || (r.role || '').trim().toLowerCase() === roleName
             );
             const roleid = matchedRoles.length > 0 ? matchedRoles.map(r => r.id) : (rawRole && !isNaN(rawRole) ? [Number(rawRole)] : []);
@@ -3729,7 +3729,7 @@ export default function DashboardScreen({ user, onSignOut }) {
             // Match Department by ID or Name
             const rawDept = String(row['Department'] || row['department'] || row['Department ID'] || '').trim();
             const deptName = rawDept.toLowerCase();
-            const matchedDept = departments.find(d => 
+            const matchedDept = departments.find(d =>
               String(d.id) === rawDept || (d.department_name || '').trim().toLowerCase() === deptName
             );
             const department_id = matchedDept ? matchedDept.id : (rawDept && !isNaN(rawDept) ? Number(rawDept) : null);
@@ -3740,7 +3740,7 @@ export default function DashboardScreen({ user, onSignOut }) {
             ).trim();
 
             const baseCompLower = rawBaseComp.toLowerCase();
-            const matchedBaseComp = companies.find(c => 
+            const matchedBaseComp = companies.find(c =>
               String(c.id) === rawBaseComp || (c.company_name || '').trim().toLowerCase() === baseCompLower
             );
             const basecompany_id = matchedBaseComp ? matchedBaseComp.id : (!isNaN(rawBaseComp) && rawBaseComp !== '' ? Number(rawBaseComp) : null);
@@ -3760,7 +3760,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                 const cTrim = rawC.trim();
                 if (!cTrim) continue;
                 const cLower = cTrim.toLowerCase();
-                const matchedC = companies.find(c => 
+                const matchedC = companies.find(c =>
                   String(c.id) === cTrim || (c.company_name || '').trim().toLowerCase() === cLower
                 );
                 if (matchedC && !matchedCompIds.includes(matchedC.id)) {
@@ -4987,7 +4987,7 @@ export default function DashboardScreen({ user, onSignOut }) {
         {/* SYSTEM ROLES LIST TABLE CARD */}
         <View style={[styles.tableCard, { marginTop: SPACING.md }]}>
           {renderTableToolbar(rolesSearch, setRolesSearch, setRolesPage, 'Search roles by title...')}
-          
+
           {rolesLoading ? (
             <View style={{ padding: 40, alignItems: 'center' }}>
               <ActivityIndicator size="large" color={COLORS.primary} />
@@ -5102,14 +5102,14 @@ export default function DashboardScreen({ user, onSignOut }) {
                       setSelectedRoleId(val);
                       setSelectedPermissionCompanyId('all');
                       setCompanyPermissionDrafts({});
-                      
+
                       const rObj = roles.find(r => String(r.id) === String(val));
                       const rAssoc = rObj
-                        ? companies.filter(c => 
-                            (Array.isArray(rObj.companyids) && rObj.companyids.map(id => String(id)).includes(String(c.id))) ||
-                            (Array.isArray(rObj.clientids) && rObj.clientids.map(id => String(id)).includes(String(c.id))) ||
-                            (rObj.clientid && String(c.clientid) === String(rObj.clientid))
-                          )
+                        ? companies.filter(c =>
+                          (Array.isArray(rObj.companyids) && rObj.companyids.map(id => String(id)).includes(String(c.id))) ||
+                          (Array.isArray(rObj.clientids) && rObj.clientids.map(id => String(id)).includes(String(c.id))) ||
+                          (rObj.clientid && String(c.clientid) === String(rObj.clientid))
+                        )
                         : [];
                       const fetchCompId = rAssoc.length > 0 ? rAssoc.map(c => c.id).join(',') : '';
                       fetchRolePermissions(val, fetchCompId);
@@ -5141,13 +5141,13 @@ export default function DashboardScreen({ user, onSignOut }) {
                 {(() => {
                   const selectedRoleObj = roles.find(r => String(r.id) === String(selectedRoleId));
                   const roleAssociatedCompanies = selectedRoleObj
-                    ? companies.filter(c => 
-                        (Array.isArray(selectedRoleObj.companyids) && selectedRoleObj.companyids.map(id => String(id)).includes(String(c.id))) ||
-                        (Array.isArray(selectedRoleObj.clientids) && selectedRoleObj.clientids.map(id => String(id)).includes(String(c.id))) ||
-                        (selectedRoleObj.clientid && String(c.clientid) === String(selectedRoleObj.clientid))
-                      )
+                    ? companies.filter(c =>
+                      (Array.isArray(selectedRoleObj.companyids) && selectedRoleObj.companyids.map(id => String(id)).includes(String(c.id))) ||
+                      (Array.isArray(selectedRoleObj.clientids) && selectedRoleObj.clientids.map(id => String(id)).includes(String(c.id))) ||
+                      (selectedRoleObj.clientid && String(c.clientid) === String(selectedRoleObj.clientid))
+                    )
                     : [];
-                  
+
                   if (!selectedRoleId) return null;
 
                   return (
@@ -5171,7 +5171,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                           if (companyPermissionDrafts[val]) {
                             setRolePermissions(companyPermissionDrafts[val]);
                           } else {
-                            const fetchCompId = val === 'all' 
+                            const fetchCompId = val === 'all'
                               ? roleAssociatedCompanies.map(c => c.id).join(',')
                               : val;
                             fetchRolePermissions(selectedRoleId, fetchCompId);
@@ -5730,7 +5730,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (user && String(user.roleId) === '1') {
       return true; // Super Admin has full control
     }
-    
+
     // Find modules belonging to this tabId
     const tabModules = modules.filter(m => getTabIdByRoute(m.module_name, m.route) === tabId);
     if (tabModules.length === 0) {
@@ -5825,12 +5825,12 @@ export default function DashboardScreen({ user, onSignOut }) {
         return <VehicleTollTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_toll')} checkRowPermission={(compId, act) => checkRowPermission('vehicle_toll', compId, act)} />;
       case 'vehicle_toll_overview':
       case 'toll_overview':
-        return <VehicleTollTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_toll')} checkRowPermission={(compId, act) => checkRowPermission('vehicle_toll', compId, act)} isOverview={true} />;
+        return <VehicleTollTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_toll_overview')} checkRowPermission={(compId, act) => checkRowPermission('vehicle_toll_overview', compId, act)} isOverview={true} />;
       case 'vehicle_toll_transaction':
       case 'vehicle_toll_transactions':
       case 'toll_transactions':
       case 'toll_transaction':
-        return <VehicleTollTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_toll')} checkRowPermission={(compId, act) => checkRowPermission('vehicle_toll', compId, act)} isTransaction={true} />;
+        return <VehicleTollTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('toll_transactions')} checkRowPermission={(compId, act) => checkRowPermission('toll_transactions', compId, act)} isTransaction={true} />;
       case 'vehicle_toll_report':
       case 'vehicle_toll_reports':
       case 'toll_report':
@@ -6013,7 +6013,7 @@ export default function DashboardScreen({ user, onSignOut }) {
               <View style={{ position: 'absolute', top: 6, left: 10, width: 4, height: 4, borderRadius: 2, backgroundColor: '#72002A' }} />
               <View style={{ position: 'absolute', top: 20, left: 2 }}><Text style={{ color: '#D86A1A', fontSize: 11, fontWeight: '700' }}>✦</Text></View>
               <View style={{ position: 'absolute', bottom: 14, left: 6, width: 7, height: 7, borderRadius: 3.5, borderWidth: 1.5, borderColor: '#72002A' }} />
-              
+
               <View style={{ position: 'absolute', top: 8, right: 14, width: 6, height: 6, borderRadius: 3, borderWidth: 1.5, borderColor: '#D86A1A' }} />
               <View style={{ position: 'absolute', top: 36, right: 4 }}><Text style={{ color: '#72002A', fontSize: 10, fontWeight: '700' }}>+</Text></View>
               <View style={{ position: 'absolute', bottom: 12, right: 12, width: 4, height: 4, borderRadius: 2, backgroundColor: '#72002A' }} />
@@ -6050,14 +6050,14 @@ export default function DashboardScreen({ user, onSignOut }) {
                   <Ionicons
                     name={
                       toast.type === 'success' ? 'checkmark' :
-                      toast.type === 'error' ? 'close' :
-                      toast.type === 'warning' ? 'warning-outline' : 'information'
+                        toast.type === 'error' ? 'close' :
+                          toast.type === 'warning' ? 'warning-outline' : 'information'
                     }
                     size={30}
                     color={
                       toast.type === 'success' ? '#16A34A' :
-                      toast.type === 'error' ? '#DC2626' :
-                      toast.type === 'warning' ? '#D97706' : '#2563EB'
+                        toast.type === 'error' ? '#DC2626' :
+                          toast.type === 'warning' ? '#D97706' : '#2563EB'
                     }
                   />
                 </View>
@@ -7733,8 +7733,8 @@ export default function DashboardScreen({ user, onSignOut }) {
                     </View>
                   )}
                 </View>
-                
-                                {/* Status Segment Selection */}
+
+                {/* Status Segment Selection */}
                 <Text style={styles.modalLabel}>Status</Text>
                 <TouchableOpacity
                   style={{
@@ -8350,7 +8350,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                   const clientCompanies = (!user || !user.clientid)
                     ? companies
                     : companies.filter(c => Number(c.clientid) === Number(user.clientid));
-                  
+
                   const nonBaseCompanies = clientCompanies.filter(c => Number(c.id) !== Number(baseCompId));
 
                   return (
@@ -8819,45 +8819,45 @@ export default function DashboardScreen({ user, onSignOut }) {
             </View>
           </View>
 
-            {/* ADD/EDIT COMPANY MODAL OVERLAY */}
-            <Modal
-              visible={isCompanyModalOpen}
-              animationType="fade"
-              transparent={true}
-              onRequestClose={() => {
-                setIsCompanyModalOpen(false);
-              }}
-            >
-              <View style={dynamicModalOverlayStyle}>
-                <View style={[styles.modalCard, { width: width > 768 ? 720 : '95%', maxWidth: 720, maxHeight: '90%' }]}>
+          {/* ADD/EDIT COMPANY MODAL OVERLAY */}
+          <Modal
+            visible={isCompanyModalOpen}
+            animationType="fade"
+            transparent={true}
+            onRequestClose={() => {
+              setIsCompanyModalOpen(false);
+            }}
+          >
+            <View style={dynamicModalOverlayStyle}>
+              <View style={[styles.modalCard, { width: width > 768 ? 720 : '95%', maxWidth: 720, maxHeight: '90%' }]}>
 
-                  {/* Modal Header */}
-                  <View style={styles.modalHeader}>
-                    <View style={styles.modalTitleWrapper}>
-                      <Ionicons name={isCompanyViewOnly ? 'eye-outline' : editingCompany ? 'pencil-outline' : 'business-outline'} size={24} color={isCompanyViewOnly ? '#0284C7' : COLORS.primary} />
-                      <Text style={styles.modalTitle}>{isCompanyViewOnly ? 'View Company Profile' : editingCompany ? 'Edit Company' : 'Add New Company'}</Text>
-                    </View>
-                    <TouchableOpacity
-                      onPress={() => {
-                        setIsCompanyModalOpen(false);
-                      }}
-                      style={styles.modalCloseBtn}
-                    >
-                      <Ionicons name="close" size={24} color={COLORS.textSecondary} />
-                    </TouchableOpacity>
+                {/* Modal Header */}
+                <View style={styles.modalHeader}>
+                  <View style={styles.modalTitleWrapper}>
+                    <Ionicons name={isCompanyViewOnly ? 'eye-outline' : editingCompany ? 'pencil-outline' : 'business-outline'} size={24} color={isCompanyViewOnly ? '#0284C7' : COLORS.primary} />
+                    <Text style={styles.modalTitle}>{isCompanyViewOnly ? 'View Company Profile' : editingCompany ? 'Edit Company' : 'Add New Company'}</Text>
                   </View>
-
-                  {/* Modal Form Content */}
-                  <ScrollView
-                    style={{ flexGrow: 0, maxHeight: height - 260 }}
-                    showsVerticalScrollIndicator={false}
-                    nestedScrollEnabled={true}
-                    keyboardShouldPersistTaps="handled"
+                  <TouchableOpacity
+                    onPress={() => {
+                      setIsCompanyModalOpen(false);
+                    }}
+                    style={styles.modalCloseBtn}
                   >
-                    {isCompanyViewOnly ? renderCompanySinglePageView() : (
-                      <View style={styles.modalForm}>
+                    <Ionicons name="close" size={24} color={COLORS.textSecondary} />
+                  </TouchableOpacity>
+                </View>
 
-                        {/* Wizard Header Progress */}
+                {/* Modal Form Content */}
+                <ScrollView
+                  style={{ flexGrow: 0, maxHeight: height - 260 }}
+                  showsVerticalScrollIndicator={false}
+                  nestedScrollEnabled={true}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {isCompanyViewOnly ? renderCompanySinglePageView() : (
+                    <View style={styles.modalForm}>
+
+                      {/* Wizard Header Progress */}
                       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, paddingHorizontal: 20, paddingVertical: 20, backgroundColor: '#F8FAFC', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 }}>
                         {[
                           { id: 1, label: 'Identity', icon: 'business-outline' },
@@ -9319,370 +9319,520 @@ export default function DashboardScreen({ user, onSignOut }) {
                         </>
                       )}
 
-                      </View>
-                    )}
-                  </ScrollView>
+                    </View>
+                  )}
+                </ScrollView>
 
-                  {/* Modal Footer Controls */}
-                  <View style={[styles.modalFooter, { justifyContent: 'space-between', paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0' }]}>
-                    {isCompanyViewOnly ? (
-                      <>
+                {/* Modal Footer Controls */}
+                <View style={[styles.modalFooter, { justifyContent: 'space-between', paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0' }]}>
+                  {isCompanyViewOnly ? (
+                    <>
+                      <TouchableOpacity
+                        style={[styles.modalCancelBtn, { backgroundColor: '#F1F5F9', borderWidth: 0, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }]}
+                        onPress={() => setIsCompanyModalOpen(false)}
+                      >
+                        <Text style={[styles.modalCancelText, { color: '#64748B', fontWeight: '600' }]}>Close View</Text>
+                      </TouchableOpacity>
+
+                      {editingCompany && (
                         <TouchableOpacity
-                          style={[styles.modalCancelBtn, { backgroundColor: '#F1F5F9', borderWidth: 0, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }]}
-                          onPress={() => setIsCompanyModalOpen(false)}
+                          style={[styles.modalSaveBtn, { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8, backgroundColor: '#2563EB', flexDirection: 'row', alignItems: 'center', gap: 8 }]}
+                          onPress={() => setIsCompanyViewOnly(false)}
                         >
-                          <Text style={[styles.modalCancelText, { color: '#64748B', fontWeight: '600' }]}>Close View</Text>
+                          <Ionicons name="pencil-outline" size={16} color="#FFFFFF" />
+                          <Text style={[styles.modalSaveText, { fontWeight: '700' }]}>Edit Company Profile</Text>
                         </TouchableOpacity>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <TouchableOpacity
+                        style={[styles.modalCancelBtn, { backgroundColor: '#F1F5F9', borderWidth: 0, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }]}
+                        onPress={() => setIsCompanyModalOpen(false)}
+                      >
+                        <Text style={[styles.modalCancelText, { color: '#64748B' }]}>Cancel</Text>
+                      </TouchableOpacity>
 
-                        {editingCompany && (
+                      <View style={{ flexDirection: 'row', gap: 16 }}>
+                        {companyWizardStep > 1 && (
                           <TouchableOpacity
-                            style={[styles.modalSaveBtn, { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8, backgroundColor: '#2563EB', flexDirection: 'row', alignItems: 'center', gap: 8 }]}
-                            onPress={() => setIsCompanyViewOnly(false)}
+                            style={[styles.modalCancelBtn, { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0', borderWidth: 1, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }]}
+                            onPress={() => setCompanyWizardStep(prev => prev - 1)}
                           >
-                            <Ionicons name="pencil-outline" size={16} color="#FFFFFF" />
-                            <Text style={[styles.modalSaveText, { fontWeight: '700' }]}>Edit Company Profile</Text>
+                            <Text style={[styles.modalCancelText, { color: '#475569' }]}>Previous</Text>
                           </TouchableOpacity>
                         )}
-                      </>
-                    ) : (
-                      <>
-                        <TouchableOpacity
-                          style={[styles.modalCancelBtn, { backgroundColor: '#F1F5F9', borderWidth: 0, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }]}
-                          onPress={() => setIsCompanyModalOpen(false)}
-                        >
-                          <Text style={[styles.modalCancelText, { color: '#64748B' }]}>Cancel</Text>
-                        </TouchableOpacity>
 
-                        <View style={{ flexDirection: 'row', gap: 16 }}>
-                          {companyWizardStep > 1 && (
-                            <TouchableOpacity
-                              style={[styles.modalCancelBtn, { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0', borderWidth: 1, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }]}
-                              onPress={() => setCompanyWizardStep(prev => prev - 1)}
-                            >
-                              <Text style={[styles.modalCancelText, { color: '#475569' }]}>Previous</Text>
-                            </TouchableOpacity>
-                          )}
-
-                          {companyWizardStep < 6 ? (
-                            <TouchableOpacity
-                              style={[styles.modalSaveBtn, { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, backgroundColor: '#0F172A' }]}
-                              onPress={() => setCompanyWizardStep(prev => prev + 1)}
-                            >
-                              <Text style={[styles.modalSaveText, { fontWeight: '600' }]}>Next Step</Text>
-                            </TouchableOpacity>
-                          ) : (
-                            <TouchableOpacity
-                              style={[styles.modalSaveBtn, { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, backgroundColor: '#10B981' }]}
-                              onPress={handleSaveCompany}
-                            >
-                              <Text style={[styles.modalSaveText, { fontWeight: '700' }]}>Save Company</Text>
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                      </>
-                    )}
-                  </View>
-
+                        {companyWizardStep < 6 ? (
+                          <TouchableOpacity
+                            style={[styles.modalSaveBtn, { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, backgroundColor: '#0F172A' }]}
+                            onPress={() => setCompanyWizardStep(prev => prev + 1)}
+                          >
+                            <Text style={[styles.modalSaveText, { fontWeight: '600' }]}>Next Step</Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity
+                            style={[styles.modalSaveBtn, { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, backgroundColor: '#10B981' }]}
+                            onPress={handleSaveCompany}
+                          >
+                            <Text style={[styles.modalSaveText, { fontWeight: '700' }]}>Save Company</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </>
+                  )}
                 </View>
-              </View>
-            </Modal>
 
-            {/* User Dropdown — rendered via Modal so it always appears above everything */}
-            <Modal
-              visible={userMenuOpen}
-              transparent={true}
-              animationType="none"
-              onRequestClose={() => setUserMenuOpen(false)}
+              </View>
+            </View>
+          </Modal>
+
+          {/* User Dropdown — rendered via Modal so it always appears above everything */}
+          <Modal
+            visible={userMenuOpen}
+            transparent={true}
+            animationType="none"
+            onRequestClose={() => setUserMenuOpen(false)}
+          >
+            <TouchableOpacity
+              style={{ flex: 1 }}
+              activeOpacity={1}
+              onPress={() => setUserMenuOpen(false)}
             >
               <TouchableOpacity
-                style={{ flex: 1 }}
                 activeOpacity={1}
-                onPress={() => setUserMenuOpen(false)}
+                onPress={() => { }}
+                style={styles.userMenuDropdown}
               >
-                <TouchableOpacity
-                  activeOpacity={1}
-                  onPress={() => { }}
-                  style={styles.userMenuDropdown}
-                >
-                  <View style={styles.userMenuHeader}>
-                    <View style={styles.userMenuAvatar}>
-                      <Text style={styles.userMenuAvatarText}>
-                        {user.name ? user.name.split(' ').map(n => n[0]).join('').slice(0, 2) : 'JS'}
-                      </Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.userMenuName} numberOfLines={1}>{user.name || 'John Smith'}</Text>
-                      <Text style={styles.userMenuEmail} numberOfLines={1}>{user.email}</Text>
-                    </View>
+                <View style={styles.userMenuHeader}>
+                  <View style={styles.userMenuAvatar}>
+                    <Text style={styles.userMenuAvatarText}>
+                      {user.name ? user.name.split(' ').map(n => n[0]).join('').slice(0, 2) : 'JS'}
+                    </Text>
                   </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.userMenuName} numberOfLines={1}>{user.name || 'John Smith'}</Text>
+                    <Text style={styles.userMenuEmail} numberOfLines={1}>{user.email}</Text>
+                  </View>
+                </View>
 
-                  <View style={styles.userMenuDivider} />
+                <View style={styles.userMenuDivider} />
 
-                  <TouchableOpacity
-                    style={styles.userMenuItem}
-                    onPress={() => { setUserMenuOpen(false); setActiveTab('profile'); }}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.userMenuItemIcon, { backgroundColor: '#EFF6FF' }]}>
-                      <Ionicons name="person-outline" size={16} color="#3B82F6" />
-                    </View>
-                    <Text style={styles.userMenuItemText}>Profile</Text>
-                  </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.userMenuItem}
+                  onPress={() => { setUserMenuOpen(false); setActiveTab('profile'); }}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.userMenuItemIcon, { backgroundColor: '#EFF6FF' }]}>
+                    <Ionicons name="person-outline" size={16} color="#3B82F6" />
+                  </View>
+                  <Text style={styles.userMenuItemText}>Profile</Text>
+                </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={styles.userMenuItem}
-                    onPress={() => { setUserMenuOpen(false); setChangePasswordVisible(true); }}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.userMenuItemIcon, { backgroundColor: '#F0FDF4' }]}>
-                      <Ionicons name="lock-closed-outline" size={16} color="#22C55E" />
-                    </View>
-                    <Text style={styles.userMenuItemText}>Change Password</Text>
-                  </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.userMenuItem}
+                  onPress={() => { setUserMenuOpen(false); setChangePasswordVisible(true); }}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.userMenuItemIcon, { backgroundColor: '#F0FDF4' }]}>
+                    <Ionicons name="lock-closed-outline" size={16} color="#22C55E" />
+                  </View>
+                  <Text style={styles.userMenuItemText}>Change Password</Text>
+                </TouchableOpacity>
 
-                  <View style={styles.userMenuDivider} />
+                <View style={styles.userMenuDivider} />
 
-                  <TouchableOpacity
-                    style={styles.userMenuItem}
-                    onPress={() => { setUserMenuOpen(false); onSignOut(); }}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.userMenuItemIcon, { backgroundColor: '#FFF1F2' }]}>
-                      <Ionicons name="log-out-outline" size={16} color="#EF4444" />
-                    </View>
-                    <Text style={[styles.userMenuItemText, { color: '#EF4444' }]}>Logout</Text>
-                  </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.userMenuItem}
+                  onPress={() => { setUserMenuOpen(false); onSignOut(); }}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.userMenuItemIcon, { backgroundColor: '#FFF1F2' }]}>
+                    <Ionicons name="log-out-outline" size={16} color="#EF4444" />
+                  </View>
+                  <Text style={[styles.userMenuItemText, { color: '#EF4444' }]}>Logout</Text>
                 </TouchableOpacity>
               </TouchableOpacity>
-            </Modal>
+            </TouchableOpacity>
+          </Modal>
 
-            {/* Employee Modal */}
-            {isEmployeeModalOpen && (
-              <Modal transparent={true} animationType="fade" visible={isEmployeeModalOpen}>
-                <View style={dynamicModalOverlayStyle}>
-                  <View style={[styles.modalCard, { width: width > 768 ? 720 : '95%', maxWidth: 720, maxHeight: '90%' }]}>
-                    {/* Modal Header */}
-                    <View style={styles.modalHeader}>
-                      <View style={styles.modalTitleWrapper}>
-                        <Ionicons name={isViewOnlyEmployee ? 'eye-outline' : (editingEmployee ? 'pencil-outline' : 'person-add-outline')} size={24} color={COLORS.primary} />
-                        <Text style={styles.modalTitle}>{isViewOnlyEmployee ? 'View User Details' : (editingEmployee ? 'Edit User' : 'Create User')}</Text>
-                      </View>
-                      <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setIsEmployeeModalOpen(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                        <Ionicons name="close" size={24} color={COLORS.textSecondary} />
-                      </TouchableOpacity>
+          {/* Employee Modal */}
+          {isEmployeeModalOpen && (
+            <Modal transparent={true} animationType="fade" visible={isEmployeeModalOpen}>
+              <View style={dynamicModalOverlayStyle}>
+                <View style={[styles.modalCard, { width: width > 768 ? 720 : '95%', maxWidth: 720, maxHeight: '90%' }]}>
+                  {/* Modal Header */}
+                  <View style={styles.modalHeader}>
+                    <View style={styles.modalTitleWrapper}>
+                      <Ionicons name={isViewOnlyEmployee ? 'eye-outline' : (editingEmployee ? 'pencil-outline' : 'person-add-outline')} size={24} color={COLORS.primary} />
+                      <Text style={styles.modalTitle}>{isViewOnlyEmployee ? 'View User Details' : (editingEmployee ? 'Edit User' : 'Create User')}</Text>
                     </View>
+                    <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setIsEmployeeModalOpen(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                      <Ionicons name="close" size={24} color={COLORS.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
 
-                    <ScrollView showsVerticalScrollIndicator={false} style={{ flexGrow: 0, maxHeight: height - 260 }}>
-                      {isViewOnlyEmployee ? (
-                        <View style={{ paddingVertical: 4 }}>
-                          {/* Profile Banner */}
-                          <View style={{
-                            backgroundColor: '#F8FAFC',
-                            borderRadius: 14,
-                            padding: 20,
-                            borderWidth: 1,
-                            borderColor: '#E2E8F0',
-                            marginBottom: 20,
-                            flexDirection: 'row',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            gap: 16
-                          }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 }}>
-                              <View style={{
-                                width: 56,
-                                height: 56,
-                                borderRadius: 28,
-                                backgroundColor: '#EEF2FF',
-                                borderWidth: 2,
-                                borderColor: '#C7D2FE',
-                                justifyContent: 'center',
-                                alignItems: 'center'
-                              }}>
-                                <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.primary }}>
-                                  {(empFullName || 'U').charAt(0).toUpperCase()}
-                                </Text>
-                              </View>
-                              <View style={{ flex: 1 }}>
-                                <Text style={{ fontSize: 18, fontWeight: '700', color: '#0F172A' }}>
-                                  {empFullName || 'N/A'}
-                                </Text>
-                                <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>
-                                  {empEmail || 'No Email Provided'}
-                                </Text>
-                              </View>
-                            </View>
-
+                  <ScrollView showsVerticalScrollIndicator={false} style={{ flexGrow: 0, maxHeight: height - 260 }}>
+                    {isViewOnlyEmployee ? (
+                      <View style={{ paddingVertical: 4 }}>
+                        {/* Profile Banner */}
+                        <View style={{
+                          backgroundColor: '#F8FAFC',
+                          borderRadius: 14,
+                          padding: 20,
+                          borderWidth: 1,
+                          borderColor: '#E2E8F0',
+                          marginBottom: 20,
+                          flexDirection: 'row',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: 16
+                        }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 }}>
                             <View style={{
-                              paddingHorizontal: 12,
-                              paddingVertical: 6,
-                              borderRadius: 20,
-                              backgroundColor: empStatus === 1 ? '#DCFCE7' : '#FEE2E2',
-                              borderWidth: 1,
-                              borderColor: empStatus === 1 ? '#86EFAC' : '#FCA5A5',
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              gap: 6
+                              width: 56,
+                              height: 56,
+                              borderRadius: 28,
+                              backgroundColor: '#EEF2FF',
+                              borderWidth: 2,
+                              borderColor: '#C7D2FE',
+                              justifyContent: 'center',
+                              alignItems: 'center'
                             }}>
-                              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: empStatus === 1 ? '#16A34A' : '#DC2626' }} />
-                              <Text style={{ fontSize: 12, fontWeight: '700', color: empStatus === 1 ? '#15803D' : '#B91C1C' }}>
-                                {empStatus === 1 ? 'Active Account' : 'Inactive Account'}
+                              <Text style={{ fontSize: 22, fontWeight: '800', color: COLORS.primary }}>
+                                {(empFullName || 'U').charAt(0).toUpperCase()}
+                              </Text>
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 18, fontWeight: '700', color: '#0F172A' }}>
+                                {empFullName || 'N/A'}
+                              </Text>
+                              <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>
+                                {empEmail || 'No Email Provided'}
                               </Text>
                             </View>
                           </View>
 
-                          {/* Details Grid */}
-                          <Text style={{ fontSize: 11, fontWeight: '800', color: '#64748B', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                            Employee Information
-                          </Text>
+                          <View style={{
+                            paddingHorizontal: 12,
+                            paddingVertical: 6,
+                            borderRadius: 20,
+                            backgroundColor: empStatus === 1 ? '#DCFCE7' : '#FEE2E2',
+                            borderWidth: 1,
+                            borderColor: empStatus === 1 ? '#86EFAC' : '#FCA5A5',
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 6
+                          }}>
+                            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: empStatus === 1 ? '#16A34A' : '#DC2626' }} />
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: empStatus === 1 ? '#15803D' : '#B91C1C' }}>
+                              {empStatus === 1 ? 'Active Account' : 'Inactive Account'}
+                            </Text>
+                          </View>
+                        </View>
 
-                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-                            {/* Phone */}
-                            <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' }}>
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                <Ionicons name="call-outline" size={14} color="#64748B" />
-                                <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '700', textTransform: 'uppercase' }}>Phone Number</Text>
-                              </View>
-                              <Text style={{ fontSize: 14, color: '#0F172A', fontWeight: '600' }}>{empPhone || 'N/A'}</Text>
+                        {/* Details Grid */}
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: '#64748B', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                          Employee Information
+                        </Text>
+
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+                          {/* Phone */}
+                          <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                              <Ionicons name="call-outline" size={14} color="#64748B" />
+                              <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '700', textTransform: 'uppercase' }}>Phone Number</Text>
                             </View>
+                            <Text style={{ fontSize: 14, color: '#0F172A', fontWeight: '600' }}>{empPhone || 'N/A'}</Text>
+                          </View>
 
-                            {/* System Role */}
-                            <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' }}>
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                <Ionicons name="shield-outline" size={14} color="#64748B" />
-                                <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '700', textTransform: 'uppercase' }}>System Role</Text>
-                              </View>
-                              <Text style={{ fontSize: 14, color: COLORS.primary, fontWeight: '600' }}>
-                                {empRoleIds.length > 0
-                                  ? roles.filter(r => empRoleIds.includes(r.id)).map(r => r.role).join(', ')
-                                  : (editingEmployee?.role_name || 'No Role Assigned')}
-                              </Text>
+                          {/* System Role */}
+                          <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                              <Ionicons name="shield-outline" size={14} color="#64748B" />
+                              <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '700', textTransform: 'uppercase' }}>System Role</Text>
                             </View>
+                            <Text style={{ fontSize: 14, color: COLORS.primary, fontWeight: '600' }}>
+                              {empRoleIds.length > 0
+                                ? roles.filter(r => empRoleIds.includes(r.id)).map(r => r.role).join(', ')
+                                : (editingEmployee?.role_name || 'No Role Assigned')}
+                            </Text>
+                          </View>
 
-                            {/* Base Company */}
-                            <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' }}>
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                <Ionicons name="business-outline" size={14} color="#64748B" />
-                                <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '700', textTransform: 'uppercase' }}>Base Company</Text>
-                              </View>
-                              <Text style={{ fontSize: 14, color: '#0F172A', fontWeight: '600' }}>
-                                {companies.find(c => String(c.id) === String(empBaseCompanyId))?.company_name || editingEmployee?.basecompany_name || 'N/A'}
-                              </Text>
+                          {/* Base Company */}
+                          <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                              <Ionicons name="business-outline" size={14} color="#64748B" />
+                              <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '700', textTransform: 'uppercase' }}>Base Company</Text>
                             </View>
+                            <Text style={{ fontSize: 14, color: '#0F172A', fontWeight: '600' }}>
+                              {companies.find(c => String(c.id) === String(empBaseCompanyId))?.company_name || editingEmployee?.basecompany_name || 'N/A'}
+                            </Text>
+                          </View>
 
-                            {/* Department */}
-                            <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' }}>
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                <Ionicons name="briefcase-outline" size={14} color="#64748B" />
-                                <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '700', textTransform: 'uppercase' }}>Department</Text>
-                              </View>
-                              <Text style={{ fontSize: 14, color: '#0F172A', fontWeight: '600' }}>
-                                {departments.find(d => String(d.id) === String(empDepartmentId))?.department_name || editingEmployee?.department_name || 'N/A'}
-                              </Text>
+                          {/* Department */}
+                          <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                              <Ionicons name="briefcase-outline" size={14} color="#64748B" />
+                              <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '700', textTransform: 'uppercase' }}>Department</Text>
                             </View>
+                            <Text style={{ fontSize: 14, color: '#0F172A', fontWeight: '600' }}>
+                              {departments.find(d => String(d.id) === String(empDepartmentId))?.department_name || editingEmployee?.department_name || 'N/A'}
+                            </Text>
+                          </View>
 
-                            {/* Assigned Companies */}
-                            <View style={{ width: '100%', backgroundColor: '#FFFFFF', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' }}>
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                                <Ionicons name="location-outline" size={14} color="#64748B" />
-                                <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '700', textTransform: 'uppercase' }}>Assigned Companies</Text>
+                          {/* Assigned Companies */}
+                          <View style={{ width: '100%', backgroundColor: '#FFFFFF', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                              <Ionicons name="location-outline" size={14} color="#64748B" />
+                              <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '700', textTransform: 'uppercase' }}>Assigned Companies</Text>
+                            </View>
+                            {empAssociatedCompanies.length > 0 ? (
+                              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                                {companies
+                                  .filter(c => empAssociatedCompanies.includes(c.id))
+                                  .map(c => (
+                                    <View key={c.id} style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#CBD5E1' }}>
+                                      <Text style={{ fontSize: 12, color: '#334155', fontWeight: '600' }}>{c.company_name}</Text>
+                                    </View>
+                                  ))}
                               </View>
-                              {empAssociatedCompanies.length > 0 ? (
-                                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                                  {companies
-                                    .filter(c => empAssociatedCompanies.includes(c.id))
-                                    .map(c => (
-                                      <View key={c.id} style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#CBD5E1' }}>
-                                        <Text style={{ fontSize: 12, color: '#334155', fontWeight: '600' }}>{c.company_name}</Text>
-                                      </View>
-                                    ))}
-                                </View>
-                              ) : (
-                                <Text style={{ fontSize: 13, color: '#94A3B8', fontStyle: 'italic' }}>No additional companies assigned</Text>
+                            ) : (
+                              <Text style={{ fontSize: 13, color: '#94A3B8', fontStyle: 'italic' }}>No additional companies assigned</Text>
+                            )}
+                          </View>
+
+                          {/* Assigned Password / Security Key */}
+                          <View style={{ width: '100%', backgroundColor: '#FFFBEB', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#FCD34D', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                            <View style={{ flex: 1, minWidth: 200 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                <Ionicons name="key-outline" size={14} color="#B45309" />
+                                <Text style={{ fontSize: 11, color: '#B45309', fontWeight: '700', textTransform: 'uppercase' }}>Assigned Password / Access Key</Text>
+                              </View>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                                <Text style={{ fontSize: 15, color: '#78350F', fontWeight: '700', letterSpacing: showViewCardPassword ? 0.5 : 2 }}>
+                                  {editingEmployee?.assigned_password || editingEmployee?.tempPassword
+                                    ? (showViewCardPassword ? (editingEmployee.assigned_password || editingEmployee.tempPassword) : '••••••••')
+                                    : 'No Password Set'}
+                                </Text>
+                                {(editingEmployee?.assigned_password || editingEmployee?.tempPassword) && (
+                                  <TouchableOpacity onPress={() => setShowViewCardPassword(prev => !prev)} style={{ padding: 2 }}>
+                                    <Ionicons name={showViewCardPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#B45309" />
+                                  </TouchableOpacity>
+                                )}
+                              </View>
+                            </View>
+                            <TouchableOpacity
+                              style={{ backgroundColor: '#F59E0B', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+                              onPress={() => {
+                                setIsEmployeeModalOpen(false);
+                                handleOpenPasswordResetModal(editingEmployee);
+                              }}
+                            >
+                              <Ionicons name="key" size={14} color="#FFFFFF" />
+                              <Text style={{ fontSize: 12, color: '#FFFFFF', fontWeight: '700' }}>Reset / Assign Password</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={styles.modalForm}>
+                        {employeeFormError ? (
+                          <Text style={styles.modalError}>{employeeFormError}</Text>
+                        ) : null}
+
+                        <View style={{ marginBottom: 16 }}>
+                          <Text style={styles.modalLabel}>Full Name</Text>
+                          <TextInput
+                            style={styles.modalInput}
+                            placeholder="Full Name *"
+                            value={empFullName}
+                            onChangeText={setEmpFullName}
+                            placeholderTextColor={COLORS.textMuted}
+                          />
+                        </View>
+
+                        <View style={{ marginBottom: 16 }}>
+                          <Text style={styles.modalLabel}>Email</Text>
+                          <TextInput
+                            style={styles.modalInput}
+                            placeholder="Email Address"
+                            value={empEmail}
+                            onChangeText={setEmpEmail}
+                            keyboardType="email-address"
+                            placeholderTextColor={COLORS.textMuted}
+                          />
+                        </View>
+
+                        <View style={{ marginBottom: 16 }}>
+                          <Text style={styles.modalLabel}>Phone</Text>
+                          <TextInput
+                            style={styles.modalInput}
+                            placeholder="Phone Number"
+                            value={empPhone}
+                            onChangeText={setEmpPhone}
+                            keyboardType="phone-pad"
+                            placeholderTextColor={COLORS.textMuted}
+                          />
+                        </View>
+
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, zIndex: 20 }}>
+                          <View style={{ flex: 1 }}>
+                            {/* Label row */}
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                              <Text style={styles.modalLabel}>System Permissions Role</Text>
+                              {empRoleIds.length > 0 && (
+                                <TouchableOpacity onPress={() => setEmpRoleIds([])} style={{ marginLeft: 'auto' }}>
+                                  <Text style={{ fontSize: 12, color: '#EF4444', fontWeight: '600' }}>Clear</Text>
+                                </TouchableOpacity>
                               )}
                             </View>
 
-                            {/* Assigned Password / Security Key */}
-                            <View style={{ width: '100%', backgroundColor: '#FFFBEB', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#FCD34D', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-                              <View style={{ flex: 1, minWidth: 200 }}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                  <Ionicons name="key-outline" size={14} color="#B45309" />
-                                  <Text style={{ fontSize: 11, color: '#B45309', fontWeight: '700', textTransform: 'uppercase' }}>Assigned Password / Access Key</Text>
+                            {/* Dropdown trigger button */}
+                            <TouchableOpacity
+                              onPress={() => { setIsEmpRoleDropdownOpen(prev => !prev); setEmpRoleError(''); }}
+                              style={[styles.modalInput, {
+                                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                                height: 42, paddingHorizontal: 12, cursor: 'pointer', marginBottom: 0,
+                                borderColor: empRoleError ? '#EF4444' : undefined,
+                              }]}
+                            >
+                              <Text style={{ color: empRoleIds.length > 0 ? COLORS.textPrimary : '#94A3B8', fontSize: 14, flex: 1 }} numberOfLines={1}>
+                                {empRoleIds.length > 0
+                                  ? roles.filter(r => empRoleIds.includes(r.id)).map(r => r.role).join(', ')
+                                  : 'Select Role'}
+                              </Text>
+                              {empRoleIds.length > 0 && (
+                                <View style={{ backgroundColor: COLORS.primary, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2, marginRight: 8 }}>
+                                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{empRoleIds.length}</Text>
                                 </View>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
-                                  <Text style={{ fontSize: 15, color: '#78350F', fontWeight: '700', letterSpacing: showViewCardPassword ? 0.5 : 2 }}>
-                                    {editingEmployee?.assigned_password || editingEmployee?.tempPassword
-                                      ? (showViewCardPassword ? (editingEmployee.assigned_password || editingEmployee.tempPassword) : '••••••••')
-                                      : 'No Password Set'}
-                                  </Text>
-                                  {(editingEmployee?.assigned_password || editingEmployee?.tempPassword) && (
-                                    <TouchableOpacity onPress={() => setShowViewCardPassword(prev => !prev)} style={{ padding: 2 }}>
-                                      <Ionicons name={showViewCardPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#B45309" />
-                                    </TouchableOpacity>
+                              )}
+                              <Ionicons name={isEmpRoleDropdownOpen ? 'chevron-up' : 'chevron-down'} size={16} color={isEmpRoleDropdownOpen ? COLORS.primary : '#94A3B8'} />
+                            </TouchableOpacity>
+                            {empRoleError ? (
+                              <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4, marginLeft: 2 }}>
+                                ⚠ {empRoleError}
+                              </Text>
+                            ) : null}
+
+                            {/* Dropdown checklist panel */}
+                            {isEmpRoleDropdownOpen && (
+                              <View style={{
+                                borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10,
+                                backgroundColor: '#FFFFFF', marginTop: 4,
+                                position: 'absolute', top: '100%', left: 0, right: 0,
+                                shadowColor: '#64748B', shadowOffset: { width: 0, height: 4 },
+                                shadowOpacity: 0.12, shadowRadius: 8, elevation: 8,
+                                zIndex: 100, overflow: 'hidden'
+                              }}>
+                                <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 200 }} showsVerticalScrollIndicator={false}>
+                                  {roles.length === 0 ? (
+                                    <View style={{ padding: 16, alignItems: 'center' }}>
+                                      <Ionicons name="shield-outline" size={24} color="#CBD5E1" />
+                                      <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 6 }}>No roles found</Text>
+                                    </View>
+                                  ) : (
+                                    roles.map((r, index) => {
+                                      const isSelected = empRoleIds.includes(r.id);
+                                      return (
+                                        <TouchableOpacity
+                                          key={r.id}
+                                          style={{
+                                            flexDirection: 'row', alignItems: 'center',
+                                            paddingVertical: 11, paddingHorizontal: 14,
+                                            backgroundColor: isSelected ? '#F0FDF4' : '#FFFFFF',
+                                            borderBottomWidth: index < roles.length - 1 ? 1 : 0,
+                                            borderBottomColor: '#F1F5F9',
+                                          }}
+                                          onPress={() => {
+                                            setEmpRoleIds(prev =>
+                                              prev.includes(r.id) ? prev.filter(id => id !== r.id) : [...prev, r.id]
+                                            );
+                                          }}
+                                        >
+                                          {/* Custom checkbox */}
+                                          <View style={{
+                                            width: 20, height: 20, borderRadius: 5,
+                                            borderWidth: 2,
+                                            borderColor: isSelected ? '#10B981' : '#CBD5E1',
+                                            backgroundColor: isSelected ? '#10B981' : '#FFFFFF',
+                                            alignItems: 'center', justifyContent: 'center',
+                                            marginRight: 12, flexShrink: 0
+                                          }}>
+                                            {isSelected && <Ionicons name="checkmark" size={13} color="#FFFFFF" />}
+                                          </View>
+                                          <Text style={{
+                                            fontSize: 14, flex: 1,
+                                            color: isSelected ? '#065F46' : '#475569',
+                                            fontWeight: isSelected ? '600' : '400'
+                                          }}>{r.role}</Text>
+                                          {isSelected && (
+                                            <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: '#10B981' }} />
+                                          )}
+                                        </TouchableOpacity>
+                                      );
+                                    })
                                   )}
-                                </View>
+                                </ScrollView>
                               </View>
-                              <TouchableOpacity
-                                style={{ backgroundColor: '#F59E0B', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}
-                                onPress={() => {
-                                  setIsEmployeeModalOpen(false);
-                                  handleOpenPasswordResetModal(editingEmployee);
-                                }}
-                              >
-                                <Ionicons name="key" size={14} color="#FFFFFF" />
-                                <Text style={{ fontSize: 12, color: '#FFFFFF', fontWeight: '700' }}>Reset / Assign Password</Text>
-                              </TouchableOpacity>
+                            )}
+                          </View>
+                          <View style={{ width: 16 }} />
+                          <View style={{ width: 100, marginTop: 25 }}>
+                            <Text style={[styles.modalLabel, { textAlign: 'center' }]}>Status</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 4 }}>
+                              <Switch
+                                value={empStatus === 1}
+                                onValueChange={(val) => setEmpStatus(val ? 1 : 0)}
+                                trackColor={{ false: '#CBD5E1', true: '#34D399' }}
+                                thumbColor={COLORS.white}
+                              />
+                              <Text style={{ marginLeft: 8, fontSize: 13, color: empStatus === 1 ? '#10B981' : COLORS.textSecondary, fontWeight: '500' }}>
+                                {empStatus === 1 ? 'Active' : 'Inactive'}
+                              </Text>
                             </View>
                           </View>
                         </View>
-                      ) : (
-                        <View style={styles.modalForm}>
-                          {employeeFormError ? (
-                            <Text style={styles.modalError}>{employeeFormError}</Text>
-                          ) : null}
 
-                          <View style={{ marginBottom: 16 }}>
-                            <Text style={styles.modalLabel}>Full Name</Text>
-                            <TextInput
-                              style={styles.modalInput}
-                              placeholder="Full Name *"
-                              value={empFullName}
-                              onChangeText={setEmpFullName}
-                              placeholderTextColor={COLORS.textMuted}
-                            />
-                          </View>
+                        {/* Base Company Dropdown */}
+                        <View style={{ marginBottom: 16 }}>
+                          <Text style={styles.modalLabel}>Base Company</Text>
+                          <SearchableDropdown
+                            data={(!user || !user.clientid)
+                              ? companies
+                              : companies.filter(c => Number(c.clientid) === Number(user.clientid))}
+                            value={empBaseCompanyId}
+                            onChange={(val) => {
+                              setEmpBaseCompanyId(val);
+                              if (val) {
+                                const selectedCompId = Number(val);
+                                setEmpAssociatedCompanies(prev => {
+                                  if (prev.includes(selectedCompId)) return prev;
+                                  return [...prev, selectedCompId];
+                                });
+                              }
+                            }}
+                            placeholder="Select Base Company"
+                            searchPlaceholder="Search Base Company..."
+                            displayKey="company_name"
+                            valueKey="id"
+                          />
+                        </View>
 
-                          <View style={{ marginBottom: 16 }}>
-                            <Text style={styles.modalLabel}>Email</Text>
-                            <TextInput
-                              style={styles.modalInput}
-                              placeholder="Email Address"
-                              value={empEmail}
-                              onChangeText={setEmpEmail}
-                              keyboardType="email-address"
-                              placeholderTextColor={COLORS.textMuted}
-                            />
-                          </View>
-
-                          <View style={{ marginBottom: 16 }}>
-                            <Text style={styles.modalLabel}>Phone</Text>
-                            <TextInput
-                              style={styles.modalInput}
-                              placeholder="Phone Number"
-                              value={empPhone}
-                              onChangeText={setEmpPhone}
-                              keyboardType="phone-pad"
-                              placeholderTextColor={COLORS.textMuted}
-                            />
-                          </View>
-
-                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, zIndex: 20 }}>
-                            <View style={{ flex: 1 }}>
+                        {(() => {
+                          const clientCompanies = (!user || !user.clientid)
+                            ? companies
+                            : companies.filter(c => Number(c.clientid) === Number(user.clientid));
+                          const selectedNames = empAssociatedCompanies.length > 0
+                            ? clientCompanies.filter(c => empAssociatedCompanies.includes(c.id)).map(c => c.company_name).join(', ')
+                            : '';
+                          return (
+                            <View style={{ marginBottom: 16, zIndex: 10 }}>
                               {/* Label row */}
                               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                                <Text style={styles.modalLabel}>System Permissions Role</Text>
-                                {empRoleIds.length > 0 && (
-                                  <TouchableOpacity onPress={() => setEmpRoleIds([])} style={{ marginLeft: 'auto' }}>
+                                <Text style={styles.modalLabel}>Company</Text>
+                                {empAssociatedCompanies.length > 0 && (
+                                  <TouchableOpacity onPress={() => setEmpAssociatedCompanies([])} style={{ marginLeft: 'auto' }}>
                                     <Text style={{ fontSize: 12, color: '#EF4444', fontWeight: '600' }}>Clear</Text>
                                   </TouchableOpacity>
                                 )}
@@ -9690,63 +9840,61 @@ export default function DashboardScreen({ user, onSignOut }) {
 
                               {/* Dropdown trigger button */}
                               <TouchableOpacity
-                                onPress={() => { setIsEmpRoleDropdownOpen(prev => !prev); setEmpRoleError(''); }}
+                                onPress={() => { setEmpCompanyDropdownOpen(prev => !prev); setEmpCompanyError(''); }}
                                 style={[styles.modalInput, {
                                   flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
                                   height: 42, paddingHorizontal: 12, cursor: 'pointer', marginBottom: 0,
-                                  borderColor: empRoleError ? '#EF4444' : undefined,
+                                  borderColor: empCompanyError ? '#EF4444' : undefined,
                                 }]}
                               >
-                                <Text style={{ color: empRoleIds.length > 0 ? COLORS.textPrimary : '#94A3B8', fontSize: 14, flex: 1 }} numberOfLines={1}>
-                                  {empRoleIds.length > 0
-                                    ? roles.filter(r => empRoleIds.includes(r.id)).map(r => r.role).join(', ')
-                                    : 'Select Role'}
+                                <Text style={{ color: selectedNames ? COLORS.textPrimary : '#94A3B8', fontSize: 14, flex: 1 }} numberOfLines={1}>
+                                  {selectedNames || 'Select Company'}
                                 </Text>
-                                {empRoleIds.length > 0 && (
+                                {empAssociatedCompanies.length > 0 && (
                                   <View style={{ backgroundColor: COLORS.primary, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2, marginRight: 8 }}>
-                                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{empRoleIds.length}</Text>
+                                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{empAssociatedCompanies.length}</Text>
                                   </View>
                                 )}
-                                <Ionicons name={isEmpRoleDropdownOpen ? 'chevron-up' : 'chevron-down'} size={16} color={isEmpRoleDropdownOpen ? COLORS.primary : '#94A3B8'} />
+                                <Ionicons name={empCompanyDropdownOpen ? 'chevron-up' : 'chevron-down'} size={16} color={empCompanyDropdownOpen ? COLORS.primary : '#94A3B8'} />
                               </TouchableOpacity>
-                              {empRoleError ? (
+                              {empCompanyError ? (
                                 <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4, marginLeft: 2 }}>
-                                  ⚠ {empRoleError}
+                                  ⚠ {empCompanyError}
                                 </Text>
                               ) : null}
 
+
                               {/* Dropdown checklist panel */}
-                              {isEmpRoleDropdownOpen && (
+                              {empCompanyDropdownOpen && (
                                 <View style={{
                                   borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10,
-                                  backgroundColor: '#FFFFFF', marginTop: 4,
-                                  position: 'absolute', top: '100%', left: 0, right: 0,
+                                  backgroundColor: '#FFFFFF', marginTop: 0,
                                   shadowColor: '#64748B', shadowOffset: { width: 0, height: 4 },
                                   shadowOpacity: 0.12, shadowRadius: 8, elevation: 8,
-                                  zIndex: 100, overflow: 'hidden'
+                                  overflow: 'hidden'
                                 }}>
                                   <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 200 }} showsVerticalScrollIndicator={false}>
-                                    {roles.length === 0 ? (
+                                    {clientCompanies.length === 0 ? (
                                       <View style={{ padding: 16, alignItems: 'center' }}>
-                                        <Ionicons name="shield-outline" size={24} color="#CBD5E1" />
-                                        <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 6 }}>No roles found</Text>
+                                        <Ionicons name="business-outline" size={24} color="#CBD5E1" />
+                                        <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 6 }}>No companies found</Text>
                                       </View>
                                     ) : (
-                                      roles.map((r, index) => {
-                                        const isSelected = empRoleIds.includes(r.id);
+                                      clientCompanies.map((c, index) => {
+                                        const isSelected = empAssociatedCompanies.includes(c.id);
                                         return (
                                           <TouchableOpacity
-                                            key={r.id}
+                                            key={c.id}
                                             style={{
                                               flexDirection: 'row', alignItems: 'center',
                                               paddingVertical: 11, paddingHorizontal: 14,
                                               backgroundColor: isSelected ? '#F0FDF4' : '#FFFFFF',
-                                              borderBottomWidth: index < roles.length - 1 ? 1 : 0,
+                                              borderBottomWidth: index < clientCompanies.length - 1 ? 1 : 0,
                                               borderBottomColor: '#F1F5F9',
                                             }}
                                             onPress={() => {
-                                              setEmpRoleIds(prev =>
-                                                prev.includes(r.id) ? prev.filter(id => id !== r.id) : [...prev, r.id]
+                                              setEmpAssociatedCompanies(prev =>
+                                                prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id]
                                               );
                                             }}
                                           >
@@ -9765,7 +9913,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                                               fontSize: 14, flex: 1,
                                               color: isSelected ? '#065F46' : '#475569',
                                               fontWeight: isSelected ? '600' : '400'
-                                            }}>{r.role}</Text>
+                                            }}>{c.company_name}</Text>
                                             {isSelected && (
                                               <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: '#10B981' }} />
                                             )}
@@ -9777,243 +9925,95 @@ export default function DashboardScreen({ user, onSignOut }) {
                                 </View>
                               )}
                             </View>
-                            <View style={{ width: 16 }} />
-                            <View style={{ width: 100, marginTop: 25 }}>
-                              <Text style={[styles.modalLabel, { textAlign: 'center' }]}>Status</Text>
-                              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 4 }}>
-                                <Switch
-                                  value={empStatus === 1}
-                                  onValueChange={(val) => setEmpStatus(val ? 1 : 0)}
-                                  trackColor={{ false: '#CBD5E1', true: '#34D399' }}
-                                  thumbColor={COLORS.white}
-                                />
-                                <Text style={{ marginLeft: 8, fontSize: 13, color: empStatus === 1 ? '#10B981' : COLORS.textSecondary, fontWeight: '500' }}>
-                                  {empStatus === 1 ? 'Active' : 'Inactive'}
-                                </Text>
+                          );
+                        })()}
+
+
+                        <View style={{ marginBottom: 16 }}>
+                          <Text style={styles.modalLabel}>Department</Text>
+                          <SearchableDropdown
+                            data={departments}
+                            value={empDepartmentId}
+                            onChange={(val) => setEmpDepartmentId(val)}
+                            placeholder="Select Department"
+                            searchPlaceholder="Search Department..."
+                            displayKey="department_name"
+                            valueKey="id"
+                          />
+                        </View>
+
+                        {true && (
+                          <View style={{ backgroundColor: '#F8FAFC', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 }}>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Ionicons name="shield-checkmark" size={18} color={COLORS.primary} style={{ marginRight: 6 }} />
+                                <Text style={{ fontSize: 14, fontWeight: '600', color: COLORS.textPrimary }}>Security</Text>
                               </View>
+                              <Switch
+                                value={empAutoGeneratePassword}
+                                onValueChange={setEmpAutoGeneratePassword}
+                                trackColor={{ false: '#CBD5E1', true: '#34D399' }}
+                                thumbColor={COLORS.white}
+                              />
                             </View>
-                          </View>
-
-                          {/* Base Company Dropdown */}
-                          <View style={{ marginBottom: 16 }}>
-                            <Text style={styles.modalLabel}>Base Company</Text>
-                            <SearchableDropdown
-                              data={(!user || !user.clientid)
-                                ? companies
-                                : companies.filter(c => Number(c.clientid) === Number(user.clientid))}
-                              value={empBaseCompanyId}
-                              onChange={(val) => {
-                                setEmpBaseCompanyId(val);
-                                if (val) {
-                                  const selectedCompId = Number(val);
-                                  setEmpAssociatedCompanies(prev => {
-                                    if (prev.includes(selectedCompId)) return prev;
-                                    return [...prev, selectedCompId];
-                                  });
-                                }
-                              }}
-                              placeholder="Select Base Company"
-                              searchPlaceholder="Search Base Company..."
-                              displayKey="company_name"
-                              valueKey="id"
-                            />
-                          </View>
-
-                          {(() => {
-                            const clientCompanies = (!user || !user.clientid)
-                              ? companies
-                              : companies.filter(c => Number(c.clientid) === Number(user.clientid));
-                            const selectedNames = empAssociatedCompanies.length > 0
-                              ? clientCompanies.filter(c => empAssociatedCompanies.includes(c.id)).map(c => c.company_name).join(', ')
-                              : '';
-                            return (
-                              <View style={{ marginBottom: 16, zIndex: 10 }}>
-                                {/* Label row */}
-                                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                                  <Text style={styles.modalLabel}>Company</Text>
-                                  {empAssociatedCompanies.length > 0 && (
-                                    <TouchableOpacity onPress={() => setEmpAssociatedCompanies([])} style={{ marginLeft: 'auto' }}>
-                                      <Text style={{ fontSize: 12, color: '#EF4444', fontWeight: '600' }}>Clear</Text>
-                                    </TouchableOpacity>
-                                  )}
-                                </View>
-
-                                {/* Dropdown trigger button */}
-                                <TouchableOpacity
-                                  onPress={() => { setEmpCompanyDropdownOpen(prev => !prev); setEmpCompanyError(''); }}
-                                  style={[styles.modalInput, {
-                                    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-                                    height: 42, paddingHorizontal: 12, cursor: 'pointer', marginBottom: 0,
-                                    borderColor: empCompanyError ? '#EF4444' : undefined,
-                                  }]}
-                                >
-                                  <Text style={{ color: selectedNames ? COLORS.textPrimary : '#94A3B8', fontSize: 14, flex: 1 }} numberOfLines={1}>
-                                    {selectedNames || 'Select Company'}
-                                  </Text>
-                                  {empAssociatedCompanies.length > 0 && (
-                                    <View style={{ backgroundColor: COLORS.primary, borderRadius: 10, paddingHorizontal: 7, paddingVertical: 2, marginRight: 8 }}>
-                                      <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{empAssociatedCompanies.length}</Text>
-                                    </View>
-                                  )}
-                                  <Ionicons name={empCompanyDropdownOpen ? 'chevron-up' : 'chevron-down'} size={16} color={empCompanyDropdownOpen ? COLORS.primary : '#94A3B8'} />
-                                </TouchableOpacity>
-                                {empCompanyError ? (
-                                  <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4, marginLeft: 2 }}>
-                                    ⚠ {empCompanyError}
-                                  </Text>
-                                ) : null}
-
-
-                                {/* Dropdown checklist panel */}
-                                {empCompanyDropdownOpen && (
-                                  <View style={{
-                                    borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10,
-                                    backgroundColor: '#FFFFFF', marginTop: 0,
-                                    shadowColor: '#64748B', shadowOffset: { width: 0, height: 4 },
-                                    shadowOpacity: 0.12, shadowRadius: 8, elevation: 8,
-                                    overflow: 'hidden'
-                                  }}>
-                                    <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 200 }} showsVerticalScrollIndicator={false}>
-                                      {clientCompanies.length === 0 ? (
-                                        <View style={{ padding: 16, alignItems: 'center' }}>
-                                          <Ionicons name="business-outline" size={24} color="#CBD5E1" />
-                                          <Text style={{ color: '#94A3B8', fontSize: 13, marginTop: 6 }}>No companies found</Text>
-                                        </View>
-                                      ) : (
-                                        clientCompanies.map((c, index) => {
-                                          const isSelected = empAssociatedCompanies.includes(c.id);
-                                          return (
-                                            <TouchableOpacity
-                                              key={c.id}
-                                              style={{
-                                                flexDirection: 'row', alignItems: 'center',
-                                                paddingVertical: 11, paddingHorizontal: 14,
-                                                backgroundColor: isSelected ? '#F0FDF4' : '#FFFFFF',
-                                                borderBottomWidth: index < clientCompanies.length - 1 ? 1 : 0,
-                                                borderBottomColor: '#F1F5F9',
-                                              }}
-                                              onPress={() => {
-                                                setEmpAssociatedCompanies(prev =>
-                                                  prev.includes(c.id) ? prev.filter(id => id !== c.id) : [...prev, c.id]
-                                                );
-                                              }}
-                                            >
-                                              {/* Custom checkbox */}
-                                              <View style={{
-                                                width: 20, height: 20, borderRadius: 5,
-                                                borderWidth: 2,
-                                                borderColor: isSelected ? '#10B981' : '#CBD5E1',
-                                                backgroundColor: isSelected ? '#10B981' : '#FFFFFF',
-                                                alignItems: 'center', justifyContent: 'center',
-                                                marginRight: 12, flexShrink: 0
-                                              }}>
-                                                {isSelected && <Ionicons name="checkmark" size={13} color="#FFFFFF" />}
-                                              </View>
-                                              <Text style={{
-                                                fontSize: 14, flex: 1,
-                                                color: isSelected ? '#065F46' : '#475569',
-                                                fontWeight: isSelected ? '600' : '400'
-                                              }}>{c.company_name}</Text>
-                                              {isSelected && (
-                                                <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: '#10B981' }} />
-                                              )}
-                                            </TouchableOpacity>
-                                          );
-                                        })
-                                      )}
-                                    </ScrollView>
-                                  </View>
-                                )}
-                              </View>
-                            );
-                          })()}
-
-
-                          <View style={{ marginBottom: 16 }}>
-                            <Text style={styles.modalLabel}>Department</Text>
-                            <SearchableDropdown
-                              data={departments}
-                              value={empDepartmentId}
-                              onChange={(val) => setEmpDepartmentId(val)}
-                              placeholder="Select Department"
-                              searchPlaceholder="Search Department..."
-                              displayKey="department_name"
-                              valueKey="id"
-                            />
-                          </View>
-
-                          {true && (
-                            <View style={{ backgroundColor: '#F8FAFC', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 }}>
-                              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                  <Ionicons name="shield-checkmark" size={18} color={COLORS.primary} style={{ marginRight: 6 }} />
-                                  <Text style={{ fontSize: 14, fontWeight: '600', color: COLORS.textPrimary }}>Security</Text>
-                                </View>
-                                <Switch
-                                  value={empAutoGeneratePassword}
-                                  onValueChange={setEmpAutoGeneratePassword}
-                                  trackColor={{ false: '#CBD5E1', true: '#34D399' }}
-                                  thumbColor={COLORS.white}
-                                />
-                              </View>
-                              <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 4 }}>
-                                Auto-generate temporary password
+                            <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 4 }}>
+                              Auto-generate temporary password
+                            </Text>
+                            {empAutoGeneratePassword && (
+                              <Text style={{ fontSize: 12, color: COLORS.primary, marginTop: 8, fontStyle: 'italic' }}>
+                                Temporary Password will be displayed upon saving.
                               </Text>
-                              {empAutoGeneratePassword && (
-                                <Text style={{ fontSize: 12, color: COLORS.primary, marginTop: 8, fontStyle: 'italic' }}>
-                                  Temporary Password will be displayed upon saving.
-                                </Text>
-                              )}
-                            </View>
-                          )}
-                        </View>
-                      )}
-                    </ScrollView>
-
-                    <View style={[styles.modalFooter, { justifyContent: isViewOnlyEmployee ? 'flex-end' : 'space-between', paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', marginTop: 20 }]}>
-                      {isViewOnlyEmployee ? (
-                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, width: '100%' }}>
-                          <TouchableOpacity
-                            style={[styles.modalCancelBtn, { backgroundColor: '#F1F5F9', borderWidth: 0, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }]}
-                            onPress={() => setIsEmployeeModalOpen(false)}
-                          >
-                            <Text style={[styles.modalCancelText, { color: '#64748B', fontWeight: '600' }]}>Close</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.modalSaveBtn, { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', gap: 6 }]}
-                            onPress={() => setIsViewOnlyEmployee(false)}
-                          >
-                            <Ionicons name="pencil" size={16} color="#FFFFFF" />
-                            <Text style={[styles.modalSaveText, { fontWeight: '600', color: '#FFFFFF' }]}>Edit User</Text>
-                          </TouchableOpacity>
-                        </View>
-                      ) : (
-                        <>
-                          <TouchableOpacity
-                            style={[styles.modalCancelBtn, { backgroundColor: '#F1F5F9', borderWidth: 0, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }]}
-                            onPress={() => setIsEmployeeModalOpen(false)}
-                            disabled={employeeFormSaving}
-                          >
-                            <Text style={[styles.modalCancelText, { color: '#64748B' }]}>Cancel</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.modalSaveBtn, { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, backgroundColor: '#0F172A' }, employeeFormSaving && { opacity: 0.7 }]}
-                            onPress={handleSaveEmployee}
-                            disabled={employeeFormSaving}
-                          >
-                            {employeeFormSaving ? (
-                              <ActivityIndicator size="small" color={COLORS.white} />
-                            ) : (
-                              <Text style={[styles.modalSaveText, { fontWeight: '600', color: '#FFFFFF' }]}>{editingEmployee ? 'Save Changes' : 'Create User'}</Text>
                             )}
-                          </TouchableOpacity>
-                        </>
-                      )}
-                    </View>
+                          </View>
+                        )}
+                      </View>
+                    )}
+                  </ScrollView>
+
+                  <View style={[styles.modalFooter, { justifyContent: isViewOnlyEmployee ? 'flex-end' : 'space-between', paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', marginTop: 20 }]}>
+                    {isViewOnlyEmployee ? (
+                      <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, width: '100%' }}>
+                        <TouchableOpacity
+                          style={[styles.modalCancelBtn, { backgroundColor: '#F1F5F9', borderWidth: 0, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }]}
+                          onPress={() => setIsEmployeeModalOpen(false)}
+                        >
+                          <Text style={[styles.modalCancelText, { color: '#64748B', fontWeight: '600' }]}>Close</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.modalSaveBtn, { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+                          onPress={() => setIsViewOnlyEmployee(false)}
+                        >
+                          <Ionicons name="pencil" size={16} color="#FFFFFF" />
+                          <Text style={[styles.modalSaveText, { fontWeight: '600', color: '#FFFFFF' }]}>Edit User</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <>
+                        <TouchableOpacity
+                          style={[styles.modalCancelBtn, { backgroundColor: '#F1F5F9', borderWidth: 0, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 }]}
+                          onPress={() => setIsEmployeeModalOpen(false)}
+                          disabled={employeeFormSaving}
+                        >
+                          <Text style={[styles.modalCancelText, { color: '#64748B' }]}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.modalSaveBtn, { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, backgroundColor: '#0F172A' }, employeeFormSaving && { opacity: 0.7 }]}
+                          onPress={handleSaveEmployee}
+                          disabled={employeeFormSaving}
+                        >
+                          {employeeFormSaving ? (
+                            <ActivityIndicator size="small" color={COLORS.white} />
+                          ) : (
+                            <Text style={[styles.modalSaveText, { fontWeight: '600', color: '#FFFFFF' }]}>{editingEmployee ? 'Save Changes' : 'Create User'}</Text>
+                          )}
+                        </TouchableOpacity>
+                      </>
+                    )}
                   </View>
                 </View>
-              </Modal>
-            )}
+              </View>
+            </Modal>
+          )}
 
           {/* Main Dashboard Panel Content */}
           <ScrollView

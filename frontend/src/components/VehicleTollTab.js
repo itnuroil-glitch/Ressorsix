@@ -569,6 +569,10 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
   };
 
   const filteredRecords = vehicleTollRecords.filter(r => {
+    const chosenComp = selectedCompany || (user?.company_id || user?.companyid ? String(user?.company_id || user?.companyid) : '');
+    if (chosenComp && r.company_id !== undefined && r.company_id !== null && String(r.company_id) !== String(chosenComp) && String(r.companyid) !== String(chosenComp)) {
+      return false;
+    }
     const q = searchQuery.toLowerCase().trim();
     if (!q) return true;
     const str = JSON.stringify(r.field_data || {}).toLowerCase();
@@ -1046,8 +1050,12 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
             ) : (
               <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20 }}>
                 <Text style={{ flex: isOverview ? 1.2 : 0.8, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>{isOverview ? 'ACCOUNT NO' : 'ID'}</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
                 {!isOverview && (
+                  <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
+                )}
+                {isOverview ? (
+                  <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>COMPANY</Text>
+                ) : (
                   <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Module Info</Text>
                 )}
                 <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>{isOverview ? 'TOLL TYPE' : 'DATA PREVIEW'}</Text>
@@ -1062,6 +1070,10 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                 const filtered = vehicleTollRecords.filter(r => {
                   if (user && String(user.roleId) !== '1' && user.clientid) {
                     if (String(r.clientid) !== String(user.clientid)) return false;
+                  }
+                  const chosenComp = selectedCompany || (user?.company_id || user?.companyid ? String(user?.company_id || user?.companyid) : '');
+                  if (chosenComp && r.company_id !== undefined && r.company_id !== null && String(r.company_id) !== String(chosenComp) && String(r.companyid) !== String(chosenComp)) {
+                    return false;
                   }
                   if (!searchQuery) return true;
                   const cObj = clients.find(c => String(c.id) === String(r.clientid));
@@ -1174,6 +1186,8 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                       }
                       const clientObj = clients.find(c => String(c.id) === String(record.clientid));
                       const clientName = clientObj ? (clientObj.client_name || clientObj.name) : `Client ${record.clientid}`;
+                      const companyObj = companies.find(c => String(c.id) === String(record.company_id || record.companyid));
+                      const companyName = companyObj ? (companyObj.company_name || companyObj.name) : (record.company_name ? record.company_name : (record.company_id || record.companyid ? `Company #${record.company_id || record.companyid}` : ''));
                       const countryObj = countries.find(c => String(c.id) === String(record.country_id));
                       const countryName = countryObj ? countryObj.name : `Country ${record.country_id}`;
                       const moduleObj = modules.find(m => String(m.id) === String(record.moduleid));
@@ -1244,12 +1258,20 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                             )}
                           </View>
 
-                          <View style={{ flex: 1.5, paddingRight: 10 }}>
-                            <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{clientName}</Text>
-                            <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Country: {countryName}</Text>
-                          </View>
-
                           {!isOverview && (
+                            <View style={{ flex: 1.5, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{clientName}</Text>
+                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Country: {countryName}</Text>
+                            </View>
+                          )}
+
+                          {isOverview ? (
+                            <View style={{ flex: 1.5, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600' }} numberOfLines={1}>
+                                {companyName || 'Unassigned'}
+                              </Text>
+                            </View>
+                          ) : (
                             <View style={{ flex: 1.5, paddingRight: 10 }}>
                               <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{moduleName}</Text>
                               <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Created: {record.created_at ? new Date(record.created_at).toLocaleDateString() : 'N/A'}</Text>
