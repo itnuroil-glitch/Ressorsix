@@ -2006,7 +2006,7 @@ export default function DashboardScreen({ user, onSignOut }) {
 
           const targetCompIds = (compId && compId !== 'all')
             ? [Number(compId)]
-            : (newRoleClientIds.length > 0 ? [Number(newRoleClientIds[0])] : [null]);
+            : (newRoleClientIds.length > 0 ? newRoleClientIds.map(Number) : [null]);
 
           return fetch(`${API_URL}/api/roles/${savedRoleId}/permissions`, {
             method: 'POST',
