@@ -153,7 +153,11 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
       const actionQuery = `&module_id=vehicle_toll&action=${action}`;
       const res = await fetch(`${API_URL}/api/companies/client/${clientId}${emailParam}${actionQuery}`);
       if (res.ok) {
-        const data = await res.json();
+        let data = await res.json();
+        if (Array.isArray(data) && user && String(user.roleId) !== '1' && Array.isArray(user.associatedCompanyIds) && user.associatedCompanyIds.length > 0) {
+          const allowedIds = user.associatedCompanyIds.map(String);
+          data = data.filter(comp => allowedIds.includes(String(comp.id)));
+        }
         setCompanies(data || []);
         return data || [];
       }

@@ -116,8 +116,12 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
       const actionQuery = `&module_id=vehicle_maintenance&action=${action}`;
       const res = await fetch(`${API_URL}/api/companies/client/${clientId}${emailParam}${actionQuery}`);
       if (res.ok) {
-        const data = await res.json();
-        const compList = data || [];
+        let data = await res.json();
+        let compList = data || [];
+        if (Array.isArray(compList) && user && String(user.roleId) !== '1' && Array.isArray(user.associatedCompanyIds) && user.associatedCompanyIds.length > 0) {
+          const allowedIds = user.associatedCompanyIds.map(String);
+          compList = compList.filter(comp => allowedIds.includes(String(comp.id)));
+        }
         setCompanies(compList);
         if (compList.length > 0) {
           setSelectedCompany(prev => {
