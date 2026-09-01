@@ -159,6 +159,12 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
           data = data.filter(comp => allowedIds.includes(String(comp.id)));
         }
         setCompanies(data || []);
+        if (Array.isArray(data) && data.length > 0) {
+          setSelectedCompany(prev => {
+            const isValid = data.some(c => String(c.id) === String(prev));
+            return isValid ? prev : String(data[0].id);
+          });
+        }
         return data || [];
       }
     } catch (e) {
