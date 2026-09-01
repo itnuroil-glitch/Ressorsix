@@ -1187,9 +1187,11 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                             </View>
 
                             <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-                              <TouchableOpacity style={{ padding: 4 }} onPress={() => handleView(record)}>
-                                <Ionicons name="eye-outline" size={18} color="#0F172A" />
-                              </TouchableOpacity>
+                              {(checkRowPermission ? checkRowPermission(record.company_id || record.companyid, 'view') : (!user || String(user.roleId) === '1' || (permissions && (permissions.can_view || permissions.full_control)))) && (
+                                <TouchableOpacity style={{ padding: 4 }} onPress={() => handleView(record)}>
+                                  <Ionicons name="eye-outline" size={18} color="#0F172A" />
+                                </TouchableOpacity>
+                              )}
 
                               {(checkRowPermission ? checkRowPermission(record.company_id || record.companyid, 'edit') : canEdit) && (
                                 <TouchableOpacity style={{ padding: 4 }} onPress={() => handleEdit(record)}>

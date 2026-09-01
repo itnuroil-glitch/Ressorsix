@@ -2413,7 +2413,7 @@ export default function DashboardScreen({ user, onSignOut }) {
 
     // 2. Rely on Role-based userPermissions (global/default permissions where company_id is null)
     const perm = userPermissions.find(p => p.module_id === moduleId);
-    return perm ? (perm.can_view || perm.full_control) : true;
+    return perm ? (perm.can_view || perm.full_control) : (user && String(user.roleId) === '1');
   };
 
   // Helper to check if user has access to a specific tab
