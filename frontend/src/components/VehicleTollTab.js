@@ -102,7 +102,11 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
         recordsRes.ok ? recordsRes.json() : [],
         cfRes.ok ? cfRes.json() : []
       ]);
-      setClients(clientsData || []);
+      const formattedClients = (clientsData || []).map(c => ({
+        ...c,
+        displayName: c.companyname || c.client_name || c.name || `Client ${c.id}`
+      }));
+      setClients(formattedClients);
       setCountries(countriesData || []);
       setModules(modulesData || []);
       setVehicleTollRecords(Array.isArray(recordsData) ? recordsData : []);
@@ -1445,22 +1449,24 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
             {wizardStep === 1 && !editingRecord && !isViewOnly ? (
               <ScrollView style={{ flex: 1, backgroundColor: '#FFFFFF', padding: 24 }}>
                 <View style={{ gap: 20 }}>
-                  <View style={styles.formGroup}>
-                    <Text style={styles.fieldLabel}>CLIENT <Text style={styles.required}>*</Text></Text>
-                    <SearchableDropdown
-                      data={clients}
-                      value={selectedClient}
-                      onChange={async (val) => {
-                        setSelectedClient(val);
-                        setSelectedCompany('');
-                        await fetchCompaniesForClient(val, 'create');
-                      }}
-                      placeholder="-- Select Client --"
-                      searchPlaceholder="Search Client..."
-                      displayKey="client_name"
-                      valueKey="id"
-                    />
-                  </View>
+                  {(!user || String(user.roleId) === '1') && (
+                    <View style={styles.formGroup}>
+                      <Text style={styles.fieldLabel}>CLIENT <Text style={styles.required}>*</Text></Text>
+                      <SearchableDropdown
+                        data={clients}
+                        value={selectedClient}
+                        onChange={async (val) => {
+                          setSelectedClient(val);
+                          setSelectedCompany('');
+                          await fetchCompaniesForClient(val, 'create');
+                        }}
+                        placeholder="-- Select Client --"
+                        searchPlaceholder="Search Client..."
+                        displayKey="displayName"
+                        valueKey="id"
+                      />
+                    </View>
+                  )}
 
                   <View style={styles.formGroup}>
                     <Text style={styles.fieldLabel}>COMPANY <Text style={styles.required}>*</Text></Text>
@@ -1838,45 +1844,47 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                   </View>
 
                   {/* Client Dropdown */}
-                  <View style={{ marginBottom: 18 }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 8, letterSpacing: 0.3 }}>CLIENT <Text style={{ color: '#EF4444' }}>*</Text></Text>
-                    <div style={{ position: 'relative' }}>
-                      <select
-                        value={importClient}
-                        onChange={async (e) => {
-                          const cId = e.target.value;
-                          setImportClient(cId);
-                          setImportCompany('');
-                          if (cId) {
-                            const compList = await fetchCompaniesForClient(cId, 'view');
-                            if (compList && compList.length > 0) {
-                              setImportCompany(String(compList[0].id));
+                  {(!user || String(user.roleId) === '1') && (
+                    <View style={{ marginBottom: 18 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 8, letterSpacing: 0.3 }}>CLIENT <Text style={{ color: '#EF4444' }}>*</Text></Text>
+                      <div style={{ position: 'relative' }}>
+                        <select
+                          value={importClient}
+                          onChange={async (e) => {
+                            const cId = e.target.value;
+                            setImportClient(cId);
+                            setImportCompany('');
+                            if (cId) {
+                              const compList = await fetchCompaniesForClient(cId, 'view');
+                              if (compList && compList.length > 0) {
+                                setImportCompany(String(compList[0].id));
+                              }
+                            } else {
+                              setCompanies([]);
                             }
-                          } else {
-                            setCompanies([]);
-                          }
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '12px 14px',
-                          borderRadius: 8,
-                          border: '1px solid #CBD5E1',
-                          backgroundColor: '#F8FAFC',
-                          fontSize: 14,
-                          fontWeight: '600',
-                          color: '#0F172A',
-                          outline: 'none',
-                          cursor: 'pointer',
-                          boxSizing: 'border-box'
-                        }}
-                      >
-                        <option value="">-- Select Client --</option>
-                        {clients.map(c => (
-                          <option key={c.id} value={c.id}>{c.client_name || c.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </View>
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '12px 14px',
+                            borderRadius: 8,
+                            border: '1px solid #CBD5E1',
+                            backgroundColor: '#F8FAFC',
+                            fontSize: 14,
+                            fontWeight: '600',
+                            color: '#0F172A',
+                            outline: 'none',
+                            cursor: 'pointer',
+                            boxSizing: 'border-box'
+                          }}
+                        >
+                          <option value="">-- Select Client --</option>
+                          {clients.map(c => (
+                            <option key={c.id} value={c.id}>{c.displayName || c.companyname || c.client_name || c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </View>
+                  )}
 
                   {/* Company Dropdown */}
                   <View style={{ marginBottom: 24 }}>

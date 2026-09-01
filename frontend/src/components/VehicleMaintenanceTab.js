@@ -867,24 +867,26 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
             {wizardStep === 1 && !editingRecord && !isViewOnly ? (
               <ScrollView style={{ flex: 1, backgroundColor: '#FFFFFF', padding: 24 }}>
                 <View style={{ gap: 20 }}>
-                  <View style={{ marginBottom: 16 }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#475569', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                      CLIENT <Text style={{ color: '#EF4444' }}>*</Text>
-                    </Text>
-                    <SearchableDropdown
-                      data={clients}
-                      value={selectedClient}
-                      onChange={async (val) => {
-                        setSelectedClient(val);
-                        setSelectedCompany('');
-                        await fetchCompaniesForClient(val, 'create');
-                      }}
-                      placeholder="-- Select Client --"
-                      searchPlaceholder="Search Client..."
-                      displayKey="client_name"
-                      valueKey="id"
-                    />
-                  </View>
+                  {(!user || String(user.roleId) === '1') && (
+                    <View style={{ marginBottom: 16 }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#475569', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        CLIENT <Text style={{ color: '#EF4444' }}>*</Text>
+                      </Text>
+                      <SearchableDropdown
+                        data={clients}
+                        value={selectedClient}
+                        onChange={async (val) => {
+                          setSelectedClient(val);
+                          setSelectedCompany('');
+                          await fetchCompaniesForClient(val, 'create');
+                        }}
+                        placeholder="-- Select Client --"
+                        searchPlaceholder="Search Client..."
+                        displayKey="client_name"
+                        valueKey="id"
+                      />
+                    </View>
+                  )}
 
                   <View style={{ marginBottom: 16 }}>
                     <Text style={{ fontSize: 12, fontWeight: '700', color: '#475569', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>

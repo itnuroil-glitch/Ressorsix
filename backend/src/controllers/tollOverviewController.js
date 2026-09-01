@@ -140,6 +140,7 @@ exports.getTollOverviewRecords = async (req, res) => {
     let query = `
       SELECT 
         v.*, 
+        comp.company_name AS company_name,
         (SELECT string_agg(role, ', ') FROM role WHERE v.roleid IS NOT NULL AND id::text = ANY(string_to_array(v.roleid::text, ','))) AS role_name, 
         COALESCE(
           (SELECT full_name FROM employee e WHERE LOWER(TRIM(e.email)) = LOWER(TRIM(u.email)) AND (e.is_deleted = false OR e.is_deleted IS NULL) ORDER BY e.id DESC LIMIT 1), 
@@ -149,6 +150,7 @@ exports.getTollOverviewRecords = async (req, res) => {
         ) AS employee_name
       FROM tbl_toll_overview v
       LEFT JOIN users u ON v.user_id = u.id
+      LEFT JOIN company comp ON v.company_id::text = comp.id::text
       WHERE (v.is_deleted = false OR v.is_deleted IS NULL)
     `;
     const params = [];
