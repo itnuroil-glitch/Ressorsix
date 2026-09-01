@@ -1071,9 +1071,23 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                   if (user && String(user.roleId) !== '1' && user.clientid) {
                     if (String(r.clientid) !== String(user.clientid)) return false;
                   }
-                  const chosenComp = selectedCompany || (user?.company_id || user?.companyid ? String(user?.company_id || user?.companyid) : '');
-                  if (chosenComp && r.company_id !== undefined && r.company_id !== null && String(r.company_id) !== String(chosenComp) && String(r.companyid) !== String(chosenComp)) {
-                    return false;
+                  const recCompId = r.company_id !== undefined && r.company_id !== null ? String(r.company_id) : (r.companyid ? String(r.companyid) : '');
+                  if (selectedCompany && selectedCompany !== 'all') {
+                    if (recCompId && recCompId !== String(selectedCompany)) return false;
+                  } else if (user && String(user.roleId) !== '1') {
+                    const allowedCompanyIds = [];
+                    if (user.companyids && Array.isArray(user.companyids)) {
+                      user.companyids.forEach(id => allowedCompanyIds.push(String(id)));
+                    }
+                    if (user.company_ids && Array.isArray(user.company_ids)) {
+                      user.company_ids.forEach(id => allowedCompanyIds.push(String(id)));
+                    }
+                    if (user.company_id) allowedCompanyIds.push(String(user.company_id));
+                    if (user.companyid) allowedCompanyIds.push(String(user.companyid));
+                    const uniqueAllowed = [...new Set(allowedCompanyIds)].filter(Boolean);
+                    if (uniqueAllowed.length > 0 && recCompId) {
+                      if (!uniqueAllowed.includes(recCompId)) return false;
+                    }
                   }
                   if (!searchQuery) return true;
                   const cObj = clients.find(c => String(c.id) === String(r.clientid));
