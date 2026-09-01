@@ -131,14 +131,21 @@ exports.login = async (req, res) => {
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ');
 
-    // Fetch associated companies if this is an employee user
+    // Fetch associated companies from employee_company and role's companyids
     let associatedCompanyIds = [];
-    const empRes = await db.query('SELECT id FROM employee WHERE email = $1 AND is_deleted = false', [email.toLowerCase().trim()]);
+    const empRes = await db.query('SELECT id FROM employee WHERE email = $1 AND (is_deleted = false OR is_deleted IS NULL)', [email.toLowerCase().trim()]);
     if (empRes.rows.length > 0) {
       const empId = empRes.rows[0].id;
       const compRes = await db.query('SELECT company_id FROM employee_company WHERE employee_id = $1', [empId]);
       associatedCompanyIds = compRes.rows.map(r => r.company_id);
     }
+    if (user.roleid) {
+      const roleRes = await db.query('SELECT companyids FROM role WHERE id = $1 AND (is_deleted = false OR is_deleted IS NULL)', [user.roleid]);
+      if (roleRes.rows.length > 0 && Array.isArray(roleRes.rows[0].companyids)) {
+        associatedCompanyIds.push(...roleRes.rows[0].companyids);
+      }
+    }
+    associatedCompanyIds = [...new Set(associatedCompanyIds)].filter(Boolean);
 
     res.status(200).json({
       message: 'Sign in successful.',
