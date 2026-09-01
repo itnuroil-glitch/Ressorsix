@@ -133,19 +133,25 @@ exports.login = async (req, res) => {
 
     // Fetch associated companies from employee_company and role's companyids
     let associatedCompanyIds = [];
-    const empRes = await db.query('SELECT id FROM employee WHERE email = $1 AND (is_deleted = false OR is_deleted IS NULL)', [email.toLowerCase().trim()]);
+    let effectiveRoleId = user.roleid;
+    const empRes = await db.query('SELECT id, roleid FROM employee WHERE email = $1 AND (is_deleted = false OR is_deleted IS NULL)', [email.toLowerCase().trim()]);
     if (empRes.rows.length > 0) {
       const empId = empRes.rows[0].id;
+      if (!effectiveRoleId && empRes.rows[0].roleid) {
+        effectiveRoleId = empRes.rows[0].roleid;
+      }
       const compRes = await db.query('SELECT company_id FROM employee_company WHERE employee_id = $1', [empId]);
       associatedCompanyIds = compRes.rows.map(r => r.company_id);
     }
-    if (user.roleid) {
-      const roleRes = await db.query('SELECT companyids FROM role WHERE id = $1 AND (is_deleted = false OR is_deleted IS NULL)', [user.roleid]);
-      if (roleRes.rows.length > 0 && Array.isArray(roleRes.rows[0].companyids)) {
-        associatedCompanyIds.push(...roleRes.rows[0].companyids);
-      }
+    if (effectiveRoleId) {
+      const roleRes = await db.query('SELECT companyids FROM role WHERE id = ANY(string_to_array($1, \',\')::int[]) AND (is_deleted = false OR is_deleted IS NULL)', [String(effectiveRoleId)]);
+      roleRes.rows.forEach(r => {
+        if (Array.isArray(r.companyids)) {
+          associatedCompanyIds.push(...r.companyids);
+        }
+      });
     }
-    associatedCompanyIds = [...new Set(associatedCompanyIds)].filter(Boolean);
+    associatedCompanyIds = [...new Set(associatedCompanyIds.map(String))].filter(Boolean);
 
     res.status(200).json({
       message: 'Sign in successful.',
