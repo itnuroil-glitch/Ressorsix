@@ -1054,6 +1054,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                 <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>TRANSACTION ID</Text>
                 <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>TAG / PLATE</Text>
                 <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>VEHICLE NAME</Text>
+                <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>COMPANY</Text>
                 <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>TOLL GATE</Text>
                 <Text style={{ flex: 1.1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>DIRECTION</Text>
                 <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>TRIP DATE & TIME</Text>
@@ -1154,6 +1155,18 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                                 </View>
                               ) : (
                                 <Text style={{ fontSize: 12, color: '#94A3B8' }}>Unassigned</Text>
+                              )}
+                            </View>
+
+                            <View style={{ flex: 1.4, paddingRight: 10 }}>
+                              {record.company_name ? (
+                                <View style={{ backgroundColor: '#F3E8FF', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start' }}>
+                                  <Text style={{ fontSize: 12, color: '#7E22CE', fontWeight: '700' }} numberOfLines={1}>
+                                    🏢 {record.company_name}
+                                  </Text>
+                                </View>
+                              ) : (
+                                <Text style={{ fontSize: 12, color: '#94A3B8' }}>N/A</Text>
                               )}
                             </View>
 
