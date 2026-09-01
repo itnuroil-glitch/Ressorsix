@@ -1283,8 +1283,8 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                           </View>
 
                           <View style={{ flex: 1.5, paddingRight: 10 }}>
-                            <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{record.role_name || `Role: ${record.roleid || 'N/A'}`}</Text>
-                            <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>{record.employee_name || 'N/A'}</Text>
+                            <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{record.employee_name || record.email || 'N/A'}</Text>
+                            <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>{record.role_name || (record.roleid ? `Role #${record.roleid}` : 'N/A')}</Text>
                           </View>
 
                           <View style={{ flex: 1, alignItems: 'flex-start' }}>
