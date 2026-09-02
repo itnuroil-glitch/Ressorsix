@@ -1,6 +1,7 @@
 const db = require('../config/db');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { createAppSession } = require('../utils/sessionHelper');
 
 // Email regex helper
 const validateEmail = (email) => {
@@ -152,6 +153,12 @@ exports.login = async (req, res) => {
       });
     }
     associatedCompanyIds = [...new Set(associatedCompanyIds.map(String))].filter(Boolean);
+
+    try {
+      await createAppSession(res, user, user.authentik_sub || `local_${user.id}`, user.email, []);
+    } catch (sessErr) {
+      console.warn('[SERVER WARN] Could not create app session cookie:', sessErr.message);
+    }
 
     res.status(200).json({
       message: 'Sign in successful.',

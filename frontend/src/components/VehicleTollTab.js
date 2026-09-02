@@ -88,12 +88,13 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
 
   const fetchInitialData = async () => {
     try {
+      const fetchOptions = { credentials: 'include' };
       const [clientsRes, countriesRes, modulesRes, recordsRes, cfRes] = await Promise.all([
-        fetch(`${API_URL}/api/clients`),
-        fetch(`${API_URL}/api/countries`),
-        fetch(`${API_URL}/api/modules`),
-        fetch(`${API_URL}${apiRoute}${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`),
-        fetch(`${API_URL}/api/custom-fields`)
+        fetch(`${API_URL}/api/clients`, fetchOptions),
+        fetch(`${API_URL}/api/countries`, fetchOptions),
+        fetch(`${API_URL}/api/modules`, fetchOptions),
+        fetch(`${API_URL}${apiRoute}${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`, fetchOptions),
+        fetch(`${API_URL}/api/custom-fields`, fetchOptions)
       ]);
       const [clientsData, countriesData, modulesData, recordsData, cfData] = await Promise.all([
         clientsRes.json(),

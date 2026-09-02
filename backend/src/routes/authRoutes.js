@@ -26,6 +26,9 @@ router.post('/approval/start', authLimiter, approvalController.startApproval);
 router.get('/approval/status/:challengeId', approvalController.checkStatus);
 router.post('/approval/verify', authLimiter, approvalController.verifyApprovalToken);
 
+// Standard Normal Login Route (Email & Password)
+router.post('/login', authLimiter, authController.login);
+
 // Legacy Authentication Endpoints (disabled/restricted when SSO active)
 router.post('/change-password', authMiddleware, authController.changePassword);
 router.post('/admin-change-password', authMiddleware, authController.adminChangePassword);
