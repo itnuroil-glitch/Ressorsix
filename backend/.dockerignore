@@ -1,0 +1,12 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+upload/*
+!upload/.gitkeep
+Attachment/*
+!Attachment/.gitkeep
+src-old
+new_asset-_Backend
+*.log

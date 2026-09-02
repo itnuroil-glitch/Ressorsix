@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -6,8 +6,6 @@ import {
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
-  KeyboardAvoidingView,
-  ScrollView,
   Platform,
   useWindowDimensions,
   SafeAreaView,
@@ -21,267 +19,176 @@ export default function LoginScreen({ onLoginSuccess }) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width > 480;
 
-  // Form State
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [emailFocused, setEmailFocused] = useState(false);
-  const [passwordFocused, setPasswordFocused] = useState(false);
-
-  // Status & Feedback States
-  const [loading, setLoading] = useState(false);
+  // Flow State: 'IDLE' | 'ENTER_EMAIL' | 'WAITING_APPROVAL' | 'SUCCESS' | 'ERROR'
+  const [approvalStage, setApprovalStage] = useState('IDLE');
+  const [emailInput, setEmailInput] = useState('');
+  const [challengeId, setChallengeId] = useState(null);
+  const [matchCode, setMatchCode] = useState(null);
+  const [timerSeconds, setTimerSeconds] = useState(90);
   const [errorMessage, setErrorMessage] = useState('');
-  const [upperBannerVisible, setUpperBannerVisible] = useState(true);
+  const [loading, setLoading] = useState(false);
 
-  // Screen View state: 'login' | 'forgot_password' | 'forgot_password_success'
-  const [screenView, setScreenView] = useState('login');
-  const [resetEmail, setResetEmail] = useState('');
-  const [resetEmailFocused, setResetEmailFocused] = useState(false);
-  const [resetLoading, setResetLoading] = useState(false);
+  const pollIntervalRef = useRef(null);
+  const timerIntervalRef = useRef(null);
 
-  // Email format validation
-  const validateEmail = (text) => {
-    const emailRegex = /\S+@\S+\.\S+/;
-    return emailRegex.test(text);
+  // Clean up timers on unmount
+  useEffect(() => {
+    return () => {
+      stopPollingAndTimer();
+    };
+  }, []);
+
+  const stopPollingAndTimer = () => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
   };
 
-  // Sign In action
-  const handleSignIn = () => {
-    setErrorMessage('');
+  // Check URL query parameters for access denied / error state from Authentik redirect
+  const isAccessDenied = typeof window !== 'undefined' &&
+    (window.location.search.includes('access_denied') || window.location.pathname.includes('/403'));
 
-    if (!email.trim()) {
-      setErrorMessage('Please enter your email address.');
-      return;
+  const handleSignInWithAuthentik = () => {
+    setLoading(true);
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.location.href = `${API_URL}/auth/login`;
     }
+  };
 
-    if (!validateEmail(email)) {
+  // Initiate Push Approval Flow
+  const handleStartApproval = async () => {
+    if (!emailInput || !emailInput.includes('@')) {
       setErrorMessage('Please enter a valid email address.');
       return;
     }
 
-    if (!password) {
-      setErrorMessage('Please enter your password.');
-      return;
-    }
+    setLoading(true);
+    setErrorMessage('');
 
-    if (password.length < 6) {
-      setErrorMessage('Password must be at least 6 characters.');
-      return;
-    }
+    try {
+      const res = await fetch(`${API_URL}/api/auth/approval/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailInput.trim() }),
+        credentials: 'include',
+      });
 
-    console.log('====================================');
-    console.log('[CLIENT LOG] Sending login request to:', `${API_URL}/api/auth/login`);
-    console.log('[CLIENT LOG] Target email:', email);
-    console.log('====================================');
+      const data = await res.json();
 
-    fetch(`${API_URL}/api/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, password }),
-      credentials: 'include',
-    })
-      .then(async (res) => {
-        console.log('[CLIENT LOG] Full Response Object:', res);
-        console.log('[CLIENT LOG] Response Status:', res.status, res.statusText);
-
-        const text = await res.text();
-        console.log('[CLIENT LOG] Raw Server Response Body:', text);
-
-        let data = {};
-        try {
-          data = text ? JSON.parse(text) : {};
-          console.log('[CLIENT LOG] Parsed Response Data:', data);
-        } catch (e) {
-          console.error('[CLIENT LOG] JSON Parsing Error:', e);
-          data = {};
-        }
-
-        if (!res.ok) {
-          throw new Error(data.message || `Server returned error (${res.status}). Please verify backend logs.`);
-        }
-        if (!data || !data.user) {
-          throw new Error(data.message || 'Invalid server response: Missing user payload.');
-        }
-        return data;
-      })
-      .then((data) => {
-        console.log('[CLIENT LOG] Sign-in succeeded for:', data.user);
+      if (!res.ok) {
         setLoading(false);
-        // Successful authentication
-        onLoginSuccess({
-          id: data.user.id,
-          email: data.user.email,
-          name: data.user.name || data.user.email,
-          roleId: data.user.roleId,
-          clientid: data.user.clientid,
-          companyid: data.user.companyid,
-          associatedCompanyIds: data.user.associatedCompanyIds || [],
-          createdAt: data.user.createdAt,
-          token: data.token,
+        setErrorMessage(data.message || 'Failed to send approval request to mobile device.');
+        setApprovalStage('ERROR');
+        return;
+      }
+
+      setChallengeId(data.challengeId);
+      setMatchCode(data.matchCode);
+      setTimerSeconds(90);
+      setApprovalStage('WAITING_APPROVAL');
+      setLoading(false);
+
+      // Start Countdown Timer
+      timerIntervalRef.current = setInterval(() => {
+        setTimerSeconds((prev) => {
+          if (prev <= 1) {
+            stopPollingAndTimer();
+            setApprovalStage('ERROR');
+            setErrorMessage('Approval request timed out after 90 seconds. Please try again.');
+            return 0;
+          }
+          return prev - 1;
         });
-      })
-      .catch((error) => {
-        console.error('[CLIENT LOG] Login Error Caught:', error);
+      }, 1000);
+
+      // Start Polling Status every 2.5 seconds
+      pollIntervalRef.current = setInterval(() => {
+        pollStatus(data.challengeId);
+      }, 2500);
+
+    } catch (err) {
+      setLoading(false);
+      setErrorMessage('Network error while connecting to server. Please try again.');
+      setApprovalStage('ERROR');
+    }
+  };
+
+  // Poll Approval Challenge Status
+  const pollStatus = async (cId) => {
+    try {
+      const res = await fetch(`${API_URL}/api/auth/approval/status/${cId}`, {
+        credentials: 'include',
+      });
+      const data = await res.json();
+
+      if (data.status === 'approved') {
+        stopPollingAndTimer();
+        setApprovalStage('WAITING_APPROVAL');
+        setLoading(true);
+        verifyCode(data.code);
+      } else if (data.status === 'denied') {
+        stopPollingAndTimer();
+        setApprovalStage('ERROR');
+        setErrorMessage('Sign-in request was denied on your mobile device.');
+      } else if (data.status === 'expired') {
+        stopPollingAndTimer();
+        setApprovalStage('ERROR');
+        setErrorMessage('Approval challenge has expired. Please try again.');
+      }
+    } catch (err) {
+      console.warn('Status polling error:', err);
+    }
+  };
+
+  // Verify Code & Create Session
+  const verifyCode = async (code) => {
+    try {
+      const res = await fetch(`${API_URL}/api/auth/approval/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+        credentials: 'include',
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setApprovalStage('SUCCESS');
+        if (onLoginSuccess && data.user) {
+          onLoginSuccess(data.user);
+        } else if (typeof window !== 'undefined') {
+          window.location.href = '/';
+        }
+      } else {
         setLoading(false);
-        setErrorMessage(error.message || 'Connection error. Please ensure the Trakio backend server is running.');
-      });
-  };
-
-  // Forgot password request action
-  const handleForgotPasswordSubmit = () => {
-    setErrorMessage('');
-
-    if (!resetEmail.trim()) {
-      setErrorMessage('Please enter your email address.');
-      return;
+        setApprovalStage('ERROR');
+        setErrorMessage(data.message || 'Verification failed. Could not verify mobile approval token.');
+      }
+    } catch (err) {
+      setLoading(false);
+      setApprovalStage('ERROR');
+      setErrorMessage('Server error during token verification.');
     }
-
-    if (!validateEmail(resetEmail)) {
-      setErrorMessage('Please enter a valid email address.');
-      return;
-    }
-
-    setResetLoading(true);
-    fetch(`${API_URL}/api/auth/forgot-password`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email: resetEmail }),
-    })
-      .then(async (res) => {
-        const text = await res.text();
-        let data = {};
-        try {
-          data = text ? JSON.parse(text) : {};
-        } catch (e) {
-          data = {};
-        }
-        if (!res.ok) {
-          throw new Error(data.message || `Server returned error (${res.status}). Please try again.`);
-        }
-        return data;
-      })
-      .then(() => {
-        setResetLoading(false);
-        setScreenView('forgot_password_success');
-      })
-      .catch((error) => {
-        setResetLoading(false);
-        setErrorMessage(error.message || 'Connection error. Please try again.');
-      });
   };
 
-  // Return to Login screen helper
-  const handleBackToLogin = () => {
+  const handleResetApproval = () => {
+    stopPollingAndTimer();
+    setApprovalStage('IDLE');
     setErrorMessage('');
-    setScreenView('login');
-    setResetEmail('');
+    setLoading(false);
   };
 
-  // Content for Forgot Password screen
-  if (screenView === 'forgot_password') {
+  if (isAccessDenied) {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar style="dark" />
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.keyboardView}
-        >
-          <ScrollView
-            contentContainerStyle={[
-              styles.scrollContainer,
-              isLargeScreen && styles.scrollContainerWeb,
-            ]}
-            keyboardShouldPersistTaps="handled"
-          >
-            <View style={[styles.card, isLargeScreen && styles.cardWeb]}>
-              {/* Green Header Bar */}
-              <View style={styles.cardHeader}>
-                <View style={styles.headerTitleContainer}>
-                  <MaterialCommunityIcons name="cube-outline" size={24} color={COLORS.white} />
-                  <Text style={styles.headerTitle}>Trakio</Text>
-                </View>
-              </View>
-
-              <View style={styles.cardBody}>
-                {/* Back Button */}
-                <TouchableOpacity style={styles.backButton} onPress={handleBackToLogin}>
-                  <Ionicons name="arrow-back" size={20} color={COLORS.primary} />
-                  <Text style={styles.backButtonText}>Back to Login</Text>
-                </TouchableOpacity>
-
-                <Text style={styles.title}>Forgot Password?</Text>
-                <Text style={styles.subtitle}>
-                  Enter the email address associated with your Trakio account and we'll send you a password reset link.
-                </Text>
-
-                {errorMessage ? (
-                  <View style={styles.errorBanner}>
-                    <Ionicons name="alert-circle" size={20} color={COLORS.error} />
-                    <Text style={styles.errorText}>{errorMessage}</Text>
-                  </View>
-                ) : null}
-
-                {/* Input Field */}
-                <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Email Address</Text>
-                  <View
-                    style={[
-                      styles.inputWrapper,
-                      resetEmailFocused && styles.inputWrapperFocused,
-                    ]}
-                  >
-                    <Ionicons
-                      name="mail-outline"
-                      size={20}
-                      color={resetEmailFocused ? COLORS.primary : COLORS.textMuted}
-                      style={styles.inputIcon}
-                    />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="john.smith@email.com"
-                      placeholderTextColor={COLORS.textMuted}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      value={resetEmail}
-                      onChangeText={setResetEmail}
-                      onFocus={() => setResetEmailFocused(true)}
-                      onBlur={() => setResetEmailFocused(false)}
-                    />
-                  </View>
-                </View>
-
-                {/* Submit Button */}
-                <TouchableOpacity
-                  style={[styles.button, styles.shadowBtn]}
-                  onPress={handleForgotPasswordSubmit}
-                  disabled={resetLoading}
-                >
-                  {resetLoading ? (
-                    <ActivityIndicator color={COLORS.white} size="small" />
-                  ) : (
-                    <Text style={styles.buttonText}>Send Reset Link</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    );
-  }
-
-  // Content for Forgot Password SUCCESS confirmation screen
-  if (screenView === 'forgot_password_success') {
-    return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar style="dark" />
-        <View style={[styles.scrollContainer, styles.centeredContent]}>
-          <View style={[styles.card, isLargeScreen && styles.cardWeb, styles.successCard]}>
+        <View style={styles.centeredContent}>
+          <View style={[styles.card, isLargeScreen && styles.cardWeb]}>
             <View style={styles.cardHeader}>
               <View style={styles.headerTitleContainer}>
                 <MaterialCommunityIcons name="cube-outline" size={24} color={COLORS.white} />
@@ -290,18 +197,24 @@ export default function LoginScreen({ onLoginSuccess }) {
             </View>
 
             <View style={[styles.cardBody, styles.centeredBody]}>
-              <View style={styles.successIconContainer}>
-                <Ionicons name="checkmark-circle" size={64} color={COLORS.success} />
+              <View style={styles.deniedIconContainer}>
+                <Ionicons name="close-circle" size={54} color={COLORS.error} />
               </View>
 
-              <Text style={styles.title}>Check Your Email</Text>
-              <Text style={styles.successSubtitle}>
-                We've sent a password reset link to <Text style={styles.boldText}>{resetEmail}</Text>.
-                Please check your inbox and follow the instructions to reset your password.
+              <Text style={styles.title}>Access Denied</Text>
+              <Text style={styles.deniedMessage}>
+                Access to this application has not been provisioned. Contact your administrator.
               </Text>
 
-              <TouchableOpacity style={[styles.button, styles.backBtnFull]} onPress={handleBackToLogin}>
-                <Text style={styles.buttonText}>Back to Sign In</Text>
+              <TouchableOpacity
+                style={[styles.button, styles.shadowBtn]}
+                onPress={() => {
+                  if (typeof window !== 'undefined') {
+                    window.location.href = '/';
+                  }
+                }}
+              >
+                <Text style={styles.buttonText}>Return to Sign In</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -310,164 +223,181 @@ export default function LoginScreen({ onLoginSuccess }) {
     );
   }
 
-  // Main Login Screen
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-      >
-        <ScrollView
-          contentContainerStyle={[
-            styles.scrollContainer,
-            isLargeScreen && styles.scrollContainerWeb,
-          ]}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={[styles.card, isLargeScreen && styles.cardWeb]}>
-            {/* Green Header Bar */}
-            <View style={styles.cardHeader}>
-              <View style={styles.headerTitleContainer}>
-                <MaterialCommunityIcons name="cube-outline" size={24} color={COLORS.white} />
-                <Text style={styles.headerTitle}>Trakio</Text>
-              </View>
+      <View style={styles.centeredContent}>
+        <View style={[styles.card, isLargeScreen && styles.cardWeb]}>
+          {/* Header Bar */}
+          <View style={styles.cardHeader}>
+            <View style={styles.headerTitleContainer}>
+              <MaterialCommunityIcons name="cube-outline" size={24} color={COLORS.white} />
+              <Text style={styles.headerTitle}>Trakio</Text>
             </View>
+          </View>
 
-            <View style={styles.cardBody}>
-              {/* Welcome Title */}
-              <Text style={styles.title}>Welcome to Trakio</Text>
+          <View style={styles.cardBody}>
+            {/* Welcome Title */}
+            <Text style={styles.title}>Welcome to Trakio</Text>
+            <Text style={styles.subtitle}>
+              Enterprise asset management — choose your preferred sign-in method
+            </Text>
 
-              {/* Upper Alert Banner */}
-              {upperBannerVisible && (
-                <View style={styles.upperAlert}>
-                  <View style={styles.alertContent}>
-                    <Ionicons name="information-circle" size={20} color={COLORS.primary} style={styles.alertIcon} />
-                    <Text style={styles.upperAlertText}>Login password has been sent to your email</Text>
-                  </View>
-                  <TouchableOpacity onPress={() => setUpperBannerVisible(false)} style={styles.alertClose}>
-                    <Ionicons name="close" size={16} color={COLORS.primary} />
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* Error Message display */}
-              {errorMessage ? (
-                <View style={styles.errorBanner}>
-                  <Ionicons name="alert-circle" size={20} color={COLORS.error} />
-                  <Text style={styles.errorText}>{errorMessage}</Text>
-                </View>
-              ) : null}
-
-              {/* Form Input fields */}
-              <View style={styles.formContainer}>
-                {/* Email Field */}
-                <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Email</Text>
-                  <View
-                    style={[
-                      styles.inputWrapper,
-                      emailFocused && styles.inputWrapperFocused,
-                    ]}
-                  >
-                    <TextInput
-                      style={styles.input}
-                      placeholder="john.smith@email.com"
-                      placeholderTextColor={COLORS.textMuted}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      value={email}
-                      onChangeText={(text) => {
-                        setEmail(text);
-                        if (errorMessage) setErrorMessage('');
-                      }}
-                      onFocus={() => setEmailFocused(true)}
-                      onBlur={() => setEmailFocused(false)}
-                    />
-                  </View>
-                </View>
-
-                {/* Password Field */}
-                <View style={styles.inputContainer}>
-                  <Text style={styles.label}>Password</Text>
-                  <View
-                    style={[
-                      styles.inputWrapper,
-                      passwordFocused && styles.inputWrapperFocused,
-                    ]}
-                  >
-                    <TextInput
-                      style={styles.input}
-                      placeholder="********"
-                      placeholderTextColor={COLORS.textMuted}
-                      secureTextEntry={!showPassword}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      value={password}
-                      onChangeText={(text) => {
-                        setPassword(text);
-                        if (errorMessage) setErrorMessage('');
-                      }}
-                      onFocus={() => setPasswordFocused(true)}
-                      onBlur={() => setPasswordFocused(false)}
-                    />
-                    <TouchableOpacity
-                      onPress={() => setShowPassword(!showPassword)}
-                      style={styles.eyeIcon}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Ionicons
-                        name={showPassword ? 'eye-outline' : 'eye-off-outline'}
-                        size={20}
-                        color={COLORS.textSecondary}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                {/* Sign In Button */}
+            {/* STAGE 1: IDLE / METHOD SELECTION */}
+            {approvalStage === 'IDLE' && (
+              <View style={styles.methodContainer}>
+                {/* Option A: OrbisHub Mobile Push Approval */}
                 <TouchableOpacity
-                  style={[styles.button, styles.shadowBtn]}
-                  onPress={handleSignIn}
+                  style={[styles.button, styles.shadowBtn, styles.orbisButton]}
+                  onPress={() => setApprovalStage('ENTER_EMAIL')}
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.btnContent}>
+                    <Ionicons name="phone-portrait-outline" size={22} color={COLORS.white} style={{ marginRight: 8 }} />
+                    <Text style={styles.buttonText}>Approve with OrbisHub app</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.dividerRow}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>OR</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+
+                {/* Option B: Standard Authentik OIDC SSO */}
+                <TouchableOpacity
+                  style={[styles.button, styles.shadowBtn, styles.ssoButton]}
+                  onPress={handleSignInWithAuthentik}
                   activeOpacity={0.85}
                   disabled={loading}
                 >
                   {loading ? (
                     <ActivityIndicator color={COLORS.white} size="small" />
                   ) : (
-                    <Text style={styles.buttonText}>Sign In</Text>
+                    <View style={styles.btnContent}>
+                      <Ionicons name="shield-checkmark-outline" size={20} color={COLORS.white} style={{ marginRight: 8 }} />
+                      <Text style={styles.buttonText}>Sign in with Authentik SSO</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* STAGE 2: ENTER EMAIL FOR PUSH APPROVAL */}
+            {approvalStage === 'ENTER_EMAIL' && (
+              <View style={styles.stageContainer}>
+                <Text style={styles.inputLabel}>Enter your work email address:</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="e.g. john.smith@company.com"
+                  placeholderTextColor="#94A3B8"
+                  value={emailInput}
+                  onChangeText={setEmailInput}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  autoFocus
+                />
+
+                {errorMessage ? (
+                  <View style={styles.errorBanner}>
+                    <Ionicons name="alert-circle-outline" size={18} color="#DC2626" style={{ marginRight: 6 }} />
+                    <Text style={styles.errorText}>{errorMessage}</Text>
+                  </View>
+                ) : null}
+
+                <TouchableOpacity
+                  style={[styles.button, styles.shadowBtn, styles.orbisButton]}
+                  onPress={handleStartApproval}
+                  disabled={loading}
+                  activeOpacity={0.85}
+                >
+                  {loading ? (
+                    <ActivityIndicator color={COLORS.white} size="small" />
+                  ) : (
+                    <View style={styles.btnContent}>
+                      <Ionicons name="send-outline" size={18} color={COLORS.white} style={{ marginRight: 8 }} />
+                      <Text style={styles.buttonText}>Send Push Approval</Text>
+                    </View>
                   )}
                 </TouchableOpacity>
 
-                {/* Forgot Password Link */}
-                <TouchableOpacity
-                  style={styles.forgotPassword}
-                  onPress={() => {
-                    setScreenView('forgot_password');
-                    setErrorMessage('');
-                  }}
-                >
-                  <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+                <TouchableOpacity style={styles.backBtn} onPress={handleResetApproval}>
+                  <Text style={styles.backBtnText}>← Back to all sign-in options</Text>
                 </TouchableOpacity>
               </View>
+            )}
 
-              {/* Lower Info Banner */}
-              <View style={styles.lowerInfoBanner}>
-                <Ionicons
-                  name="information-circle-outline"
-                  size={20}
-                  color={COLORS.textSecondary}
-                  style={styles.lowerInfoIcon}
-                />
-                <Text style={styles.lowerInfoText}>
-                  Temporary password has been sent to your email. Log in with this temporary password and follow the instructions.
+            {/* STAGE 3: WAITING FOR MOBILE APPROVAL WITH 2-DIGIT MATCH CODE */}
+            {approvalStage === 'WAITING_APPROVAL' && (
+              <View style={styles.stageContainer}>
+                <Text style={styles.pollingSubtitle}>
+                  Check your phone. A push notification has been sent to your enrolled OrbisHub mobile app.
                 </Text>
+
+                {/* 2-Digit Match Code Card */}
+                <View style={styles.matchCodeCard}>
+                  <Text style={styles.matchCodeLabel}>CONFIRM MATCH CODE</Text>
+                  <Text style={styles.matchCodeValue}>{matchCode || '--'}</Text>
+                  <Text style={styles.matchCodeHint}>
+                    Confirm that this code matches what appears on your mobile device.
+                  </Text>
+                </View>
+
+                <View style={styles.timerRow}>
+                  <ActivityIndicator size="small" color={COLORS.primary} style={{ marginRight: 8 }} />
+                  <Text style={styles.timerText}>Waiting for approval ({timerSeconds}s remaining)</Text>
+                </View>
+
+                <TouchableOpacity style={styles.backBtn} onPress={handleResetApproval}>
+                  <Text style={styles.backBtnText}>Cancel & return to sign-in options</Text>
+                </TouchableOpacity>
               </View>
+            )}
+
+            {/* STAGE 4: ERROR / DENIED / TIMEOUT */}
+            {approvalStage === 'ERROR' && (
+              <View style={styles.stageContainer}>
+                <View style={styles.errorIconContainer}>
+                  <Ionicons name="alert-circle" size={48} color="#DC2626" />
+                </View>
+                <Text style={styles.errorTitle}>Push Approval Failed</Text>
+                <Text style={styles.errorDescription}>{errorMessage}</Text>
+
+                <TouchableOpacity
+                  style={[styles.button, styles.shadowBtn, styles.orbisButton]}
+                  onPress={() => setApprovalStage('ENTER_EMAIL')}
+                >
+                  <Text style={styles.buttonText}>Try Approval Again</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.button, styles.shadowBtn, styles.ssoButton]}
+                  onPress={handleSignInWithAuthentik}
+                >
+                  <Text style={styles.buttonText}>Sign in with Authentik SSO</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.backBtn} onPress={handleResetApproval}>
+                  <Text style={styles.backBtnText}>Back to start</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Lower Info Banner */}
+            <View style={styles.lowerInfoBanner}>
+              <Ionicons
+                name="information-circle-outline"
+                size={20}
+                color={COLORS.textSecondary}
+                style={styles.lowerInfoIcon}
+              />
+              <Text style={styles.lowerInfoText}>
+                User accounts are pre-provisioned by system administrators. Contact your manager if you require access.
+              </Text>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </View>
+      </View>
     </SafeAreaView>
   );
 }
@@ -476,18 +406,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: SPACING.md,
-  },
-  scrollContainerWeb: {
-    paddingVertical: SPACING.xxl,
   },
   centeredContent: {
     flex: 1,
@@ -503,10 +421,7 @@ const styles = StyleSheet.create({
     ...SHADOWS.card,
   },
   cardWeb: {
-    maxWidth: 420,
-  },
-  successCard: {
-    paddingBottom: SPACING.lg,
+    maxWidth: 460,
   },
   cardHeader: {
     backgroundColor: COLORS.primary,
@@ -537,7 +452,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.textPrimary,
     textAlign: 'center',
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.xs,
   },
   subtitle: {
     fontSize: 14,
@@ -546,7 +461,20 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: SPACING.lg,
   },
-  successSubtitle: {
+  methodContainer: {
+    marginVertical: SPACING.xs,
+  },
+  stageContainer: {
+    marginVertical: SPACING.xs,
+    alignItems: 'center',
+  },
+  deniedIconContainer: {
+    marginBottom: SPACING.md,
+    backgroundColor: '#FFEBEB',
+    padding: SPACING.md,
+    borderRadius: 50,
+  },
+  deniedMessage: {
     fontSize: 15,
     color: COLORS.textSecondary,
     textAlign: 'center',
@@ -554,136 +482,153 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xl,
     paddingHorizontal: SPACING.md,
   },
-  boldText: {
-    fontWeight: 'bold',
-    color: COLORS.textPrimary,
-  },
-  upperAlert: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: COLORS.primaryTint,
-    borderRadius: 8,
-    paddingVertical: SPACING.sm + 2,
-    paddingHorizontal: SPACING.md,
-    marginBottom: SPACING.lg,
-    borderWidth: 1,
-    borderColor: '#D4E6DF',
-  },
-  alertContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    paddingRight: SPACING.xs,
-  },
-  alertIcon: {
-    marginRight: SPACING.sm,
-    color: COLORS.primary,
-  },
-  upperAlertText: {
-    fontSize: 13,
-    color: COLORS.primary,
-    fontWeight: '500',
-    flex: 1,
-  },
-  alertClose: {
-    padding: SPACING.xs,
-  },
-  errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFEBEB',
-    borderWidth: 1,
-    borderColor: '#F5C2C2',
-    borderRadius: 8,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    marginBottom: SPACING.lg,
-  },
-  errorText: {
-    color: COLORS.error,
-    fontSize: 13,
-    fontWeight: '500',
-    marginLeft: SPACING.sm,
-    flex: 1,
-  },
-  formContainer: {
-    width: '100%',
-  },
-  inputContainer: {
-    marginBottom: SPACING.md,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textSecondary,
-    marginBottom: SPACING.xs + 2,
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    backgroundColor: '#FAFAFA',
-    height: 48,
-    paddingHorizontal: SPACING.md,
-  },
-  inputWrapperFocused: {
-    borderColor: COLORS.borderFocus,
-    backgroundColor: COLORS.white,
-    ...(Platform.OS === 'web'
-      ? { boxShadow: '0px 1px 2px rgba(27, 62, 48, 0.1)' }
-      : {
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
-      }),
-  },
-  inputIcon: {
-    marginRight: SPACING.sm,
-  },
-  input: {
-    flex: 1,
-    height: '100%',
-    color: COLORS.textPrimary,
-    fontSize: 15,
-    ...(Platform.OS === 'web' && { outlineStyle: 'none' }), // Remove web outline
-  },
-  eyeIcon: {
-    padding: SPACING.xs,
-  },
   button: {
-    backgroundColor: COLORS.primary,
-    height: 48,
+    height: 52,
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: SPACING.sm,
     marginBottom: SPACING.md,
-  },
-  backBtnFull: {
     width: '100%',
-    maxWidth: 300,
+  },
+  orbisButton: {
+    backgroundColor: '#2563EB', // Vibrant Orbis Blue
+  },
+  ssoButton: {
+    backgroundColor: '#1B3E30', // Deep Trakio Green
   },
   shadowBtn: {
     ...SHADOWS.button,
+  },
+  btnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   buttonText: {
     color: COLORS.white,
     fontSize: 15,
     fontWeight: 'bold',
   },
-  forgotPassword: {
-    alignSelf: 'center',
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: SPACING.sm,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  dividerText: {
+    marginHorizontal: SPACING.md,
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  inputLabel: {
+    alignSelf: 'flex-start',
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    marginBottom: 8,
+  },
+  textInput: {
+    width: '100%',
+    height: 48,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    fontSize: 15,
+    color: COLORS.textPrimary,
+    backgroundColor: '#F8FAFC',
+    marginBottom: SPACING.md,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: 8,
+    padding: SPACING.sm + 2,
+    marginBottom: SPACING.md,
+    width: '100%',
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 13,
+    flex: 1,
+  },
+  pollingSubtitle: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: SPACING.md,
+  },
+  matchCodeCard: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 2,
+    borderColor: '#3B82F6',
+    borderRadius: 12,
+    padding: SPACING.md + 4,
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: SPACING.md,
+  },
+  matchCodeLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1D4ED8',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  matchCodeValue: {
+    fontSize: 44,
+    fontWeight: '900',
+    color: '#1E40AF',
+    letterSpacing: 4,
+    marginVertical: 4,
+  },
+  matchCodeHint: {
+    fontSize: 12,
+    color: '#3B82F6',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  timerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  timerText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+  },
+  backBtn: {
     paddingVertical: SPACING.xs,
   },
-  forgotPasswordText: {
-    color: COLORS.textSecondary,
+  backBtnText: {
+    color: COLORS.primary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  errorIconContainer: {
+    marginBottom: SPACING.xs,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    marginBottom: 6,
+  },
+  errorDescription: {
     fontSize: 14,
-    fontWeight: '500',
-    textDecorationLine: 'underline',
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginBottom: SPACING.md,
   },
   lowerInfoBanner: {
     flexDirection: 'row',
@@ -693,7 +638,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: SPACING.md,
     backgroundColor: '#F9FAFB',
-    marginTop: SPACING.lg + 4,
+    marginTop: SPACING.md,
   },
   lowerInfoIcon: {
     marginRight: SPACING.sm,
@@ -704,23 +649,5 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     lineHeight: 18,
     flex: 1,
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.lg,
-    paddingVertical: SPACING.xs,
-  },
-  backButtonText: {
-    color: COLORS.primary,
-    fontWeight: '600',
-    fontSize: 14,
-    marginLeft: SPACING.xs,
-  },
-  successIconContainer: {
-    marginBottom: SPACING.md,
-    backgroundColor: '#E8F5E9',
-    padding: SPACING.md,
-    borderRadius: 50,
   },
 });

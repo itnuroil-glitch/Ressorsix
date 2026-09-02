@@ -29,10 +29,23 @@ const uomRoutes = require('./routes/uomRoutes');
 const vatRoutes = require('./routes/vatRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
 const planRoutes = require('./routes/planRoutes');
+const cookieParser = require('cookie-parser');
+const helmet = require('helmet');
+const authMiddleware = require('./middleware/authMiddleware');
+const oidcController = require('./controllers/oidcController');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// Security Headers
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
+
+// Cookie Parser
+app.use(cookieParser());
 
 // Enable CORS for frontend
 app.use(cors({
@@ -61,6 +74,11 @@ app.use('/backend/Attachment', express.static(path.join(__dirname, '../Attachmen
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// Root OIDC endpoints (/auth/login, /auth/callback, /auth/logout)
+app.get('/auth/login', oidcController.login);
+app.get('/auth/callback', oidcController.callback);
+app.all('/auth/logout', oidcController.logout);
+
 // Base health check route
 app.get('/', (req, res) => {
   res.json({
@@ -68,6 +86,19 @@ app.get('/', (req, res) => {
     message: 'Trakio Backend Service is active and running.',
     timestamp: new Date()
   });
+});
+
+// Private API Protection Middleware
+app.use((req, res, next) => {
+  const isPublicAuthRoute = req.path === '/api/auth/login' ||
+    req.path === '/api/auth/callback' ||
+    req.path === '/api/auth/logout' ||
+    req.path.startsWith('/api/auth/approval');
+
+  if (req.path.startsWith('/api') && !isPublicAuthRoute) {
+    return authMiddleware(req, res, next);
+  }
+  next();
 });
 
 // Mounting authentication routes

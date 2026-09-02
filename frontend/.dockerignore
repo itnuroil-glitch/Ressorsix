@@ -1,0 +1,10 @@
+node_modules
+dist
+.expo
+npm-debug.log
+.git
+.gitignore
+.env
+src-old
+new_asset-_Frontend
+*.log

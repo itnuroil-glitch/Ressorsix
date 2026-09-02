@@ -3,6 +3,7 @@ import { View, StyleSheet, Platform, ActivityIndicator, Text } from 'react-nativ
 import LoginScreen from './src/components/LoginScreen';
 import DashboardScreen from './src/components/DashboardScreen';
 import { COLORS } from './src/theme';
+import { API_URL } from './src/config';
 
 // Polyfill crypto.randomUUID for non-secure HTTP / IP contexts
 if (typeof window !== 'undefined') {
@@ -53,19 +54,48 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Load user session on initial render
+  // Load user session from server-side Authentik OIDC session on initial render
   useEffect(() => {
-    try {
-      if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
-        const storedUser = localStorage.getItem('trakio_user');
-        if (storedUser) {
-          setUser(JSON.parse(storedUser));
+    async function checkAuthSession() {
+      try {
+        const res = await fetch(`${API_URL}/api/auth/me`, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          credentials: 'include',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.user) {
+            setUser(data.user);
+            if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+              localStorage.setItem('trakio_user', JSON.stringify(data.user));
+            }
+          } else {
+            setUser(null);
+          }
+        } else {
+          setUser(null);
+          if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+            localStorage.removeItem('trakio_user');
+          }
         }
+      } catch (error) {
+        console.warn('Session verification error:', error);
+        // Fallback to stored user if offline
+        try {
+          if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+            const storedUser = localStorage.getItem('trakio_user');
+            if (storedUser) {
+              setUser(JSON.parse(storedUser));
+            }
+          }
+        } catch (e) {}
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.warn('Failed to restore user session', error);
     }
-    setLoading(false);
+
+    checkAuthSession();
   }, []);
 
   // Authentication callbacks
@@ -85,6 +115,10 @@ export default function App() {
         localStorage.removeItem('trakio_user');
       }
     } catch (error) { }
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.location.href = `${API_URL}/auth/logout`;
+    }
   };
 
   if (loading) {
