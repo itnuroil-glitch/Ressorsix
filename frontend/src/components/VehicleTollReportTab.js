@@ -32,6 +32,7 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
   const [records, setRecords] = useState([]);
   const [clients, setClients] = useState([]);
   const [companies, setCompanies] = useState([]);
+  const [tollAccounts, setTollAccounts] = useState([]);
 
   // Filter States
   const [filterCompany, setFilterCompany] = useState('ALL');
@@ -77,10 +78,11 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
         companyApiUrl = `${API_URL}/api/companies?email=${encodeURIComponent(user.email)}`;
       }
 
-      const [resTxn, resClient, resComp] = await Promise.all([
+      const [resTxn, resClient, resComp, resOverview] = await Promise.all([
         fetch(`${API_URL}/api/vehicle-toll-transaction${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`),
         fetch(`${API_URL}/api/clients`),
-        fetch(companyApiUrl)
+        fetch(companyApiUrl),
+        fetch(`${API_URL}/api/vehicle-toll-overview${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`)
       ]);
 
       if (resTxn.ok) {
@@ -92,8 +94,24 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
         setClients(Array.isArray(clientData) ? clientData : []);
       }
       if (resComp.ok) {
-        const compData = await resComp.json();
+        let compData = await resComp.json();
+        if (Array.isArray(compData) && user && String(user.roleId) !== '1' && Array.isArray(user.associatedCompanyIds) && user.associatedCompanyIds.length > 0) {
+          const allowedIds = user.associatedCompanyIds.map(String);
+          compData = compData.filter(comp => allowedIds.includes(String(comp.id)));
+        }
         setCompanies(Array.isArray(compData) ? compData : []);
+      }
+      if (resOverview.ok) {
+        const overviewData = await resOverview.json();
+        if (Array.isArray(overviewData)) {
+          const accs = overviewData.map(o => {
+            const fd = typeof o.field_data === 'string' ? JSON.parse(o.field_data) : (o.field_data || {});
+            const accNo = fd['1786629206891'] || fd['Account No'] || fd['ACCOUNT NO'] || fd['Account Number'] || fd.account_no || null;
+            const name = fd['1786629185586'] || fd['Toll Name'] || fd['TOLL NAME'] || fd.toll_name || '';
+            return accNo ? { account_no: String(accNo), name, id: o.id } : null;
+          }).filter(Boolean);
+          setTollAccounts(accs);
+        }
       }
     } catch (err) {
       console.error('Error fetching vehicle toll dashboard data:', err);
@@ -158,6 +176,14 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
       // 3. Account Number Filter
       if (activeFilters.accountNo) {
         const targetAcc = activeFilters.accountNo.toLowerCase();
+
+        // Match against linked overview account IDs
+        const matchedOverviewIds = tollAccounts
+          .filter(a => a.account_no.toLowerCase().includes(targetAcc))
+          .map(a => String(a.id));
+
+        const isOverviewMatch = r.toll_overview_id && matchedOverviewIds.includes(String(r.toll_overview_id));
+
         const accHaystack = [
           r.account_number,
           r.account_no,
@@ -169,7 +195,7 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
           r.field_data?.account_number
         ].filter(Boolean).join(' ').toLowerCase();
 
-        if (!accHaystack.includes(targetAcc)) return false;
+        if (!isOverviewMatch && !accHaystack.includes(targetAcc)) return false;
       }
 
       // 4. Plate Number Filter
@@ -658,11 +684,17 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
             <Text style={{ fontSize: 11, fontWeight: '600', color: COLORS.textSecondary, marginBottom: 4 }}>Account Number</Text>
             <input
               type="text"
+              list="toll-account-numbers-list"
               placeholder="Account / Txn No..."
               value={filterAccountNo}
               onChange={(e) => setFilterAccountNo(e.target.value)}
               style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #E2E8F0', backgroundColor: '#F8FAFC', fontSize: 13, color: '#0F172A', outline: 'none' }}
             />
+            <datalist id="toll-account-numbers-list">
+              {tollAccounts.map((acc, idx) => (
+                <option key={idx} value={acc.account_no}>{acc.account_no} ({acc.name || 'Toll Account'})</option>
+              ))}
+            </datalist>
           </View>
 
           {/* Vehicle / Plate Number */}

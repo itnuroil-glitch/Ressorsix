@@ -277,9 +277,13 @@ exports.getTollTransactionRecords = async (req, res) => {
 
     const result = await db.query(query, params);
 
-    // Fetch all vehicles for dynamic lookup matching
-    const allVehiclesRes = await db.query('SELECT vehicle_id, id, clientid, field_data FROM tbl_vehicle_details');
+    // Fetch all vehicles and toll overviews for dynamic lookup matching
+    const [allVehiclesRes, allOverviewRes] = await Promise.all([
+      db.query('SELECT vehicle_id, id, clientid, field_data FROM tbl_vehicle_details'),
+      db.query('SELECT id, clientid, field_data FROM tbl_toll_overview WHERE is_deleted = false OR is_deleted IS NULL')
+    ]);
     const vehiclesList = allVehiclesRes.rows;
+    const overviewList = allOverviewRes.rows;
 
     const enrichedRows = result.rows.map(row => {
       let matchedV = null;
@@ -307,8 +311,36 @@ exports.getTollTransactionRecords = async (req, res) => {
         vName = fd['1780558935557'] || fd['vehicle_name'] || fd['name'] || Object.values(fd)[0] || null;
       }
 
+      // Map account number from overview record or field_data
+      let accNo = row.account_number || null;
+      if (!accNo && row.toll_overview_id) {
+        const ov = overviewList.find(o => String(o.id) === String(row.toll_overview_id));
+        if (ov && ov.field_data) {
+          const ofd = ov.field_data;
+          accNo = ofd['1786629206891'] || ofd['Account No'] || ofd['ACCOUNT NO'] || ofd['Account Number'] || ofd.account_no || null;
+        }
+      }
+      if (!accNo) {
+        const rFd = row.field_data || {};
+        accNo = rFd['Account No'] || rFd['ACCOUNT NO'] || rFd['Account Number'] || rFd.account_no || null;
+      }
+      if (!accNo && overviewList.length > 0) {
+        const tName = String(row.toll_name || row.toll_gate || '').toLowerCase();
+        const isDarb = tName.includes('darb') || tName.includes('abu dhabi');
+        const matchedOv = overviewList.find(o => {
+          if (row.clientid && String(o.clientid) !== String(row.clientid)) return false;
+          const str = JSON.stringify(o.field_data || {}).toLowerCase();
+          return isDarb ? str.includes('darb') : str.includes('salik');
+        });
+        if (matchedOv && matchedOv.field_data) {
+          const ofd = matchedOv.field_data;
+          accNo = ofd['1786629206891'] || ofd['Account No'] || ofd['ACCOUNT NO'] || ofd['Account Number'] || ofd.account_no || null;
+        }
+      }
+
       return {
         ...row,
+        account_number: accNo || row.account_number || null,
         vehicle_name: vName || null
       };
     });
