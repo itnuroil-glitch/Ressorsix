@@ -155,9 +155,38 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
       const res = await fetch(`${API_URL}/api/companies/client/${clientId}${emailParam}${actionQuery}`);
       if (res.ok) {
         let data = await res.json();
-        if (Array.isArray(data) && user && String(user.roleId) !== '1' && Array.isArray(user.associatedCompanyIds) && user.associatedCompanyIds.length > 0) {
-          const allowedIds = user.associatedCompanyIds.map(String);
-          data = data.filter(comp => allowedIds.includes(String(comp.id)));
+        if (Array.isArray(data) && user && String(user.roleId) !== '1') {
+          if (Array.isArray(user.associatedCompanyIds) && user.associatedCompanyIds.length > 0) {
+            const allowedIds = user.associatedCompanyIds.map(String);
+            data = data.filter(comp => allowedIds.includes(String(comp.id)));
+          }
+          try {
+            const resPerm = await fetch(`${API_URL}/api/roles/${user.roleId}/permissions`);
+            if (resPerm.ok) {
+              const permData = await resPerm.json();
+              const tollMod = (permData.permissions || []).find(m => 
+                (m.module_name && (m.module_name.toLowerCase().includes('toll transaction') || m.module_name.toLowerCase().includes('vehicle toll')))
+              );
+              const tollModId = tollMod ? String(tollMod.module_id) : null;
+              
+              if (Array.isArray(permData.companyPermissions) && permData.companyPermissions.length > 0) {
+                const allowedCompIdsForToll = permData.companyPermissions
+                  .filter(cp => (!tollModId || String(cp.module_id) === tollModId) && (action === 'create' ? cp.can_create : (cp.can_view || cp.can_create || cp.full_control)))
+                  .map(cp => String(cp.company_id));
+
+                if (allowedCompIdsForToll.length > 0) {
+                  data = data.filter(comp => allowedCompIdsForToll.includes(String(comp.id)));
+                } else if (tollModId) {
+                  const hasTollEntry = permData.companyPermissions.some(cp => String(cp.module_id) === tollModId);
+                  if (hasTollEntry) {
+                    data = [];
+                  }
+                }
+              }
+            }
+          } catch (pErr) {
+            console.warn('Could not fetch role permissions in VehicleTollTab:', pErr);
+          }
         }
         setCompanies(data || []);
         if (Array.isArray(data) && data.length > 0) {
