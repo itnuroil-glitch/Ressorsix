@@ -19,13 +19,13 @@ const getApiUrl = () => {
       return `${protocol}//${hostname}:5000`;
     }
 
-    // Default for live production site on Render
-    return 'https://ressoxis-backend.onrender.com';
+    // Default for live production site: dynamic domain origin
+    return `${protocol}//${hostname}`;
   }
 
   return (
     process.env.EXPO_PUBLIC_API_URL_MOBILE ||
-    'https://ressoxis-backend.onrender.com'
+    ''
   );
 };
 
