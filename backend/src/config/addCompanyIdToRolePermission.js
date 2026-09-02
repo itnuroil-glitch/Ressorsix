@@ -4,6 +4,30 @@ async function migrate() {
   try {
     console.log('Running database schema updates for role permissions...');
 
+    // 0. Ensure referenced tables exist
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS company (
+        id SERIAL PRIMARY KEY,
+        company_name VARCHAR(255) NOT NULL
+      );
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS role_permission (
+        id SERIAL PRIMARY KEY,
+        role_id INTEGER NOT NULL,
+        module_id INTEGER NOT NULL,
+        can_view BOOLEAN DEFAULT false,
+        can_create BOOLEAN DEFAULT false,
+        can_edit BOOLEAN DEFAULT false,
+        can_delete BOOLEAN DEFAULT false,
+        all_record_view BOOLEAN DEFAULT false,
+        full_control BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     // 1. Add company_id if not present
     const checkCol = await db.query(`
       SELECT 1 FROM information_schema.columns 

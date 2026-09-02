@@ -66,6 +66,30 @@ async function initDb() {
       );
     `);
 
+    // 1b. Module table
+    await runSafeQuery('Create Module Table', `
+      CREATE TABLE IF NOT EXISTS module (
+        id SERIAL PRIMARY KEY,
+        module_name VARCHAR(255) NOT NULL,
+        parent_id INTEGER,
+        status VARCHAR(50) DEFAULT 'active',
+        is_deleted BOOLEAN DEFAULT false,
+        route VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 1c. Role table
+    await runSafeQuery('Create Role Table', `
+      CREATE TABLE IF NOT EXISTS role (
+        id SERIAL PRIMARY KEY,
+        role_name VARCHAR(100) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     // 2. Role permission table
     await runSafeQuery('Create Role Permission Table', `
       CREATE TABLE IF NOT EXISTS role_permission (
