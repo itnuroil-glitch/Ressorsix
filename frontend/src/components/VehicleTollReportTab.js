@@ -436,6 +436,11 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
       if (sortColumn === 'amount') {
         valA = parseFloat(valA) || 0;
         valB = parseFloat(valB) || 0;
+      } else if (sortColumn === 'account_number') {
+        const strA = String(valA || '');
+        const strB = String(valB || '');
+        const cmp = strA.localeCompare(strB, undefined, { numeric: true, sensitivity: 'base' });
+        return sortDirection === 'asc' ? cmp : -cmp;
       } else {
         valA = String(valA || '').toLowerCase();
         valB = String(valB || '').toLowerCase();
@@ -466,6 +471,7 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
     try {
       const exportRows = tableFilteredData.map(r => ({
         'Transaction ID': r.transaction_id || r.id,
+        'Account Number': r.account_number || 'N/A',
         'Trip Date': r.trip_date || 'N/A',
         'Trip Time': r.trip_time || 'N/A',
         'Transaction Post Date': r.created_at ? new Date(r.created_at).toLocaleDateString() : 'N/A',
@@ -1038,6 +1044,9 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
               <TouchableOpacity style={{ flex: 1.4 }} onPress={() => handleSort('transaction_id')}>
                 <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>TRANSACTION ID ⇕</Text>
               </TouchableOpacity>
+              <TouchableOpacity style={{ flex: 1.2 }} onPress={() => handleSort('account_number')}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>ACCOUNT NO ⇕</Text>
+              </TouchableOpacity>
               <TouchableOpacity style={{ flex: 1.2 }} onPress={() => handleSort('trip_date')}>
                 <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>TRIP DATE & TIME ⇕</Text>
               </TouchableOpacity>
@@ -1069,6 +1078,7 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
                   return (
                     <View key={row.id || idx} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
                       <Text style={{ flex: 1.4, fontSize: 12, fontWeight: '700', color: '#0F172A' }}>{row.transaction_id || `#${row.id}`}</Text>
+                      <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '600', color: '#475569' }}>{row.account_number || 'N/A'}</Text>
                       <View style={{ flex: 1.2 }}>
                         <Text style={{ fontSize: 12, color: '#0F172A' }}>{row.trip_date || 'N/A'}</Text>
                         <Text style={{ fontSize: 10, color: '#94A3B8' }}>{row.trip_time || ''}</Text>
