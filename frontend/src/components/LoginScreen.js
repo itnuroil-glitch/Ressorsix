@@ -19,9 +19,10 @@ export default function LoginScreen({ onLoginSuccess }) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width > 480;
 
-  // Flow State: 'IDLE' | 'ENTER_EMAIL' | 'WAITING_APPROVAL' | 'SUCCESS' | 'ERROR'
+  // Flow State: 'IDLE' | 'ENTER_EMAIL' | 'WAITING_APPROVAL' | 'SUCCESS' | 'ERROR' | 'NORMAL_LOGIN'
   const [approvalStage, setApprovalStage] = useState('IDLE');
   const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
   const [challengeId, setChallengeId] = useState(null);
   const [matchCode, setMatchCode] = useState(null);
   const [timerSeconds, setTimerSeconds] = useState(90);
@@ -176,10 +177,51 @@ export default function LoginScreen({ onLoginSuccess }) {
     }
   };
 
+  const handleNormalLogin = async () => {
+    if (!emailInput || !emailInput.includes('@')) {
+      setErrorMessage('Please enter a valid email address.');
+      return;
+    }
+    if (!passwordInput) {
+      setErrorMessage('Please enter your password.');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMessage('');
+
+    try {
+      const res = await fetch(`${API_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailInput.trim(), password: passwordInput }),
+        credentials: 'include',
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.user) {
+        setLoading(false);
+        if (onLoginSuccess) {
+          onLoginSuccess(data.user);
+        } else if (typeof window !== 'undefined') {
+          window.location.href = '/';
+        }
+      } else {
+        setLoading(false);
+        setErrorMessage(data.message || 'Invalid email or password.');
+      }
+    } catch (err) {
+      setLoading(false);
+      setErrorMessage('Network error while connecting to server.');
+    }
+  };
+
   const handleResetApproval = () => {
     stopPollingAndTimer();
     setApprovalStage('IDLE');
     setErrorMessage('');
+    setPasswordInput('');
     setLoading(false);
   };
 
@@ -279,6 +321,81 @@ export default function LoginScreen({ onLoginSuccess }) {
                       <Text style={styles.buttonText}>Sign in with Authentik SSO</Text>
                     </View>
                   )}
+                </TouchableOpacity>
+
+                <View style={styles.dividerRow}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>OR</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+
+                {/* Option C: Standard Normal Email & Password Login */}
+                <TouchableOpacity
+                  style={[styles.button, styles.shadowBtn, styles.normalButton]}
+                  onPress={() => {
+                    setErrorMessage('');
+                    setApprovalStage('NORMAL_LOGIN');
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.btnContent}>
+                    <Ionicons name="key-outline" size={20} color={COLORS.white} style={{ marginRight: 8 }} />
+                    <Text style={styles.buttonText}>Sign in with Email & Password</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* STAGE: NORMAL EMAIL & PASSWORD LOGIN */}
+            {approvalStage === 'NORMAL_LOGIN' && (
+              <View style={styles.stageContainer}>
+                <Text style={styles.inputLabel}>Email Address:</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="e.g. admin@example.com"
+                  placeholderTextColor="#94A3B8"
+                  value={emailInput}
+                  onChangeText={setEmailInput}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  autoFocus
+                />
+
+                <Text style={styles.inputLabel}>Password:</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Enter your password"
+                  placeholderTextColor="#94A3B8"
+                  value={passwordInput}
+                  onChangeText={setPasswordInput}
+                  secureTextEntry
+                />
+
+                {errorMessage ? (
+                  <View style={styles.errorBanner}>
+                    <Ionicons name="alert-circle-outline" size={18} color="#DC2626" style={{ marginRight: 6 }} />
+                    <Text style={styles.errorText}>{errorMessage}</Text>
+                  </View>
+                ) : null}
+
+                <TouchableOpacity
+                  style={[styles.button, styles.shadowBtn, styles.normalButton]}
+                  onPress={handleNormalLogin}
+                  disabled={loading}
+                  activeOpacity={0.85}
+                >
+                  {loading ? (
+                    <ActivityIndicator color={COLORS.white} size="small" />
+                  ) : (
+                    <View style={styles.btnContent}>
+                      <Ionicons name="log-in-outline" size={20} color={COLORS.white} style={{ marginRight: 8 }} />
+                      <Text style={styles.buttonText}>Sign In</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.backBtn} onPress={handleResetApproval}>
+                  <Text style={styles.backBtnText}>← Back to all sign-in options</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -495,6 +612,9 @@ const styles = StyleSheet.create({
   },
   ssoButton: {
     backgroundColor: '#1B3E30', // Deep Trakio Green
+  },
+  normalButton: {
+    backgroundColor: '#334155', // Slate Dark Gray for Normal Email/Password Login
   },
   shadowBtn: {
     ...SHADOWS.button,
