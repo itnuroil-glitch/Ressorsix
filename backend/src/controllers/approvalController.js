@@ -154,9 +154,38 @@ exports.checkStatus = async (req, res) => {
     }
 
     const data = await statusRes.json();
+
+    // Priority extraction for 'code'
+    let code = data.code || data.authorizationCode || null;
+
+    if (!code && data.redirectUrl) {
+      try {
+        const parsedUrl = new URL(data.redirectUrl);
+        code = parsedUrl.searchParams.get('code');
+      } catch (err) {
+        // Fall through if URL parsing fails
+      }
+    }
+
+    if (!code) {
+      code = challengeId;
+    }
+
+    // Priority extraction for 'state'
+    let state = data.state || null;
+    if (!state && data.redirectUrl) {
+      try {
+        const parsedUrl = new URL(data.redirectUrl);
+        state = parsedUrl.searchParams.get('state');
+      } catch (err) {
+        // Fall through if URL parsing fails
+      }
+    }
+
     return res.status(200).json({
       status: data.status,
-      code: data.code || data.authorizationCode,
+      code: code,
+      state: state,
     });
   } catch (error) {
     console.error('[Check Approval Status Error]:', error);
