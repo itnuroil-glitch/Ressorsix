@@ -680,7 +680,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
     setImportCompany('');
     setImportSummary(null);
     if (defaultClient) {
-      const compList = await fetchCompaniesForClient(defaultClient, 'view');
+      const compList = await fetchCompaniesForClient(defaultClient, 'create');
       if (compList && compList.length > 0) {
         setImportCompany(String(compList[0].id));
       }
