@@ -57,7 +57,7 @@ export default function LoginScreen({ onLoginSuccess }) {
   const handleSignInWithAuthentik = () => {
     setLoading(true);
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      window.location.href = `${API_URL}/auth/login`;
+      window.location.href = `${API_URL}/api/auth/login`;
     }
   };
 
