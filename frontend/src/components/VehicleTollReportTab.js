@@ -32,6 +32,7 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
   const [records, setRecords] = useState([]);
   const [clients, setClients] = useState([]);
   const [companies, setCompanies] = useState([]);
+  const [createCompanyIds, setCreateCompanyIds] = useState([]);
   const [tollAccounts, setTollAccounts] = useState([]);
 
   // Filter States
@@ -111,13 +112,19 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
               
               if (Array.isArray(permData.companyPermissions) && permData.companyPermissions.length > 0) {
                 const allowedCompIdsForToll = permData.companyPermissions
-                  .filter(cp => (!tollModId || String(cp.module_id) === tollModId) && (cp.can_create || cp.can_view || cp.full_control))
+                  .filter(cp => (!tollModId || String(cp.module_id) === String(tollModId)) && (cp.can_create || cp.can_view || cp.full_control))
                   .map(cp => String(cp.company_id));
+
+                const allowedCreateCompIdsForToll = permData.companyPermissions
+                  .filter(cp => (!tollModId || String(cp.module_id) === String(tollModId)) && (cp.can_create || cp.full_control))
+                  .map(cp => String(cp.company_id));
+
+                setCreateCompanyIds(allowedCreateCompIdsForToll);
 
                 if (allowedCompIdsForToll.length > 0) {
                   compData = compData.filter(comp => allowedCompIdsForToll.includes(String(comp.id)));
                 } else if (tollModId) {
-                  const hasTollEntry = permData.companyPermissions.some(cp => String(cp.module_id) === tollModId);
+                  const hasTollEntry = permData.companyPermissions.some(cp => String(cp.module_id) === String(tollModId));
                   if (hasTollEntry) {
                     compData = [];
                   }
@@ -1316,6 +1323,7 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
                         <option value="">-- Select Company --</option>
                         {companies
                           .filter(c => !importClient || String(c.client_id || c.clientid) === String(importClient))
+                          .filter(c => (user && String(user.roleId) === '1') ? true : (createCompanyIds.length > 0 ? createCompanyIds.includes(String(c.id)) : true))
                           .map(c => (
                             <option key={c.id} value={c.id}>{c.company_name || c.name}</option>
                           ))}
