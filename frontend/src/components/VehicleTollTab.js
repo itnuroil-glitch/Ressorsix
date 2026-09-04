@@ -122,11 +122,11 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
       if (user?.country_id || user?.countryid) setSelectedCountry(String(user?.country_id || user?.countryid));
       if (user?.company_id || user?.companyid) setSelectedCompany(String(user?.company_id || user?.companyid));
 
-      // Target Module ID ('71' for Toll Transactions, '70' for Vehicle Toll Overview, '50' for Vehicle Toll)
+      // Target Module ID ('71' / '53' for Toll Transactions, '70' / '52' for Vehicle Toll Overview, '50' for Vehicle Toll)
       const tollModule = (modulesData || []).find(m => isTransaction
-        ? (m.module_name && m.module_name.toLowerCase().includes('transaction')) || String(m.id) === '71'
+        ? (m.module_name && m.module_name.toLowerCase().includes('transaction')) || String(m.id) === '71' || String(m.id) === '53'
         : (isOverview
-          ? (m.module_name && m.module_name.toLowerCase().includes('vehicle toll overview')) || String(m.id) === '70'
+          ? (m.module_name && m.module_name.toLowerCase().includes('vehicle toll overview')) || String(m.id) === '70' || String(m.id) === '52'
           : String(m.id) === '50' || (m.module_name && m.module_name.toLowerCase() === 'vehicle toll')
         )
       );
@@ -164,19 +164,17 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
             const resPerm = await fetch(`${API_URL}/api/roles/${user.roleId}/permissions`);
             if (resPerm.ok) {
               const permData = await resPerm.json();
-              const targetModuleId = isTransaction ? '71' : (isOverview ? '70' : '50');
-              const tollMod = (permData.permissions || []).find(m => String(m.module_id) === targetModuleId);
-              const tollModId = targetModuleId;
+              const targetModuleIds = isTransaction ? ['71', '53'] : (isOverview ? ['70', '52'] : ['50']);
               
               if (Array.isArray(permData.companyPermissions) && permData.companyPermissions.length > 0) {
                 const allowedCompIdsForToll = permData.companyPermissions
-                  .filter(cp => String(cp.module_id) === tollModId && (action === 'create' ? cp.can_create : (cp.can_view || cp.can_create || cp.full_control)))
+                  .filter(cp => targetModuleIds.includes(String(cp.module_id)) && (action === 'create' ? cp.can_create : (cp.can_view || cp.can_create || cp.full_control)))
                   .map(cp => String(cp.company_id));
 
                 if (allowedCompIdsForToll.length > 0) {
                   data = data.filter(comp => allowedCompIdsForToll.includes(String(comp.id)));
-                } else if (tollModId) {
-                  const hasTollEntry = permData.companyPermissions.some(cp => String(cp.module_id) === tollModId);
+                } else {
+                  const hasTollEntry = permData.companyPermissions.some(cp => targetModuleIds.includes(String(cp.module_id)));
                   if (hasTollEntry) {
                     data = [];
                   }
@@ -247,8 +245,8 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
         );
       }
 
-      // Fallback check: if no custom fields specifically for module #70 (Vehicle Toll Overview), check module #50 (Vehicle Toll)
-      if (!matchingFieldDef && (String(moduleId) === '70' || isOverview)) {
+      // Fallback check: if no custom fields specifically for module #70/#52 (Vehicle Toll Overview), check module #50 (Vehicle Toll)
+      if (!matchingFieldDef && (String(moduleId) === '70' || String(moduleId) === '52' || isOverview)) {
         matchingFieldDef = customFields.find(cf =>
           String(cf.client_id || cf.clientid) === String(clientId) &&
           String(cf.module_id || cf.moduleid) === '50' &&
@@ -269,7 +267,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
         String(p.moduleid) === String(moduleId) &&
         String(p.countryid || p.country_id) === String(countryId)
       );
-      if (!activePerm && (String(moduleId) === '70' || isOverview)) {
+      if (!activePerm && (String(moduleId) === '70' || String(moduleId) === '52' || isOverview)) {
         activePerm = permissionsList.find(p =>
           String(p.clientid) === String(clientId) &&
           String(p.moduleid) === '50' &&
@@ -821,7 +819,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
             String(cf.module_id || cf.moduleid) === String(targetModuleId) &&
             String(cf.country_id || cf.countryid) === String(countryIdVal)
           );
-          if (!matchingCf && (String(targetModuleId) === '70' || isOverview)) {
+          if (!matchingCf && (String(targetModuleId) === '70' || String(targetModuleId) === '52' || isOverview)) {
             matchingCf = (allCustomFields || []).find(cf =>
               String(cf.client_id || cf.clientid) === String(clientidVal) &&
               String(cf.module_id || cf.moduleid) === '50' &&
@@ -1911,7 +1909,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                             setImportClient(cId);
                             setImportCompany('');
                             if (cId) {
-                              const compList = await fetchCompaniesForClient(cId, 'view');
+                              const compList = await fetchCompaniesForClient(cId, 'create');
                               if (compList && compList.length > 0) {
                                 setImportCompany(String(compList[0].id));
                               }
