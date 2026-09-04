@@ -219,11 +219,18 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
   // Master Filtered Transactions
   const filteredData = useMemo(() => {
     return records.filter(r => {
+      // Parse field_data if stringified
+      let fd = r.field_data;
+      if (typeof fd === 'string') {
+        try { fd = JSON.parse(fd); } catch (e) { fd = {}; }
+      }
+      fd = fd || {};
+
       // 1. Company Filter
       if (activeFilters.company && activeFilters.company !== 'ALL') {
         const selectedCompId = String(activeFilters.company).toLowerCase();
-        const rCompId = String(r.company_id || r.companyid || r.field_data?.company_id || r.field_data?.companyid || '').toLowerCase();
-        const rCompName = String(r.company_name || r.field_data?.Company || r.field_data?.company_name || '').toLowerCase();
+        const rCompId = String(r.company_id || r.companyid || fd.company_id || fd.companyid || '').toLowerCase();
+        const rCompName = String(r.company_name || fd.Company || fd.company_name || '').toLowerCase();
 
         const selectedCompObj = companies.find(c => String(c.id) === String(activeFilters.company));
         const selectedCompName = selectedCompObj ? String(selectedCompObj.company_name || selectedCompObj.name || '').toLowerCase() : '';
@@ -238,7 +245,7 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
 
       // 2. Toll System Filter
       if (activeFilters.tollSystem && activeFilters.tollSystem !== 'ALL') {
-        const sys = String(r.toll_name || r.toll_gate || r.field_data?.['Toll System'] || r.field_data?.['Toll Name'] || '').toLowerCase();
+        const sys = String(r.toll_name || r.toll_gate || fd['Toll System'] || fd['Toll Name'] || '').toLowerCase();
         if (activeFilters.tollSystem === 'Salik' && (sys.includes('darb') || sys.includes('abu dhabi'))) return false;
         if (activeFilters.tollSystem === 'Darb' && !sys.includes('darb') && !sys.includes('abu dhabi')) return false;
       }
@@ -255,7 +262,7 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
         const isOverviewMatch = r.toll_overview_id && matchedOverviewIds.includes(String(r.toll_overview_id));
 
         const recAccNo = getRecordAccountNo(r);
-        const fdVals = getRecordFieldDataValues(r);
+        const fdVals = Object.values(fd).map(v => String(v));
 
         const accHaystack = [
           r.account_number,
@@ -275,10 +282,10 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
         const plateHaystack = [
           r.plate,
           r.vehicle_name,
-          r.field_data?.['Plate'],
-          r.field_data?.['Plate Number'],
-          r.field_data?.['Plate No'],
-          r.field_data?.plate
+          fd['Plate'],
+          fd['Plate Number'],
+          fd['Plate No'],
+          fd.plate
         ].filter(Boolean).join(' ').toLowerCase();
 
         if (!plateHaystack.includes(targetPlate)) return false;
@@ -290,43 +297,45 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
         const tagHaystack = [
           r.tag_number,
           r.tag,
-          r.field_data?.['Tag Number'],
-          r.field_data?.['Tag No'],
-          r.field_data?.tag_number
+          fd['Tag Number'],
+          fd['Tag No'],
+          fd.tag_number
         ].filter(Boolean).join(' ').toLowerCase();
 
         if (!tagHaystack.includes(targetTag)) return false;
       }
 
       // 6. From Date & To Date Filter
-      const recordRawDate = r.trip_date || r.field_data?.['Trip Date'] || r.created_at;
+      const recordRawDate = r.trip_date || fd['Trip Date'] || r.created_at;
       if (recordRawDate) {
-        let recordDate = null;
-        if (recordRawDate instanceof Date) {
-          recordDate = recordRawDate;
-        } else {
-          const str = String(recordRawDate).trim();
-          if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
-            recordDate = new Date(str);
-          } else if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(str)) {
+        const parseDateStr = (dateVal) => {
+          if (!dateVal) return null;
+          if (dateVal instanceof Date) return dateVal;
+          const str = String(dateVal).trim();
+          if (/^\d{4}-\d{2}-\d{2}/.test(str)) return new Date(str);
+          if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(str)) {
             const parts = str.split('/');
-            recordDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-          } else {
-            const d = new Date(str);
-            if (!isNaN(d.getTime())) recordDate = d;
+            return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
           }
-        }
+          const d = new Date(str);
+          return !isNaN(d.getTime()) ? d : null;
+        };
 
+        const recordDate = parseDateStr(recordRawDate);
         if (recordDate) {
           if (activeFilters.fromDate) {
-            const fromD = new Date(activeFilters.fromDate);
-            fromD.setHours(0, 0, 0, 0);
-            if (recordDate < fromD) return false;
+            const fromD = parseDateStr(activeFilters.fromDate);
+            if (fromD) {
+              fromD.setHours(0, 0, 0, 0);
+              if (recordDate < fromD) return false;
+            }
           }
           if (activeFilters.toDate) {
-            const toD = new Date(activeFilters.toDate);
-            toD.setHours(23, 59, 59, 999);
-            if (recordDate > toD) return false;
+            const toD = parseDateStr(activeFilters.toDate);
+            if (toD) {
+              toD.setHours(23, 59, 59, 999);
+              if (recordDate > toD) return false;
+            }
           }
         }
       }
