@@ -75,7 +75,13 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
     try {
       setLoading(true);
       let companyApiUrl = `${API_URL}/api/companies`;
-      if (user && String(user.roleId) !== '1' && user.email) {
+      const userClientId = user?.clientid || user?.client_id;
+      if (userClientId) {
+        companyApiUrl = `${API_URL}/api/companies/client/${userClientId}`;
+        if (user && String(user.roleId) !== '1' && user.email) {
+          companyApiUrl += `?email=${encodeURIComponent(user.email)}`;
+        }
+      } else if (user && String(user.roleId) !== '1' && user.email) {
         companyApiUrl = `${API_URL}/api/companies?email=${encodeURIComponent(user.email)}`;
       }
 
@@ -96,6 +102,15 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
       }
       if (resComp.ok) {
         let compData = await resComp.json();
+        const userClientId = user?.clientid || user?.client_id || user?.clientId;
+
+        if (Array.isArray(compData) && userClientId) {
+          const clientComps = compData.filter(comp => String(comp.client_id || comp.clientid) === String(userClientId));
+          if (clientComps.length > 0) {
+            compData = clientComps;
+          }
+        }
+
         if (Array.isArray(compData) && user && String(user.roleId) !== '1') {
           if (Array.isArray(user.associatedCompanyIds) && user.associatedCompanyIds.length > 0) {
             const allowedIds = user.associatedCompanyIds.map(String);
@@ -128,11 +143,9 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
                 setCreateCompanyIds(allowedCreateCompIdsForToll);
 
                 if (allowedCompIdsForToll.length > 0) {
-                  compData = compData.filter(comp => allowedCompIdsForToll.includes(String(comp.id)));
-                } else if (tollModId) {
-                  const hasTollEntry = permData.companyPermissions.some(cp => targetModuleIds.includes(String(cp.module_id)) || String(cp.module_id) === String(tollModId));
-                  if (hasTollEntry) {
-                    compData = [];
+                  const filteredComp = compData.filter(comp => allowedCompIdsForToll.includes(String(comp.id)));
+                  if (filteredComp.length > 0) {
+                    compData = filteredComp;
                   }
                 }
               }
