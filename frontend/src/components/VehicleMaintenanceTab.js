@@ -128,17 +128,17 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
             const resPerm = await fetch(`${API_URL}/api/roles/${user.roleId}/permissions`);
             if (resPerm.ok) {
               const permData = await resPerm.json();
-              const targetModuleId = '74'; // Vehicle Maintenance Module ID
+              const targetModuleIds = ['74', '55']; // Supports Local (74) and Live Server (55)
               
               if (Array.isArray(permData.companyPermissions) && permData.companyPermissions.length > 0) {
                 const allowedCompIds = permData.companyPermissions
-                  .filter(cp => String(cp.module_id) === targetModuleId && (action === 'create' ? cp.can_create : (cp.can_view || cp.can_create || cp.full_control)))
+                  .filter(cp => targetModuleIds.includes(String(cp.module_id)) && (action === 'create' ? cp.can_create : (cp.can_view || cp.can_create || cp.full_control)))
                   .map(cp => String(cp.company_id));
 
                 if (allowedCompIds.length > 0) {
                   compList = compList.filter(comp => allowedCompIds.includes(String(comp.id)));
                 } else {
-                  const hasEntry = permData.companyPermissions.some(cp => String(cp.module_id) === targetModuleId);
+                  const hasEntry = permData.companyPermissions.some(cp => targetModuleIds.includes(String(cp.module_id)));
                   if (hasEntry) {
                     compList = [];
                   }
