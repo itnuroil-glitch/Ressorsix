@@ -105,10 +105,14 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
             const resPerm = await fetch(`${API_URL}/api/roles/${user.roleId}/permissions`);
             if (resPerm.ok) {
               const permData = await resPerm.json();
-              const targetModuleIds = ['71', '53', '70', '52'];
+              const targetModuleIds = ['54', '53', '52', '50', '71', '70'];
               const tollMod = (permData.permissions || []).find(m => 
                 targetModuleIds.includes(String(m.module_id)) ||
-                (m.module_name && (m.module_name.toLowerCase().includes('toll transaction') || m.module_name.toLowerCase().includes('vehicle toll')))
+                (m.module_name && (
+                  m.module_name.toLowerCase().includes('toll transaction') ||
+                  m.module_name.toLowerCase().includes('vehicle toll') ||
+                  m.module_name.toLowerCase().includes('vehcile')
+                ))
               );
               const tollModId = tollMod ? String(tollMod.module_id) : null;
               

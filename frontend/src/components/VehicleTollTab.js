@@ -127,7 +127,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
         ? (m.module_name && m.module_name.toLowerCase().includes('transaction')) || String(m.id) === '71' || String(m.id) === '53'
         : (isOverview
           ? (m.module_name && m.module_name.toLowerCase().includes('vehicle toll overview')) || String(m.id) === '70' || String(m.id) === '52'
-          : String(m.id) === '50' || (m.module_name && m.module_name.toLowerCase() === 'vehicle toll')
+          : String(m.id) === '50' || String(m.id) === '54' || (m.module_name && (m.module_name.toLowerCase().includes('vehicle toll') || m.module_name.toLowerCase().includes('vehcile')))
         )
       );
       if (tollModule) {
@@ -164,7 +164,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
             const resPerm = await fetch(`${API_URL}/api/roles/${user.roleId}/permissions`);
             if (resPerm.ok) {
               const permData = await resPerm.json();
-              const targetModuleIds = isTransaction ? ['71', '53'] : (isOverview ? ['70', '52'] : ['50']);
+              const targetModuleIds = isTransaction ? ['71', '53'] : (isOverview ? ['70', '52'] : ['50', '54']);
               
               if (Array.isArray(permData.companyPermissions) && permData.companyPermissions.length > 0) {
                 const allowedCompIdsForToll = permData.companyPermissions
