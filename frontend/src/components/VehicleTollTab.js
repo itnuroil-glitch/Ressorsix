@@ -164,14 +164,13 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
             const resPerm = await fetch(`${API_URL}/api/roles/${user.roleId}/permissions`);
             if (resPerm.ok) {
               const permData = await resPerm.json();
-              const tollMod = (permData.permissions || []).find(m => 
-                (m.module_name && (m.module_name.toLowerCase().includes('toll transaction') || m.module_name.toLowerCase().includes('vehicle toll')))
-              );
-              const tollModId = tollMod ? String(tollMod.module_id) : null;
+              const targetModuleId = isTransaction ? '71' : (isOverview ? '70' : '50');
+              const tollMod = (permData.permissions || []).find(m => String(m.module_id) === targetModuleId);
+              const tollModId = targetModuleId;
               
               if (Array.isArray(permData.companyPermissions) && permData.companyPermissions.length > 0) {
                 const allowedCompIdsForToll = permData.companyPermissions
-                  .filter(cp => (!tollModId || String(cp.module_id) === tollModId) && (action === 'create' ? cp.can_create : (cp.can_view || cp.can_create || cp.full_control)))
+                  .filter(cp => String(cp.module_id) === tollModId && (action === 'create' ? cp.can_create : (cp.can_view || cp.can_create || cp.full_control)))
                   .map(cp => String(cp.company_id));
 
                 if (allowedCompIdsForToll.length > 0) {
@@ -980,22 +979,24 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
           </TouchableOpacity>
 
           {/* Import Excel Button */}
-          <TouchableOpacity
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: '#16A34A',
-              paddingHorizontal: 16,
-              paddingVertical: 10,
-              borderRadius: 8,
-              gap: 6
-            }}
-            onPress={handleImportExcelClick}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
-            <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>{isTransaction || isOverview ? '+ Import Excel' : 'Import Excel'}</Text>
-          </TouchableOpacity>
+          {canCreate && (
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: '#16A34A',
+                paddingHorizontal: 16,
+                paddingVertical: 10,
+                borderRadius: 8,
+                gap: 6
+              }}
+              onPress={handleImportExcelClick}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
+              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>{isTransaction || isOverview ? '+ Import Excel' : 'Import Excel'}</Text>
+            </TouchableOpacity>
+          )}
 
           {/* Add Vehicle Toll Button */}
           {canCreate && (

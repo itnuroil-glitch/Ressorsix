@@ -24,6 +24,7 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
   const isEmployee = user && String(user.roleId) !== '1' && String(user.roleId) !== '2' && String(user.roleId) !== '5' && String(user.roleId) !== '8';
 
   const isSuperAdmin = !user || String(user.roleId) === '1';
+  const canView = !user || String(user.roleId) === '1' || (permissions && (permissions.can_view || permissions.full_control));
   const canCreate = !user || String(user.roleId) === '1' || (permissions && (permissions.can_create || permissions.full_control));
   const canEdit = !user || String(user.roleId) === '1' || (permissions && (permissions.can_edit || permissions.full_control));
   const canDelete = !user || String(user.roleId) === '1' || (permissions && (permissions.can_delete || permissions.full_control));
@@ -118,9 +119,35 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
       if (res.ok) {
         let data = await res.json();
         let compList = data || [];
-        if (Array.isArray(compList) && user && String(user.roleId) !== '1' && Array.isArray(user.associatedCompanyIds) && user.associatedCompanyIds.length > 0) {
-          const allowedIds = user.associatedCompanyIds.map(String);
-          compList = compList.filter(comp => allowedIds.includes(String(comp.id)));
+        if (Array.isArray(compList) && user && String(user.roleId) !== '1') {
+          if (Array.isArray(user.associatedCompanyIds) && user.associatedCompanyIds.length > 0) {
+            const allowedIds = user.associatedCompanyIds.map(String);
+            compList = compList.filter(comp => allowedIds.includes(String(comp.id)));
+          }
+          try {
+            const resPerm = await fetch(`${API_URL}/api/roles/${user.roleId}/permissions`);
+            if (resPerm.ok) {
+              const permData = await resPerm.json();
+              const targetModuleId = '74'; // Vehicle Maintenance Module ID
+              
+              if (Array.isArray(permData.companyPermissions) && permData.companyPermissions.length > 0) {
+                const allowedCompIds = permData.companyPermissions
+                  .filter(cp => String(cp.module_id) === targetModuleId && (action === 'create' ? cp.can_create : (cp.can_view || cp.can_create || cp.full_control)))
+                  .map(cp => String(cp.company_id));
+
+                if (allowedCompIds.length > 0) {
+                  compList = compList.filter(comp => allowedCompIds.includes(String(comp.id)));
+                } else {
+                  const hasEntry = permData.companyPermissions.some(cp => String(cp.module_id) === targetModuleId);
+                  if (hasEntry) {
+                    compList = [];
+                  }
+                }
+              }
+            }
+          } catch (pErr) {
+            console.warn('Could not fetch role permissions in VehicleMaintenanceTab:', pErr);
+          }
         }
         setCompanies(compList);
         if (compList.length > 0) {
@@ -128,6 +155,8 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
             const isValid = compList.some(c => String(c.id) === String(prev));
             return isValid ? prev : String(compList[0].id);
           });
+        } else {
+          setSelectedCompany('');
         }
         return compList;
       }
@@ -503,6 +532,10 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
   };
 
   const handleEdit = async (record) => {
+    if (checkRowPermission ? !checkRowPermission(record.company_id || record.companyid, 'edit') : !canEdit) {
+      if (showToast) showToast('You do not have permission to edit this record.', 'warning');
+      return;
+    }
     setIsViewOnly(false);
     setEditingRecord(record);
     let parsed = {};
@@ -526,6 +559,10 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
   };
 
   const handleView = async (record) => {
+    if (checkRowPermission ? !checkRowPermission(record.company_id || record.companyid, 'view') : !canView) {
+      if (showToast) showToast('You do not have permission to view this record.', 'warning');
+      return;
+    }
     setIsViewOnly(true);
     setEditingRecord(record);
     let parsed = {};
@@ -549,6 +586,10 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
   };
 
   const handleDelete = (record) => {
+    if (checkRowPermission ? !checkRowPermission(record.company_id || record.companyid, 'delete') : !canDelete) {
+      if (showToast) showToast('You do not have permission to delete this record.', 'warning');
+      return;
+    }
     setRecordToDelete(record);
     setDeleteConfirmationText('');
     setDeleteModalVisible(true);
@@ -697,16 +738,18 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
           </View>
 
           {/* Right Group: Action Button (+ Add Maintenance only) */}
-          <TouchableOpacity
-            style={styles.bannerAddButton}
-            onPress={handleAddNewRecord}
-            activeOpacity={0.88}
-          >
-            <View style={styles.bannerAddIconBadge}>
-              <Ionicons name="add" size={14} color="#72002A" />
-            </View>
-            <Text style={styles.bannerAddButtonText}>+ Add Maintenance</Text>
-          </TouchableOpacity>
+          {canCreate && (
+            <TouchableOpacity
+              style={styles.bannerAddButton}
+              onPress={handleAddNewRecord}
+              activeOpacity={0.88}
+            >
+              <View style={styles.bannerAddIconBadge}>
+                <Ionicons name="add" size={14} color="#72002A" />
+              </View>
+              <Text style={styles.bannerAddButtonText}>+ Add Maintenance</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -783,15 +826,21 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
                         </View>
                       </View>
                       <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'center', gap: 8 }}>
-                        <TouchableOpacity onPress={() => handleView(item)} style={styles.actionIconButton}>
-                          <Ionicons name="eye-outline" size={18} color="#0284C7" />
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => handleEdit(item)} style={styles.actionIconButton}>
-                          <Ionicons name="pencil-outline" size={18} color="#16A34A" />
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => handleDelete(item)} style={styles.actionIconButton}>
-                          <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                        </TouchableOpacity>
+                        {(checkRowPermission ? checkRowPermission(item.company_id || item.companyid, 'view') : canView) && (
+                          <TouchableOpacity onPress={() => handleView(item)} style={styles.actionIconButton}>
+                            <Ionicons name="eye-outline" size={18} color="#0284C7" />
+                          </TouchableOpacity>
+                        )}
+                        {(checkRowPermission ? checkRowPermission(item.company_id || item.companyid, 'edit') : canEdit) && (
+                          <TouchableOpacity onPress={() => handleEdit(item)} style={styles.actionIconButton}>
+                            <Ionicons name="pencil-outline" size={18} color="#16A34A" />
+                          </TouchableOpacity>
+                        )}
+                        {(checkRowPermission ? checkRowPermission(item.company_id || item.companyid, 'delete') : canDelete) && (
+                          <TouchableOpacity onPress={() => handleDelete(item)} style={styles.actionIconButton}>
+                            <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                          </TouchableOpacity>
+                        )}
                       </View>
                     </View>
                   );
