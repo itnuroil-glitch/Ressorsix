@@ -1,0 +1,77 @@
+INSERT INTO public.employee (full_name,email,phone,roleid,status,clientid,department_id,is_deleted,created_at,basecompany_id,assigned_password) VALUES
+	 ('Anna','admin@nurac.com','986556',8,1,6,4,false,'2026-07-10 10:30:58.042994',NULL,NULL),
+	 ('Ragav','ragav@gmail.com','7788',11,1,6,2,false,'2026-07-14 08:45:00.758009',NULL,NULL),
+	 ('Vishnupriya','vishnupriya@gmail.com','87798',10,1,6,2,false,'2026-07-14 08:43:20.335219',NULL,NULL),
+	 ('Naveen Antony','sales03@asasgt.com','971523409157',14,1,19,11,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Sruthy Jeemon','sruthy@nurac.com','971509858214',14,1,19,9,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Suveesh Suseelan','klen.sales01@asasgt.com','971543051035',14,1,19,11,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('hgfhgf','fghfg@sdfgf.fghfh','0522486345',14,1,19,2,true,'2026-07-29 14:18:12.095849',NULL,NULL),
+	 ('Vishnu Sayi Malayi','klen.sales02@asasgt.com','971502728965',14,1,19,11,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Testing','vishnupriya@nurac.com','555',12,1,19,3,true,'2026-07-15 09:59:23.849911',NULL,NULL),
+	 ('Christy Jose Neelankavil','christy@nurac.com','971505082478',14,1,19,13,false,'2026-08-15 11:23:09.48528',24,NULL);
+INSERT INTO public.employee (full_name,email,phone,roleid,status,clientid,department_id,is_deleted,created_at,basecompany_id,assigned_password) VALUES
+	 ('Jenany Jayaram','jenany@nurac.com','971526749323',14,1,19,13,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Madhukrishnan Sanka','madhu@nurac.com','971527901846',14,1,19,13,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Mary Kripa','kripa@nurac.com','971509407714',14,1,19,13,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('test','vishnupriya@nurac.com','656',14,1,19,5,true,'2026-08-15 08:01:24.674058',26,NULL),
+	 ('test','vishnupriya@nuroil.com','4344',12,1,19,5,false,'2026-08-15 08:02:54.529119',26,NULL),
+	 ('Navaneetha Krishnan','ops@nuragro.com','0522486345',13,1,19,5,true,'2026-08-15 08:45:46.274187',25,NULL),
+	 ('rtyrt','nkrish2692@gmail.com','dsfdsfg',14,1,19,5,true,'2026-08-15 08:48:11.377243',24,NULL),
+	 ('sdfgd','ops@nuragro.com','sdfsdf',13,1,19,7,true,'2026-08-15 08:47:09.434464',25,NULL),
+	 ('Rincy','rincy@nurac.com','565',12,1,19,5,true,'2026-08-15 08:04:42.35393',26,NULL),
+	 ('Ana Loren','admin@nuroil.com','+971  555652919',13,1,19,4,false,'2026-08-11 14:34:51.696811',26,NULL);
+INSERT INTO public.employee (full_name,email,phone,roleid,status,clientid,department_id,is_deleted,created_at,basecompany_id,assigned_password) VALUES
+	 ('Anandhu Ajayakumar','accounts@nuroil.com','971523511621',14,1,19,5,false,'2026-08-15 11:13:52.0344',26,NULL),
+	 ('Shanmughapriya Sivakumar','priya@nuroil.com','971527001406',14,1,19,7,false,'2026-08-15 11:13:52.0344',26,NULL),
+	 ('Anjana Sadana Kumar','anjana@nurac.com','971553447894',14,1,19,8,false,'2026-08-15 11:13:52.0344',26,NULL),
+	 ('Nirmal Raj Sathyan','nirmal@nurac.com','971563798535',14,1,19,9,false,'2026-08-15 11:13:52.0344',26,NULL),
+	 ('Rincy Mathew','rincy@nurac.com','971547146131',14,1,19,9,false,'2026-08-15 11:13:52.0344',26,NULL),
+	 ('Mugesh Selvaraj','docs4@nuroil.com','971525038532',14,1,19,12,false,'2026-08-15 11:13:52.0344',26,NULL),
+	 ('Ashok Kalavathy Nagarajan Sivaraman','docs6@nuroil.com','971569094246',14,1,19,20,false,'2026-08-15 11:13:52.0344',26,NULL),
+	 ('Stany Thomas','docs5@nuroil.com','971524975672',14,1,19,20,false,'2026-08-15 11:13:52.0344',26,NULL),
+	 ('Satish Radha','satish@nuroil.com','971558405473',14,1,19,23,false,'2026-08-15 11:13:52.0344',26,NULL),
+	 ('Hariram N S','hari@nuroil.com','971567764865',14,1,19,24,false,'2026-08-15 11:13:52.0344',26,NULL);
+INSERT INTO public.employee (full_name,email,phone,roleid,status,clientid,department_id,is_deleted,created_at,basecompany_id,assigned_password) VALUES
+	 ('Benazir Kathija Abdul Imthiyas','kathija@nuroil.com','971556921813',14,1,19,31,false,'2026-08-15 11:13:52.0344',26,NULL),
+	 ('Navin Prithviraj','yuvraj@nuroil.com','971555934544',14,1,19,31,false,'2026-08-15 11:13:52.0344',26,NULL),
+	 ('Nithin Kumar R','nithin@nuroil.com','971527684425',14,1,19,31,false,'2026-08-15 11:13:52.0344',26,NULL),
+	 ('Prabhath Ramachandran','prabhath@nuroil.com','971564067868',14,1,19,31,false,'2026-08-15 11:13:52.0344',26,NULL),
+	 ('Sreeni Ramachandra','sreeni@nuroil.com','971569936102',14,1,19,31,false,'2026-08-15 11:13:52.0344',26,NULL),
+	 ('Roy Antony','royantony1209@gmail.com','971522782396',14,1,19,32,false,'2026-08-15 11:13:52.0344',26,NULL),
+	 ('Siva Kumar Nagendran','admin@asas.com','',14,1,19,21,true,'2026-08-15 11:13:52.0344',26,NULL),
+	 ('Mary Sumi Jean V','freight@nuroil.com','971523674011',14,1,19,16,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Nagarjun Sivakumar','arjun@nurac.com','971524827669',14,1,19,18,false,'2026-08-15 11:13:52.0344',26,NULL),
+	 ('Aswathy S','accounts03@nuroil.com','971588798267',14,1,19,5,false,'2026-08-15 11:13:52.0344',24,NULL);
+INSERT INTO public.employee (full_name,email,phone,roleid,status,clientid,department_id,is_deleted,created_at,basecompany_id,assigned_password) VALUES
+	 ('Printu Anupaman','accounts@nurac.com','971527029403',14,1,19,5,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Lydianita Abarca','bhiengkai@gmail.com','971581968436',14,1,19,6,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Sujeewa Priyadarshani Kandiya','sujeewasujee1983@gmail.com','971544023181',14,1,19,6,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Nivin Kelayi Aravindakshan','nivin@nurac.com','971527003558',14,1,19,8,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Rahul N R','rahul@nurac.com','971566428036',14,1,19,8,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Afsal Najumudeen','sales02@nurac.com','971588622949',14,1,19,11,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Carmel Joseph','sc01@asasgt.com','971522586720',14,1,19,11,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Deepak Murugan','deepak@nurac.com','971569936095',14,1,19,11,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Din Raj','sales01@nurac.com','971551307270',14,1,19,11,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Rajeswary Kumudamsha Raju','hr@nuroil.com','971524245804',14,1,19,17,false,'2026-08-15 11:23:09.48528',24,NULL);
+INSERT INTO public.employee (full_name,email,phone,roleid,status,clientid,department_id,is_deleted,created_at,basecompany_id,assigned_password) VALUES
+	 ('Govind Krishnan','ops4@nuroil.com','971521304486',14,1,19,20,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Ali Jafzan Ahamed Mohamed Jawaha','purchase01@nuragro.com','971545829147',14,1,19,24,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Mahesh Ramamoorthy','mahi@nuroil.com','971524806401',14,1,19,24,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Ramya Anand','ops3@nuroil.com','971524399757',14,1,19,24,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Krishnapriya Krishnadas','krishna@nurac.com','971559706985',14,1,19,26,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Ligin Enose Joys','ligin@nuroil.com','971523648718',14,1,19,31,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Ajikumar Babu','monaju82@gmail.com','971523909665',14,1,19,32,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Jenish Kumar Justin','jjenishkumar@gmail.com','971505264656',14,1,19,32,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Kumar Vareedh','kumarsanjaysheyon@gmail.com','971566295896',14,1,19,32,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Nandhulal Kamalasanan Suneethi','nandhupopy122@gmail.com','971542493551',14,1,19,32,false,'2026-08-15 11:23:09.48528',24,NULL);
+INSERT INTO public.employee (full_name,email,phone,roleid,status,clientid,department_id,is_deleted,created_at,basecompany_id,assigned_password) VALUES
+	 ('Thejus Kumbathi','thejus@asasgt.com ','971543797084',14,1,19,32,false,'2026-08-15 11:23:09.48528',24,NULL),
+	 ('Ayyappan Murukanandan','accounts01@nuroil.com','971521861963',14,1,19,5,false,'2026-08-15 11:23:40.569066',25,NULL),
+	 ('Sukrishn Suresh','sukrishsuresh123@gmail.com','971547936993',14,1,19,5,false,'2026-08-15 11:23:40.569066',25,NULL),
+	 ('Sajina J Mohanan','ops1@nuragro.com','971501070455',14,1,19,20,false,'2026-08-15 11:23:40.569066',25,NULL),
+	 ('Jenith Jayaram','jenith@nuragro.com','971509750539',14,1,19,26,false,'2026-08-15 11:23:40.569066',25,NULL),
+	 ('Nandhakumar Kandhasamy','nandha@nuragro.com','971521487101',14,1,19,31,false,'2026-08-15 11:23:40.569066',25,NULL),
+	 ('Navaneetha Krishnan','krish@nuroil.com','971522486345',2,1,19,6,false,'2026-08-15 11:13:52.0344',26,NULL),
+	 ('Sujithkumar Gopalakrishna','sujith@nuragro.com','971521601843',14,1,19,31,false,'2026-08-15 11:23:40.569066',25,NULL),
+	 ('Nishanth John John','nishanthmanoj2025@gmail.com','971586942412',14,1,19,32,false,'2026-08-15 11:23:40.569066',25,NULL),
+	 ('Clement Jose','clement@nuragro.com','971545379779',14,1,19,31,false,'2026-08-15 11:23:40.569066',25,'C@12345');
