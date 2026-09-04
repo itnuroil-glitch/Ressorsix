@@ -105,18 +105,20 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
             const resPerm = await fetch(`${API_URL}/api/roles/${user.roleId}/permissions`);
             if (resPerm.ok) {
               const permData = await resPerm.json();
+              const targetModuleIds = ['71', '53', '70', '52'];
               const tollMod = (permData.permissions || []).find(m => 
+                targetModuleIds.includes(String(m.module_id)) ||
                 (m.module_name && (m.module_name.toLowerCase().includes('toll transaction') || m.module_name.toLowerCase().includes('vehicle toll')))
               );
               const tollModId = tollMod ? String(tollMod.module_id) : null;
               
               if (Array.isArray(permData.companyPermissions) && permData.companyPermissions.length > 0) {
                 const allowedCompIdsForToll = permData.companyPermissions
-                  .filter(cp => (!tollModId || String(cp.module_id) === String(tollModId)) && (cp.can_create || cp.can_view || cp.full_control))
+                  .filter(cp => (!tollModId || targetModuleIds.includes(String(cp.module_id)) || String(cp.module_id) === String(tollModId)) && (cp.can_create || cp.can_view || cp.full_control))
                   .map(cp => String(cp.company_id));
 
                 const allowedCreateCompIdsForToll = permData.companyPermissions
-                  .filter(cp => (!tollModId || String(cp.module_id) === String(tollModId)) && (cp.can_create || cp.full_control))
+                  .filter(cp => (!tollModId || targetModuleIds.includes(String(cp.module_id)) || String(cp.module_id) === String(tollModId)) && (cp.can_create || cp.full_control))
                   .map(cp => String(cp.company_id));
 
                 setCreateCompanyIds(allowedCreateCompIdsForToll);
@@ -124,7 +126,7 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
                 if (allowedCompIdsForToll.length > 0) {
                   compData = compData.filter(comp => allowedCompIdsForToll.includes(String(comp.id)));
                 } else if (tollModId) {
-                  const hasTollEntry = permData.companyPermissions.some(cp => String(cp.module_id) === String(tollModId));
+                  const hasTollEntry = permData.companyPermissions.some(cp => targetModuleIds.includes(String(cp.module_id)) || String(cp.module_id) === String(tollModId));
                   if (hasTollEntry) {
                     compData = [];
                   }
@@ -220,15 +222,20 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
 
         const isOverviewMatch = r.toll_overview_id && matchedOverviewIds.includes(String(r.toll_overview_id));
 
+        const fdValues = r.field_data && typeof r.field_data === 'object' ? Object.values(r.field_data) : [];
+
         const accHaystack = [
           r.account_number,
           r.account_no,
           r.transaction_id,
           r.toll_overview_id,
+          r.field_data?.['1786629206891'],
           r.field_data?.['Account Number'],
           r.field_data?.['Account No'],
+          r.field_data?.['ACCOUNT NO'],
           r.field_data?.['Transaction ID'],
-          r.field_data?.account_number
+          r.field_data?.account_number,
+          ...fdValues
         ].filter(Boolean).join(' ').toLowerCase();
 
         if (!isOverviewMatch && !accHaystack.includes(targetAcc)) return false;
@@ -473,8 +480,8 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
         valA = parseFloat(valA) || 0;
         valB = parseFloat(valB) || 0;
       } else if (sortColumn === 'account_number') {
-        const strA = String(valA || '');
-        const strB = String(valB || '');
+        const strA = String(a.account_number || a.field_data?.['1786629206891'] || a.field_data?.['Account Number'] || a.field_data?.['Account No'] || '');
+        const strB = String(b.account_number || b.field_data?.['1786629206891'] || b.field_data?.['Account Number'] || b.field_data?.['Account No'] || '');
         const cmp = strA.localeCompare(strB, undefined, { numeric: true, sensitivity: 'base' });
         return sortDirection === 'asc' ? cmp : -cmp;
       } else {
@@ -507,7 +514,7 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
     try {
       const exportRows = tableFilteredData.map(r => ({
         'Transaction ID': r.transaction_id || r.id,
-        'Account Number': r.account_number || 'N/A',
+        'Account Number': r.account_number || r.field_data?.['1786629206891'] || r.field_data?.['Account Number'] || r.field_data?.['Account No'] || 'N/A',
         'Trip Date': r.trip_date || 'N/A',
         'Trip Time': r.trip_time || 'N/A',
         'Transaction Post Date': r.created_at ? new Date(r.created_at).toLocaleDateString() : 'N/A',
@@ -1114,7 +1121,7 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
                   return (
                     <View key={row.id || idx} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
                       <Text style={{ flex: 1.4, fontSize: 12, fontWeight: '700', color: '#0F172A' }}>{row.transaction_id || `#${row.id}`}</Text>
-                      <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '600', color: '#475569' }}>{row.account_number || 'N/A'}</Text>
+                      <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '600', color: '#475569' }}>{row.account_number || row.field_data?.['1786629206891'] || row.field_data?.['Account Number'] || row.field_data?.['Account No'] || 'N/A'}</Text>
                       <View style={{ flex: 1.2 }}>
                         <Text style={{ fontSize: 12, color: '#0F172A' }}>{row.trip_date || 'N/A'}</Text>
                         <Text style={{ fontSize: 10, color: '#94A3B8' }}>{row.trip_time || ''}</Text>
