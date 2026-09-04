@@ -184,6 +184,34 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
     setCurrentPage(1);
   };
 
+  const getRecordAccountNo = (r) => {
+    if (!r) return '';
+    if (r.account_number) return String(r.account_number);
+    let fd = r.field_data;
+    if (typeof fd === 'string') {
+      try { fd = JSON.parse(fd); } catch (e) { fd = {}; }
+    }
+    fd = fd || {};
+    return String(
+      fd['1786629206891'] || 
+      fd['Account Number'] || 
+      fd['Account No'] || 
+      fd['ACCOUNT NO'] || 
+      fd.account_number || 
+      fd.account_no || 
+      ''
+    );
+  };
+
+  const getRecordFieldDataValues = (r) => {
+    if (!r || !r.field_data) return [];
+    let fd = r.field_data;
+    if (typeof fd === 'string') {
+      try { fd = JSON.parse(fd); } catch (e) { fd = {}; }
+    }
+    return typeof fd === 'object' && fd !== null ? Object.values(fd) : [];
+  };
+
   // Master Filtered Transactions
   const filteredData = useMemo(() => {
     return records.filter(r => {
@@ -222,20 +250,16 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
 
         const isOverviewMatch = r.toll_overview_id && matchedOverviewIds.includes(String(r.toll_overview_id));
 
-        const fdValues = r.field_data && typeof r.field_data === 'object' ? Object.values(r.field_data) : [];
+        const recAccNo = getRecordAccountNo(r);
+        const fdVals = getRecordFieldDataValues(r);
 
         const accHaystack = [
           r.account_number,
           r.account_no,
           r.transaction_id,
           r.toll_overview_id,
-          r.field_data?.['1786629206891'],
-          r.field_data?.['Account Number'],
-          r.field_data?.['Account No'],
-          r.field_data?.['ACCOUNT NO'],
-          r.field_data?.['Transaction ID'],
-          r.field_data?.account_number,
-          ...fdValues
+          recAccNo,
+          ...fdVals
         ].filter(Boolean).join(' ').toLowerCase();
 
         if (!isOverviewMatch && !accHaystack.includes(targetAcc)) return false;
@@ -480,8 +504,8 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
         valA = parseFloat(valA) || 0;
         valB = parseFloat(valB) || 0;
       } else if (sortColumn === 'account_number') {
-        const strA = String(a.account_number || a.field_data?.['1786629206891'] || a.field_data?.['Account Number'] || a.field_data?.['Account No'] || '');
-        const strB = String(b.account_number || b.field_data?.['1786629206891'] || b.field_data?.['Account Number'] || b.field_data?.['Account No'] || '');
+        const strA = getRecordAccountNo(a);
+        const strB = getRecordAccountNo(b);
         const cmp = strA.localeCompare(strB, undefined, { numeric: true, sensitivity: 'base' });
         return sortDirection === 'asc' ? cmp : -cmp;
       } else {
@@ -514,7 +538,7 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
     try {
       const exportRows = tableFilteredData.map(r => ({
         'Transaction ID': r.transaction_id || r.id,
-        'Account Number': r.account_number || r.field_data?.['1786629206891'] || r.field_data?.['Account Number'] || r.field_data?.['Account No'] || 'N/A',
+        'Account Number': getRecordAccountNo(r) || 'N/A',
         'Trip Date': r.trip_date || 'N/A',
         'Trip Time': r.trip_time || 'N/A',
         'Transaction Post Date': r.created_at ? new Date(r.created_at).toLocaleDateString() : 'N/A',
@@ -1121,7 +1145,7 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
                   return (
                     <View key={row.id || idx} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
                       <Text style={{ flex: 1.4, fontSize: 12, fontWeight: '700', color: '#0F172A' }}>{row.transaction_id || `#${row.id}`}</Text>
-                      <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '600', color: '#475569' }}>{row.account_number || row.field_data?.['1786629206891'] || row.field_data?.['Account Number'] || row.field_data?.['Account No'] || 'N/A'}</Text>
+                      <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '600', color: '#475569' }}>{getRecordAccountNo(row) || 'N/A'}</Text>
                       <View style={{ flex: 1.2 }}>
                         <Text style={{ fontSize: 12, color: '#0F172A' }}>{row.trip_date || 'N/A'}</Text>
                         <Text style={{ fontSize: 10, color: '#94A3B8' }}>{row.trip_time || ''}</Text>
