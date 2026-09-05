@@ -38,10 +38,11 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('All');
   const [selectedProviderFilter, setSelectedProviderFilter] = useState('All');
   const [selectedMonthFilter, setSelectedMonthFilter] = useState('All');
-  const [dateSortOrder, setDateSortOrder] = useState('DESC');
+  const [sortColumn, setSortColumn] = useState('date'); // 'date' | 'source_number' | 'destination_number'
+  const [sortDirection, setSortDirection] = useState('DESC'); // 'ASC' | 'DESC'
+  const dateSortOrder = sortDirection; // for backward compatibility
   
   // Date Range Filter States
-  const [showMoreFilters, setShowMoreFilters] = useState(true);
   const [showDatePickerDropdown, setShowDatePickerDropdown] = useState(false);
   const [activeDatePreset, setActiveDatePreset] = useState('Custom Range');
   const [fromDateInput, setFromDateInput] = useState('2026-07-01');
@@ -231,19 +232,88 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
         }
       }
 
-      const matchesQuery = !searchQuery || 
-        (log.destination_number && log.destination_number.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (log.source_number && log.source_number.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (log.country_name && log.country_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (log.provider && log.provider.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (log.bill_number && log.bill_number.toLowerCase().includes(searchQuery.toLowerCase()));
+      const rawQuery = (searchQuery || '').trim().toLowerCase();
+      const digitQuery = rawQuery.replace(/\D/g, '');
+
+      const srcNum = String(log.source_number || '');
+      const destNum = String(log.destination_number || '');
+      const srcDigits = srcNum.replace(/\D/g, '');
+      const destDigits = destNum.replace(/\D/g, '');
+
+      const matchesQuery = !rawQuery || 
+        (destNum.toLowerCase().includes(rawQuery)) ||
+        (srcNum.toLowerCase().includes(rawQuery)) ||
+        (digitQuery.length >= 2 && (srcDigits.includes(digitQuery) || destDigits.includes(digitQuery))) ||
+        (log.country_name && log.country_name.toLowerCase().includes(rawQuery)) ||
+        (log.provider && log.provider.toLowerCase().includes(rawQuery)) ||
+        (log.bill_number && log.bill_number.toLowerCase().includes(rawQuery));
       
       return matchesCat && matchesProv && matchesMonth && matchesDateRange && matchesQuery;
     })
     .sort((a, b) => {
+      const cleanedQuery = (searchQuery || '').trim();
+      const digitQuery = cleanedQuery.replace(/\D/g, '');
+      const isNumericSearch = digitQuery.length >= 2;
+
+      const cleanNum = (val) => String(val || '').replace(/\D/g, '');
+
+      // 1. If user explicitly clicked to sort by Caller Line
+      if (sortColumn === 'source_number') {
+        const diff = cleanNum(a.source_number).localeCompare(cleanNum(b.source_number), undefined, { numeric: true });
+        if (diff !== 0) return sortDirection === 'DESC' ? -diff : diff;
+        // Secondary tie-breaker: sort destination
+        const destDiff = cleanNum(a.destination_number).localeCompare(cleanNum(b.destination_number), undefined, { numeric: true });
+        if (destDiff !== 0) return destDiff;
+      }
+
+      // 2. If user explicitly clicked to sort by Dialed Destination
+      if (sortColumn === 'destination_number') {
+        const diff = cleanNum(a.destination_number).localeCompare(cleanNum(b.destination_number), undefined, { numeric: true });
+        if (diff !== 0) return sortDirection === 'DESC' ? -diff : diff;
+        // Secondary tie-breaker: sort caller
+        const srcDiff = cleanNum(a.source_number).localeCompare(cleanNum(b.source_number), undefined, { numeric: true });
+        if (srcDiff !== 0) return srcDiff;
+      }
+
+      // 3. When searching using search box by phone number (automatic number-wise sorting)
+      if (isNumericSearch && sortColumn === 'date') {
+        const aSrcDigits = cleanNum(a.source_number);
+        const bSrcDigits = cleanNum(b.source_number);
+        const aDestDigits = cleanNum(a.destination_number);
+        const bDestDigits = cleanNum(b.destination_number);
+
+        const aSrcMatch = aSrcDigits.includes(digitQuery);
+        const bSrcMatch = bSrcDigits.includes(digitQuery);
+        const aDestMatch = aDestDigits.includes(digitQuery);
+        const bDestMatch = bDestDigits.includes(digitQuery);
+
+        // Case A: Query matched Caller Line (e.g. searching '2829856782')
+        // Sort the other column (Dialed Destinations) in natural numerical order 0-9!
+        if (aSrcMatch && bSrcMatch) {
+          const destDiff = aDestDigits.localeCompare(bDestDigits, undefined, { numeric: true });
+          if (destDiff !== 0) return destDiff;
+        }
+
+        // Case B: Query matched Dialed Destination (e.g. searching destination '917208...')
+        // Sort Caller Lines in natural numerical order 0-9!
+        if (aDestMatch && bDestMatch) {
+          const srcDiff = aSrcDigits.localeCompare(bSrcDigits, undefined, { numeric: true });
+          if (srcDiff !== 0) return srcDiff;
+        }
+
+        // Case C: General number prefix search (e.g. '052' or '050')
+        // Sort caller lines first, then destinations in natural numeric sequence
+        const srcDiff = aSrcDigits.localeCompare(bSrcDigits, undefined, { numeric: true });
+        if (srcDiff !== 0) return srcDiff;
+
+        const destDiff = aDestDigits.localeCompare(bDestDigits, undefined, { numeric: true });
+        if (destDiff !== 0) return destDiff;
+      }
+
+      // 4. Default / Secondary sort by Date & Time
       const timeA = parseLogDate(a.call_date, a.call_time);
       const timeB = parseLogDate(b.call_date, b.call_time);
-      return dateSortOrder === 'DESC' ? timeB - timeA : timeA - timeB;
+      return sortDirection === 'DESC' ? timeB - timeA : timeA - timeB;
     });
 
   return (
@@ -464,63 +534,6 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
         </View>
       </View>
 
-      {/* Provider & Month Filter Bar */}
-      {showMoreFilters && (
-        <View style={styles.dateFilterCard}>
-          {/* Bottom Provider & Month Filter Controls Row */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 20 }}>
-            {/* Provider Filter */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={styles.providerFilterLabel}>Filter by Provider:</Text>
-              <TouchableOpacity
-                style={[styles.providerTab, selectedProviderFilter === 'All' && styles.providerTabActive]}
-                onPress={() => setSelectedProviderFilter('All')}
-              >
-                <Text style={[styles.providerTabText, selectedProviderFilter === 'All' && styles.providerTabTextActive]}>
-                  All Providers ({recentLogs.length.toLocaleString()})
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.providerTab, selectedProviderFilter === 'Etisalat' && { backgroundColor: '#7A001E', borderColor: '#7A001E' }]}
-                onPress={() => setSelectedProviderFilter('Etisalat')}
-              >
-                <Text style={[styles.providerTabText, selectedProviderFilter === 'Etisalat' && { color: '#FFF' }]}>
-                  Etisalat ({recentLogs.filter(l => l.provider && l.provider.toLowerCase().includes('etisalat')).length.toLocaleString()})
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.providerTab, selectedProviderFilter === 'du' && { backgroundColor: '#0066CC', borderColor: '#0066CC' }]}
-                onPress={() => setSelectedProviderFilter('du')}
-              >
-                <Text style={[styles.providerTabText, selectedProviderFilter === 'du' && { color: '#FFF' }]}>
-                  du ({recentLogs.filter(l => l.provider && l.provider.toLowerCase().includes('du')).length.toLocaleString()})
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Month Filter */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={styles.providerFilterLabel}>Filter by Month:</Text>
-              {availableMonths.map((m) => (
-                <TouchableOpacity
-                  key={m.key}
-                  style={[
-                    styles.providerTab,
-                    selectedMonthFilter === m.key && { backgroundColor: '#D86A1A', borderColor: '#D86A1A' }
-                  ]}
-                  onPress={() => setSelectedMonthFilter(m.key)}
-                >
-                  <Text style={[styles.providerTabText, selectedMonthFilter === m.key && { color: '#FFF' }]}>
-                    {m.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        </View>
-      )}
 
       {/* Main Grid Section: Top Callers & Top Destinations */}
       <View style={styles.gridTwoCol}>
@@ -789,17 +802,6 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
               </Text>
             </TouchableOpacity>
 
-            {/* More Filters Toggle Button */}
-            <TouchableOpacity 
-              style={[styles.moreFiltersBtn, showMoreFilters && styles.moreFiltersBtnActive]} 
-              onPress={() => setShowMoreFilters(prev => !prev)}
-            >
-              <Ionicons name="options-outline" size={16} color={showMoreFilters ? COLORS.primary : COLORS.textPrimary} />
-              <Text style={[styles.moreFiltersBtnText, showMoreFilters && styles.moreFiltersBtnTextActive]}>
-                More Filters
-              </Text>
-              <Ionicons name={showMoreFilters ? "chevron-up-outline" : "chevron-down-outline"} size={14} color={showMoreFilters ? COLORS.primary : COLORS.textPrimary} />
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -821,16 +823,68 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
         {/* Table View */}
         <View style={{ overflow: 'hidden' }}>
           <View style={styles.tableHeaderRow}>
+            {/* Date & Time Sort */}
             <TouchableOpacity
               style={{ flex: 0.8, flexDirection: 'row', alignItems: 'center', gap: 4 }}
-              onPress={() => setDateSortOrder(prev => prev === 'DESC' ? 'ASC' : 'DESC')}
+              onPress={() => {
+                if (sortColumn === 'date') {
+                  setSortDirection(prev => prev === 'DESC' ? 'ASC' : 'DESC');
+                } else {
+                  setSortColumn('date');
+                  setSortDirection('DESC');
+                }
+              }}
             >
-              <Text style={styles.thCell}>Date & Time</Text>
-              <Ionicons name={dateSortOrder === 'DESC' ? "arrow-down" : "arrow-up"} size={14} color={COLORS.textSecondary} />
+              <Text style={[styles.thCell, sortColumn === 'date' && { color: COLORS.primary, fontWeight: '800' }]}>Date & Time</Text>
+              <Ionicons
+                name={sortColumn === 'date' ? (sortDirection === 'DESC' ? "arrow-down" : "arrow-up") : "swap-vertical-outline"}
+                size={13}
+                color={sortColumn === 'date' ? COLORS.primary : COLORS.textSecondary}
+              />
             </TouchableOpacity>
+
             <Text style={[styles.thCell, { flex: 0.8 }]}>Provider</Text>
-            <Text style={[styles.thCell, { flex: 1 }]}>Caller Line</Text>
-            <Text style={[styles.thCell, { flex: 1.2 }]}>Dialed Destination</Text>
+
+            {/* Caller Line - Number-wise Sort */}
+            <TouchableOpacity
+              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+              onPress={() => {
+                if (sortColumn === 'source_number') {
+                  setSortDirection(prev => prev === 'ASC' ? 'DESC' : 'ASC');
+                } else {
+                  setSortColumn('source_number');
+                  setSortDirection('ASC');
+                }
+              }}
+            >
+              <Text style={[styles.thCell, sortColumn === 'source_number' && { color: COLORS.primary, fontWeight: '800' }]}>Caller Line</Text>
+              <Ionicons
+                name={sortColumn === 'source_number' ? (sortDirection === 'DESC' ? "arrow-down" : "arrow-up") : "swap-vertical-outline"}
+                size={13}
+                color={sortColumn === 'source_number' ? COLORS.primary : COLORS.textSecondary}
+              />
+            </TouchableOpacity>
+
+            {/* Dialed Destination - Number-wise Sort */}
+            <TouchableOpacity
+              style={{ flex: 1.2, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+              onPress={() => {
+                if (sortColumn === 'destination_number') {
+                  setSortDirection(prev => prev === 'ASC' ? 'DESC' : 'ASC');
+                } else {
+                  setSortColumn('destination_number');
+                  setSortDirection('ASC');
+                }
+              }}
+            >
+              <Text style={[styles.thCell, sortColumn === 'destination_number' && { color: COLORS.primary, fontWeight: '800' }]}>Dialed Destination</Text>
+              <Ionicons
+                name={sortColumn === 'destination_number' ? (sortDirection === 'DESC' ? "arrow-down" : "arrow-up") : "swap-vertical-outline"}
+                size={13}
+                color={sortColumn === 'destination_number' ? COLORS.primary : COLORS.textSecondary}
+              />
+            </TouchableOpacity>
+
             <Text style={[styles.thCell, { flex: 1.2 }]}>Category</Text>
             <Text style={[styles.thCell, { flex: 0.8 }]}>Duration</Text>
             <Text style={[styles.thCell, { flex: 0.8, textAlign: 'right' }]}>Cost (AED)</Text>

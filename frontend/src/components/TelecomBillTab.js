@@ -596,7 +596,7 @@ const TelecomBillTab = ({
     setIsModalOpen(true);
   };
 
-  const openViewModal = (record) => {
+  const openViewModal = async (record) => {
     setIsViewOnly(true);
     setEditingRecord(record);
     setWizardStep(2);
@@ -620,6 +620,22 @@ const TelecomBillTab = ({
     });
     setViewMode('table');
     setIsModalOpen(true);
+
+    const bId = record.tele_bill_id || record.id || record.bill_id;
+    if (bId && (!record.items || record.items.length === 0)) {
+      try {
+        const res = await fetch(`${API_URL}/api/telecom-bills/${bId}`);
+        if (res.ok) {
+          const fresh = await res.json();
+          setEditingRecord(prev => ({ ...prev, ...fresh }));
+          if (fresh.items && fresh.items.length > 0) {
+            setPdfParsedData({ rows: fresh.items });
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching full telecom bill details:', err);
+      }
+    }
   };
 
   const closeModal = () => {
@@ -1160,18 +1176,29 @@ const TelecomBillTab = ({
         <View style={[styles.modalOverlay, isLargeScreen && { marginLeft: isSidebarCollapsed ? 78 : 260 }]}>
           <View style={styles.modalContent}>
 
-            {/* MODAL HEADER WITH CIRCULAR CLOUD ICON */}
+            {/* MODAL HEADER WITH CIRCULAR CLOUD / RECEIPT ICON */}
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-                <View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: '#E6F4EA', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#A7F3D0' }}>
-                  <Ionicons name="cloud-upload-outline" size={24} color="#004D34" />
+                <View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: isViewOnly ? '#ECFDF5' : '#E6F4EA', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: isViewOnly ? '#A7F3D0' : '#A7F3D0' }}>
+                  <Ionicons name={isViewOnly ? "receipt-outline" : "cloud-upload-outline"} size={24} color="#004D34" />
                 </View>
                 <View>
-                  <Text style={styles.modalTitle}>
-                    {isViewOnly ? 'Telecom Bill Details' : editingRecord ? 'Edit Telecom Bill' : 'Import Telecom Bills'}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Text style={styles.modalTitle}>
+                      {isViewOnly ? 'Telecom Bill Details' : editingRecord ? 'Edit Telecom Bill' : 'Import Telecom Bills'}
+                    </Text>
+                    {isViewOnly && (
+                      <View style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#CBD5E1' }}>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#475569' }}>
+                          #{editingRecord?.tele_bill_id || editingRecord?.id || ''}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
                   <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>
-                    Upload official Etisalat or du transaction sheets into corporate asset log
+                    {isViewOnly
+                      ? 'Detailed summary breakdown and itemized records from tbl_telecome_bill'
+                      : 'Upload official Etisalat or du transaction sheets into corporate asset log'}
                   </Text>
                 </View>
               </View>
@@ -1272,79 +1299,338 @@ const TelecomBillTab = ({
                 </View>
               </>
             ) : (
-              /* WIZARD STEP 2: FILE UPLOAD & FORM DATA */
+              /* WIZARD STEP 2: FILE UPLOAD & FORM DATA OR VIEW ONLY SUMMARY */
               <>
                 <ScrollView style={{ flex: 1, backgroundColor: '#F8FAFC' }} contentContainerStyle={{ padding: 24, paddingBottom: 24 }}>
-                  
-                  {/* ACTIVE CONFIGURATION SCOPE BANNER MATCHING SCREENSHOT */}
-                  {!isViewOnly && (
-                    <View style={styles.activeScopeCard}>
-                      <View style={{ flex: 1 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                          <Ionicons name="shield-checkmark" size={16} color="#004D34" />
-                          <Text style={styles.activeScopeTitle}>ACTIVE CONFIGURATION SCOPE</Text>
-                        </View>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <View style={styles.scopeBadge}>
-                            <Ionicons name="person-outline" size={14} color="#004D34" />
-                            <Text style={styles.scopeBadgeText}>
-                              {clientsList.find(c => String(c.id) === String(selectedClient))?.client_name || user?.client_name || 'Nirmal Raj'}
-                            </Text>
+                  {isViewOnly ? (
+                    <View style={styles.viewModalContainer}>
+                      {/* 1. TOP SUMMARY KPI CARDS (FROM tbl_telecome_bill) */}
+                      <View style={styles.viewKpiRow}>
+                        {/* Total Bill Amount */}
+                        <View style={[styles.viewKpiCard, styles.viewKpiCardTotal]}>
+                          <View style={styles.viewKpiHeader}>
+                            <Text style={styles.viewKpiTitleTotal}>TOTAL BILL AMOUNT</Text>
+                            <View style={styles.viewKpiIconWrapTotal}>
+                              <Ionicons name="receipt" size={15} color="#047857" />
+                            </View>
                           </View>
-                          <Ionicons name="arrow-forward" size={14} color="#004D34" />
-                          <View style={styles.scopeBadge}>
-                            <Ionicons name="business-outline" size={14} color="#004D34" />
-                            <Text style={styles.scopeBadgeText}>
-                              {selectedCompany || 'Ansar Mall'}
-                            </Text>
-                          </View>
-                        </View>
-                      </View>
-                      <TouchableOpacity
-                        style={styles.changeScopeBtn}
-                        onPress={() => setWizardStep(1)}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={styles.changeScopeBtnText}>Change Scope</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-
-                  {/* DASHED DRAG & DROP FILE UPLOAD BOX MATCHING SCREENSHOT 100% */}
-                  {!isViewOnly && (
-                    <View style={styles.dropZoneBox}>
-                      <View style={styles.dropZoneCircleIcon}>
-                        <Ionicons name="cloud-upload" size={32} color="#004D34" />
-                      </View>
-
-                      <Text style={styles.dropZoneTitle}>Select PDF / CSV File</Text>
-                      <Text style={styles.dropZoneSubtitle}>
-                        Upload official Etisalat or du trip statement sheet (.pdf, .xlsx, .xls, .csv)
-                      </Text>
-
-                      <label style={{ cursor: 'pointer', marginTop: 16 }}>
-                        <input
-                          type="file"
-                          accept="application/pdf,.xlsx,.xls,.csv"
-                          style={{ display: 'none' }}
-                          onChange={handleAutoFillFromPdf}
-                          disabled={parsingPdf}
-                        />
-                        <View style={styles.browseFileBtn}>
-                          {parsingPdf ? (
-                            <ActivityIndicator size="small" color="#FFFFFF" />
-                          ) : (
-                            <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
-                          )}
-                          <Text style={styles.browseFileBtnText}>
-                            {parsingPdf ? 'Extracting PDF Data...' : 'Browse PDF File'}
+                          <Text style={styles.viewKpiValueTotal}>
+                            AED {Number(editingRecord?.total_bill || editingRecord?.['Total Bill'] || editingRecord?.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </Text>
+                          <Text style={styles.viewKpiSubtextTotal}>Official Net Payable Amount</Text>
                         </View>
-                      </label>
+
+                        {/* Monthly Plan Rental */}
+                        <View style={styles.viewKpiCard}>
+                          <View style={styles.viewKpiHeader}>
+                            <Text style={styles.viewKpiTitle}>PLAN / SERVICE RENTAL</Text>
+                            <View style={styles.viewKpiIconWrap}>
+                              <Ionicons name="calendar-outline" size={15} color="#004D34" />
+                            </View>
+                          </View>
+                          <Text style={styles.viewKpiValue}>
+                            AED {Number(editingRecord?.plan_rental || editingRecord?.['Monthly Plan Amount'] || editingRecord?.['Service Rental'] || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </Text>
+                          <Text style={styles.viewKpiSubtext}>Fixed recurring package charge</Text>
+                        </View>
+
+                        {/* Usage Charges */}
+                        <View style={styles.viewKpiCard}>
+                          <View style={styles.viewKpiHeader}>
+                            <Text style={styles.viewKpiTitle}>USAGE CHARGES</Text>
+                            <View style={styles.viewKpiIconWrap}>
+                              <Ionicons name="cellular-outline" size={15} color="#004D34" />
+                            </View>
+                          </View>
+                          <Text style={styles.viewKpiValue}>
+                            AED {Number(editingRecord?.usage_charges || editingRecord?.['Usage Charges'] || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </Text>
+                          <Text style={styles.viewKpiSubtext}>Calls, data & excess usage</Text>
+                        </View>
+
+                        {/* VAT Current Period (5%) */}
+                        <View style={styles.viewKpiCard}>
+                          <View style={styles.viewKpiHeader}>
+                            <Text style={styles.viewKpiTitle}>VAT CURRENT PERIOD (5%)</Text>
+                            <View style={styles.viewKpiIconWrap}>
+                              <Ionicons name="calculator-outline" size={15} color="#004D34" />
+                            </View>
+                          </View>
+                          <Text style={styles.viewKpiValue}>
+                            AED {Number(editingRecord?.vat_current_period || editingRecord?.vat_amount || editingRecord?.['VAT'] || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </Text>
+                          <Text style={styles.viewKpiSubtext}>Tax authority compliance</Text>
+                        </View>
+                      </View>
+
+                      {/* 2. BILL & ACCOUNT DETAILS SPECIFICATIONS */}
+                      <View style={styles.viewDetailCard}>
+                        <View style={styles.viewDetailCardHeader}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <Ionicons name="information-circle-outline" size={18} color="#004D34" />
+                            <Text style={styles.viewDetailCardTitle}>BILL & SUBSCRIPTION SPECIFICATIONS</Text>
+                          </View>
+                          <View style={[styles.statusBadge, ((editingRecord?.status || editingRecord?.['Payment Status'] || '').toLowerCase() === 'paid' || (editingRecord?.status || editingRecord?.['Payment Status'] || '').toLowerCase() === 'active') ? styles.statusActive : styles.statusPending]}>
+                            <Text style={[styles.statusText, ((editingRecord?.status || editingRecord?.['Payment Status'] || '').toLowerCase() === 'paid' || (editingRecord?.status || editingRecord?.['Payment Status'] || '').toLowerCase() === 'active') ? styles.statusTextActive : styles.statusTextPending]}>
+                              {(editingRecord?.status || editingRecord?.['Payment Status'] || 'PENDING').toUpperCase()}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.viewGrid}>
+                          {/* Client */}
+                          <View style={styles.viewGridItem}>
+                            <Text style={styles.viewGridLabel}>CLIENT</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                              <Ionicons name="person-circle-outline" size={18} color="#64748B" />
+                              <Text style={styles.viewGridValue}>
+                                {editingRecord?.client_name || clientsList.find(c => String(c.id) === String(editingRecord?.clientid))?.client_name || user?.client_name || 'Nirmal Raj'}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Company */}
+                          <View style={styles.viewGridItem}>
+                            <Text style={styles.viewGridLabel}>COMPANY / SUBSIDIARY</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                              <Ionicons name="business-outline" size={18} color="#64748B" />
+                              <Text style={styles.viewGridValue}>
+                                {editingRecord?.company_name || editingRecord?.Company || selectedCompany || '—'}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Telecom Provider */}
+                          <View style={styles.viewGridItem}>
+                            <Text style={styles.viewGridLabel}>TELECOM PROVIDER</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                              <Ionicons name="radio-outline" size={18} color="#004D34" />
+                              <Text style={[styles.viewGridValue, { fontWeight: '700', color: '#004D34' }]}>
+                                {editingRecord?.telecom_provider || editingRecord?.['Telecom Provider'] || editingRecord?.provider || '—'}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Mobile Number / Account */}
+                          <View style={styles.viewGridItem}>
+                            <Text style={styles.viewGridLabel}>MOBILE / ACCOUNT NUMBER</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                              <Ionicons name="call-outline" size={18} color="#64748B" />
+                              <Text style={[styles.viewGridValue, { fontFamily: 'monospace', fontWeight: '700' }]}>
+                                {editingRecord?.mobile_number || editingRecord?.['Mobile Number / Account'] || editingRecord?.account || '—'}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Bill Number */}
+                          <View style={styles.viewGridItem}>
+                            <Text style={styles.viewGridLabel}>INVOICE / BILL NUMBER</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                              <Ionicons name="barcode-outline" size={18} color="#64748B" />
+                              <Text style={styles.viewGridValue}>
+                                {editingRecord?.bill_number || editingRecord?.['Bill Number'] || `BILL-#${editingRecord?.tele_bill_id || editingRecord?.id || ''}`}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Statement / Bill Period */}
+                          <View style={styles.viewGridItem}>
+                            <Text style={styles.viewGridLabel}>STATEMENT / BILL DATE</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                              <Ionicons name="calendar-clear-outline" size={18} color="#64748B" />
+                              <Text style={styles.viewGridValue}>
+                                {editingRecord?.bill_date || editingRecord?.['Bill Month'] || editingRecord?.['Bill Issue Date'] || (editingRecord?.created_at ? String(editingRecord.created_at).slice(0, 10) : 'Current Period')}
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                      </View>
+
+                      {/* 3. ITEMIZED BREAKDOWN FROM TBL_TELECOME_BILL_ITEMS */}
+                      <View style={styles.viewDetailCard}>
+                        <View style={styles.viewDetailCardHeader}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <Ionicons name="list-outline" size={18} color="#004D34" />
+                            <Text style={styles.viewDetailCardTitle}>
+                              ITEMIZED BREAKDOWN (TBL_TELECOME_BILL_ITEMS)
+                            </Text>
+                          </View>
+                          <View style={{ backgroundColor: '#E0F2FE', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                            <Text style={{ fontSize: 11, fontWeight: '700', color: '#0369A1' }}>
+                              {((editingRecord?.items && editingRecord.items.length > 0) ? editingRecord.items.length : (pdfParsedData?.rows?.length || 0))} Line Item(s)
+                            </Text>
+                          </View>
+                        </View>
+
+                        {((editingRecord?.items && editingRecord.items.length > 0) || (pdfParsedData?.rows && pdfParsedData.rows.length > 0)) ? (
+                          <View style={{ overflow: 'hidden' }}>
+                            {/* Table Header */}
+                            <View style={styles.itemTableHeader}>
+                              <Text style={[styles.itemThCell, { flex: 0.5 }]}>#</Text>
+                              <Text style={[styles.itemThCell, { flex: 1.8 }]}>CATEGORY / DESCRIPTION</Text>
+                              <Text style={[styles.itemThCell, { flex: 1.2 }]}>RECORD TYPE</Text>
+                              <Text style={[styles.itemThCell, { flex: 1.4 }]}>ACCOUNT / MOBILE</Text>
+                              <Text style={[styles.itemThCell, { flex: 1.2, textAlign: 'right' }]}>AMOUNT (AED)</Text>
+                            </View>
+
+                            {/* Table Rows */}
+                            {((editingRecord?.items && editingRecord.items.length > 0) ? editingRecord.items : pdfParsedData.rows).slice(0, 50).map((it, idx) => (
+                              <View key={it.item_id || idx} style={[styles.itemTableRow, idx % 2 === 1 && { backgroundColor: '#F8FAFC' }]}>
+                                <Text style={[styles.itemTdCell, { flex: 0.5, color: '#64748B', fontWeight: '600' }]}>{idx + 1}</Text>
+                                <Text style={[styles.itemTdCell, { flex: 1.8, fontWeight: '600', color: '#0F172A' }]}>
+                                  {it.category || it.description || it['Category'] || it['Item Description'] || 'Service Item'}
+                                </Text>
+                                <View style={[styles.itemTdCell, { flex: 1.2 }]}>
+                                  <View style={styles.recordTypeTag}>
+                                    <Text style={styles.recordTypeTagText}>
+                                      {it.record_type || (it.category?.toLowerCase().includes('plan') ? 'PLAN' : it.category?.toLowerCase().includes('vat') ? 'VAT' : 'CHARGE')}
+                                    </Text>
+                                  </View>
+                                </View>
+                                <Text style={[styles.itemTdCell, { flex: 1.4, fontFamily: 'monospace', color: '#475569' }]}>
+                                  {it.mobile_number || editingRecord?.mobile_number || '—'}
+                                </Text>
+                                <Text style={[styles.itemTdCell, { flex: 1.2, textAlign: 'right', fontWeight: '700', color: '#004D34' }]}>
+                                  AED {Number(it.amount || it.total || it['Amount'] || 0).toFixed(2)}
+                                </Text>
+                              </View>
+                            ))}
+                          </View>
+                        ) : (
+                          /* Statement balance math check if specific items not yet imported */
+                          <View style={styles.viewCalcBanner}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                              <Ionicons name="calculator" size={18} color="#004D34" />
+                              <Text style={{ fontSize: 13, fontWeight: '700', color: '#0F172A' }}>
+                                Statement Balance Summary
+                              </Text>
+                            </View>
+                            <Text style={{ fontSize: 12, color: '#475569', lineHeight: 18 }}>
+                              The master bill charges in tbl_telecome_bill are verified as follows:
+                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
+                              <View style={styles.calcTag}>
+                                <Text style={styles.calcTagText}>Plan Rental: AED {Number(editingRecord?.plan_rental || 0).toFixed(2)}</Text>
+                              </View>
+                              <Text style={{ fontWeight: '700', color: '#64748B' }}>+</Text>
+                              <View style={styles.calcTag}>
+                                <Text style={styles.calcTagText}>Usage: AED {Number(editingRecord?.usage_charges || 0).toFixed(2)}</Text>
+                              </View>
+                              <Text style={{ fontWeight: '700', color: '#64748B' }}>+</Text>
+                              <View style={styles.calcTag}>
+                                <Text style={styles.calcTagText}>VAT (5%): AED {Number(editingRecord?.vat_current_period || 0).toFixed(2)}</Text>
+                              </View>
+                              <Text style={{ fontWeight: '700', color: '#64748B' }}>=</Text>
+                              <View style={[styles.calcTag, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
+                                <Text style={[styles.calcTagText, { color: '#047857', fontWeight: '800' }]}>
+                                  Total Bill: AED {Number(editingRecord?.total_bill || 0).toFixed(2)}
+                                </Text>
+                              </View>
+                            </View>
+                          </View>
+                        )}
+                      </View>
+
+                      {/* 4. CALL LOGS IF AVAILABLE (tbl_telecome_call_logs) */}
+                      {editingRecord?.call_logs && editingRecord.call_logs.length > 0 && (
+                        <View style={styles.viewDetailCard}>
+                          <View style={styles.viewDetailCardHeader}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                              <Ionicons name="call" size={18} color="#004D34" />
+                              <Text style={styles.viewDetailCardTitle}>
+                                CALL & USAGE LOGS ({editingRecord.call_logs.length})
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View style={{ overflow: 'hidden' }}>
+                            <View style={styles.itemTableHeader}>
+                              <Text style={[styles.itemThCell, { flex: 1.2 }]}>DATE & TIME</Text>
+                              <Text style={[styles.itemThCell, { flex: 1.2 }]}>DESTINATION</Text>
+                              <Text style={[styles.itemThCell, { flex: 1.0 }]}>CATEGORY</Text>
+                              <Text style={[styles.itemThCell, { flex: 0.8 }]}>DURATION</Text>
+                              <Text style={[styles.itemThCell, { flex: 0.8, textAlign: 'right' }]}>AMOUNT</Text>
+                            </View>
+                            {editingRecord.call_logs.slice(0, 30).map((log, lIdx) => (
+                              <View key={log.log_id || lIdx} style={[styles.itemTableRow, lIdx % 2 === 1 && { backgroundColor: '#F8FAFC' }]}>
+                                <Text style={[styles.itemTdCell, { flex: 1.2, color: '#334155' }]}>{log.call_date} {log.call_time}</Text>
+                                <Text style={[styles.itemTdCell, { flex: 1.2, fontFamily: 'monospace' }]}>{log.destination_number}</Text>
+                                <Text style={[styles.itemTdCell, { flex: 1.0, color: '#0F172A', fontWeight: '600' }]}>{log.category}</Text>
+                                <Text style={[styles.itemTdCell, { flex: 0.8, color: '#64748B' }]}>{log.duration}</Text>
+                                <Text style={[styles.itemTdCell, { flex: 0.8, textAlign: 'right', fontWeight: '700', color: '#004D34' }]}>AED {Number(log.amount || 0).toFixed(2)}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        </View>
+                      )}
                     </View>
+                  ) : (
+                    <>
+                      {/* ACTIVE CONFIGURATION SCOPE BANNER MATCHING SCREENSHOT */}
+                      <View style={styles.activeScopeCard}>
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                            <Ionicons name="shield-checkmark" size={16} color="#004D34" />
+                            <Text style={styles.activeScopeTitle}>ACTIVE CONFIGURATION SCOPE</Text>
+                          </View>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <View style={styles.scopeBadge}>
+                              <Ionicons name="person-outline" size={14} color="#004D34" />
+                              <Text style={styles.scopeBadgeText}>
+                                {clientsList.find(c => String(c.id) === String(selectedClient))?.client_name || user?.client_name || 'Nirmal Raj'}
+                              </Text>
+                            </View>
+                            <Ionicons name="arrow-forward" size={14} color="#004D34" />
+                            <View style={styles.scopeBadge}>
+                              <Ionicons name="business-outline" size={14} color="#004D34" />
+                              <Text style={styles.scopeBadgeText}>
+                                {selectedCompany || 'Ansar Mall'}
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.changeScopeBtn}
+                          onPress={() => setWizardStep(1)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.changeScopeBtnText}>Change Scope</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* DASHED DRAG & DROP FILE UPLOAD BOX MATCHING SCREENSHOT 100% */}
+                      <View style={styles.dropZoneBox}>
+                        <View style={styles.dropZoneCircleIcon}>
+                          <Ionicons name="cloud-upload" size={32} color="#004D34" />
+                        </View>
+
+                        <Text style={styles.dropZoneTitle}>Select PDF / CSV File</Text>
+                        <Text style={styles.dropZoneSubtitle}>
+                          Upload official Etisalat or du trip statement sheet (.pdf, .xlsx, .xls, .csv)
+                        </Text>
+
+                        <label style={{ cursor: 'pointer', marginTop: 16 }}>
+                          <input
+                            type="file"
+                            accept="application/pdf,.xlsx,.xls,.csv"
+                            style={{ display: 'none' }}
+                            onChange={handleAutoFillFromPdf}
+                            disabled={parsingPdf}
+                          />
+                          <View style={styles.browseFileBtn}>
+                            {parsingPdf ? (
+                              <ActivityIndicator size="small" color="#FFFFFF" />
+                            ) : (
+                              <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
+                            )}
+                            <Text style={styles.browseFileBtnText}>
+                              {parsingPdf ? 'Extracting PDF Data...' : 'Browse PDF File'}
+                            </Text>
+                          </View>
+                        </label>
+                      </View>
+                    </>
                   )}
-
-
                 </ScrollView>
 
                 {/* STEP 2 MODAL FOOTER */}
@@ -1860,6 +2146,204 @@ const styles = StyleSheet.create({
   cancelBtnText: { color: '#64748B', fontWeight: '600', fontSize: 14 },
   saveBtn: { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, backgroundColor: '#004D34' },
   saveBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 14 },
+
+  /* VIEW ONLY SUMMARY MODAL STYLES (TBL_TELECOME_BILL) */
+  viewModalContainer: {
+    gap: 16,
+  },
+  viewKpiRow: {
+    flexDirection: 'row',
+    gap: 12,
+    flexWrap: 'wrap',
+  },
+  viewKpiCard: {
+    flex: 1,
+    minWidth: 180,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  viewKpiCardTotal: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  viewKpiHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  viewKpiTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  viewKpiTitleTotal: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#065F46',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  viewKpiIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  viewKpiIconWrapTotal: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#D1FAE5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  viewKpiValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  viewKpiValueTotal: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#047857',
+  },
+  viewKpiSubtext: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 4,
+  },
+  viewKpiSubtextTotal: {
+    fontSize: 11,
+    color: '#065F46',
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  viewDetailCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  viewDetailCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 12,
+    marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  viewDetailCardTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#004D34',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  viewGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  viewGridItem: {
+    width: '31%',
+    minWidth: 180,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    borderRadius: 8,
+    padding: 10,
+  },
+  viewGridLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  viewGridValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  itemTableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    marginBottom: 4,
+  },
+  itemThCell: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#475569',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  itemTableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  itemTdCell: {
+    fontSize: 12,
+    color: '#334155',
+  },
+  recordTypeTag: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  recordTypeTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  viewCalcBanner: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    padding: 14,
+  },
+  calcTag: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  calcTagText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
+  },
 });
 
 export default TelecomBillTab;
