@@ -83,7 +83,6 @@ const TelecomBillTab = ({
   // Selected Configuration Values
   const [selectedClient, setSelectedClient] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
-  const [selectedCompanyFilter, setSelectedCompanyFilter] = useState('');
 
   // Dynamic Custom Fields State
   const [customFields, setCustomFields] = useState(null);
@@ -957,28 +956,9 @@ const TelecomBillTab = ({
     );
   };
 
-  // Distinct list of company names for the table filter dropdown
-  const filterCompanyOptions = React.useMemo(() => {
-    const names = new Set();
-    companiesList.forEach(c => {
-      const n = c.company_name || c.name;
-      if (n) names.add(n);
-    });
-    records.forEach(r => {
-      const n = r.company_name || r.Company;
-      if (n && n !== '—') names.add(n);
-    });
-    return Array.from(names).sort();
-  }, [companiesList, records]);
-
   const filteredRecords = records.filter(r => {
     if (user && String(user.roleId) !== '1' && user.clientid && String(r.clientid) !== String(user.clientid)) {
       return false;
-    }
-    if (selectedCompanyFilter) {
-      const rComp = (r.company_name || r.Company || '').toLowerCase().trim();
-      const filterComp = selectedCompanyFilter.toLowerCase().trim();
-      if (rComp !== filterComp) return false;
     }
     if (!search.trim()) return true;
     const q = search.toLowerCase();
@@ -1036,7 +1016,7 @@ const TelecomBillTab = ({
       {/* DATA TABLE (UNIFIED ENTERPRISE CARD MATCHING ASSET DETAILS 100%) */}
       <View style={styles.tableCard}>
 
-        {/* INTEGRATED SEARCH & COMPANY FILTER TOOLBAR */}
+        {/* INTEGRATED SEARCH TOOLBAR */}
         <View style={styles.toolbarWrapper}>
           <View style={styles.searchBarWrapper}>
             <Ionicons name="search" size={16} color="#94A3B8" />
@@ -1047,23 +1027,6 @@ const TelecomBillTab = ({
               onChangeText={text => { setSearch(text); setPage(1); }}
               placeholderTextColor="#94A3B8"
             />
-          </View>
-
-          <View style={styles.filterDropdownWrapper}>
-            <Ionicons name="business-outline" size={16} color="#64748B" style={{ marginRight: 6 }} />
-            <select
-              value={selectedCompanyFilter}
-              onChange={(e) => {
-                setSelectedCompanyFilter(e.target.value);
-                setPage(1);
-              }}
-              style={styles.companyFilterSelect}
-            >
-              <option value="">All Companies ({records.length})</option>
-              {filterCompanyOptions.map(compName => (
-                <option key={compName} value={compName}>{compName}</option>
-              ))}
-            </select>
           </View>
         </View>
 
@@ -1883,31 +1846,6 @@ const styles = StyleSheet.create({
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  filterDropdownWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    height: 38,
-  },
-  companyFilterSelect: {
-    border: 'none',
-    backgroundColor: 'transparent',
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#0F172A',
-    outline: 'none',
-    cursor: 'pointer',
-    paddingRight: 8,
   },
   searchBarWrapper: {
     flexDirection: 'row',
