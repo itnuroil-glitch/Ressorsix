@@ -317,31 +317,35 @@ exports.getMaintenanceRecords = async (req, res) => {
 
     const result = await db.query(query, params);
 
-    // Fetch vehicle name and plate fields definitions
-    let vehicleNameFieldIds = [];
+    // Fetch custom field definitions to accurately extract vehicle name and plate number
+    let primaryVehicleNameFieldIds = [];
+    let fallbackModelFieldIds = [];
+    let fallbackMakeFieldIds = [];
     let vehiclePlateFieldIds = [];
+
     try {
       const allFieldsRes = await db.query('SELECT field_id, field_name FROM tbl_customfield_details');
-
-      const exactNameField = allFieldsRes.rows.find(f => f.field_name.toLowerCase() === 'vehicle name');
-      if (exactNameField) {
-        vehicleNameFieldIds.push(exactNameField.field_id);
-      }
-      
       allFieldsRes.rows.forEach(f => {
-        const fn = f.field_name.toLowerCase();
-        if ((fn.includes('vehicle name') || fn.includes('model') || fn.includes('make')) && !fn.includes('type') && !fn.includes('number')) {
-          if (!vehicleNameFieldIds.includes(f.field_id)) {
-            vehicleNameFieldIds.push(f.field_id);
-          }
+        const fn = (f.field_name || '').toLowerCase().trim();
+        // Strict vehicle name priority: fields containing 'vehicle' and 'name'
+        if (fn.includes('vehicle') && fn.includes('name')) {
+          primaryVehicleNameFieldIds.push(f.field_id);
+        } else if (fn.includes('vehicle') && !fn.includes('type') && !fn.includes('number') && !fn.includes('status') && !fn.includes('id') && !fn.includes('company')) {
+          primaryVehicleNameFieldIds.push(f.field_id);
+        } else if (fn.includes('model')) {
+          fallbackModelFieldIds.push(f.field_id);
+        } else if (fn.includes('make')) {
+          fallbackMakeFieldIds.push(f.field_id);
         }
-        if (fn.includes('plate') || fn.includes('license')) {
-          if (!vehiclePlateFieldIds.includes(f.field_id)) {
-            vehiclePlateFieldIds.push(f.field_id);
-          }
+
+        // Plate / License Number priority
+        if (fn.includes('plate') || fn.includes('liceno') || fn.includes('license')) {
+          vehiclePlateFieldIds.push(f.field_id);
         }
       });
-    } catch (e) {}
+    } catch (e) {
+      console.error('Error fetching custom field definitions:', e);
+    }
 
     // Build vehicle mapping from tbl_vehicle_details
     const vehiclesMap = {};
@@ -353,18 +357,55 @@ exports.getMaintenanceRecords = async (req, res) => {
         vFd = vFd || {};
         
         let vName = '';
-        for (const fid of vehicleNameFieldIds) {
+        // 1. Strict Priority: Check "Vehicle Name" custom fields first
+        for (const fid of primaryVehicleNameFieldIds) {
           if (vFd[fid] && String(vFd[fid]).trim()) {
             vName = String(vFd[fid]).trim();
             break;
           }
         }
+        // 2. Named direct properties
+        if (!vName) {
+          const directName = vFd['Vehicle Name'] || vFd['vehicle_name'] || vFd['VehicleName'] || vFd['vehicleName'] || vFd['name'];
+          if (directName && String(directName).trim()) {
+            vName = String(directName).trim();
+          }
+        }
+        // 3. Fallback to model ONLY if vehicle name is absent
+        if (!vName) {
+          for (const fid of fallbackModelFieldIds) {
+            if (vFd[fid] && String(vFd[fid]).trim()) {
+              vName = String(vFd[fid]).trim();
+              break;
+            }
+          }
+          if (!vName && (vFd['Model'] || vFd['model'])) {
+            vName = String(vFd['Model'] || vFd['model']).trim();
+          }
+        }
+        // 4. Fallback to make ONLY as absolute last resort
+        if (!vName) {
+          for (const fid of fallbackMakeFieldIds) {
+            if (vFd[fid] && String(vFd[fid]).trim()) {
+              vName = String(vFd[fid]).trim();
+              break;
+            }
+          }
+          if (!vName && (vFd['Make'] || vFd['make'])) {
+            vName = String(vFd['Make'] || vFd['make']).trim();
+          }
+        }
+
+        // Plate number resolution
         let pNo = '';
         for (const fid of vehiclePlateFieldIds) {
           if (vFd[fid] && String(vFd[fid]).trim()) {
             pNo = String(vFd[fid]).trim();
             break;
           }
+        }
+        if (!pNo && (vFd['Plate Number'] || vFd['plate_no'] || vFd['Plate No'] || vFd['PlateNumber'])) {
+          pNo = String(vFd['Plate Number'] || vFd['plate_no'] || vFd['Plate No'] || vFd['PlateNumber']).trim();
         }
 
         const info = {

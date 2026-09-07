@@ -897,8 +897,13 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
               ) : (
                 paginatedRecords.map((item, idx) => {
                   const fd = item.field_data || {};
-                  const vehicleName = item.vehicle_name && item.vehicle_name !== 'N/A' ? item.vehicle_name : (fd.vehicle_name || fd['Vehicle Name'] || 'N/A');
-                  const plateNo = item.plate_no && item.plate_no !== 'N/A' ? item.plate_no : (fd.plate_no || fd['Plate Number'] || 'N/A');
+                  const matchedVehicle = (allVehicles || []).find(v => String(v.id) === String(item.vehicle_id) || String(v.vehicle_id) === String(item.vehicle_id));
+                  const vehicleName = item.vehicle_name && item.vehicle_name !== 'N/A' 
+                    ? item.vehicle_name 
+                    : (matchedVehicle?.vehicle_name || fd.vehicle_name || fd['Vehicle Name'] || 'N/A');
+                  const plateNo = item.plate_no && item.plate_no !== 'N/A' 
+                    ? item.plate_no 
+                    : (matchedVehicle?.plate_no || fd.plate_no || fd['Plate Number'] || 'N/A');
                   const serviceType = fd.service_type || fd['Service Type'] || fd['1786967942496'] || 'General Service';
                   const cost = fd.total_cost || fd['Total Cost'] || fd['1786968040112'] || 'AED 0.00';
 
