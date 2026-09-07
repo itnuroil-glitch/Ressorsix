@@ -126,7 +126,7 @@ const fillAllSchemaFieldIds = async (fieldData, custom_field_id = null) => {
   return parsed;
 };
 
-// Sanitize field_data to keep ONLY field IDs (numeric keys)
+// Sanitize field_data to keep ONLY field IDs (numeric keys) and vehicle_id
 const sanitizeFieldDataOnlyFieldIds = (fieldData) => {
   if (!fieldData) return {};
   let parsed = typeof fieldData === 'string' ? JSON.parse(fieldData) : { ...fieldData };
@@ -135,8 +135,8 @@ const sanitizeFieldDataOnlyFieldIds = (fieldData) => {
   const clean = {};
   Object.keys(parsed).forEach(k => {
     const trimmedKey = String(k).trim();
-    // Only keep numeric keys (Field IDs)
-    if (/^\d+$/.test(trimmedKey)) {
+    // Keep numeric keys (Field IDs) and explicit vehicle keys
+    if (/^\d+$/.test(trimmedKey) || trimmedKey === 'vehicle_id' || trimmedKey === 'vehicleId') {
       clean[trimmedKey] = parsed[k];
     }
   });
@@ -223,41 +223,27 @@ const processAndSyncFieldDataFiles = async (fieldData, clientid, company_id) => 
 
 // Helper to extract vehicle_id from field_data if not directly provided
 const resolveVehicleId = async (vehicle_id, field_data) => {
-  if (vehicle_id) return vehicle_id;
+  if (vehicle_id) return String(vehicle_id);
   if (!field_data) return null;
 
   let parsed = typeof field_data === 'string' ? JSON.parse(field_data) : field_data;
   if (!parsed || typeof parsed !== 'object') return null;
 
-  if (parsed.vehicle_id) return parsed.vehicle_id;
+  if (parsed.vehicle_id) return String(parsed.vehicle_id);
+  if (parsed.vehicleId) return String(parsed.vehicleId);
 
   const stringValues = Object.values(parsed).filter(v => v !== null && v !== undefined && typeof v !== 'object' && String(v).trim() !== '');
 
-  // First pass: direct match on vehicle ID or vehicle_id in tbl_vehicle_details
+  // Exact match on vehicle primary key id or custom vehicle_id in tbl_vehicle_details
   for (const val of stringValues) {
     const sVal = String(val).trim();
     try {
       const matchRes = await db.query(
-        'SELECT vehicle_id, id FROM tbl_vehicle_details WHERE (id::text = $1 OR vehicle_id::text = $1) LIMIT 1',
+        'SELECT id, vehicle_id FROM tbl_vehicle_details WHERE (id::text = $1 OR vehicle_id::text = $1) LIMIT 1',
         [sVal]
       );
       if (matchRes.rows.length > 0) {
-        return matchRes.rows[0].vehicle_id || matchRes.rows[0].id;
-      }
-    } catch (e) {}
-  }
-
-  // Second pass: check field_data of tbl_vehicle_details for plate/vehicle name match
-  for (const val of stringValues) {
-    const sVal = String(val).trim();
-    if (sVal.length < 2) continue;
-    try {
-      const plateRes = await db.query(
-        "SELECT vehicle_id, id FROM tbl_vehicle_details WHERE field_data::text LIKE $1 LIMIT 1",
-        [`%${sVal}%`]
-      );
-      if (plateRes.rows.length > 0) {
-        return plateRes.rows[0].vehicle_id || plateRes.rows[0].id;
+        return String(matchRes.rows[0].id);
       }
     } catch (e) {}
   }
@@ -387,8 +373,12 @@ exports.getMaintenanceRecords = async (req, res) => {
           vehicle_name: vName || 'N/A',
           plate_no: pNo || 'N/A'
         };
+        // Primary key id takes absolute priority (guaranteed unique)
         if (v.id) vehiclesMap[String(v.id)] = info;
-        if (v.vehicle_id) vehiclesMap[String(v.vehicle_id)] = info;
+        // Only map vehicle_id if it doesn't collide with a primary key id
+        if (v.vehicle_id && !vehiclesMap[String(v.vehicle_id)]) {
+          vehiclesMap[String(v.vehicle_id)] = info;
+        }
       });
     } catch (e) {}
 
@@ -452,21 +442,17 @@ exports.getMaintenanceRecords = async (req, res) => {
         }
       }
 
-      // Ensure field_data only contains numeric Field IDs
+      // Ensure field_data only contains numeric Field IDs and vehicle_id
       const cleanFd = sanitizeFieldDataOnlyFieldIds(rawFd);
 
       let vId = row.vehicle_id;
       let matchedVehicle = vId ? vehiclesMap[String(vId)] : null;
 
-      if (!matchedVehicle) {
-        for (const val of Object.values(cleanFd)) {
-          if (val && typeof val !== 'object' && vehiclesMap[String(val)]) {
-            matchedVehicle = vehiclesMap[String(val)];
-            vId = matchedVehicle.vehicle_id || matchedVehicle.id;
-            needsDbUpdate = true;
-            break;
-          }
-        }
+      // If vehicle_id wasn't in row.vehicle_id, check explicit cleanFd.vehicle_id
+      if (!matchedVehicle && cleanFd.vehicle_id && vehiclesMap[String(cleanFd.vehicle_id)]) {
+        matchedVehicle = vehiclesMap[String(cleanFd.vehicle_id)];
+        vId = matchedVehicle.id;
+        needsDbUpdate = true;
       }
 
       // Background DB self-healing sync if record needed updates

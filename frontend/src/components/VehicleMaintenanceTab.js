@@ -405,7 +405,12 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
 
         // Guarantee that the currently selected or edited vehicle is always available with its label
         if (isVehicleField) {
-          const currentVehicleId = String(formData[field.id] || (editingRecord ? (editingRecord.vehicle_id || '') : '')).trim();
+          const currentVehicleId = String(
+            formData[field.id] ||
+            formData.vehicle_id ||
+            formData.vehicleId ||
+            (editingRecord ? (editingRecord.vehicle_id || '') : '')
+          ).trim();
           if (currentVehicleId && currentVehicleId !== 'null' && currentVehicleId !== 'undefined') {
             const exists = optionsList.some(opt => String(opt.value) === currentVehicleId || String(opt.rawId) === currentVehicleId);
             if (!exists) {
@@ -435,7 +440,10 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
           }
         }
 
-        let currentVal = formData[field.id] !== undefined && formData[field.id] !== null ? formData[field.id] : '';
+        let currentVal = (formData[field.id] !== undefined && formData[field.id] !== null && formData[field.id] !== '')
+          ? formData[field.id]
+          : (isVehicleField ? (formData.vehicle_id || formData.vehicleId || editingRecord?.vehicle_id || '') : '');
+
         if (currentVal) {
           if (Array.isArray(currentVal)) {
             currentVal = currentVal.map(v => {
@@ -460,7 +468,12 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
           <SearchableDropdown
             data={optionsList}
             value={currentVal !== undefined && currentVal !== null ? String(currentVal) : ''}
-            onChange={(val) => handleInputChange(field.id, val)}
+            onChange={(val) => {
+              handleInputChange(field.id, val);
+              if (isVehicleField) {
+                handleInputChange('vehicle_id', val);
+              }
+            }}
             placeholder="Select..."
             searchPlaceholder={`Search ${field.name}...`}
             displayKey="label"
@@ -598,6 +611,9 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
         parsed = typeof record.field_data === 'string' ? JSON.parse(record.field_data) : record.field_data;
       } catch (e) { }
     }
+    if (record.vehicle_id) {
+      parsed.vehicle_id = String(record.vehicle_id);
+    }
     setFormData(parsed);
     setSelectedClient(String(record.clientid || ''));
     setSelectedCountry(String(record.country_id || ''));
@@ -611,6 +627,12 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
       String(record.moduleid || ''),
       recCompanyId
     );
+    if (record.vehicle_id) {
+      setFormData(prev => ({
+        ...prev,
+        vehicle_id: String(record.vehicle_id)
+      }));
+    }
     setIsFormOpen(true);
   };
 
@@ -627,6 +649,9 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
         parsed = typeof record.field_data === 'string' ? JSON.parse(record.field_data) : record.field_data;
       } catch (e) { }
     }
+    if (record.vehicle_id) {
+      parsed.vehicle_id = String(record.vehicle_id);
+    }
     setFormData(parsed);
     setSelectedClient(String(record.clientid || ''));
     setSelectedCountry(String(record.country_id || ''));
@@ -640,6 +665,12 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
       String(record.moduleid || ''),
       recCompanyId
     );
+    if (record.vehicle_id) {
+      setFormData(prev => ({
+        ...prev,
+        vehicle_id: String(record.vehicle_id)
+      }));
+    }
     setIsFormOpen(true);
   };
 
@@ -699,6 +730,9 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
       }
 
       const finalFormData = { ...formData };
+      if (selectedVehicleId) {
+        finalFormData.vehicle_id = String(selectedVehicleId);
+      }
       const todayStr = new Date().toISOString().split('T')[0];
       if (fieldsLayout && Array.isArray(fieldsLayout)) {
         for (const sec of fieldsLayout) {
