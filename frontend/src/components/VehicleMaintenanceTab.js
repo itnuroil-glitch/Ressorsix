@@ -62,6 +62,7 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
   const [selectedCountry, setSelectedCountry] = useState('');
   const [selectedModule, setSelectedModule] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
+  const [allVehicles, setAllVehicles] = useState([]);
 
   useEffect(() => {
     fetchInitialData();
@@ -70,22 +71,25 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
   const fetchInitialData = async () => {
     setLoading(true);
     try {
-      const [clientsRes, countriesRes, modulesRes, recordsRes] = await Promise.all([
+      const [clientsRes, countriesRes, modulesRes, recordsRes, vehiclesRes] = await Promise.all([
         fetch(`${API_URL}/api/clients`),
         fetch(`${API_URL}/api/countries`),
         fetch(`${API_URL}/api/modules`),
-        fetch(`${API_URL}/api/vehicle-maintenance${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`)
+        fetch(`${API_URL}/api/vehicle-maintenance${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`),
+        fetch(`${API_URL}/api/vehicle-details${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`)
       ]);
-      const [clientsData, countriesData, modulesData, recordsData] = await Promise.all([
+      const [clientsData, countriesData, modulesData, recordsData, vehiclesData] = await Promise.all([
         clientsRes.ok ? clientsRes.json() : [],
         countriesRes.ok ? countriesRes.json() : [],
         modulesRes.ok ? modulesRes.json() : [],
-        recordsRes.ok ? recordsRes.json() : []
+        recordsRes.ok ? recordsRes.json() : [],
+        vehiclesRes && vehiclesRes.ok ? vehiclesRes.json() : []
       ]);
       setClients(clientsData || []);
       setCountries(countriesData || []);
       setModules(modulesData || []);
       setMaintenanceRecords(Array.isArray(recordsData) ? recordsData : []);
+      setAllVehicles(Array.isArray(vehiclesData) ? vehiclesData : []);
 
       const clientVal = user?.client_id || user?.clientid;
       if (clientVal) {
@@ -196,7 +200,7 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
     }));
   };
 
-  const fetchFormConfiguration = async (clientId, countryId, moduleId) => {
+  const fetchFormConfiguration = async (clientId, countryId, moduleId, targetCompanyId) => {
     setLoading(true);
     setWizardStep(2);
     try {
@@ -276,7 +280,9 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
       }
 
       const activeClientId = clientId || user?.client_id || user?.clientid || '1';
-      const activeCompanyId = selectedCompany ? String(selectedCompany).split(',')[0].trim() : '';
+      const activeCompanyId = (targetCompanyId !== undefined && targetCompanyId !== null && targetCompanyId !== '')
+        ? String(targetCompanyId).split(',')[0].trim()
+        : (selectedCompany ? String(selectedCompany).split(',')[0].trim() : '');
 
       // Fetch dynamic options for dropdowns if needed
       for (const sec of (parsedSections || [])) {
@@ -379,6 +385,54 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
             }
             return { label: String(label), value: String(value), rawId: String(value) };
           });
+        }
+
+        const isVehicleField = fNameLower.includes('vehicle') || field.id === 'vehicle_id';
+
+        // Fallback to allVehicles if dynamicOptionsList returned empty for vehicle dropdown
+        if (isVehicleField && optionsList.length === 0 && allVehicles.length > 0) {
+          optionsList = allVehicles.map(v => {
+            const vName = v.vehicle_name || v.Vehiclename || '';
+            const pNo = v.plate_no || v.Plateno || '';
+            const label = (vName && pNo && vName !== pNo) ? `${vName} - ${pNo}` : (vName || pNo || `Vehicle #${v.id}`);
+            return {
+              label: String(label),
+              value: String(v.id || v.vehicle_id),
+              rawId: String(v.id || v.vehicle_id)
+            };
+          });
+        }
+
+        // Guarantee that the currently selected or edited vehicle is always available with its label
+        if (isVehicleField) {
+          const currentVehicleId = String(formData[field.id] || (editingRecord ? (editingRecord.vehicle_id || '') : '')).trim();
+          if (currentVehicleId && currentVehicleId !== 'null' && currentVehicleId !== 'undefined') {
+            const exists = optionsList.some(opt => String(opt.value) === currentVehicleId || String(opt.rawId) === currentVehicleId);
+            if (!exists) {
+              const matchedFromAll = allVehicles.find(v => String(v.id) === currentVehicleId || String(v.vehicle_id) === currentVehicleId);
+              let vName = matchedFromAll ? (matchedFromAll.vehicle_name || matchedFromAll.Vehiclename) : (editingRecord?.vehicle_name);
+              let pNo = matchedFromAll ? (matchedFromAll.plate_no || matchedFromAll.Plateno) : (editingRecord?.plate_no);
+
+              let vLabel = '';
+              if (vName && vName !== 'N/A') {
+                vLabel = (pNo && pNo !== 'N/A' && pNo !== vName) ? `${vName} - ${pNo}` : vName;
+              } else if (editingRecord && editingRecord.vehicle_name && editingRecord.vehicle_name !== 'N/A') {
+                vLabel = (editingRecord.plate_no && editingRecord.plate_no !== 'N/A' && editingRecord.plate_no !== editingRecord.vehicle_name)
+                  ? `${editingRecord.vehicle_name} - ${editingRecord.plate_no}`
+                  : editingRecord.vehicle_name;
+              } else {
+                vLabel = `Vehicle #${currentVehicleId}`;
+              }
+
+              if (vLabel) {
+                optionsList.unshift({
+                  label: String(vLabel),
+                  value: currentVehicleId,
+                  rawId: currentVehicleId
+                });
+              }
+            }
+          }
         }
 
         let currentVal = formData[field.id] !== undefined && formData[field.id] !== null ? formData[field.id] : '';
@@ -548,12 +602,14 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
     setSelectedClient(String(record.clientid || ''));
     setSelectedCountry(String(record.country_id || ''));
     setSelectedModule(String(record.moduleid || ''));
+    const recCompanyId = record.company_id ? String(record.company_id) : '';
     await fetchCompaniesForClient(String(record.clientid || ''), 'edit');
-    setSelectedCompany(record.company_id ? String(record.company_id) : '');
+    setSelectedCompany(recCompanyId);
     await fetchFormConfiguration(
       String(record.clientid || ''),
       String(record.country_id || ''),
-      String(record.moduleid || '')
+      String(record.moduleid || ''),
+      recCompanyId
     );
     setIsFormOpen(true);
   };
@@ -575,12 +631,14 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
     setSelectedClient(String(record.clientid || ''));
     setSelectedCountry(String(record.country_id || ''));
     setSelectedModule(String(record.moduleid || ''));
+    const recCompanyId = record.company_id ? String(record.company_id) : '';
     await fetchCompaniesForClient(String(record.clientid || ''), 'view');
-    setSelectedCompany(record.company_id ? String(record.company_id) : '');
+    setSelectedCompany(recCompanyId);
     await fetchFormConfiguration(
       String(record.clientid || ''),
       String(record.country_id || ''),
-      String(record.moduleid || '')
+      String(record.moduleid || ''),
+      recCompanyId
     );
     setIsFormOpen(true);
   };
