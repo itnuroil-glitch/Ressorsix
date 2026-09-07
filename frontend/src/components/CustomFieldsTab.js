@@ -25,13 +25,20 @@ export const SearchableDropdown = ({ value, onChange, data, placeholder, searchP
     return searchString.includes(searchTerm.toLowerCase()) || detailsString.includes(searchTerm.toLowerCase());
   });
 
-  const selectedItems = data.filter(item => 
-    item !== undefined && item !== null && (
-      (item[valueKey] !== undefined && item[valueKey] !== null && selectedValues.includes(String(item[valueKey]))) ||
-      (item.rawId !== undefined && item.rawId !== null && selectedValues.includes(String(item.rawId))) ||
-      (item.label !== undefined && item.label !== null && selectedValues.includes(String(item.label)))
-    )
+  const primarySelectedItems = data.filter(item => 
+    item !== undefined && item !== null &&
+    item[valueKey] !== undefined && item[valueKey] !== null &&
+    selectedValues.includes(String(item[valueKey]))
   );
+
+  const selectedItems = primarySelectedItems.length > 0
+    ? primarySelectedItems
+    : data.filter(item => 
+        item !== undefined && item !== null && (
+          (item.rawId !== undefined && item.rawId !== null && selectedValues.includes(String(item.rawId))) ||
+          (item.label !== undefined && item.label !== null && selectedValues.includes(String(item.label)))
+        )
+      );
 
   const displayText = selectedItems.length > 0 
     ? selectedItems.map(item => item[displayKey]).join(', ')
@@ -145,10 +152,14 @@ export const SearchableDropdown = ({ value, onChange, data, placeholder, searchP
             <ScrollView nestedScrollEnabled={true} style={{ maxHeight: 130 }} keyboardShouldPersistTaps="handled">
               {filteredData.length > 0 ? (
                 filteredData.map((item, index) => {
-                  const isSelected = item !== undefined && item !== null && (
-                    (item[valueKey] !== undefined && item[valueKey] !== null && selectedValues.includes(String(item[valueKey]))) ||
-                    (item.rawId !== undefined && item.rawId !== null && selectedValues.includes(String(item.rawId))) ||
-                    (item.label !== undefined && item.label !== null && selectedValues.includes(String(item.label)))
+                  const matchesKey = item !== undefined && item !== null &&
+                    item[valueKey] !== undefined && item[valueKey] !== null &&
+                    selectedValues.includes(String(item[valueKey]));
+                  const isSelected = matchesKey || (
+                    primarySelectedItems.length === 0 && item !== undefined && item !== null && (
+                      (item.rawId !== undefined && item.rawId !== null && selectedValues.includes(String(item.rawId))) ||
+                      (item.label !== undefined && item.label !== null && selectedValues.includes(String(item.label)))
+                    )
                   );
                   const isOptionDisabled = getIsOptionDisabled ? getIsOptionDisabled(item) : false;
                   return (
