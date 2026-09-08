@@ -8,6 +8,9 @@ router.route('/')
 
 router.post('/bulk-import', employeeController.bulkImportEmployees);
 
+router.get('/company/:companyId', employeeController.getEmployeesByCompany);
+router.get('/company', employeeController.getEmployeesByCompany);
+
 router.route('/:id')
   .put(employeeController.updateEmployee)
   .delete(employeeController.deleteEmployee);
