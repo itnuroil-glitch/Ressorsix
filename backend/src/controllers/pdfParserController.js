@@ -266,9 +266,10 @@ exports.parsePdfDocument = async (req, res) => {
     let matchedPeriodFrom = '';
     let matchedPeriodTo = '';
     const periodPatterns = [
-      /(?:bill\s*period|billing\s*period|bill\s*cycle|usage\s*period|period|duration)\s*[:.-]?\s*[\r\n]*\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})\s*(?:[-–—−~]|to|until)\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})/i,
-      /(?:from)\s*[:.-]?\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})\s*(?:[-–—−~]|to|until)\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})/i,
-      /(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})\s*(?:[-–—−~]|to|until)\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})/i
+      /(?:bill\s*period|billing\s*period|billing\s*cycle|bill\s*cycle|usage\s*period|statement\s*period|period|duration)\s*[:.-]?\s*[\r\n]*\s*(\d{1,2}[\s\/\.-]+[A-Za-z0-9]{3,9}[\s\/\.-]+\d{2,4})\s*(?:[-–—−~]|to|until)\s*(\d{1,2}[\s\/\.-]+[A-Za-z0-9]{3,9}[\s\/\.-]+\d{2,4})/i,
+      /(?:for\s*the\s*period|period\s*covered|from)\s*[:.-]?\s*(\d{1,2}[\s\/\.-]+[A-Za-z0-9]{3,9}[\s\/\.-]+\d{2,4})\s*(?:[-–—−~]|to|until)\s*(\d{1,2}[\s\/\.-]+[A-Za-z0-9]{3,9}[\s\/\.-]+\d{2,4})/i,
+      /(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})\s*(?:[-–—−~]|to|until)\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})/i,
+      /(\d{2}[\/\.-]\d{2}[\/\.-]\d{4})\s*(?:[-–—−~]|to|until)\s*(\d{2}[\/\.-]\d{2}[\/\.-]\d{4})/i
     ];
     for (const pat of periodPatterns) {
       const m = rawText.match(pat);
@@ -277,6 +278,21 @@ exports.parsePdfDocument = async (req, res) => {
         matchedPeriodTo = parseToStandardDate(m[2].trim());
         break;
       }
+    }
+    if ((!matchedPeriodFrom || !matchedPeriodTo) && matchedIssueDate) {
+      try {
+        const d = new Date(matchedIssueDate);
+        if (!isNaN(d.getTime())) {
+          const prevMonthLastDay = new Date(d.getFullYear(), d.getMonth(), 0);
+          const prevMonthFirstDay = new Date(prevMonthLastDay.getFullYear(), prevMonthLastDay.getMonth(), 1);
+          if (!matchedPeriodFrom) {
+            matchedPeriodFrom = `${prevMonthFirstDay.getFullYear()}-${String(prevMonthFirstDay.getMonth() + 1).padStart(2, '0')}-01`;
+          }
+          if (!matchedPeriodTo) {
+            matchedPeriodTo = `${prevMonthLastDay.getFullYear()}-${String(prevMonthLastDay.getMonth() + 1).padStart(2, '0')}-${String(prevMonthLastDay.getDate()).padStart(2, '0')}`;
+          }
+        }
+      } catch (e) {}
     }
     if (!matchedPeriodFrom && matchedIssueDate) matchedPeriodFrom = matchedIssueDate;
     if (!matchedPeriodTo && matchedDueDate) matchedPeriodTo = matchedDueDate;
@@ -321,29 +337,40 @@ exports.parsePdfDocument = async (req, res) => {
 
     // M. Enhanced Telecom Provider Detection (Etisalat vs du vs Others)
     let matchedTelecomProvider = '';
-    const isDuKeywords = /\b(du|emirates integrated telecommunications|power\s*\d+\s*data\s*flexi|a closer look at your mobile plans)\b/i.test(rawText);
-    const isDuBillNo = /^I400\d+/i.test(matchedDocNumber) || /^1400\d+/i.test(matchedDocNumber);
-    const isDuAccountNo = /^28\d{8}$/.test(matchedMobileAccount.replace(/\s+/g, ''));
+    const cleanFileName = (file_name || '').toLowerCase();
+    const cleanAccount = String(matchedMobileAccount || '').replace(/\D/g, '');
+    const cleanDocNo = String(matchedDocNumber || '').trim();
 
-    const isEtisalatKeywords = /\b(etisalat|e&|emirates telecommunications group|usage & services details)\b/i.test(rawText);
-    const isEtisalatBillNo = /^INV/i.test(matchedDocNumber);
+    // 1. du detection signals
+    const isDuFileName = cleanFileName.includes('-du') || cleanFileName.includes('du-') || cleanFileName.includes('_du') || cleanFileName.includes('du.') || cleanFileName.includes('du_');
+    const isDuAccount = cleanAccount.startsWith('28') && cleanAccount.length >= 8 && cleanAccount.length <= 12;
+    const isDuBillNo = /^I400/i.test(cleanDocNo) || /^1400/i.test(cleanDocNo) || /^I5/i.test(cleanDocNo) || /^INV-DU/i.test(cleanDocNo);
+    const isDuKeywords = /\b(du\.ae|eitc|eitc\.ae|emirates integrated telecommunications|power\s*\d+\s*data\s*flexi|a closer look at your mobile plans|payment slip\s*-\s*du|po\s*box\s*502666|business mobile plan)\b/i.test(rawText) ||
+      (/\bdu\b/i.test(rawText) && (rawText.toLowerCase().includes('telecom') || rawText.toLowerCase().includes('invoice') || rawText.toLowerCase().includes('bill')));
 
-    if (isDuKeywords || isDuBillNo || isDuAccountNo) {
+    // 2. Etisalat detection signals
+    const isEtisalatFileName = cleanFileName.includes('etisalat') || cleanFileName.includes('e&');
+    const isEtisalatBillNo = /^INV20/i.test(cleanDocNo) || /^INV1/i.test(cleanDocNo) || (/^INV/i.test(cleanDocNo) && !isDuBillNo);
+    const isEtisalatAccount = (cleanAccount.startsWith('050') || cleanAccount.startsWith('054') || cleanAccount.startsWith('056') || cleanAccount.startsWith('02') || cleanAccount.startsWith('04') || cleanAccount.startsWith('06')) && cleanAccount.length <= 10;
+    const isEtisalatKeywords = /\b(etisalat|etisalat\.ae|eand\.com|emirates telecommunications group|po\s*box\s*3838)\b/i.test(rawText);
+
+    // Decision Logic: du takes priority if du-specific account / bill / filename / domain matches
+    if (isDuFileName || isDuAccount || isDuBillNo || isDuKeywords) {
       matchedTelecomProvider = 'du';
-    } else if (isEtisalatKeywords || isEtisalatBillNo) {
+    } else if (isEtisalatFileName || isEtisalatKeywords || isEtisalatBillNo || isEtisalatAccount) {
       matchedTelecomProvider = 'Etisalat';
-    } else if (/\bvirgin\b/i.test(rawText)) {
+    } else if (/\bvirgin\b/i.test(rawText) || cleanFileName.includes('virgin')) {
       matchedTelecomProvider = 'Virgin';
-    } else if (/\bvodafone\b/i.test(rawText)) {
+    } else if (/\bvodafone\b/i.test(rawText) || cleanFileName.includes('vodafone')) {
       matchedTelecomProvider = 'Vodafone';
-    } else if (/\bstc\b/i.test(rawText)) {
+    } else if (/\bstc\b/i.test(rawText) || cleanFileName.includes('stc')) {
       matchedTelecomProvider = 'STC';
-    } else if (/\booredoo\b/i.test(rawText)) {
+    } else if (/\booredoo\b/i.test(rawText) || cleanFileName.includes('ooredoo')) {
       matchedTelecomProvider = 'Ooredoo';
-    } else if (/\bzain\b/i.test(rawText)) {
+    } else if (/\bzain\b/i.test(rawText) || cleanFileName.includes('zain')) {
       matchedTelecomProvider = 'Zain';
     } else {
-      matchedTelecomProvider = 'Etisalat';
+      matchedTelecomProvider = isDuAccount ? 'du' : 'Etisalat';
     }
 
     // N. Match Total / Bill Amount Regex (Includes du "this month's bill" patterns)
