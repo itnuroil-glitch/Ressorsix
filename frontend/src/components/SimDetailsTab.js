@@ -205,8 +205,9 @@ export default function SimDetailsTab({
     setFormData(prev => ({ ...prev, [key]: value }));
   };
 
-  const fetchFormConfiguration = async (clientId) => {
+  const fetchFormConfiguration = async (clientId, companyId = null) => {
     try {
+      const activeCompanyId = companyId || selectedCompany || formData.company_id || formData.company || '';
       const cfRes = await fetch(`${API_URL}/api/custom-fields`);
       if (!cfRes.ok) return;
       const customFields = await cfRes.json();
@@ -214,22 +215,68 @@ export default function SimDetailsTab({
       const isSimModule = (cf) => {
         const modId = String(cf.moduleid || cf.module_id || '');
         const modName = String(cf.module_name || '').toLowerCase();
-        if (modId === '52' || modId === '58' || modId === '59') return true;
-        if (modName.includes('document')) return false;
-        return modName.includes('sim') || modName === 'telecom details' || modName.includes('telecom detail');
+        
+        // Exclude Module 58 (Premium Extra Charges) and Module 61 (Documents)
+        if (modId === '58' || modId === '61') return false;
+        if (modName.includes('document') || modName.includes('extra charge') || modName.includes('premium')) return false;
+
+        // Check if section name in field_data contains extra charges
+        let fdStr = '';
+        if (typeof cf.field_data === 'string') {
+          fdStr = cf.field_data.toLowerCase();
+        } else if (cf.field_data) {
+          fdStr = JSON.stringify(cf.field_data).toLowerCase();
+        }
+        if (fdStr.includes('premium & extra charge') || fdStr.includes('extra charge')) return false;
+
+        if (isTelecomDataView) {
+          if (modId === '59') return true;
+          return modName.includes('telecom data') || modName.includes('telecome data');
+        } else {
+          if (modId === '52') return true;
+          return modName.includes('sim') || modName.includes('telecom detail') || modName.includes('telecome detail') || fdStr.includes('telecom') || fdStr.includes('telecome');
+        }
       };
 
-      let matchingFieldDef = customFields.find(cf =>
-        (String(cf.client_id || cf.clientid) === String(clientId)) && isSimModule(cf)
-      );
-      if (!matchingFieldDef) {
-        matchingFieldDef = customFields.find(cf =>
-          (!cf.clientid && !cf.client_id) && isSimModule(cf)
-        );
-      }
-      if (!matchingFieldDef && customFields.length > 0) {
-        matchingFieldDef = customFields.find(cf => isSimModule(cf));
-      }
+      // Score and select the best matching custom field for Telecom Details
+      const getSimModuleScore = (cf) => {
+        if (!isSimModule(cf)) return -1;
+        let score = 10;
+        const modId = String(cf.moduleid || cf.module_id || '');
+        const modName = String(cf.module_name || '').toLowerCase();
+        let fdStr = typeof cf.field_data === 'string' ? cf.field_data.toLowerCase() : JSON.stringify(cf.field_data || '').toLowerCase();
+
+        // Target client match gets highest priority
+        if (clientId && String(cf.client_id || cf.clientid) === String(clientId)) {
+          score += 100;
+        } else if (!cf.client_id && !cf.clientid) {
+          score += 50; // Global custom field
+        }
+
+        // Module ID match (52 for Telecom Details, 59 for Telecom Data)
+        const expectedModId = isTelecomDataView ? '59' : '52';
+        if (modId === expectedModId) {
+          score += 40;
+        }
+
+        // Section name match ('Telecome Details' / 'Telecom Details')
+        if (fdStr.includes('telecom detail') || fdStr.includes('telecome detail')) {
+          score += 50;
+        } else if (modName.includes('telecom detail') || modName.includes('telecome detail')) {
+          score += 30;
+        } else if (fdStr.includes('sim') || modName.includes('sim')) {
+          score += 20;
+        }
+
+        return score;
+      };
+
+      const candidateFields = customFields
+        .map(cf => ({ cf, score: getSimModuleScore(cf) }))
+        .filter(item => item.score > 0)
+        .sort((a, b) => b.score - a.score);
+
+      let matchingFieldDef = candidateFields.length > 0 ? candidateFields[0].cf : null;
 
       if (matchingFieldDef) {
         // Fetch field permissions
@@ -274,6 +321,19 @@ export default function SimDetailsTab({
         const fetchDynamicOptions = async (path) => {
           try {
             let processedPath = (path || '').trim();
+
+            // Replace :companyId with activeCompanyId
+            if (processedPath.includes(':companyId') || processedPath.includes(':companyid')) {
+              if (activeCompanyId) {
+                processedPath = processedPath.replace(':companyId', activeCompanyId).replace(':companyid', activeCompanyId);
+              } else {
+                return [];
+              }
+            } else if (activeCompanyId && processedPath.includes('/api/employees') && !processedPath.includes('company')) {
+              const sep = processedPath.includes('?') ? '&' : '?';
+              processedPath = `${processedPath}${sep}company_id=${activeCompanyId}`;
+            }
+
             if (processedPath.includes('client') && clientId) {
               if (processedPath.endsWith('/client') || processedPath.endsWith('/client/')) {
                 const separator = processedPath.endsWith('/') ? '' : '/';
@@ -291,6 +351,10 @@ export default function SimDetailsTab({
             return data.map(item => {
               if (typeof item === 'string') return item;
               if (item && typeof item === 'object') {
+                if (item.full_name) return item.full_name;
+                if (item.employee_name) return item.employee_name;
+                if (item.name) return item.name;
+
                 let displayName = '';
                 if (item.field_data && typeof item.field_data === 'object') {
                   const firstVal = Object.values(item.field_data)[0];
@@ -365,8 +429,9 @@ export default function SimDetailsTab({
     setIsViewOnly(viewMode);
     setIsAddOnMode(addOnMode);
     const targetClient = record?.clientid ? String(record.clientid) : (user?.clientid ? String(user.clientid) : selectedClient);
+    const targetCompany = record?.company_id ? String(record.company_id) : selectedCompany;
     if (targetClient) {
-      await fetchFormConfiguration(targetClient);
+      await fetchFormConfiguration(targetClient, targetCompany);
     }
     if (record) {
       setEditingId(record.tele_id || record.id);
@@ -466,7 +531,7 @@ export default function SimDetailsTab({
       showToast('Please select a Client', 'error');
       return;
     }
-    await fetchFormConfiguration(selectedClient);
+    await fetchFormConfiguration(selectedClient, selectedCompany);
     setWizardStep(2);
   };
 
@@ -526,7 +591,12 @@ export default function SimDetailsTab({
           } else if (fName.includes('plan')) {
             options = simPlans.map(p => p.plan_name || p.name).filter(Boolean);
           } else if (fName.includes('employee') || fName.includes('assigned')) {
-            options = employees.map(e => e.employee_name || e.first_name || e.name).filter(Boolean);
+            const targetCId = selectedCompany || formData.company_id || formData.company;
+            const filteredEmps = targetCId ? employees.filter(e => 
+              String(e.basecompany_id) === String(targetCId) || 
+              (Array.isArray(e.companies) && e.companies.some(c => String(c.id) === String(targetCId)))
+            ) : employees;
+            options = filteredEmps.map(e => e.full_name || e.employee_name || e.first_name || e.name).filter(Boolean);
           } else if (fName.includes('status')) {
             options = ['Active', 'Available', 'Assigned', 'Suspended', 'Lost', 'Damaged', 'Cancelled'];
           }
@@ -1588,7 +1658,11 @@ export default function SimDetailsTab({
                     <SearchableDropdown
                       data={companies}
                       value={selectedCompany}
-                      onChange={(val) => setSelectedCompany(val)}
+                      onChange={(val) => {
+                        setSelectedCompany(val);
+                        handleChange('assigned_employee', '');
+                        handleChange('Assigned Employee', '');
+                      }}
                       placeholder="-- Select Company --"
                       searchPlaceholder="Search Company..."
                       displayKey="company_name"
@@ -2421,26 +2495,33 @@ export default function SimDetailsTab({
                         {/* Assigned Employee */}
                         <View style={styles.fieldContainer}>
                           <Text style={styles.fieldLabel}>Assigned Employee</Text>
-                          {employees.length > 0 ? (
-                            <SearchableDropdown
-                              data={employees}
-                              value={formData.assigned_employee}
-                              onChange={(val) => handleChange('assigned_employee', val)}
-                              placeholder="-- Select Employee --"
-                              searchPlaceholder="Search Employee..."
-                              displayKey="full_name"
-                              valueKey="full_name"
-                              disabled={isViewOnly}
-                            />
-                          ) : (
-                            <TextInput
-                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
-                              placeholder="e.g. John Doe"
-                              value={formData.assigned_employee}
-                              onChangeText={val => handleChange('assigned_employee', val)}
-                              editable={!isViewOnly}
-                            />
-                          )}
+                          {(() => {
+                            const targetCId = selectedCompany || formData.company_id || formData.company;
+                            const filteredEmps = targetCId ? employees.filter(e => 
+                              String(e.basecompany_id) === String(targetCId) || 
+                              (Array.isArray(e.companies) && e.companies.some(c => String(c.id) === String(targetCId)))
+                            ) : employees;
+                            return filteredEmps.length > 0 ? (
+                              <SearchableDropdown
+                                data={filteredEmps}
+                                value={formData.assigned_employee}
+                                onChange={(val) => handleChange('assigned_employee', val)}
+                                placeholder="-- Select Employee --"
+                                searchPlaceholder="Search Employee..."
+                                displayKey="full_name"
+                                valueKey="full_name"
+                                disabled={isViewOnly}
+                              />
+                            ) : (
+                              <TextInput
+                                style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                                placeholder="e.g. John Doe"
+                                value={formData.assigned_employee}
+                                onChangeText={val => handleChange('assigned_employee', val)}
+                                editable={!isViewOnly}
+                              />
+                            );
+                          })()}
                         </View>
 
                         {/* Department */}
