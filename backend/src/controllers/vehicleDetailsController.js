@@ -463,7 +463,7 @@ exports.getVehiclesByClient = async (req, res) => {
       WHERE LOWER(field_name) LIKE '%vehicle%'
     `);
 
-    // Sort so fields containing 'name' get highest priority
+    // Sort so fields containing 'name' get highest priority, while 'type' and 'category' are deprioritized
     const sortedFields = fieldsRes.rows.sort((a, b) => {
       const aName = a.field_name.toLowerCase();
       const bName = b.field_name.toLowerCase();
@@ -471,6 +471,10 @@ exports.getVehiclesByClient = async (req, res) => {
       const bHasName = bName.includes('name');
       if (aHasName && !bHasName) return -1;
       if (!aHasName && bHasName) return 1;
+      const aHasType = aName.includes('type') || aName.includes('category');
+      const bHasType = bName.includes('type') || bName.includes('category');
+      if (!aHasType && bHasType) return -1;
+      if (aHasType && !bHasType) return 1;
       return 0;
     });
     const fieldIds = sortedFields.map(f => f.field_id);
@@ -666,11 +670,35 @@ exports.getVehiclePlatesByClient = async (req, res) => {
          OR LOWER(field_name) LIKE '%no%'
     `);
 
+    // Prioritize fields containing 'name', deprioritize 'type' and 'category'
     const vehicleNameFieldIds = fieldsRes.rows
       .filter(f => f.field_name.toLowerCase().includes('vehicle'))
+      .sort((a, b) => {
+        const aName = a.field_name.toLowerCase();
+        const bName = b.field_name.toLowerCase();
+        const aHasName = aName.includes('name');
+        const bHasName = bName.includes('name');
+        if (aHasName && !bHasName) return -1;
+        if (!aHasName && bHasName) return 1;
+        const aHasType = aName.includes('type') || aName.includes('category');
+        const bHasType = bName.includes('type') || bName.includes('category');
+        if (!aHasType && bHasType) return -1;
+        if (aHasType && !bHasType) return 1;
+        return 0;
+      })
       .map(f => f.field_id);
+
     const vehiclePlateFieldIds = fieldsRes.rows
-      .filter(f => !f.field_name.toLowerCase().includes('vehicle'))
+      .filter(f => !f.field_name.toLowerCase().includes('vehicle') || f.field_name.toLowerCase().includes('plate'))
+      .sort((a, b) => {
+        const aName = a.field_name.toLowerCase();
+        const bName = b.field_name.toLowerCase();
+        const aHasPlate = aName.includes('plate');
+        const bHasPlate = bName.includes('plate');
+        if (aHasPlate && !bHasPlate) return -1;
+        if (!aHasPlate && bHasPlate) return 1;
+        return 0;
+      })
       .map(f => f.field_id);
 
     let companyId = req.params.companyId || req.params.companyid || req.query.companyId || req.query.companyid || req.query.company;
@@ -696,33 +724,66 @@ exports.getVehiclePlatesByClient = async (req, res) => {
       let vehicleName = '';
       let plateNo = '';
       if (v.field_data) {
-        // Extract vehicle name
+        let fieldData = v.field_data;
+        if (typeof fieldData === 'string') {
+          try { fieldData = JSON.parse(fieldData); } catch (e) { fieldData = {}; }
+        }
+
+        // Extract vehicle name (prioritizing vehicle name fields)
         for (const fid of vehicleNameFieldIds) {
-          if (v.field_data[fid]) {
-            vehicleName = v.field_data[fid];
+          if (fieldData[fid]) {
+            vehicleName = fieldData[fid];
             break;
           }
         }
         if (!vehicleName) {
-          const matchField = fieldsRes.rows.find(f => f.field_name.toLowerCase().includes('vehicle') && v.field_data[f.field_id]);
-          if (matchField) vehicleName = v.field_data[matchField.field_id];
+          // Direct key fallback for field names like "Vehicle Name"
+          for (const key of Object.keys(fieldData)) {
+            const kLower = key.toLowerCase();
+            if (kLower.includes('vehicle') && kLower.includes('name')) {
+              vehicleName = fieldData[key];
+              break;
+            }
+          }
+        }
+        if (!vehicleName) {
+          const matchField = fieldsRes.rows
+            .filter(f => f.field_name.toLowerCase().includes('vehicle'))
+            .sort((a, b) => {
+              const aHasName = a.field_name.toLowerCase().includes('name');
+              const bHasName = b.field_name.toLowerCase().includes('name');
+              if (aHasName && !bHasName) return -1;
+              if (!aHasName && bHasName) return 1;
+              return 0;
+            })
+            .find(f => fieldData[f.field_id]);
+          if (matchField) vehicleName = fieldData[matchField.field_id];
         }
 
         // Extract plate number
         for (const fid of vehiclePlateFieldIds) {
-          if (v.field_data[fid]) {
-            plateNo = v.field_data[fid];
+          if (fieldData[fid]) {
+            plateNo = fieldData[fid];
             break;
           }
         }
         if (!plateNo) {
-          const matchField = fieldsRes.rows.find(f => !f.field_name.toLowerCase().includes('vehicle') && v.field_data[f.field_id]);
-          if (matchField) plateNo = v.field_data[matchField.field_id];
+          for (const key of Object.keys(fieldData)) {
+            const kLower = key.toLowerCase();
+            if (kLower.includes('plate') || kLower.includes('liceno')) {
+              plateNo = fieldData[key];
+              break;
+            }
+          }
         }
         if (!plateNo) {
-          const keys = Object.keys(v.field_data);
+          const matchField = fieldsRes.rows.find(f => !f.field_name.toLowerCase().includes('vehicle') && fieldData[f.field_id]);
+          if (matchField) plateNo = fieldData[matchField.field_id];
+        }
+        if (!plateNo) {
+          const keys = Object.keys(fieldData);
           if (keys.length > 0) {
-            plateNo = v.field_data[keys[0]];
+            plateNo = fieldData[keys[0]];
           }
         }
       }
@@ -735,6 +796,9 @@ exports.getVehiclePlatesByClient = async (req, res) => {
       return {
         Plateno: displayName,
         plateno: displayName,
+        VehicleName: vehicleName,
+        vehiclename: vehicleName,
+        plate_only: plateNo,
         id: v.id,
         Id: v.id,
         vehicle_id: v.vehicle_id
