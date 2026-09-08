@@ -23,8 +23,8 @@ autoSyncInitialData();
 
 const sanitizeFieldData = (fd) => {
   if (!fd || typeof fd !== 'object') return {};
-  const tollNameVal = fd['1786629185586'] || fd['Toll Name'] || fd['TOLL NAME'] || fd['toll_name'];
-  const accNoVal = fd['1786629206891'] || fd['Account No'] || fd['ACCOUNT NO'] || fd['account_no'];
+  const tollNameVal = fd['1786788666800'] || fd['1786629185586'] || fd['Toll Name'] || fd['TOLL NAME'] || fd['toll_name'];
+  const accNoVal = fd['1786788673616'] || fd['1786629206891'] || fd['Account No'] || fd['ACCOUNT NO'] || fd['account_no'];
 
   const clean = {};
   for (const [k, v] of Object.entries(fd)) {
@@ -33,9 +33,11 @@ const sanitizeFieldData = (fd) => {
     }
   }
   if (tollNameVal !== undefined && tollNameVal !== null) {
+    clean['1786788666800'] = tollNameVal;
     clean['1786629185586'] = tollNameVal;
   }
   if (accNoVal !== undefined && accNoVal !== null) {
+    clean['1786788673616'] = accNoVal;
     clean['1786629206891'] = accNoVal;
   }
   return clean;
@@ -51,6 +53,7 @@ exports.saveTollOverview = async (req, res) => {
     let tollIdVal = null;
     if (cleanFd) {
       tollIdVal = 
+        cleanFd['1786788673616'] || 
         cleanFd['1786629206891'] || 
         cleanFd['Account No'] || 
         cleanFd['ACCOUNT NO'] || 
@@ -62,7 +65,7 @@ exports.saveTollOverview = async (req, res) => {
       if (!tollIdVal) {
         const keys = Object.keys(cleanFd);
         for (const k of keys) {
-          if (k !== '1786629185586' && k !== 'toll_name' && String(cleanFd[k]).trim().length > 0) {
+          if (k !== '1786788666800' && k !== '1786629185586' && k !== 'toll_name' && String(cleanFd[k]).trim().length > 0) {
             tollIdVal = cleanFd[k];
             break;
           }
@@ -78,6 +81,7 @@ exports.saveTollOverview = async (req, res) => {
           AND (
             field_data->>'Account No' = $1
             OR field_data->>'ACCOUNT NO' = $1
+            OR field_data->>'1786788673616' = $1
             OR field_data->>'1786629206891' = $1
             OR field_data->>'toll_id' = $1
             OR field_data->>'ID' = $1

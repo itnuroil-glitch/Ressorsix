@@ -76,8 +76,8 @@ const resolveVehicleId = async (fieldData, clientId, plateVal, tagNumberVal) => 
 const resolveTollOverviewId = async (fieldData, clientId, tollNameVal, accountNoVal) => {
   try {
     const fd = fieldData || {};
-    const accNo = accountNoVal || fd['Account No'] || fd['ACCOUNT NO'] || fd['Account Number'] || fd.account_no || fd['1786629206891'] || null;
-    const tollName = tollNameVal || fd['Toll Name'] || fd['TOLL NAME'] || fd.toll_name || fd['1786629185586'] || null;
+    const accNo = accountNoVal || fd['1786788673616'] || fd['Account No'] || fd['ACCOUNT NO'] || fd['Account Number'] || fd.account_no || fd['1786629206891'] || Object.values(fd).find(v => /^\d{5,15}$/.test(String(v).trim())) || null;
+    const tollName = tollNameVal || fd['1786788666800'] || fd['Toll Name'] || fd['TOLL NAME'] || fd.toll_name || fd['1786629185586'] || null;
 
     let query = 'SELECT id, field_data FROM tbl_toll_overview WHERE (is_deleted = false OR is_deleted IS NULL)';
     const params = [];
@@ -94,7 +94,7 @@ const resolveTollOverviewId = async (fieldData, clientId, tollNameVal, accountNo
       const cleanAcc = String(accNo).trim().toLowerCase();
       for (const row of res.rows) {
         const rowFd = row.field_data || {};
-        const rowAcc = String(rowFd['1786629206891'] || rowFd['Account No'] || rowFd['ACCOUNT NO'] || rowFd['Account Number'] || rowFd.account_no || '').trim().toLowerCase();
+        const rowAcc = String(rowFd['1786788673616'] || rowFd['1786629206891'] || rowFd['Account No'] || rowFd['ACCOUNT NO'] || rowFd['Account Number'] || rowFd.account_no || Object.values(rowFd).find(v => /^\d{5,15}$/.test(String(v).trim())) || '').trim().toLowerCase();
         if (rowAcc && (rowAcc === cleanAcc || cleanAcc.includes(rowAcc) || rowAcc.includes(cleanAcc))) {
           return row.id;
         }
@@ -106,7 +106,7 @@ const resolveTollOverviewId = async (fieldData, clientId, tollNameVal, accountNo
       const cleanName = String(tollName).trim().toLowerCase();
       for (const row of res.rows) {
         const rowFd = row.field_data || {};
-        const rowName = String(rowFd['1786629185586'] || rowFd['Toll Name'] || rowFd['TOLL NAME'] || rowFd.toll_name || '').trim().toLowerCase();
+        const rowName = String(rowFd['1786788666800'] || rowFd['1786629185586'] || rowFd['Toll Name'] || rowFd['TOLL NAME'] || rowFd.toll_name || '').trim().toLowerCase();
         if (rowName && (rowName === cleanName || cleanName.includes(rowName) || rowName.includes(cleanName))) {
           return row.id;
         }
@@ -191,7 +191,7 @@ exports.saveTollTransaction = async (req, res) => {
 
     let finalOverviewId = toll_overview_id || null;
     if (!finalOverviewId) {
-      const accountNoVal = fd['Account No'] || fd['ACCOUNT NO'] || fd.account_no || fd['1786629206891'] || null;
+      const accountNoVal = fd['1786788673616'] || fd['Account No'] || fd['ACCOUNT NO'] || fd.account_no || fd['1786629206891'] || Object.values(fd).find(v => /^\d{5,15}$/.test(String(v).trim())) || null;
       finalOverviewId = await resolveTollOverviewId(field_data, clientid, tollNameVal, accountNoVal);
     }
 
@@ -317,12 +317,12 @@ exports.getTollTransactionRecords = async (req, res) => {
         const ov = overviewList.find(o => String(o.id) === String(row.toll_overview_id));
         if (ov && ov.field_data) {
           const ofd = ov.field_data;
-          accNo = ofd['1786629206891'] || ofd['Account No'] || ofd['ACCOUNT NO'] || ofd['Account Number'] || ofd.account_no || null;
+          accNo = ofd['1786788673616'] || ofd['1786629206891'] || ofd['Account No'] || ofd['ACCOUNT NO'] || ofd['Account Number'] || ofd.account_no || Object.values(ofd).find(v => /^\d{5,15}$/.test(String(v).trim())) || null;
         }
       }
       if (!accNo) {
         const rFd = row.field_data || {};
-        accNo = rFd['Account No'] || rFd['ACCOUNT NO'] || rFd['Account Number'] || rFd.account_no || null;
+        accNo = rFd['1786788673616'] || rFd['Account No'] || rFd['ACCOUNT NO'] || rFd['Account Number'] || rFd.account_no || rFd['1786629206891'] || Object.values(rFd).find(v => /^\d{5,15}$/.test(String(v).trim())) || null;
       }
       if (!accNo && overviewList.length > 0) {
         const tName = String(row.toll_name || row.toll_gate || '').toLowerCase();
@@ -334,7 +334,7 @@ exports.getTollTransactionRecords = async (req, res) => {
         });
         if (matchedOv && matchedOv.field_data) {
           const ofd = matchedOv.field_data;
-          accNo = ofd['1786629206891'] || ofd['Account No'] || ofd['ACCOUNT NO'] || ofd['Account Number'] || ofd.account_no || null;
+          accNo = ofd['1786788673616'] || ofd['1786629206891'] || ofd['Account No'] || ofd['ACCOUNT NO'] || ofd['Account Number'] || ofd.account_no || Object.values(ofd).find(v => /^\d{5,15}$/.test(String(v).trim())) || null;
         }
       }
 
