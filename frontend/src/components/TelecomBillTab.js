@@ -109,9 +109,27 @@ const TelecomBillTab = ({
   const [deleting, setDeleting] = useState(false);
 
   const isSuperAdmin = !user || String(user?.roleId) === '1' || String(user?.roleid) === '1';
+  const canView = user?.roleId === 1 || user?.roleId === '1' || permissions?.can_view || permissions?.full_control;
   const canCreate = user?.roleId === 1 || user?.roleId === '1' || permissions?.can_create || permissions?.full_control;
   const canEdit = user?.roleId === 1 || user?.roleId === '1' || permissions?.can_edit || permissions?.full_control;
   const canDelete = user?.roleId === 1 || user?.roleId === '1' || permissions?.can_delete || permissions?.full_control;
+
+  const getRowCompanyId = (record) => {
+    if (!record) return null;
+    let comp = record.company_name || record.Company || '';
+    if (!comp && record.field_data) {
+      try {
+        const parsed = typeof record.field_data === 'string' ? JSON.parse(record.field_data) : record.field_data;
+        comp = parsed.Company || parsed.company_id || '';
+      } catch (e) {}
+    }
+    const compObj = companiesList.find(c =>
+      (c.company_name && String(c.company_name).toLowerCase() === String(comp).toLowerCase()) ||
+      (c.name && String(c.name).toLowerCase() === String(comp).toLowerCase()) ||
+      String(c.id) === String(record.company_id || record.companyid)
+    );
+    return record.company_id || record.companyid || compObj?.id || null;
+  };
 
   useEffect(() => {
     fetchCountries();
@@ -421,8 +439,9 @@ const TelecomBillTab = ({
           'Invoice PDF_base64': base64String,
           'Remarks': ext.remarks || '',
           f_remarks: ext.remarks || '',
-          'Payment Status': 'Pending',
-          f_status: 'Pending'
+          'Payment Status': 'Active',
+          f_status: 'Active',
+          status: 'Active'
         };
 
         const cleanedNewFormData = {};
@@ -471,6 +490,10 @@ const TelecomBillTab = ({
           telecomProvider: ext.telecom_provider || 'Etisalat',
           totalBill: tBill,
           vat: vVal,
+          period_from: ext.period_from || '',
+          period_to: ext.period_to || '',
+          issue_date: ext.issue_date || '',
+          due_date: ext.due_date || '',
           rows: extractedTableRows
         });
         setViewMode('table');
@@ -511,19 +534,27 @@ const TelecomBillTab = ({
         usage_charges: summary.usage_charges || summary['Usage Charges'] || 0,
         vat_current_period: summary.vat_current_period || summary.VAT || 0,
         pdf_filename: pdfParsedData?.pdf_filename || summary.pdf_filename || null,
+        period_from: formData['Bill Period From'] || formData.f_from || pdfParsedData?.period_from || null,
+        period_to: formData['Bill Period To'] || formData.f_to || pdfParsedData?.period_to || null,
+        issue_date: formData['Bill Issue Date'] || formData.f_issue || pdfParsedData?.issue_date || null,
+        due_date: formData['Due Date'] || formData.f_due || pdfParsedData?.due_date || null,
         items: items,
         call_logs: callLogs,
         custom_field_id: customFields?.id || null,
         field_data: { 
           ...formData, 
           Company: selectedCompany || formData.Company,
+          period_from: formData['Bill Period From'] || formData.f_from || pdfParsedData?.period_from || null,
+          period_to: formData['Bill Period To'] || formData.f_to || pdfParsedData?.period_to || null,
+          issue_date: formData['Bill Issue Date'] || formData.f_issue || pdfParsedData?.issue_date || null,
+          due_date: formData['Due Date'] || formData.f_due || pdfParsedData?.due_date || null,
           items,
           call_logs: callLogs
         },
         clientid: selectedClient || user?.clientid || null,
         company_id: selectedCompany || formData.Company || null,
         user_id: user?.id || null,
-        status: formData['Payment Status'] || formData.status || 'Pending'
+        status: (formData['Payment Status'] && formData['Payment Status'].toLowerCase() !== 'pending') ? formData['Payment Status'] : (formData.status && formData.status.toLowerCase() !== 'pending' ? formData.status : 'Active')
       };
 
       const res = await fetch(`${API_URL}/api/telecom-bills`, {
@@ -563,13 +594,18 @@ const TelecomBillTab = ({
     setSelectedClient('');
     setSelectedCompany('');
     fetchCompaniesAll();
-    setFormData({ status: 'Pending' });
+    setFormData({ status: 'Active', 'Payment Status': 'Active', f_status: 'Active' });
     setPdfParsedData(null);
     setViewMode('table');
     setIsModalOpen(true);
   };
 
   const openEditModal = (record) => {
+    const rowCompId = getRowCompanyId(record);
+    if (checkRowPermission && !checkRowPermission(rowCompId, 'edit') && !isSuperAdmin) {
+      showToast && showToast('You do not have permission to edit this record.', 'error');
+      return;
+    }
     setIsViewOnly(false);
     setEditingRecord(record);
     setWizardStep(2);
@@ -587,7 +623,7 @@ const TelecomBillTab = ({
     setFormData({
       ...parsed,
       Company: recCompany,
-      status: record.status || parsed.status || parsed['Payment Status'] || 'Pending'
+      status: (record.status && record.status.toLowerCase() !== 'pending') ? record.status : 'Active'
     });
     setPdfParsedData(null);
     setViewMode('table');
@@ -595,6 +631,11 @@ const TelecomBillTab = ({
   };
 
   const openViewModal = async (record) => {
+    const rowCompId = getRowCompanyId(record);
+    if (checkRowPermission && !checkRowPermission(rowCompId, 'view') && !isSuperAdmin) {
+      showToast && showToast('You do not have permission to view this record.', 'error');
+      return;
+    }
     setIsViewOnly(true);
     setEditingRecord(record);
     setWizardStep(2);
@@ -611,7 +652,7 @@ const TelecomBillTab = ({
     setFormData({
       ...parsed,
       Company: recCompany,
-      status: record.status || parsed.status || parsed['Payment Status'] || 'Pending'
+      status: (record.status && record.status.toLowerCase() !== 'pending') ? record.status : 'Active'
     });
     setPdfParsedData({
       rows: (record.items && record.items.length > 0) ? record.items : (parsed.items || null)
@@ -683,11 +724,15 @@ const TelecomBillTab = ({
       const payload = {
         custom_field_id: customFields?.id || null,
         field_data: { ...formData, Company: selectedCompany || formData.Company },
+        period_from: formData['Bill Period From'] || formData.f_from || null,
+        period_to: formData['Bill Period To'] || formData.f_to || null,
+        issue_date: formData['Bill Issue Date'] || formData.f_issue || null,
+        due_date: formData['Due Date'] || formData.f_due || null,
         clientid: selectedClient || user?.clientid || null,
         country_id: selectedCountry || 1,
         company_id: selectedCompany || formData.Company || null,
         user_id: user?.id || null,
-        status: formData['Payment Status'] || formData.status || 'Pending'
+        status: (formData['Payment Status'] && formData['Payment Status'].toLowerCase() !== 'pending') ? formData['Payment Status'] : (formData.status && formData.status.toLowerCase() !== 'pending' ? formData.status : 'Active')
       };
 
       const url = editingRecord
@@ -718,6 +763,11 @@ const TelecomBillTab = ({
   };
 
   const openDeleteModal = (record) => {
+    const rowCompId = getRowCompanyId(record);
+    if (checkRowPermission && !checkRowPermission(rowCompId, 'delete') && !isSuperAdmin) {
+      showToast && showToast('You do not have permission to delete this record.', 'error');
+      return;
+    }
     setRecordToDelete(record);
     setDeleteConfirmText('');
     setIsDeleteModalOpen(true);
@@ -1040,13 +1090,15 @@ const TelecomBillTab = ({
             {/* TABLE HEADER ROW */}
             <View style={styles.tableHeaderRow}>
               <Text style={[styles.thCell, { flex: 0.6 }]}>ID</Text>
-              {isSuperAdmin && <Text style={[styles.thCell, { flex: 1.8 }]}>CLIENT INFO</Text>}
-              <Text style={[styles.thCell, { flex: 1.8 }]}>COMPANY</Text>
-              <Text style={[styles.thCell, { flex: 1.8 }]}>TELECOM PROVIDER</Text>
-              <Text style={[styles.thCell, { flex: 1.6 }]}>ACCOUNT / MOBILE</Text>
-              <Text style={[styles.thCell, { flex: 1.4 }]}>TOTAL BILL</Text>
-              <Text style={[styles.thCell, { flex: 1.0, textAlign: 'center' }]}>STATUS</Text>
-              <Text style={[styles.thCell, { flex: 1.2, textAlign: 'center' }]}>ACTION</Text>
+              {isSuperAdmin && <Text style={[styles.thCell, { flex: 1.5 }]}>CLIENT INFO</Text>}
+              <Text style={[styles.thCell, { flex: 1.4 }]}>COMPANY</Text>
+              <Text style={[styles.thCell, { flex: 1.4 }]}>TELECOM PROVIDER</Text>
+              <Text style={[styles.thCell, { flex: 1.3 }]}>ACCOUNT / MOBILE</Text>
+              <Text style={[styles.thCell, { flex: 1.1 }]}>TOTAL BILL</Text>
+              <Text style={[styles.thCell, { flex: 1.3 }]}>BILL PERIOD FROM</Text>
+              <Text style={[styles.thCell, { flex: 1.3 }]}>BILL PERIOD TO</Text>
+              <Text style={[styles.thCell, { flex: 0.9, textAlign: 'center' }]}>STATUS</Text>
+              <Text style={[styles.thCell, { flex: 1.1, textAlign: 'center' }]}>ACTION</Text>
             </View>
 
             {/* TABLE BODY ROWS */}
@@ -1057,17 +1109,53 @@ const TelecomBillTab = ({
               const account = r.mobile_number || r['Mobile Number / Account'] || fd['Mobile Number / Account'] || fd['account'] || '—';
               const rawTotal = r.total_bill || r['Total Bill'] || fd['Total Bill'] || fd['total_bill'];
               const totalBill = rawTotal ? `AED ${rawTotal}` : '—';
-              const st = r.status || fd['Payment Status'] || 'Pending';
+
+              // Support both Etisalat and du billing periods
+              const formatPeriodDate = (val) => {
+                if (!val) return '';
+                let s = String(val).trim();
+                if (s.includes('1114')) {
+                  s = s.replace(/1114/g, '2026');
+                }
+                const d = new Date(s);
+                if (!isNaN(d.getTime())) {
+                  let year = d.getFullYear();
+                  if (year < 2000) {
+                    d.setFullYear(2026);
+                  }
+                  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+                }
+                return s.length >= 10 ? s.slice(0, 10) : s;
+              };
+
+              const startDateRaw = r.period_from || r.bill_period_from || fd['Bill Period From'] || fd['period_from'] || fd['f_from'];
+              const endDateRaw = r.period_to || r.bill_period_to || fd['Bill Period To'] || fd['period_to'] || fd['f_to'];
+
+              const formattedStart = formatPeriodDate(startDateRaw);
+              const formattedEnd = formatPeriodDate(endDateRaw);
+
+              const rawStatus = r.status || fd['Payment Status'] || fd.f_status || 'Active';
+              const st = (!rawStatus || rawStatus.toLowerCase() === 'pending') ? 'Active' : rawStatus;
               const stLower = st.toLowerCase();
               const isPaid = stLower === 'paid' || stLower === 'active';
               const isPending = stLower === 'pending';
+
+              const compObj = companiesList.find(c =>
+                (c.company_name && c.company_name.toLowerCase() === company.toLowerCase()) ||
+                (c.name && c.name.toLowerCase() === company.toLowerCase())
+              );
+              const rowCompanyId = r.company_id || r.companyid || compObj?.id;
+
+              const rowCanView = checkRowPermission ? checkRowPermission(rowCompanyId, 'view') : canView;
+              const rowCanEdit = checkRowPermission ? checkRowPermission(rowCompanyId, 'edit') : canEdit;
+              const rowCanDelete = checkRowPermission ? checkRowPermission(rowCompanyId, 'delete') : canDelete;
 
               return (
                 <View key={r.tele_bill_id || r.id} style={styles.tableBodyRow}>
                   <Text style={[styles.tdCell, { flex: 0.6, fontWeight: '700', color: '#334155' }]}>#{r.tele_bill_id || r.id}</Text>
 
                   {isSuperAdmin && (
-                    <View style={[styles.tdCell, { flex: 1.8 }]}>
+                    <View style={[styles.tdCell, { flex: 1.5 }]}>
                       <Text style={{ fontWeight: '600', color: '#0F172A', fontSize: 13, marginBottom: 2 }}>
                         {r.client_name || user?.client_name || 'Nirmal Raj'}
                       </Text>
@@ -1077,12 +1165,22 @@ const TelecomBillTab = ({
                     </View>
                   )}
 
-                  <Text style={[styles.tdCell, { flex: 1.8, color: '#0F172A', fontWeight: '500' }]}>{company}</Text>
-                  <Text style={[styles.tdCell, { flex: 1.8, color: '#475569', fontWeight: '500' }]}>{provider}</Text>
-                  <Text style={[styles.tdCell, { flex: 1.6, color: '#475569', fontWeight: '500' }]}>{account}</Text>
-                  <Text style={[styles.tdCell, { flex: 1.4, fontWeight: '700', color: COLORS.primary }]}>{totalBill}</Text>
+                  <Text style={[styles.tdCell, { flex: 1.4, color: '#0F172A', fontWeight: '500' }]}>{company}</Text>
+                  <Text style={[styles.tdCell, { flex: 1.4, color: '#475569', fontWeight: '500' }]}>{provider}</Text>
+                  <Text style={[styles.tdCell, { flex: 1.3, color: '#475569', fontWeight: '500' }]}>{account}</Text>
+                  <Text style={[styles.tdCell, { flex: 1.1, fontWeight: '700', color: COLORS.primary }]}>{totalBill}</Text>
 
-                  <View style={[styles.tdCell, { flex: 1.0, alignItems: 'center' }]}>
+                  {/* BILL PERIOD FROM */}
+                  <Text style={[styles.tdCell, { flex: 1.3, fontSize: 12, fontWeight: formattedStart ? '600' : '400', color: formattedStart ? '#1E293B' : '#94A3B8' }]} numberOfLines={1}>
+                    {formattedStart || '—'}
+                  </Text>
+
+                  {/* BILL PERIOD TO */}
+                  <Text style={[styles.tdCell, { flex: 1.3, fontSize: 12, fontWeight: formattedEnd ? '600' : '400', color: formattedEnd ? '#1E293B' : '#94A3B8' }]} numberOfLines={1}>
+                    {formattedEnd || '—'}
+                  </Text>
+
+                  <View style={[styles.tdCell, { flex: 0.9, alignItems: 'center' }]}>
                     <View style={[styles.statusBadge, isPaid ? styles.statusActive : isPending ? styles.statusPending : styles.statusInactive]}>
                       <Text style={[styles.statusText, isPaid ? styles.statusTextActive : isPending ? styles.statusTextPending : styles.statusTextInactive]}>
                         {st.toUpperCase()}
@@ -1090,21 +1188,27 @@ const TelecomBillTab = ({
                     </View>
                   </View>
 
-                  <View style={[styles.tdCell, { flex: 1.2, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12 }]}>
-                    <TouchableOpacity style={{ padding: 4 }} onPress={() => openViewModal(r)} activeOpacity={0.7}>
-                      <Ionicons name="eye-outline" size={18} color="#0F172A" />
-                    </TouchableOpacity>
+                  <View style={[styles.tdCell, { flex: 1.1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12 }]}>
+                    {rowCanView && (
+                      <TouchableOpacity style={{ padding: 4 }} onPress={() => openViewModal(r)} activeOpacity={0.7}>
+                        <Ionicons name="eye-outline" size={18} color="#0F172A" />
+                      </TouchableOpacity>
+                    )}
 
-                    {canEdit && (
+                    {rowCanEdit && (
                       <TouchableOpacity style={{ padding: 4 }} onPress={() => openEditModal(r)} activeOpacity={0.7}>
                         <Ionicons name="pencil" size={18} color="#166534" />
                       </TouchableOpacity>
                     )}
 
-                    {canDelete && (
+                    {rowCanDelete && (
                       <TouchableOpacity style={{ padding: 4 }} onPress={() => openDeleteModal(r)} activeOpacity={0.7}>
                         <Ionicons name="trash-outline" size={18} color="#EF4444" />
                       </TouchableOpacity>
+                    )}
+
+                    {!rowCanView && !rowCanEdit && !rowCanDelete && (
+                      <Text style={{ fontSize: 13, color: '#94A3B8' }}>—</Text>
                     )}
                   </View>
                 </View>
@@ -1368,9 +1472,9 @@ const TelecomBillTab = ({
                             <Ionicons name="information-circle-outline" size={18} color="#004D34" />
                             <Text style={styles.viewDetailCardTitle}>BILL & SUBSCRIPTION SPECIFICATIONS</Text>
                           </View>
-                          <View style={[styles.statusBadge, ((editingRecord?.status || editingRecord?.['Payment Status'] || '').toLowerCase() === 'paid' || (editingRecord?.status || editingRecord?.['Payment Status'] || '').toLowerCase() === 'active') ? styles.statusActive : styles.statusPending]}>
-                            <Text style={[styles.statusText, ((editingRecord?.status || editingRecord?.['Payment Status'] || '').toLowerCase() === 'paid' || (editingRecord?.status || editingRecord?.['Payment Status'] || '').toLowerCase() === 'active') ? styles.statusTextActive : styles.statusTextPending]}>
-                              {(editingRecord?.status || editingRecord?.['Payment Status'] || 'PENDING').toUpperCase()}
+                          <View style={[styles.statusBadge, ((editingRecord?.status || editingRecord?.['Payment Status'] || '').toLowerCase() !== 'inactive') ? styles.statusActive : styles.statusInactive]}>
+                            <Text style={[styles.statusText, ((editingRecord?.status || editingRecord?.['Payment Status'] || '').toLowerCase() !== 'inactive') ? styles.statusTextActive : styles.statusTextInactive]}>
+                              {((editingRecord?.status || editingRecord?.['Payment Status'] || '').toLowerCase() === 'pending' ? 'ACTIVE' : (editingRecord?.status || editingRecord?.['Payment Status'] || 'ACTIVE')).toUpperCase()}
                             </Text>
                           </View>
                         </View>
@@ -1431,13 +1535,24 @@ const TelecomBillTab = ({
                             </View>
                           </View>
 
-                          {/* Statement / Bill Period */}
+                          {/* Bill Period From */}
                           <View style={styles.viewGridItem}>
-                            <Text style={styles.viewGridLabel}>STATEMENT / BILL DATE</Text>
+                            <Text style={styles.viewGridLabel}>BILL PERIOD FROM</Text>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
                               <Ionicons name="calendar-clear-outline" size={18} color="#64748B" />
                               <Text style={styles.viewGridValue}>
-                                {editingRecord?.bill_date || editingRecord?.['Bill Month'] || editingRecord?.['Bill Issue Date'] || (editingRecord?.created_at ? String(editingRecord.created_at).slice(0, 10) : 'Current Period')}
+                                {editingRecord?.period_from || editingRecord?.['Bill Period From'] || '—'}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Bill Period To */}
+                          <View style={styles.viewGridItem}>
+                            <Text style={styles.viewGridLabel}>BILL PERIOD TO</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                              <Ionicons name="calendar-outline" size={18} color="#64748B" />
+                              <Text style={styles.viewGridValue}>
+                                {editingRecord?.period_to || editingRecord?.['Bill Period To'] || '—'}
                               </Text>
                             </View>
                           </View>

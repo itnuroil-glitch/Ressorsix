@@ -28,6 +28,11 @@ const COLORS = {
   purple: '#8B5CF6'
 };
 
+const isSmsCategory = (cat) => {
+  if (!cat) return false;
+  return ['National SMS', 'International SMS', 'Premium SMS', 'Roaming SMS'].includes(cat) || String(cat).toLowerCase().includes('sms');
+};
+
 export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }) {
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
@@ -41,6 +46,8 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
   const [sortColumn, setSortColumn] = useState('date'); // 'date' | 'source_number' | 'destination_number'
   const [sortDirection, setSortDirection] = useState('DESC'); // 'ASC' | 'DESC'
   const dateSortOrder = sortDirection; // for backward compatibility
+  
+  const isSmsFilterSelected = isSmsCategory(selectedCategoryFilter);
   
   // Date Range Filter States
   const [showDatePickerDropdown, setShowDatePickerDropdown] = useState(false);
@@ -95,16 +102,24 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
       return;
     }
     try {
-      const headers = ['Date & Time', 'Provider', 'Caller Line', 'Dialed Destination', 'Category', 'Duration', 'Cost (AED)'];
-      const rows = filteredLogs.map(l => [
-        `"${l.call_date || ''} ${l.call_time || ''}"`,
-        `"${l.provider || 'Etisalat'}"`,
-        `"${l.source_number || ''}"`,
-        `"${l.destination_number || ''}"`,
-        `"${l.category || ''}"`,
-        `"${l.duration || ''}"`,
-        `"${l.cost || '0.00'}"`
-      ]);
+      const isSmsOnly = isSmsFilterSelected;
+      const headers = isSmsOnly
+        ? ['Date & Time', 'Provider', 'Caller Line', 'Dialed Destination', 'Category', 'Cost (AED)']
+        : ['Date & Time', 'Provider', 'Caller Line', 'Dialed Destination', 'Category', 'Duration', 'Cost (AED)'];
+      const rows = filteredLogs.map(l => {
+        const row = [
+          `"${l.call_date || ''} ${l.call_time || ''}"`,
+          `"${l.provider || 'Etisalat'}"`,
+          `"${l.source_number || ''}"`,
+          `"${l.destination_number || ''}"`,
+          `"${l.category || ''}"`,
+        ];
+        if (!isSmsOnly) {
+          row.push(`"${isSmsCategory(l.category) ? '' : (l.duration || '')}"`);
+        }
+        row.push(`"${l.cost || l.amount || '0.00'}"`);
+        return row;
+      });
       const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
       const encodedUri = encodeURI(csvContent);
       const link = document.createElement('a');
@@ -886,7 +901,9 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
             </TouchableOpacity>
 
             <Text style={[styles.thCell, { flex: 1.2 }]}>Category</Text>
-            <Text style={[styles.thCell, { flex: 0.8 }]}>Duration</Text>
+            {!isSmsFilterSelected && (
+              <Text style={[styles.thCell, { flex: 0.8 }]}>Duration</Text>
+            )}
             <Text style={[styles.thCell, { flex: 0.8, textAlign: 'right' }]}>Cost (AED)</Text>
           </View>
 
@@ -923,7 +940,11 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
                     {log.sub_heading && log.sub_heading !== log.category ? `${log.category} (${log.sub_heading})` : log.category}
                   </Text>
                 </View>
-                <Text style={[styles.tdCell, { flex: 0.8 }]}>{log.duration}</Text>
+                {!isSmsFilterSelected && (
+                  <Text style={[styles.tdCell, { flex: 0.8 }]}>
+                    {isSmsCategory(log.category) ? '—' : (log.duration || '—')}
+                  </Text>
+                )}
                 <Text style={[styles.tdCell, { flex: 0.8, textAlign: 'right', fontWeight: '800', color: parseFloat(log.amount) > 0 ? COLORS.danger : COLORS.textPrimary }]}>
                   {parseFloat(log.amount || 0).toFixed(2)}
                 </Text>

@@ -105,7 +105,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
       ]);
       const formattedClients = (clientsData || []).map(c => ({
         ...c,
-        displayName: c.companyname || c.client_name || c.name || `Client ${c.id}`
+        displayName: c.client_name || c.name || c.companyname || `Client ${c.id}`
       }));
       setClients(formattedClients);
       setCountries(countriesData || []);
@@ -165,7 +165,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
             if (resPerm.ok) {
               const permData = await resPerm.json();
               const targetModuleIds = isTransaction ? ['71', '53'] : (isOverview ? ['70', '52'] : ['50', '54']);
-              
+
               if (Array.isArray(permData.companyPermissions) && permData.companyPermissions.length > 0) {
                 const allowedCompIdsForToll = permData.companyPermissions
                   .filter(cp => targetModuleIds.includes(String(cp.module_id)) && (action === 'create' ? cp.can_create : (cp.can_view || cp.can_create || cp.full_control)))
@@ -369,7 +369,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
             // Auto-fetch Account Numbers for any "Acc No" dropdown when options are empty
             const fieldNameLower = (f.name || f.label || '').toLowerCase();
             if ((!updatedField.allowedOptions || updatedField.allowedOptions.length === 0) &&
-                (fieldNameLower.includes('acc no') || fieldNameLower.includes('account no') || fieldNameLower.includes('acc_no'))) {
+              (fieldNameLower.includes('acc no') || fieldNameLower.includes('account no') || fieldNameLower.includes('acc_no'))) {
               const accOptions = await fetchDynamicOptions('/api/vehicle-tolls/account-numbers');
               if (accOptions && accOptions.length > 0) {
                 updatedField.allowedOptions = accOptions;
@@ -767,7 +767,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
     if (!excelPreviewRows || excelPreviewRows.length === 0) return;
     try {
       setIsImportingExcel(true);
-      
+
       const flattenCustomFieldsList = (detailsArr) => {
         const result = [];
         if (!Array.isArray(detailsArr)) return result;
@@ -787,7 +787,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
         if (cf.custom_field_details) {
           let details = cf.custom_field_details;
           if (typeof details === 'string') {
-            try { details = JSON.parse(details); } catch(e){}
+            try { details = JSON.parse(details); } catch (e) { }
           }
           flatFields.push(...flattenCustomFieldsList(details));
         }
@@ -846,7 +846,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
               cfDetails = typeof matchingCf.custom_field_details === 'string'
                 ? JSON.parse(matchingCf.custom_field_details)
                 : matchingCf.custom_field_details;
-            } catch(e) {}
+            } catch (e) { }
           }
           const flatCfFields = flattenCustomFieldsList(cfDetails);
 
@@ -959,25 +959,27 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           {/* Template Button */}
-          <TouchableOpacity
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: '#475569',
-              paddingHorizontal: 16,
-              paddingVertical: 10,
-              borderRadius: 8,
-              gap: 6
-            }}
-            onPress={handleDownloadTemplate}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="download-outline" size={18} color="#FFFFFF" />
-            <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>Template</Text>
-          </TouchableOpacity>
+          {!isOverview && (
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: '#475569',
+                paddingHorizontal: 16,
+                paddingVertical: 10,
+                borderRadius: 8,
+                gap: 6
+              }}
+              onPress={handleDownloadTemplate}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="download-outline" size={18} color="#FFFFFF" />
+              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>Template</Text>
+            </TouchableOpacity>
+          )}
 
           {/* Import Excel Button */}
-          {canCreate && (
+          {canCreate && !isOverview && (
             <TouchableOpacity
               style={{
                 flexDirection: 'row',
@@ -992,7 +994,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
               activeOpacity={0.8}
             >
               <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
-              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>{isTransaction || isOverview ? '+ Import Excel' : 'Import Excel'}</Text>
+              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>{isTransaction ? '+ Import Excel' : 'Import Excel'}</Text>
             </TouchableOpacity>
           )}
 
@@ -1093,18 +1095,16 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
             ) : (
               <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20 }}>
                 <Text style={{ flex: isOverview ? 1.2 : 0.8, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>{isOverview ? 'ACCOUNT NO' : 'ID'}</Text>
-                {!isOverview && (
-                  <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
-                )}
+                <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>CLIENT</Text>
                 {isOverview ? (
-                  <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>COMPANY</Text>
+                  <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>COMPANY</Text>
                 ) : (
-                  <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Module Info</Text>
+                  <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Module Info</Text>
                 )}
-                <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>{isOverview ? 'TOLL TYPE' : 'DATA PREVIEW'}</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Submitted By</Text>
+                <Text style={{ flex: 1.8, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>{isOverview ? 'TOLL TYPE' : 'DATA PREVIEW'}</Text>
+                <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Submitted By</Text>
                 <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
-                <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>ACTION</Text>
+                <Text style={{ flex: 1.1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>ACTION</Text>
               </View>
             )}
 
@@ -1151,12 +1151,12 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                         const gate = record.toll_gate || parsedData['Toll Gate'] || parsedData['toll_name'] || 'N/A';
                         const dir = record.direction || parsedData['Direction'] || 'N/A';
                         const tripDt = (record.trip_date || parsedData['Trip Date'] || '') + ' ' + (record.trip_time || parsedData['Trip Time'] || '');
-                        
+
                         const rawTotalAmt = record.total_amount !== null && record.total_amount !== undefined
                           ? record.total_amount
                           : (record.amount !== null && record.amount !== undefined
-                              ? (parseFloat(record.amount) * 1.05)
-                              : (parsedData['Total Amount (AED) (Incl. VAT)'] || parsedData['total_amount'] || parsedData['Amount (AED)'] || parsedData['Amount(AED)'] || parsedData['amount'] || 0));
+                            ? (parseFloat(record.amount) * 1.05)
+                            : (parsedData['Total Amount (AED) (Incl. VAT)'] || parsedData['total_amount'] || parsedData['Amount (AED)'] || parsedData['Amount(AED)'] || parsedData['amount'] || 0));
                         const totalAmtNum = parseFloat(rawTotalAmt) || 0;
 
                         return (
@@ -1265,21 +1265,21 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
 
                       if (parsedData && typeof parsedData === 'object') {
                         // Direct key lookup for Account No / Toll ID
-                        formAccountNoVal = 
-                          parsedData['Account No'] || 
-                          parsedData['ACCOUNT NO'] || 
-                          parsedData['account_no'] || 
-                          parsedData['1786629206891'] || 
-                          parsedData['Toll ID'] || 
-                          parsedData['toll_id'] || 
+                        formAccountNoVal =
+                          parsedData['Account No'] ||
+                          parsedData['ACCOUNT NO'] ||
+                          parsedData['account_no'] ||
+                          parsedData['1786629206891'] ||
+                          parsedData['Toll ID'] ||
+                          parsedData['toll_id'] ||
                           '';
 
                         // Direct key lookup for Toll Name / Type
-                        formTollTypeVal = 
-                          parsedData['Toll Name'] || 
-                          parsedData['TOLL NAME'] || 
-                          parsedData['toll_name'] || 
-                          parsedData['1786629185586'] || 
+                        formTollTypeVal =
+                          parsedData['Toll Name'] ||
+                          parsedData['TOLL NAME'] ||
+                          parsedData['toll_name'] ||
+                          parsedData['1786629185586'] ||
                           '';
 
                         if (!formAccountNoVal || !formTollTypeVal) {
@@ -1311,27 +1311,27 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                             )}
                           </View>
 
-                          {!isOverview && (
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{clientName}</Text>
+                          <View style={{ flex: 1.4, paddingRight: 10 }}>
+                            <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600' }} numberOfLines={1}>{clientName}</Text>
+                            {!isOverview && countryName && (
                               <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Country: {countryName}</Text>
-                            </View>
-                          )}
+                            )}
+                          </View>
 
                           {isOverview ? (
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
+                            <View style={{ flex: 1.4, paddingRight: 10 }}>
                               <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600' }} numberOfLines={1}>
                                 {companyName || 'Unassigned'}
                               </Text>
                             </View>
                           ) : (
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
+                            <View style={{ flex: 1.4, paddingRight: 10 }}>
                               <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{moduleName}</Text>
                               <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Created: {record.created_at ? new Date(record.created_at).toLocaleDateString() : 'N/A'}</Text>
                             </View>
                           )}
 
-                          <View style={{ flex: 2, paddingRight: 10 }}>
+                          <View style={{ flex: 1.8, paddingRight: 10 }}>
                             <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>
                               {isOverview ? formTollTypeVal : String(firstValue)}
                             </Text>
@@ -1835,7 +1835,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
       {isImportModalOpen && (
         <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(4px)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
           <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, width: '92%', maxWidth: 620, overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(15, 23, 42, 0.3)', borderWidth: 1, borderColor: '#E2E8F0' }}>
-            
+
             {/* Modal Header */}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -2041,7 +2041,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                     <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#A7F3D0' }}>
                       <Ionicons name="cloud-upload" size={30} color={COLORS.primary} />
                     </View>
-                    
+
                     <Text style={{ fontSize: 16, fontWeight: '800', color: '#0F172A' }}>Select Excel / CSV File</Text>
                     <Text style={{ fontSize: 12, color: '#64748B', marginTop: 4, textAlign: 'center' }}>
                       Upload official Salik or Darb trip statement sheet (.xlsx, .xls, .csv)
@@ -2164,8 +2164,8 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                           const rawTot = selectedViewRecord.total_amount !== null && selectedViewRecord.total_amount !== undefined
                             ? selectedViewRecord.total_amount
                             : (selectedViewRecord.amount !== null && selectedViewRecord.amount !== undefined
-                                ? (parseFloat(selectedViewRecord.amount) * 1.05)
-                                : (selectedViewRecord.parsedData['Total Amount (AED) (Incl. VAT)'] || selectedViewRecord.parsedData['total_amount'] || selectedViewRecord.parsedData['Amount (AED)'] || selectedViewRecord.parsedData['Amount(AED)'] || selectedViewRecord.parsedData['amount'] || 0));
+                              ? (parseFloat(selectedViewRecord.amount) * 1.05)
+                              : (selectedViewRecord.parsedData['Total Amount (AED) (Incl. VAT)'] || selectedViewRecord.parsedData['total_amount'] || selectedViewRecord.parsedData['Amount (AED)'] || selectedViewRecord.parsedData['Amount(AED)'] || selectedViewRecord.parsedData['amount'] || 0));
                           return `AED ${(parseFloat(rawTot) || 0).toFixed(2)}`;
                         })()}
                       </Text>

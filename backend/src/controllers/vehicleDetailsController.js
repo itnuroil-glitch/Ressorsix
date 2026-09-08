@@ -501,6 +501,17 @@ exports.getVehiclesByClient = async (req, res) => {
     });
     const plateFieldIds = sortedPlateFields.map(f => f.field_id);
 
+    // Fetch matching custom field IDs for chassis / vin
+    const chassisFieldsRes = await db.query(`
+      SELECT field_id, field_name 
+      FROM tbl_customfield_details 
+      WHERE LOWER(field_name) LIKE '%chassis%' 
+         OR LOWER(field_name) LIKE '%chasis%' 
+         OR LOWER(field_name) LIKE '%vin%' 
+         OR LOWER(field_name) LIKE '%engine%'
+    `);
+    const chassisFieldIds = chassisFieldsRes.rows.map(f => f.field_id);
+
     let companyId = req.params.companyId || req.params.companyid || req.query.companyId || req.query.companyid || req.query.company;
 
     // 2. Fetch vehicle details for this client and company
@@ -523,6 +534,7 @@ exports.getVehiclesByClient = async (req, res) => {
     const formattedVehicles = rows.map(v => {
       let vehicleName = '';
       let plateNo = '';
+      let chassisNo = '';
 
       let fieldData = v.field_data;
       if (typeof fieldData === 'string') {
@@ -574,6 +586,31 @@ exports.getVehiclesByClient = async (req, res) => {
             }
           }
         }
+
+        // Find chassis number
+        for (const fid of chassisFieldIds) {
+          if (fieldData[fid]) {
+            chassisNo = fieldData[fid];
+            break;
+          }
+        }
+        if (!chassisNo) {
+          for (const f of chassisFieldsRes.rows) {
+            if (fieldData[f.field_id]) {
+              chassisNo = fieldData[f.field_id];
+              break;
+            }
+          }
+        }
+        if (!chassisNo) {
+          for (const k of Object.keys(fieldData)) {
+            const kLower = k.toLowerCase();
+            if (kLower.includes('chassis') || kLower.includes('chasis') || kLower.includes('vin')) {
+              chassisNo = fieldData[k];
+              break;
+            }
+          }
+        }
       }
 
       // Concatenate plate number with vehicle name if plate number exists and is different from vehicle name
@@ -589,7 +626,10 @@ exports.getVehiclesByClient = async (req, res) => {
         Vehiclename: displayName,
         vehiclename: displayName,
         Plateno: plateNo,
-        plateno: plateNo
+        plateno: plateNo,
+        Chassisno: chassisNo,
+        chassisno: chassisNo,
+        chassis_no: chassisNo
       };
     });
 

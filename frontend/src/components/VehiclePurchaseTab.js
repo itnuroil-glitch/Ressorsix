@@ -60,6 +60,7 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
   const [selectedCountry, setSelectedCountry] = useState('');
   const [selectedModule, setSelectedModule] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
+  const [clientVehicles, setClientVehicles] = useState([]);
 
   useEffect(() => {
     fetchInitialData();
@@ -238,8 +239,12 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
         const fetchDynamicOptions = async (path) => {
           try {
             let processedPath = (path || '').trim();
-            // Automatically append clientId if the path is designed for client lookup
-            if (processedPath.includes('client') && clientId) {
+            // Automatically handle client vehicle routes and clientId replacement
+            if (processedPath.includes('client-vehicles') && clientId) {
+              processedPath = processedPath.replace('client-vehicles', `client/${clientId}`);
+            } else if ((processedPath.includes(':clientId') || processedPath.includes(':clientid')) && clientId) {
+              processedPath = processedPath.replace(':clientId', clientId).replace(':clientid', clientId);
+            } else if (processedPath.includes('client') && clientId) {
               if (processedPath.endsWith('/client') || processedPath.endsWith('/client/')) {
                 const separator = processedPath.endsWith('/') ? '' : '/';
                 processedPath = `${processedPath}${separator}${clientId}`;
@@ -263,9 +268,27 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
             if (!res.ok) return [];
             const data = await res.json();
             if (!Array.isArray(data)) return [];
+            if (processedPath.includes('vehicle') || processedPath.includes('client')) {
+              setClientVehicles(prev => {
+                const combined = [...(prev || [])];
+                data.forEach(item => {
+                  if (item && typeof item === 'object' && (item.id || item.vehicle_id)) {
+                    const idx = combined.findIndex(c => String(c.id || c.vehicle_id) === String(item.id || item.vehicle_id));
+                    if (idx >= 0) combined[idx] = { ...combined[idx], ...item };
+                    else combined.push(item);
+                  }
+                });
+                return combined;
+              });
+            }
             return data.map(item => {
               if (typeof item === 'string') return item;
               if (item && typeof item === 'object') {
+                const vName = item.vehicle_display_name || item.Vehiclename || item.vehiclename || item.vehicle_name || item.name || '';
+                const pNo = item.Plateno || item.plateno || item.plate_no || item.plate_number || '';
+                if (vName && pNo && vName !== pNo && !String(vName).includes(pNo)) {
+                  return `${vName} - ${pNo}`;
+                }
                 const nameKey = Object.keys(item).find(key =>
                   key.toLowerCase().includes('name') ||
                   key.toLowerCase().includes('label') ||
@@ -477,6 +500,72 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
     setFormData(prev => ({ ...prev, [fieldId]: value }));
   };
 
+  const handleVehicleSelectAutoFill = async (val) => {
+    if (!val) return;
+    const strVal = String(val).trim();
+    let parts = strVal.includes(' - ') ? strVal.split(' - ') : [strVal];
+    const vName = parts[0]?.trim()?.toLowerCase();
+    const pNo = parts[1]?.trim()?.toLowerCase();
+
+    // 1. Try to find in clientVehicles
+    let matched = (clientVehicles || []).find(v => {
+      const vDisp = String(v.Vehiclename || v.vehiclename || v.vehicle_display_name || '').toLowerCase();
+      const vPlate = String(v.Plateno || v.plateno || v.plate_no || '').toLowerCase();
+      const vId = String(v.id || v.vehicle_id || '').toLowerCase();
+      if (strVal.toLowerCase() === vDisp || strVal.toLowerCase() === vId) return true;
+      if (pNo && vPlate === pNo) return true;
+      if (vName && vDisp.includes(vName)) return true;
+      return false;
+    });
+
+    // 2. If not found, fetch fresh from server
+    if (!matched && selectedClient) {
+      try {
+        const res = await fetch(`${API_URL}/api/vehicle-details/client/${selectedClient}`);
+        if (res.ok) {
+          const vList = await res.json();
+          if (Array.isArray(vList)) {
+            setClientVehicles(prev => [...(prev || []), ...vList]);
+            matched = vList.find(v => {
+              const vDisp = String(v.Vehiclename || v.vehiclename || v.vehicle_display_name || '').toLowerCase();
+              const vPlate = String(v.Plateno || v.plateno || v.plate_no || '').toLowerCase();
+              const vId = String(v.id || v.vehicle_id || '').toLowerCase();
+              if (strVal.toLowerCase() === vDisp || strVal.toLowerCase() === vId) return true;
+              if (pNo && vPlate === pNo) return true;
+              if (vName && vDisp.includes(vName)) return true;
+              return false;
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('Error fetching vehicle details for auto-fill:', e);
+      }
+    }
+
+    const extractedPlate = matched ? (matched.Plateno || matched.plateno || matched.plate_no || parts[1]?.trim()) : parts[1]?.trim();
+    const extractedChassis = matched ? (matched.Chassisno || matched.chassisno || matched.chassis_no) : null;
+
+    setFormData(prev => {
+      const updated = { ...prev };
+      if (fieldsLayout) {
+        fieldsLayout.forEach(sec => {
+          (sec.fields || []).forEach(f => {
+            const fn = (f.name || f.label || '').toLowerCase();
+            // Plate number auto-fill
+            if (extractedPlate && fn.includes('plate') && !fn.includes('vehicle')) {
+              updated[f.id] = extractedPlate;
+            }
+            // Chassis number auto-fill
+            if (extractedChassis && (fn.includes('chassis') || fn.includes('chasis') || fn.includes('vin'))) {
+              updated[f.id] = extractedChassis;
+            }
+          });
+        });
+      }
+      return updated;
+    });
+  };
+
   const renderField = (field) => {
     switch (field.type) {
       case 'Dropdown':
@@ -488,28 +577,33 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
         const dropdownData = options.map(opt => {
           let label = typeof opt === 'object' ? (opt.label !== undefined ? opt.label : opt.value) : String(opt);
           let value = typeof opt === 'object' ? (opt.value !== undefined ? opt.value : opt.label) : String(opt);
-          if (fNameLower.includes('plate') && String(label).includes(' - ')) {
+          if (fNameLower.includes('plate') && !fNameLower.includes('vehicle') && String(label).includes(' - ')) {
             label = String(label).split(' - ')[1].trim();
             value = String(value).includes(' - ') ? String(value).split(' - ')[1].trim() : label;
-          } else if (fNameLower.includes('vehicle') && fNameLower.includes('name') && String(label).includes(' - ')) {
-            label = String(label).split(' - ')[0].trim();
-            value = String(value).includes(' - ') ? String(value).split(' - ')[0].trim() : label;
           }
           return { label, value };
         });
 
         let currentValue = formData[field.id] || '';
-        if (fNameLower.includes('plate') && String(currentValue).includes(' - ')) {
+        if (fNameLower.includes('plate') && !fNameLower.includes('vehicle') && String(currentValue).includes(' - ')) {
           currentValue = String(currentValue).split(' - ')[1].trim();
-        } else if (fNameLower.includes('vehicle') && fNameLower.includes('name') && String(currentValue).includes(' - ')) {
-          currentValue = String(currentValue).split(' - ')[0].trim();
+        }
+
+        // If currentValue exists (such as auto-filled chassis number) but is not in dropdownData, add it!
+        if (currentValue && !dropdownData.some(d => String(d.value) === String(currentValue) || String(d.label) === String(currentValue))) {
+          dropdownData.unshift({ label: String(currentValue), value: String(currentValue) });
         }
 
         return (
           <SearchableDropdown
             data={dropdownData}
             value={currentValue}
-            onChange={(val) => handleInputChange(field.id, val)}
+            onChange={(val) => {
+              handleInputChange(field.id, val);
+              if (fNameLower.includes('vehicle') || field.id === 'vehicle_id') {
+                handleVehicleSelectAutoFill(val);
+              }
+            }}
             placeholder={`-- Select ${field.name} --`}
             searchPlaceholder={`Search ${field.name}...`}
             displayKey="label"
