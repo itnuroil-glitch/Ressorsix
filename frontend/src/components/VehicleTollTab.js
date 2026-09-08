@@ -216,7 +216,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
       await fetchFormConfiguration(
         selectedClient,
         targetCountry,
-        selectedModule || '50'
+        selectedModule || (isTransaction ? '71' : (isOverview ? '70' : '50'))
       );
     } else {
       setWizardStep(1);
@@ -232,16 +232,25 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
       const cfRes = await fetch(`${API_URL}/api/custom-fields`);
       const customFields = await cfRes.json();
 
+      const isCountryMatch = (cfCountry, targetCountry) => {
+        if (!cfCountry || !targetCountry) return true;
+        const c1 = String(cfCountry).trim().toLowerCase();
+        const c2 = String(targetCountry).trim().toLowerCase();
+        return c1 === c2 || (c1 === '1' && (c2 === 'uae' || c2.includes('emirates'))) || (c2 === '1' && (c1 === 'uae' || c1.includes('emirates')));
+      };
+
+      const targetModIds = isTransaction ? ['71', '53'] : (isOverview ? ['70', '52'] : ['50', '54']);
+
       let matchingFieldDef = customFields.find(cf =>
         String(cf.client_id || cf.clientid) === String(clientId) &&
-        String(cf.module_id || cf.moduleid) === String(moduleId) &&
-        String(cf.country_id || cf.countryid) === String(countryId)
+        (targetModIds.includes(String(cf.module_id || cf.moduleid)) || String(cf.module_id || cf.moduleid) === String(moduleId)) &&
+        isCountryMatch(cf.country_id || cf.countryid, countryId)
       );
       if (!matchingFieldDef) {
         matchingFieldDef = customFields.find(cf =>
           (!cf.clientid && !cf.client_id) &&
-          String(cf.module_id || cf.moduleid) === String(moduleId) &&
-          String(cf.country_id || cf.countryid) === String(countryId)
+          (targetModIds.includes(String(cf.module_id || cf.moduleid)) || String(cf.module_id || cf.moduleid) === String(moduleId)) &&
+          isCountryMatch(cf.country_id || cf.countryid, countryId)
         );
       }
 
@@ -250,11 +259,11 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
         matchingFieldDef = customFields.find(cf =>
           String(cf.client_id || cf.clientid) === String(clientId) &&
           String(cf.module_id || cf.moduleid) === '50' &&
-          String(cf.country_id || cf.countryid) === String(countryId)
+          isCountryMatch(cf.country_id || cf.countryid, countryId)
         ) || customFields.find(cf =>
           (!cf.clientid && !cf.client_id) &&
           String(cf.module_id || cf.moduleid) === '50' &&
-          String(cf.country_id || cf.countryid) === String(countryId)
+          isCountryMatch(cf.country_id || cf.countryid, countryId)
         );
       }
 
@@ -263,15 +272,15 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
       const permissionsList = await permRes.json();
 
       let activePerm = permissionsList.find(p =>
-        String(p.clientid) === String(clientId) &&
-        String(p.moduleid) === String(moduleId) &&
-        String(p.countryid || p.country_id) === String(countryId)
+        (String(p.clientid) === String(clientId) || !p.clientid) &&
+        (targetModIds.includes(String(p.moduleid)) || String(p.moduleid) === String(moduleId) || String(p.module_name || '').toLowerCase().includes(isTransaction ? 'transaction' : (isOverview ? 'overview' : 'toll'))) &&
+        isCountryMatch(p.countryid || p.country_id, countryId)
       );
       if (!activePerm && (String(moduleId) === '70' || String(moduleId) === '52' || isOverview)) {
         activePerm = permissionsList.find(p =>
           String(p.clientid) === String(clientId) &&
           String(p.moduleid) === '50' &&
-          String(p.countryid || p.country_id) === String(countryId)
+          isCountryMatch(p.countryid || p.country_id, countryId)
         );
       }
 
@@ -280,8 +289,13 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
         permittedFields = typeof activePerm.permitted_fields === 'string'
           ? JSON.parse(activePerm.permitted_fields)
           : activePerm.permitted_fields;
-      } else {
-        matchingFieldDef = null;
+      } else if (matchingFieldDef) {
+        // Fallback to all fields enabled if active permissions record is not restricted
+        permittedFields = {};
+        try {
+          const pSecs = typeof matchingFieldDef.field_data === 'string' ? JSON.parse(matchingFieldDef.field_data) : (matchingFieldDef.field_data || []);
+          (pSecs || []).forEach(sec => (sec.fields || []).forEach(f => { permittedFields[f.id] = true; }));
+        } catch (e) {}
       }
 
       if (matchingFieldDef) {
@@ -1559,7 +1573,8 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                       disabled={!selectedClient || !selectedCompany}
                       onPress={() => {
                         const countryToUse = selectedCountry || '1';
-                        fetchFormConfiguration(selectedClient, countryToUse, selectedModule || '50');
+                        const fallbackMod = isTransaction ? '71' : (isOverview ? '70' : '50');
+                        fetchFormConfiguration(selectedClient, countryToUse, selectedModule || fallbackMod);
                       }}
                     >
                       <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>Next</Text>
