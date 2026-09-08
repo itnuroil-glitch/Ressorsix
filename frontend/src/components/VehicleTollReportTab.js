@@ -175,7 +175,13 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
               name = Object.values(fd).find(v => /^(salik|darb)/i.test(String(v).trim())) || (entries[0] ? entries[0][1] : '');
             }
 
-            return accNo ? { account_no: String(accNo).trim(), name: String(name || '').trim(), id: o.id } : null;
+            return accNo ? { 
+              account_no: String(accNo).trim(), 
+              name: String(name || '').trim(), 
+              id: o.id,
+              company_id: o.company_id || o.companyid || (typeof o.field_data === 'object' && o.field_data ? o.field_data.company_id : null),
+              company_name: o.company_name || (typeof o.field_data === 'object' && o.field_data ? o.field_data.company_name : null)
+            } : null;
           }).filter(Boolean);
           setTollAccounts(accs);
         }
@@ -188,27 +194,87 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
     }
   };
 
-  // Collect unique accounts for the dropdown
+  // Helper to match a record against the selected company
+  const isRecordInCompany = (r, compId) => {
+    if (!compId || compId === 'ALL') return true;
+    let fd = r.field_data;
+    if (typeof fd === 'string') {
+      try { fd = JSON.parse(fd); } catch (e) { fd = {}; }
+    }
+    fd = fd || {};
+    const selectedCompId = String(compId).toLowerCase();
+    const rCompId = String(r.company_id || r.companyid || fd.company_id || fd.companyid || '').toLowerCase();
+    const rCompName = String(r.company_name || fd.Company || fd.company_name || '').toLowerCase();
+    const selectedCompObj = companies.find(c => String(c.id) === String(compId));
+    const selectedCompName = selectedCompObj ? String(selectedCompObj.company_name || selectedCompObj.name || '').toLowerCase() : '';
+
+    return (rCompId === selectedCompId) ||
+      (selectedCompName && rCompName === selectedCompName) ||
+      (rCompName && rCompName === selectedCompId);
+  };
+
+  // Helper to match a toll account against the selected company
+  const isAccountInCompany = (a, compId) => {
+    if (!compId || compId === 'ALL') return true;
+    const selectedCompId = String(compId).toLowerCase();
+    const aCompId = String(a.company_id || '').toLowerCase();
+    const aCompName = String(a.company_name || '').toLowerCase();
+    const selectedCompObj = companies.find(c => String(c.id) === String(compId));
+    const selectedCompName = selectedCompObj ? String(selectedCompObj.company_name || selectedCompObj.name || '').toLowerCase() : '';
+
+    return (aCompId === selectedCompId) ||
+      (selectedCompName && aCompName === selectedCompName) ||
+      (aCompName && aCompName === selectedCompId);
+  };
+
+  // Collect unique accounts for the dropdown (Company-based and Toll-System-based)
   const accountOptions = useMemo(() => {
     const accMap = new Map();
-    tollAccounts.forEach(a => {
+
+    // 1. Filter overview toll accounts by selected company & toll system
+    const relevantTollAccounts = tollAccounts.filter(a => {
+      if (!isAccountInCompany(a, filterCompany)) return false;
+      if (filterTollSystem !== 'ALL') {
+        const sys = String(a.name || '').toLowerCase();
+        if (filterTollSystem === 'Salik' && (sys.includes('darb') || sys.includes('abu dhabi'))) return false;
+        if (filterTollSystem === 'Darb' && !sys.includes('darb') && !sys.includes('abu dhabi')) return false;
+      }
+      return true;
+    });
+
+    relevantTollAccounts.forEach(a => {
       if (a.account_no) {
         accMap.set(String(a.account_no).trim(), a.name ? `${a.account_no} (${a.name})` : a.account_no);
       }
     });
-    records.forEach(r => {
+
+    // 2. Filter transaction records by selected company & toll system
+    const relevantRecords = records.filter(r => {
+      if (!isRecordInCompany(r, filterCompany)) return false;
+      if (filterTollSystem !== 'ALL') {
+        const sys = String(r.toll_name || r.toll_gate || '').toLowerCase();
+        if (filterTollSystem === 'Salik' && (sys.includes('darb') || sys.includes('abu dhabi'))) return false;
+        if (filterTollSystem === 'Darb' && !sys.includes('darb') && !sys.includes('abu dhabi')) return false;
+      }
+      return true;
+    });
+
+    relevantRecords.forEach(r => {
       const accNo = r.account_number || r.account_no;
       if (accNo && !accMap.has(String(accNo).trim())) {
         accMap.set(String(accNo).trim(), String(accNo).trim());
       }
     });
-    return Array.from(accMap.entries()).map(([value, label]) => ({ value, label }));
-  }, [tollAccounts, records]);
 
-  // Collect unique vehicles as "Vehicle Name - Plate Number"
+    return Array.from(accMap.entries()).map(([value, label]) => ({ value, label }));
+  }, [tollAccounts, records, filterCompany, filterTollSystem, companies]);
+
+  // Collect unique vehicles as "Vehicle Name - Plate Number" (Company-based)
   const vehicleOptions = useMemo(() => {
     const map = new Map();
-    records.forEach(r => {
+    const relevantRecords = records.filter(r => isRecordInCompany(r, filterCompany));
+
+    relevantRecords.forEach(r => {
       let p = r.plate;
       let vName = r.vehicle_name;
       if (r.field_data) {
@@ -229,7 +295,7 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
       }
     });
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
-  }, [records]);
+  }, [records, filterCompany, companies]);
 
   const handleApplyFilter = () => {
     setActiveFilters({
@@ -811,7 +877,12 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
             <Text style={{ fontSize: 11, fontWeight: '600', color: COLORS.textSecondary, marginBottom: 4 }}>Company</Text>
             <select
               value={filterCompany}
-              onChange={(e) => setFilterCompany(e.target.value)}
+              onChange={(e) => {
+                const chosen = e.target.value;
+                setFilterCompany(chosen);
+                setFilterAccountNo('ALL');
+                setFilterPlate('ALL');
+              }}
               style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #E2E8F0', backgroundColor: '#F8FAFC', fontSize: 13, color: '#0F172A', outline: 'none' }}
             >
               <option value="ALL">All Companies</option>
@@ -826,7 +897,11 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
             <Text style={{ fontSize: 11, fontWeight: '600', color: COLORS.textSecondary, marginBottom: 4 }}>Toll System</Text>
             <select
               value={filterTollSystem}
-              onChange={(e) => setFilterTollSystem(e.target.value)}
+              onChange={(e) => {
+                const chosen = e.target.value;
+                setFilterTollSystem(chosen);
+                setFilterAccountNo('ALL');
+              }}
               style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #E2E8F0', backgroundColor: '#F8FAFC', fontSize: 13, color: '#0F172A', outline: 'none' }}
             >
               <option value="ALL">Salik / Darb (All)</option>
