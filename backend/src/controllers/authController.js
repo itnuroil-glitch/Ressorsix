@@ -104,7 +104,7 @@ exports.login = async (req, res) => {
     }
 
     // 2. Find user in database
-    const findUserQuery = 'SELECT id, email, password, roleid, clientid, companyid, created_at FROM users WHERE email = $1';
+    const findUserQuery = 'SELECT id, email, password, roleid, clientid, companyid, created_at, authentik_sub FROM users WHERE email = $1';
     const userResult = await db.query(findUserQuery, [email.toLowerCase().trim()]);
 
     if (userResult.rows.length === 0) {
