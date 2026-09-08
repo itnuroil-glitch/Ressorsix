@@ -517,7 +517,27 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
   };
 
   const handleInputChange = (fieldId, value) => {
-    setFormData(prev => ({ ...prev, [fieldId]: value }));
+    setFormData(prev => {
+      const next = { ...prev, [fieldId]: value };
+
+      // If the changed field is Category, reset Sub Category
+      if (fieldsLayout) {
+        let isCat = false;
+        let subCatFieldId = null;
+        for (const sec of fieldsLayout) {
+          for (const f of (sec.fields || [])) {
+            const fn = (f.name || '').toLowerCase().trim();
+            if (f.id === fieldId && fn === 'category') isCat = true;
+            if (fn === 'sub category' || fn === 'subcategory') subCatFieldId = f.id;
+          }
+        }
+        if (isCat && subCatFieldId) {
+          next[subCatFieldId] = '';
+        }
+      }
+
+      return next;
+    });
   };
 
   const renderField = (field) => {
@@ -572,9 +592,44 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
         };
 
         let finalDropdownData = dropdownData;
-        const isCategoryField = field.name && field.name.toLowerCase().includes('category');
+        const fieldNameLower = (field.name || '').toLowerCase().trim();
+        const isMainCategoryField = fieldNameLower === 'category';
+        const isSubCategoryField = fieldNameLower === 'sub category' || fieldNameLower === 'subcategory';
+        const isCategoryField = fieldNameLower.includes('category');
 
-        if (isCategoryField && dropdownData.some(d => d.rawData && d.rawData.parent_id !== undefined)) {
+        // Look up currently selected Category value if this is the Sub Category field
+        let selectedCategoryVal = null;
+        if (isSubCategoryField && fieldsLayout) {
+          for (const sec of fieldsLayout) {
+            const catF = (sec.fields || []).find(f => (f.name || '').toLowerCase().trim() === 'category');
+            if (catF && formData[catF.id]) {
+              selectedCategoryVal = formData[catF.id];
+              break;
+            }
+          }
+        }
+
+        if (isMainCategoryField && dropdownData.some(d => d.rawData && d.rawData.parent_id !== undefined)) {
+            // Main Category field shows ONLY parent/root categories (parent_id is 0, null, or undefined)
+            finalDropdownData = dropdownData.filter(d => {
+               const pId = d.rawData?.parent_id;
+               return !pId || pId === 0 || pId === '0';
+            });
+        } else if (isSubCategoryField) {
+            // Sub Category shows ONLY subcategories (parent_id > 0), filtered by the selected parent Category
+            const subsOnly = dropdownData.filter(d => {
+               const pId = d.rawData?.parent_id;
+               return pId && pId !== 0 && pId !== '0';
+            });
+            if (!selectedCategoryVal) {
+               finalDropdownData = [];
+            } else {
+               finalDropdownData = subsOnly.filter(d => {
+                  const pId = String(d.rawData?.parent_id);
+                  return pId === String(selectedCategoryVal);
+               });
+            }
+        } else if (isCategoryField && dropdownData.some(d => d.rawData && d.rawData.parent_id !== undefined)) {
             const topLevel = [];
             const childrenMap = {};
             dropdownData.forEach(d => {
@@ -602,18 +657,27 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
         const renderCategoryOption = (item, isSelected) => {
            const pId = item.rawData?.parent_id;
            const isChild = Boolean(pId && pId !== 0 && pId !== '0');
+           if (!isChild) {
+             return (
+               <Text style={{ 
+                  fontSize: 14, 
+                  color: isSelected ? COLORS.primary : '#0F172A', 
+                  fontWeight: isSelected ? '600' : '500',
+                  paddingVertical: 2
+               }}>
+                  {item.label}
+               </Text>
+             );
+           }
            return (
-              <View style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: isChild ? 24 : 0, paddingVertical: isChild ? 0 : 2 }}>
-                 {isChild ? (
-                    <View style={{ width: 20, alignItems: 'center', justifyContent: 'center', marginRight: 4, marginTop: 2 }}>
-                       <Ionicons name="return-down-forward" size={16} color="#CBD5E1" />
-                    </View>
-                 ) : null}
+              <View style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: 24 }}>
+                 <View style={{ width: 20, alignItems: 'center', justifyContent: 'center', marginRight: 4, marginTop: 2 }}>
+                    <Ionicons name="return-down-forward" size={16} color="#CBD5E1" />
+                 </View>
                  <Text style={{ 
-                    fontSize: isChild ? 13 : 14, 
-                    color: isSelected ? COLORS.primary : (isChild ? '#475569' : '#0F172A'), 
-                    fontWeight: isSelected ? '600' : (isChild ? '500' : '700'),
-                    letterSpacing: isChild ? 0 : 0.3
+                    fontSize: 13, 
+                    color: isSelected ? COLORS.primary : '#475569', 
+                    fontWeight: isSelected ? '600' : '500'
                  }}>
                     {item.label}
                  </Text>
@@ -627,12 +691,12 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
               data={finalDropdownData}
               value={selectedValue || ''}
               onChange={(val) => handleInputChange(field.id, val)}
-              placeholder={`-- Select ${field.name} --`}
+              placeholder={isSubCategoryField && !selectedCategoryVal ? '-- Select Category first --' : `-- Select ${field.name} --`}
               searchPlaceholder={`Search ${field.name}...`}
               displayKey="label"
               valueKey="value"
-              disabled={isViewOnly}
-              renderOption={field.name && field.name.toLowerCase().includes('asset') ? renderAssetOption : isCategoryField ? renderCategoryOption : undefined}
+              disabled={isViewOnly || (isSubCategoryField && !selectedCategoryVal)}
+              renderOption={field.name && field.name.toLowerCase().includes('asset') ? renderAssetOption : (isCategoryField && !isMainCategoryField && !isSubCategoryField) ? renderCategoryOption : undefined}
             />
 
             {field.name && field.name.toLowerCase().includes('asset') && selectedValue && dropdownData.find(opt => String(opt.value) === String(selectedValue))?.rawData?.details && (

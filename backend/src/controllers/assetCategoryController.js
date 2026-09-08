@@ -1,12 +1,54 @@
 const db = require('../config/db');
 
-exports.getAllAssetCategories = async (req, res) => {
+exports.getParentCategories = async (req, res) => {
   try {
     const queryText = `
       SELECT * FROM tbl_asset_category 
-      WHERE is_deleted = 0 
+      WHERE is_deleted = 0 AND (parent_id = 0 OR parent_id IS NULL)
       ORDER BY cid ASC
     `;
+    const result = await db.query(queryText);
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Error fetching parent asset categories:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
+
+exports.getSubcategories = async (req, res) => {
+  try {
+    const parentId = req.query.parent_id || req.query.parent || req.query.parentId || req.query.categoryId;
+    let queryText = `
+      SELECT * FROM tbl_asset_category 
+      WHERE is_deleted = 0 AND parent_id > 0 AND parent_id IS NOT NULL
+    `;
+    const params = [];
+    if (parentId && !isNaN(parseInt(parentId, 10))) {
+      params.push(parseInt(parentId, 10));
+      queryText += ` AND parent_id = $1`;
+    }
+    queryText += ` ORDER BY cid ASC`;
+    const result = await db.query(queryText, params);
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Error fetching subcategories:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
+
+exports.getAllAssetCategories = async (req, res) => {
+  try {
+    const { type, onlyParents, onlySubs } = req.query;
+    let queryText = `
+      SELECT * FROM tbl_asset_category 
+      WHERE is_deleted = 0
+    `;
+    if (type === 'parent' || onlyParents === 'true') {
+      queryText += ` AND (parent_id = 0 OR parent_id IS NULL)`;
+    } else if (type === 'sub' || type === 'subcategory' || onlySubs === 'true') {
+      queryText += ` AND parent_id > 0 AND parent_id IS NOT NULL`;
+    }
+    queryText += ` ORDER BY cid ASC`;
     const result = await db.query(queryText);
     res.status(200).json(result.rows);
   } catch (error) {
