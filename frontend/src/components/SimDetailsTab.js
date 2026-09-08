@@ -216,24 +216,26 @@ export default function SimDetailsTab({
         const modId = String(cf.moduleid || cf.module_id || '');
         const modName = String(cf.module_name || '').toLowerCase();
         
-        // Exclude Module 58 (Premium Extra Charges) and Module 61 (Documents)
-        if (modId === '58' || modId === '61') return false;
-        if (modName.includes('document') || modName.includes('extra charge') || modName.includes('premium')) return false;
+        // Exclude Toll modules and Toll data
+        if (['50', '52', '53', '54'].includes(modId) || modName.includes('toll')) return false;
 
-        // Check if section name in field_data contains extra charges
+        // Exclude Documents
+        if (modId === '61' || modName.includes('document')) return false;
+
+        // Check if section name in field_data contains extra charges or toll
         let fdStr = '';
         if (typeof cf.field_data === 'string') {
           fdStr = cf.field_data.toLowerCase();
         } else if (cf.field_data) {
           fdStr = JSON.stringify(cf.field_data).toLowerCase();
         }
-        if (fdStr.includes('premium & extra charge') || fdStr.includes('extra charge')) return false;
+        if (fdStr.includes('premium & extra charge') || fdStr.includes('extra charge') || fdStr.includes('toll data') || fdStr.includes('toll name')) return false;
 
         if (isTelecomDataView) {
           if (modId === '59') return true;
           return modName.includes('telecom data') || modName.includes('telecome data');
         } else {
-          if (modId === '52') return true;
+          if (modId === '58') return true;
           return modName.includes('sim') || modName.includes('telecom detail') || modName.includes('telecome detail') || fdStr.includes('telecom') || fdStr.includes('telecome');
         }
       };
@@ -253,8 +255,8 @@ export default function SimDetailsTab({
           score += 50; // Global custom field
         }
 
-        // Module ID match (52 for Telecom Details, 59 for Telecom Data)
-        const expectedModId = isTelecomDataView ? '59' : '52';
+        // Module ID match (58 for Telecom Details, 59 for Telecom Data)
+        const expectedModId = isTelecomDataView ? '59' : '58';
         if (modId === expectedModId) {
           score += 40;
         }
@@ -288,7 +290,7 @@ export default function SimDetailsTab({
             const activePerm = permissionsList.find(p =>
               (String(p.clientid || p.client_id) === String(clientId) || !p.clientid) &&
               (
-                String(p.moduleid || p.module_id) === '52' ||
+                String(p.moduleid || p.module_id) === '58' ||
                 String(p.moduleid || p.module_id) === '59' ||
                 String(p.moduleid || p.module_id) === String(matchingFieldDef.moduleid || matchingFieldDef.module_id) ||
                 String(p.module_name || '').toLowerCase().includes('telecom') ||
