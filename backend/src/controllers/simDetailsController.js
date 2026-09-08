@@ -177,7 +177,7 @@ exports.createSimDetail = async (req, res) => {
         JSON.stringify(finalFieldData),
         clientid ? String(clientid) : null,
         country_id ? parseInt(country_id, 10) : null,
-        moduleid || 52,
+        moduleid || 58,
         user_id ? parseInt(user_id, 10) : null,
         company_id ? String(company_id) : null,
         status || 'Active'
