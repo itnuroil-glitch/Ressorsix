@@ -161,9 +161,21 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
         if (Array.isArray(overviewData)) {
           const accs = overviewData.map(o => {
             const fd = typeof o.field_data === 'string' ? JSON.parse(o.field_data) : (o.field_data || {});
-            const accNo = fd['1786629206891'] || fd['Account No'] || fd['ACCOUNT NO'] || fd['Account Number'] || fd.account_no || null;
-            const name = fd['1786629185586'] || fd['Toll Name'] || fd['TOLL NAME'] || fd.toll_name || '';
-            return accNo ? { account_no: String(accNo), name, id: o.id } : null;
+            const entries = Object.entries(fd);
+
+            // Direct keys (live server IDs + standard names)
+            let accNo = fd['1786788673616'] || fd['1786629206891'] || fd['Account No'] || fd['ACCOUNT NO'] || fd['Account Number'] || fd.account_no;
+            let name = fd['1786788666800'] || fd['1786629185586'] || fd['Toll Name'] || fd['TOLL NAME'] || fd.toll_name;
+
+            // Smart Fallback (extract numeric account number and toll gateway)
+            if (!accNo) {
+              accNo = Object.values(fd).find(v => /^\d{5,15}$/.test(String(v).trim())) || (entries[1] ? entries[1][1] : null);
+            }
+            if (!name) {
+              name = Object.values(fd).find(v => /^(salik|darb)/i.test(String(v).trim())) || (entries[0] ? entries[0][1] : '');
+            }
+
+            return accNo ? { account_no: String(accNo).trim(), name: String(name || '').trim(), id: o.id } : null;
           }).filter(Boolean);
           setTollAccounts(accs);
         }
@@ -252,15 +264,17 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
       try { fd = JSON.parse(fd); } catch (e) { fd = {}; }
     }
     fd = fd || {};
-    return String(
+    const accVal = 
+      fd['1786788673616'] || 
       fd['1786629206891'] || 
       fd['Account Number'] || 
       fd['Account No'] || 
       fd['ACCOUNT NO'] || 
       fd.account_number || 
       fd.account_no || 
-      ''
-    );
+      Object.values(fd).find(v => /^\d{5,15}$/.test(String(v).trim())) ||
+      '';
+    return String(accVal).trim();
   };
 
   const getRecordFieldDataValues = (r) => {
