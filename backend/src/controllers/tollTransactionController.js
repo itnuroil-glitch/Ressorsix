@@ -73,17 +73,21 @@ const resolveVehicleId = async (fieldData, clientId, plateVal, tagNumberVal) => 
   return null;
 };
 
-const resolveTollOverviewId = async (fieldData, clientId, tollNameVal, accountNoVal) => {
+const resolveTollOverviewId = async (fieldData, clientId, tollNameVal, accountNoVal, companyId) => {
   try {
     const fd = fieldData || {};
     const accNo = accountNoVal || fd['1786788673616'] || fd['Account No'] || fd['ACCOUNT NO'] || fd['Account Number'] || fd.account_no || fd['1786629206891'] || Object.values(fd).find(v => /^\d{5,15}$/.test(String(v).trim())) || null;
     const tollName = tollNameVal || fd['1786788666800'] || fd['Toll Name'] || fd['TOLL NAME'] || fd.toll_name || fd['1786629185586'] || null;
 
-    let query = 'SELECT id, field_data FROM tbl_toll_overview WHERE (is_deleted = false OR is_deleted IS NULL)';
+    let query = 'SELECT id, clientid, company_id, field_data FROM tbl_toll_overview WHERE (is_deleted = false OR is_deleted IS NULL)';
     const params = [];
     if (clientId) {
-      query += ' AND clientid::text = $1';
       params.push(String(clientId));
+      query += ` AND clientid::text = $${params.length}`;
+    }
+    if (companyId) {
+      params.push(String(companyId));
+      query += ` AND company_id::text = $${params.length}`;
     }
 
     const res = await db.query(query, params);
@@ -192,7 +196,7 @@ exports.saveTollTransaction = async (req, res) => {
     let finalOverviewId = toll_overview_id || null;
     if (!finalOverviewId) {
       const accountNoVal = fd['1786788673616'] || fd['Account No'] || fd['ACCOUNT NO'] || fd.account_no || fd['1786629206891'] || Object.values(fd).find(v => /^\d{5,15}$/.test(String(v).trim())) || null;
-      finalOverviewId = await resolveTollOverviewId(field_data, clientid, tollNameVal, accountNoVal);
+      finalOverviewId = await resolveTollOverviewId(field_data, clientid, tollNameVal, accountNoVal, company_id);
     }
 
     // Insert row directly without duplicate checking
@@ -280,7 +284,7 @@ exports.getTollTransactionRecords = async (req, res) => {
     // Fetch all vehicles and toll overviews for dynamic lookup matching
     const [allVehiclesRes, allOverviewRes] = await Promise.all([
       db.query('SELECT vehicle_id, id, clientid, field_data FROM tbl_vehicle_details'),
-      db.query('SELECT id, clientid, field_data FROM tbl_toll_overview WHERE is_deleted = false OR is_deleted IS NULL')
+      db.query('SELECT id, clientid, company_id, field_data FROM tbl_toll_overview WHERE is_deleted = false OR is_deleted IS NULL')
     ]);
     const vehiclesList = allVehiclesRes.rows;
     const overviewList = allOverviewRes.rows;
@@ -311,13 +315,17 @@ exports.getTollTransactionRecords = async (req, res) => {
         vName = fd['1780558935557'] || fd['vehicle_name'] || fd['name'] || Object.values(fd)[0] || null;
       }
 
-      // Map account number from overview record or field_data
+      // Map account number from overview record or field_data (strict company isolation)
       let accNo = row.account_number || null;
       if (!accNo && row.toll_overview_id) {
         const ov = overviewList.find(o => String(o.id) === String(row.toll_overview_id));
         if (ov && ov.field_data) {
-          const ofd = ov.field_data;
-          accNo = ofd['1786788673616'] || ofd['1786629206891'] || ofd['Account No'] || ofd['ACCOUNT NO'] || ofd['Account Number'] || ofd.account_no || Object.values(ofd).find(v => /^\d{5,15}$/.test(String(v).trim())) || null;
+          const ovComp = String(ov.company_id || '').trim();
+          const rowComp = String(row.company_id || '').trim();
+          if (!ovComp || !rowComp || ovComp === rowComp) {
+            const ofd = ov.field_data;
+            accNo = ofd['1786788673616'] || ofd['1786629206891'] || ofd['Account No'] || ofd['ACCOUNT NO'] || ofd['Account Number'] || ofd.account_no || Object.values(ofd).find(v => /^\d{5,15}$/.test(String(v).trim())) || null;
+          }
         }
       }
       if (!accNo) {
@@ -329,6 +337,7 @@ exports.getTollTransactionRecords = async (req, res) => {
         const isDarb = tName.includes('darb') || tName.includes('abu dhabi');
         const matchedOv = overviewList.find(o => {
           if (row.clientid && String(o.clientid) !== String(row.clientid)) return false;
+          if (row.company_id && o.company_id && String(o.company_id) !== String(row.company_id)) return false;
           const str = JSON.stringify(o.field_data || {}).toLowerCase();
           return isDarb ? str.includes('darb') : str.includes('salik');
         });

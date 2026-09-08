@@ -248,23 +248,37 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
       }
     });
 
-    // 2. Filter transaction records by selected company & toll system
-    const relevantRecords = records.filter(r => {
-      if (!isRecordInCompany(r, filterCompany)) return false;
-      if (filterTollSystem !== 'ALL') {
-        const sys = String(r.toll_name || r.toll_gate || '').toLowerCase();
-        if (filterTollSystem === 'Salik' && (sys.includes('darb') || sys.includes('abu dhabi'))) return false;
-        if (filterTollSystem === 'Darb' && !sys.includes('darb') && !sys.includes('abu dhabi')) return false;
-      }
-      return true;
-    });
+    // Accounts known to belong to other companies must NOT appear under the selected company
+    const otherCompanyAccountNos = new Set(
+      tollAccounts
+        .filter(a => filterCompany && filterCompany !== 'ALL' && !isAccountInCompany(a, filterCompany))
+        .map(a => String(a.account_no || '').trim().toLowerCase())
+        .filter(Boolean)
+    );
 
-    relevantRecords.forEach(r => {
-      const accNo = r.account_number || r.account_no;
-      if (accNo && !accMap.has(String(accNo).trim())) {
-        accMap.set(String(accNo).trim(), String(accNo).trim());
-      }
-    });
+    // 2. Only supplement with transaction records if no overview accounts are configured or when viewing all companies,
+    // and strictly exclude any account registered under a different company
+    if (!filterCompany || filterCompany === 'ALL' || accMap.size === 0) {
+      const relevantRecords = records.filter(r => {
+        if (!isRecordInCompany(r, filterCompany)) return false;
+        if (filterTollSystem !== 'ALL') {
+          const sys = String(r.toll_name || r.toll_gate || '').toLowerCase();
+          if (filterTollSystem === 'Salik' && (sys.includes('darb') || sys.includes('abu dhabi'))) return false;
+          if (filterTollSystem === 'Darb' && !sys.includes('darb') && !sys.includes('abu dhabi')) return false;
+        }
+        return true;
+      });
+
+      relevantRecords.forEach(r => {
+        const accNo = r.account_number || r.account_no;
+        if (accNo) {
+          const cleanAcc = String(accNo).trim();
+          if (!accMap.has(cleanAcc) && !otherCompanyAccountNos.has(cleanAcc.toLowerCase())) {
+            accMap.set(cleanAcc, cleanAcc);
+          }
+        }
+      });
+    }
 
     return Array.from(accMap.entries()).map(([value, label]) => ({ value, label }));
   }, [tollAccounts, records, filterCompany, filterTollSystem, companies]);
