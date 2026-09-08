@@ -19,7 +19,8 @@ const ensureColumnsExist = async () => {
 exports.getAllEmployees = async (req, res) => {
   try {
     await ensureColumnsExist();
-    const { clientid } = req.query;
+    const { clientid, company_id, companyId } = req.query;
+    const targetCompId = company_id || companyId;
 
     let queryText = `
       SELECT e.*, 
@@ -36,8 +37,13 @@ exports.getAllEmployees = async (req, res) => {
     const params = [];
 
     if (clientid) {
-      queryText += ` AND e.clientid = $1`;
       params.push(clientid);
+      queryText += ` AND e.clientid = $${params.length}`;
+    }
+
+    if (targetCompId) {
+      params.push(String(targetCompId).trim());
+      queryText += ` AND (e.basecompany_id::text = $${params.length} OR EXISTS (SELECT 1 FROM employee_company ec WHERE ec.employee_id = e.id AND ec.company_id::text = $${params.length}))`;
     }
 
     queryText += ` ORDER BY e.id DESC`;
@@ -500,6 +506,82 @@ exports.bulkImportEmployees = async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error: ' + error.message });
   } finally {
     client.release();
+  }
+};
+
+exports.getEmployeesByCompany = async (req, res) => {
+  try {
+    await ensureColumnsExist();
+    const companyId = req.params.companyId || req.query.company_id || req.query.companyId;
+    const { clientid } = req.query;
+
+    if (!companyId) {
+      return res.status(200).json([]);
+    }
+
+    let queryText = `
+      SELECT e.*, 
+             e.full_name AS employee_name,
+             COALESCE(e.assigned_password, u.assigned_password) as assigned_password,
+             (SELECT string_agg(role, ', ') FROM role WHERE e.roleid IS NOT NULL AND e.roleid::text != '' AND id::text = ANY(array_remove(string_to_array(e.roleid::text, ','), ''))) as role_name, 
+             d.department_name,
+             bc.company_name as base_company_name
+      FROM employee e
+      LEFT JOIN department d ON e.department_id = d.id
+      LEFT JOIN company bc ON e.basecompany_id = bc.id
+      LEFT JOIN users u ON LOWER(TRIM(e.email)) = LOWER(TRIM(u.email))
+      WHERE e.is_deleted = false
+        AND (
+          e.basecompany_id::text = $1
+          OR EXISTS (
+            SELECT 1 
+            FROM employee_company ec 
+            WHERE ec.employee_id = e.id 
+              AND ec.company_id::text = $1
+          )
+        )
+    `;
+    const params = [String(companyId).trim()];
+
+    if (clientid) {
+      queryText += ` AND e.clientid::text = $2`;
+      params.push(String(clientid).trim());
+    }
+
+    queryText += ` ORDER BY e.full_name ASC`;
+
+    const result = await db.query(queryText, params);
+
+    // Fetch associated companies for each employee
+    if (result.rows.length > 0) {
+      const empIds = result.rows.map(row => row.id);
+      const companiesQuery = `
+        SELECT ec.employee_id, c.id, c.company_name, c.short_code
+        FROM employee_company ec
+        JOIN company c ON ec.company_id = c.id
+        WHERE ec.employee_id = ANY($1)
+      `;
+      const companiesResult = await db.query(companiesQuery, [empIds]);
+
+      const compMap = {};
+      companiesResult.rows.forEach(row => {
+        if (!compMap[row.employee_id]) compMap[row.employee_id] = [];
+        compMap[row.employee_id].push({
+          id: row.id,
+          company_name: row.company_name,
+          short_code: row.short_code
+        });
+      });
+
+      result.rows.forEach(row => {
+        row.companies = compMap[row.id] || [];
+      });
+    }
+
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Error fetching employees by company:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
   }
 };
 
