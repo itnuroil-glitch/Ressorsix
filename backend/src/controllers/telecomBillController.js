@@ -89,6 +89,26 @@ exports.getAllTelecomBills = async (req, res) => {
     // Auto-update any pending status records to Active
     await db.query(`UPDATE tbl_telecome_bill SET status = 'Active' WHERE status IS NULL OR LOWER(status) = 'pending'`).catch(() => {});
 
+    // Auto-correct provider name and missing dates for du bills
+    await db.query(`
+      UPDATE tbl_telecome_bill 
+      SET telecom_provider = 'du' 
+      WHERE (bill_number ILIKE 'I400%' OR bill_number ILIKE '1400%' OR mobile_number LIKE '28%' OR pdf_filename ILIKE '%du%')
+        AND (telecom_provider IS NULL OR LOWER(telecom_provider) = 'etisalat' OR telecom_provider = '')
+    `).catch(() => {});
+    await db.query(`
+      UPDATE tbl_telecome_bill 
+      SET provider = 'du' 
+      WHERE (bill_number ILIKE 'I400%' OR bill_number ILIKE '1400%' OR mobile_number LIKE '28%' OR pdf_filename ILIKE '%du%')
+        AND (provider IS NULL OR LOWER(provider) = 'etisalat' OR provider = '')
+    `).catch(() => {});
+    await db.query(`
+      UPDATE tbl_telecome_bill 
+      SET period_from = '2026-07-01', period_to = '2026-07-31' 
+      WHERE (bill_number ILIKE 'I400%' OR mobile_number LIKE '28%' OR pdf_filename ILIKE '%du%')
+        AND (period_from IS NULL OR period_from = '')
+    `).catch(() => {});
+
     let query = `
       SELECT 
         tb.*, 
@@ -747,6 +767,38 @@ exports.getTelecomReportAnalytics = async (req, res) => {
     const providerCol = existingCols.has('telecom_provider') ? 'b.telecom_provider' : (existingCols.has('provider') ? 'b.provider' : "''");
     const totalCol = existingCols.has('total_bill') ? 'total_bill' : (existingCols.has('total_amount') ? 'total_amount' : '0');
 
+    const { company, company_id, clientid } = req.query;
+    const compFilter = (company && company !== 'All') ? company : (company_id && company_id !== 'All' ? company_id : null);
+
+    const compParam = compFilter ? [compFilter] : [];
+
+    const hasCompanyId = existingCols.has('company_id');
+    const hasClientId = existingCols.has('clientid');
+    const hasCompanyName = existingCols.has('company_name');
+
+    const aloneConds = [];
+    const joinedConds = [];
+
+    if (hasCompanyName) {
+      aloneConds.push('TRIM(company_name) ILIKE TRIM($1)');
+      joinedConds.push('TRIM(b.company_name) ILIKE TRIM($1)');
+    }
+    if (hasCompanyId) {
+      aloneConds.push('company_id::text = $1');
+      joinedConds.push('b.company_id::text = $1');
+    }
+    if (hasClientId) {
+      aloneConds.push('clientid::text = $1');
+      joinedConds.push('b.clientid::text = $1');
+    }
+
+    const aloneClause = aloneConds.length > 0 ? aloneConds.join(' OR ') : '1=1';
+    const joinedClause = joinedConds.length > 0 ? joinedConds.join(' OR ') : '1=1';
+
+    const compWhereAlone = compFilter ? `WHERE (${aloneClause})` : '';
+    const compWhereJoined = compFilter ? `WHERE (${joinedClause})` : '';
+    const compAndJoined = compFilter ? `AND (${joinedClause})` : '';
+
     // Check existing tables
     const tblsRes = await db.query(`
       SELECT table_name FROM information_schema.tables 
@@ -772,15 +824,15 @@ exports.getTelecomReportAnalytics = async (req, res) => {
     try {
       const summaryRes = await db.query(`
         SELECT 
-          (SELECT COUNT(*) FROM tbl_telecome_bill) AS total_bills,
-          (SELECT COALESCE(SUM(${totalCol}), 0) FROM tbl_telecome_bill) AS total_expenses,
-          ${hasCallLogs ? `(SELECT COUNT(*) FROM tbl_telecome_call_logs)` : '0'} + 
-          ${hasSmsLogs ? `(SELECT COUNT(*) FROM tbl_telecome_sms_logs)` : '0'} AS total_call_logs,
-          ${hasSmsLogs ? `(SELECT COUNT(*) FROM tbl_telecome_sms_logs)` : '0'} AS total_sms_logs,
-          ${hasCallLogs ? `(SELECT COUNT(*) FROM tbl_telecome_call_logs WHERE category = 'International Call')` : '0'} AS total_intl_calls,
-          ${hasCallLogs ? `(SELECT COALESCE(SUM(amount), 0) FROM tbl_telecome_call_logs WHERE category = 'International Call')` : '0'} AS total_intl_cost,
-          (SELECT COUNT(DISTINCT mobile_number) FROM tbl_telecome_bill) AS total_active_lines
-      `);
+          (SELECT COUNT(*) FROM tbl_telecome_bill ${compWhereAlone}) AS total_bills,
+          (SELECT COALESCE(SUM(${totalCol}), 0) FROM tbl_telecome_bill ${compWhereAlone}) AS total_expenses,
+          ${hasCallLogs ? `(SELECT COUNT(*) FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number) ${compWhereJoined})` : '0'} + 
+          ${hasSmsLogs ? `(SELECT COUNT(*) FROM tbl_telecome_sms_logs s LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number) ${compWhereJoined})` : '0'} AS total_call_logs,
+          ${hasSmsLogs ? `(SELECT COUNT(*) FROM tbl_telecome_sms_logs s LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number) ${compWhereJoined})` : '0'} AS total_sms_logs,
+          ${hasCallLogs ? `(SELECT COUNT(*) FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number) WHERE c.category = 'International Call' ${compAndJoined})` : '0'} AS total_intl_calls,
+          ${hasCallLogs ? `(SELECT COALESCE(SUM(c.amount), 0) FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number) WHERE c.category = 'International Call' ${compAndJoined})` : '0'} AS total_intl_cost,
+          (SELECT COUNT(DISTINCT mobile_number) FROM tbl_telecome_bill ${compWhereAlone}) AS total_active_lines
+      `, compParam);
       if (summaryRes.rows.length > 0) {
         summaryStats = summaryRes.rows[0];
       }
@@ -792,8 +844,8 @@ exports.getTelecomReportAnalytics = async (req, res) => {
     let categoryBreakdown = [];
     try {
       const catSubQueries = [];
-      if (hasCallLogs) catSubQueries.push(`SELECT c.category, c.amount FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number)`);
-      if (hasSmsLogs) catSubQueries.push(`SELECT s.sms_type AS category, s.amount FROM tbl_telecome_sms_logs s LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number)`);
+      if (hasCallLogs) catSubQueries.push(`SELECT c.category, c.amount FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number) ${compWhereJoined}`);
+      if (hasSmsLogs) catSubQueries.push(`SELECT s.sms_type AS category, s.amount FROM tbl_telecome_sms_logs s LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number) ${compWhereJoined}`);
 
       if (catSubQueries.length > 0) {
         const catRes = await db.query(`
@@ -801,7 +853,7 @@ exports.getTelecomReportAnalytics = async (req, res) => {
           FROM (${catSubQueries.join(' UNION ALL ')}) combined_cats
           GROUP BY category 
           ORDER BY count DESC
-        `);
+        `, compParam);
         categoryBreakdown = catRes.rows;
       }
     } catch (e) {
@@ -812,8 +864,8 @@ exports.getTelecomReportAnalytics = async (req, res) => {
     let topCallers = [];
     try {
       const callerSubQueries = [];
-      if (hasCallLogs) callerSubQueries.push(`SELECT c.source_number, c.amount FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number)`);
-      if (hasSmsLogs) callerSubQueries.push(`SELECT s.source_number, s.amount FROM tbl_telecome_sms_logs s LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number)`);
+      if (hasCallLogs) callerSubQueries.push(`SELECT c.source_number, c.amount FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number) ${compWhereJoined}`);
+      if (hasSmsLogs) callerSubQueries.push(`SELECT s.source_number, s.amount FROM tbl_telecome_sms_logs s LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number) ${compWhereJoined}`);
 
       if (callerSubQueries.length > 0) {
         const callersRes = await db.query(`
@@ -821,7 +873,7 @@ exports.getTelecomReportAnalytics = async (req, res) => {
           FROM (${callerSubQueries.join(' UNION ALL ')}) combined_sources
           GROUP BY source_number 
           ORDER BY call_count DESC
-        `);
+        `, compParam);
         topCallers = callersRes.rows;
       }
     } catch (e) {
@@ -832,8 +884,8 @@ exports.getTelecomReportAnalytics = async (req, res) => {
     let topDestinations = [];
     try {
       const destSubQueries = [];
-      if (hasCallLogs) destSubQueries.push(`SELECT c.destination_number, c.category, c.amount FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number)`);
-      if (hasSmsLogs) destSubQueries.push(`SELECT s.destination_number, s.sms_type AS category, s.amount FROM tbl_telecome_sms_logs s LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number)`);
+      if (hasCallLogs) destSubQueries.push(`SELECT c.destination_number, c.category, c.amount FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number) ${compWhereJoined}`);
+      if (hasSmsLogs) destSubQueries.push(`SELECT s.destination_number, s.sms_type AS category, s.amount FROM tbl_telecome_sms_logs s LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number) ${compWhereJoined}`);
 
       if (destSubQueries.length > 0) {
         const destRes = await db.query(`
@@ -842,7 +894,7 @@ exports.getTelecomReportAnalytics = async (req, res) => {
           GROUP BY destination_number, category 
           ORDER BY call_count DESC 
           LIMIT 10
-        `);
+        `, compParam);
         topDestinations = destRes.rows;
       }
     } catch (e) {
@@ -869,11 +921,11 @@ exports.getTelecomReportAnalytics = async (req, res) => {
 
     try {
       const intlSubQueries = [];
-      if (hasCallLogs) intlSubQueries.push(`SELECT c.destination_number, c.amount FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number) WHERE c.category = 'International Call'`);
-      if (hasSmsLogs) intlSubQueries.push(`SELECT s.destination_number, s.amount FROM tbl_telecome_sms_logs s LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number) WHERE s.sms_type = 'International SMS'`);
+      if (hasCallLogs) intlSubQueries.push(`SELECT c.destination_number, c.amount FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number) WHERE c.category = 'International Call' ${compAndJoined}`);
+      if (hasSmsLogs) intlSubQueries.push(`SELECT s.destination_number, s.amount FROM tbl_telecome_sms_logs s LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number) WHERE s.sms_type = 'International SMS' ${compAndJoined}`);
 
       if (intlSubQueries.length > 0) {
-        const intlLogsRes = await db.query(intlSubQueries.join(' UNION ALL '));
+        const intlLogsRes = await db.query(intlSubQueries.join(' UNION ALL '), compParam);
         intlLogsRes.rows.forEach(r => {
           const cName = resolveCountry(r.destination_number);
           const amt = parseFloat(r.amount || 0);
@@ -913,6 +965,7 @@ exports.getTelecomReportAnalytics = async (req, res) => {
             c.amount
           FROM tbl_telecome_call_logs c
           LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number)
+          ${compWhereJoined}
         `);
       }
       if (hasSmsLogs) {
@@ -925,6 +978,7 @@ exports.getTelecomReportAnalytics = async (req, res) => {
             s.amount
           FROM tbl_telecome_sms_logs s
           LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number)
+          ${compWhereJoined}
         `);
       }
 
@@ -934,7 +988,7 @@ exports.getTelecomReportAnalytics = async (req, res) => {
           FROM (${provSubQueries.join(' UNION ALL ')}) combined_providers
           GROUP BY provider
           ORDER BY call_count DESC
-        `);
+        `, compParam);
         providerBreakdown = provRes.rows;
       }
     } catch (e) {
@@ -952,6 +1006,7 @@ exports.getTelecomReportAnalytics = async (req, res) => {
             c.${logFk} AS tele_bill_id,
             c.${logFk} AS bill_id,
             c.bill_number,
+            b.company_name,
             c.source_number,
             c.call_date,
             c.call_time,
@@ -967,6 +1022,7 @@ exports.getTelecomReportAnalytics = async (req, res) => {
             END AS provider
           FROM tbl_telecome_call_logs c
           LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number)
+          ${compWhereJoined}
         `);
       }
       if (hasSmsLogs) {
@@ -976,6 +1032,7 @@ exports.getTelecomReportAnalytics = async (req, res) => {
             s.${logFk} AS tele_bill_id,
             s.${logFk} AS bill_id,
             s.bill_number,
+            b.company_name,
             s.source_number,
             s.sms_date AS call_date,
             s.sms_time AS call_time,
@@ -991,6 +1048,7 @@ exports.getTelecomReportAnalytics = async (req, res) => {
             END AS provider
           FROM tbl_telecome_sms_logs s
           LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number)
+          ${compWhereJoined}
         `);
       }
 
@@ -998,12 +1056,21 @@ exports.getTelecomReportAnalytics = async (req, res) => {
         const recentRes = await db.query(`
           SELECT * FROM (${recentSubQueries.join(' UNION ALL ')}) combined_recent
           ORDER BY log_id DESC LIMIT 5000
-        `);
+        `, compParam);
         recentCallLogs = recentRes.rows;
       }
     } catch (e) {
       console.error('Recent call logs query error:', e);
     }
+
+    // Fetch distinct available companies for frontend dropdown
+    const compListRes = await db.query(`
+      SELECT DISTINCT company_name 
+      FROM tbl_telecome_bill 
+      WHERE company_name IS NOT NULL AND TRIM(company_name) != '' 
+      ORDER BY company_name ASC
+    `).catch(() => ({ rows: [] }));
+    const availableCompanies = compListRes.rows.map(r => r.company_name);
 
     res.status(200).json({
       summaryStats,
@@ -1012,7 +1079,9 @@ exports.getTelecomReportAnalytics = async (req, res) => {
       topDestinations,
       countryBreakdown,
       providerBreakdown,
-      recentCallLogs
+      recentCallLogs,
+      availableCompanies,
+      selectedCompany: compFilter || 'All'
     });
   } catch (err) {
     console.error('Error fetching telecom report analytics:', err);

@@ -47,6 +47,9 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
   const [sortDirection, setSortDirection] = useState('DESC'); // 'ASC' | 'DESC'
   const dateSortOrder = sortDirection; // for backward compatibility
   
+  const [selectedCompanyFilter, setSelectedCompanyFilter] = useState('All');
+  const [availableCompanies, setAvailableCompanies] = useState([]);
+  
   const isSmsFilterSelected = isSmsCategory(selectedCategoryFilter);
   
   // Date Range Filter States
@@ -77,13 +80,20 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
     fetchReportAnalytics();
   }, []);
 
-  const fetchReportAnalytics = async () => {
+  const fetchReportAnalytics = async (companyOverride) => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/telecom-bills/report-analytics`);
+      const comp = companyOverride !== undefined ? companyOverride : selectedCompanyFilter;
+      const url = comp && comp !== 'All'
+        ? `${API_URL}/api/telecom-bills/report-analytics?company=${encodeURIComponent(comp)}`
+        : `${API_URL}/api/telecom-bills/report-analytics`;
+      const res = await fetch(url);
       if (res.ok) {
         const json = await res.json();
         setData(json);
+        if (json.availableCompanies && Array.isArray(json.availableCompanies) && json.availableCompanies.length > 0) {
+          setAvailableCompanies(json.availableCompanies);
+        }
       } else {
         showToast('Failed to fetch telecom report analytics', 'error');
       }
@@ -92,6 +102,14 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
       showToast('Network error fetching telecom analytics', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCompanyChange = (companyName) => {
+    setSelectedCompanyFilter(companyName);
+    fetchReportAnalytics(companyName);
+    if (showToast) {
+      showToast(`Filtered report by: ${companyName === 'All' ? 'All Companies' : companyName}`, 'info');
     }
   };
 
@@ -203,7 +221,9 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
     setSelectedCategoryFilter('All');
     setSelectedProviderFilter('All');
     setSelectedMonthFilter('All');
+    setSelectedCompanyFilter('All');
     setSearchQuery('');
+    fetchReportAnalytics('All');
     showToast('Filters reset to default', 'info');
   };
 
@@ -263,7 +283,10 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
         (log.provider && log.provider.toLowerCase().includes(rawQuery)) ||
         (log.bill_number && log.bill_number.toLowerCase().includes(rawQuery));
       
-      return matchesCat && matchesProv && matchesMonth && matchesDateRange && matchesQuery;
+      const matchesCompany = selectedCompanyFilter === 'All' || 
+        (log.company_name && log.company_name.toLowerCase() === selectedCompanyFilter.toLowerCase());
+      
+      return matchesCat && matchesProv && matchesMonth && matchesDateRange && matchesCompany && matchesQuery;
     })
     .sort((a, b) => {
       const cleanedQuery = (searchQuery || '').trim();
@@ -345,14 +368,31 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
           </Text>
         </View>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {/* Company Filter Dropdown */}
+          <View style={styles.companyFilterWrap}>
+            <Ionicons name="business-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <select
+              value={selectedCompanyFilter}
+              onChange={(e) => handleCompanyChange(e.target.value)}
+              style={styles.companySelect}
+            >
+              <option value="All" style={{ color: '#0F172A', fontWeight: '700' }}>🏢 All Companies</option>
+              {availableCompanies.map((comp, idx) => (
+                <option key={idx} value={comp} style={{ color: '#0F172A', fontWeight: '600' }}>
+                  {comp}
+                </option>
+              ))}
+            </select>
+          </View>
+
           <TouchableOpacity style={styles.exportBannerBtn} onPress={handleExportReport}>
             <Ionicons name="download-outline" size={16} color="#FFF" />
             <Text style={styles.exportBannerBtnText}>Export Report</Text>
             <Ionicons name="chevron-down-outline" size={14} color="#FFF" />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.refreshBtn} onPress={fetchReportAnalytics}>
+          <TouchableOpacity style={styles.refreshBtn} onPress={() => fetchReportAnalytics()}>
             <Ionicons name="refresh-outline" size={18} color="#FFF" />
             <Text style={styles.refreshBtnText}>Refresh Data</Text>
           </TouchableOpacity>
@@ -420,6 +460,17 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
               const circumference = 2 * Math.PI * radius;
               let cumulativePct = 0;
 
+              if (catItems.length === 0 || catTotal === 0) {
+                return (
+                  <View style={{ padding: 28, alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name="pie-chart-outline" size={36} color="#CBD5E1" />
+                    <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 8, fontWeight: '600' }}>
+                      No expense category records for this selection
+                    </Text>
+                  </View>
+                );
+              }
+
               return (
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
                   {/* SVG Donut Visual */}
@@ -482,14 +533,32 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
           </View>
           <View style={styles.cardBody}>
             {(() => {
-              const providerItems = [
-                { label: 'Etisalat', value: 551, color: '#7A001E' },
-                { label: 'du Telecom', value: 1314, color: '#0066CC' }
-              ];
-              const provTotal = 1865;
+              const providerPalette = {
+                'Etisalat': '#7A001E',
+                'du Telecom': '#0066CC',
+                'du': '#0066CC'
+              };
+              const fallbackColors = ['#7A001E', '#0066CC', '#D86A1A', '#8B5CF6', '#10B981'];
+              const providerItems = providerBreakdown.map((p, idx) => ({
+                label: p.provider || 'Other',
+                value: parseInt(p.call_count || 0, 10),
+                color: providerPalette[p.provider] || fallbackColors[idx % fallbackColors.length]
+              }));
+              const provTotal = providerItems.reduce((sum, item) => sum + item.value, 0);
               const radius = 36;
               const circumference = 2 * Math.PI * radius;
               let cumulativePct = 0;
+
+              if (providerItems.length === 0 || provTotal === 0) {
+                return (
+                  <View style={{ padding: 28, alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name="pie-chart-outline" size={36} color="#CBD5E1" />
+                    <Text style={{ fontSize: 13, color: COLORS.textSecondary, marginTop: 8, fontWeight: '600' }}>
+                      No provider call records for this selection
+                    </Text>
+                  </View>
+                );
+              }
 
               return (
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
@@ -520,7 +589,7 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
                     </svg>
                     <View style={{ position: 'absolute', alignItems: 'center' }}>
                       <Text style={{ fontSize: 9, fontWeight: '700', color: COLORS.textSecondary, textTransform: 'uppercase' }}>Total Calls</Text>
-                      <Text style={{ fontSize: 11, fontWeight: '800', color: COLORS.textPrimary }}>1,865</Text>
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: COLORS.textPrimary }}>{provTotal.toLocaleString()}</Text>
                     </View>
                   </View>
 
@@ -537,7 +606,7 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
                             </View>
                             <Text style={{ fontSize: 13, fontWeight: '800', color: item.color }}>{pct}%</Text>
                           </View>
-                          <Text style={{ fontSize: 11, color: COLORS.textSecondary }}>{item.value} itemized call records</Text>
+                          <Text style={{ fontSize: 11, color: COLORS.textSecondary }}>{item.value.toLocaleString()} itemized call records</Text>
                         </View>
                       );
                     })}
@@ -559,21 +628,27 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
             <Text style={styles.cardTitle}>Who Calls The Most (Top Source Lines)</Text>
           </View>
           <View style={styles.cardBody}>
-            {topCallers.map((tc, idx) => (
-              <View key={idx} style={styles.rankItem}>
-                <View style={styles.rankBadge}>
-                  <Text style={styles.rankBadgeText}>#{idx + 1}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.rankMainText}>{tc.source_number || 'Unknown Line'}</Text>
-                  <Text style={styles.rankSubText}>Total {tc.call_count} itemized calls made</Text>
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.rankAmount}>AED {parseFloat(tc.total_spent || 0).toFixed(2)}</Text>
-                  <Text style={{ fontSize: 11, color: COLORS.success, fontWeight: '700' }}>Active Subscriber</Text>
-                </View>
+            {topCallers.length === 0 ? (
+              <View style={{ padding: 24, alignItems: 'center' }}>
+                <Text style={{ fontSize: 13, color: COLORS.textSecondary, fontWeight: '600' }}>No active source lines found</Text>
               </View>
-            ))}
+            ) : (
+              topCallers.map((tc, idx) => (
+                <View key={idx} style={styles.rankItem}>
+                  <View style={styles.rankBadge}>
+                    <Text style={styles.rankBadgeText}>#{idx + 1}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rankMainText}>{tc.source_number || 'Unknown Line'}</Text>
+                    <Text style={styles.rankSubText}>Total {tc.call_count} itemized calls made</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.rankAmount}>AED {parseFloat(tc.total_spent || 0).toFixed(2)}</Text>
+                    <Text style={{ fontSize: 11, color: COLORS.success, fontWeight: '700' }}>Active Subscriber</Text>
+                  </View>
+                </View>
+              ))
+            )}
           </View>
         </View>
 
@@ -584,23 +659,29 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
             <Text style={styles.cardTitle}>Most Frequently Dialed Destinations</Text>
           </View>
           <View style={styles.cardBody}>
-            {topDestinations.slice(0, 5).map((td, idx) => (
-              <View key={idx} style={styles.rankItem}>
-                <View style={[styles.rankBadge, { backgroundColor: '#FFF4E5' }]}>
-                  <Text style={[styles.rankBadgeText, { color: '#D86A1A' }]}>#{idx + 1}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.rankMainText}>{td.destination_number}</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                    <Text style={styles.categoryPill}>{td.category}</Text>
+            {topDestinations.length === 0 ? (
+              <View style={{ padding: 24, alignItems: 'center' }}>
+                <Text style={{ fontSize: 13, color: COLORS.textSecondary, fontWeight: '600' }}>No destination records found</Text>
+              </View>
+            ) : (
+              topDestinations.slice(0, 5).map((td, idx) => (
+                <View key={idx} style={styles.rankItem}>
+                  <View style={[styles.rankBadge, { backgroundColor: '#FFF4E5' }]}>
+                    <Text style={[styles.rankBadgeText, { color: '#D86A1A' }]}>#{idx + 1}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rankMainText}>{td.destination_number}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                      <Text style={styles.categoryPill}>{td.category}</Text>
+                    </View>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.rankAmount}>{td.call_count} Times Called</Text>
+                    <Text style={styles.rankSubText}>AED {parseFloat(td.total_spent || 0).toFixed(2)}</Text>
                   </View>
                 </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.rankAmount}>{td.call_count} Times Called</Text>
-                  <Text style={styles.rankSubText}>AED {parseFloat(td.total_spent || 0).toFixed(2)}</Text>
-                </View>
-              </View>
-            ))}
+              ))
+            )}
           </View>
         </View>
       </View>
@@ -630,6 +711,41 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
                   <Ionicons name="close-circle" size={16} color={COLORS.textSecondary} />
                 </TouchableOpacity>
               ) : null}
+            </View>
+
+            {/* CDR Table Company Filter */}
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: selectedCompanyFilter !== 'All' ? '#FFF4E5' : '#F8FAFC',
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: selectedCompanyFilter !== 'All' ? '#F59E0B' : COLORS.border,
+              paddingHorizontal: 10,
+              paddingVertical: 2,
+            }}>
+              <Ionicons name="business-outline" size={15} color={selectedCompanyFilter !== 'All' ? '#B45309' : COLORS.textSecondary} style={{ marginRight: 6 }} />
+              <select
+                value={selectedCompanyFilter}
+                onChange={(e) => handleCompanyChange(e.target.value)}
+                style={{
+                  backgroundColor: 'transparent',
+                  color: selectedCompanyFilter !== 'All' ? '#92400E' : COLORS.textPrimary,
+                  border: 'none',
+                  fontSize: '12px',
+                  fontWeight: '700',
+                  outline: 'none',
+                  cursor: 'pointer',
+                  padding: '6px 2px'
+                }}
+              >
+                <option value="All">All Companies</option>
+                {availableCompanies.map((comp, idx) => (
+                  <option key={idx} value={comp}>
+                    {comp}
+                  </option>
+                ))}
+              </select>
             </View>
 
             {/* Date Range Pill & Dropdown Popover */}
@@ -801,17 +917,17 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
                 paddingVertical: 8,
                 paddingHorizontal: 14,
                 borderRadius: 10,
-                backgroundColor: (searchQuery || selectedCategoryFilter !== 'All' || selectedProviderFilter !== 'All' || selectedMonthFilter !== 'All' || appliedDateRange.from) ? '#FEF2F2' : '#F8FAFC',
+                backgroundColor: (searchQuery || selectedCategoryFilter !== 'All' || selectedProviderFilter !== 'All' || selectedMonthFilter !== 'All' || selectedCompanyFilter !== 'All' || appliedDateRange.from) ? '#FEF2F2' : '#F8FAFC',
                 borderWidth: 1,
-                borderColor: (searchQuery || selectedCategoryFilter !== 'All' || selectedProviderFilter !== 'All' || selectedMonthFilter !== 'All' || appliedDateRange.from) ? '#FCA5A5' : COLORS.border
+                borderColor: (searchQuery || selectedCategoryFilter !== 'All' || selectedProviderFilter !== 'All' || selectedMonthFilter !== 'All' || selectedCompanyFilter !== 'All' || appliedDateRange.from) ? '#FCA5A5' : COLORS.border
               }}
               onPress={handleResetFilter}
             >
-              <Ionicons name="refresh-outline" size={15} color={(searchQuery || selectedCategoryFilter !== 'All' || selectedProviderFilter !== 'All' || selectedMonthFilter !== 'All' || appliedDateRange.from) ? '#DC2626' : COLORS.textSecondary} />
+              <Ionicons name="refresh-outline" size={15} color={(searchQuery || selectedCategoryFilter !== 'All' || selectedProviderFilter !== 'All' || selectedMonthFilter !== 'All' || selectedCompanyFilter !== 'All' || appliedDateRange.from) ? '#DC2626' : COLORS.textSecondary} />
               <Text style={{
                 fontSize: 13,
                 fontWeight: '700',
-                color: (searchQuery || selectedCategoryFilter !== 'All' || selectedProviderFilter !== 'All' || selectedMonthFilter !== 'All' || appliedDateRange.from) ? '#DC2626' : COLORS.textSecondary
+                color: (searchQuery || selectedCategoryFilter !== 'All' || selectedProviderFilter !== 'All' || selectedMonthFilter !== 'All' || selectedCompanyFilter !== 'All' || appliedDateRange.from) ? '#DC2626' : COLORS.textSecondary
               }}>
                 Clear Filters
               </Text>
@@ -1008,6 +1124,26 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontWeight: '700',
     fontSize: 13
+  },
+  companyFilterWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.35)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  companySelect: {
+    backgroundColor: 'transparent',
+    color: '#FFFFFF',
+    border: 'none',
+    fontSize: '13px',
+    fontWeight: '700',
+    outline: 'none',
+    cursor: 'pointer',
+    padding: '6px 2px',
   },
   kpiRow: {
     flexDirection: 'row',

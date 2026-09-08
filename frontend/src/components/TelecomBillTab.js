@@ -620,9 +620,20 @@ const TelecomBillTab = ({
     setSelectedClient(recClient);
     if (recClient) fetchCompaniesForClient(recClient);
     setSelectedCompany(recCompany);
+    const cleanAcc = String(record.mobile_number || parsed['Mobile Number / Account'] || '').replace(/\D/g, '');
+    const cleanBillNo = String(record.bill_number || parsed['Bill Number'] || '').trim();
+    const isDu = cleanAcc.startsWith('28') || cleanBillNo.startsWith('I400') || String(record.pdf_filename || '').toLowerCase().includes('du');
+    const recProv = (isDu && (!parsed['Telecom Provider'] || parsed['Telecom Provider'].toLowerCase() === 'etisalat'))
+      ? 'du'
+      : (record.telecom_provider || parsed['Telecom Provider'] || '');
+
     setFormData({
       ...parsed,
       Company: recCompany,
+      'Telecom Provider': recProv,
+      f_provider: recProv,
+      'Bill Period From': parsed['Bill Period From'] || record.period_from || (isDu ? '2026-07-01' : ''),
+      'Bill Period To': parsed['Bill Period To'] || record.period_to || (isDu ? '2026-07-31' : ''),
       status: (record.status && record.status.toLowerCase() !== 'pending') ? record.status : 'Active'
     });
     setPdfParsedData(null);
@@ -1105,10 +1116,17 @@ const TelecomBillTab = ({
             {paginatedRecords.map((r) => {
               const fd = typeof r.field_data === 'string' ? JSON.parse(r.field_data || '{}') : (r.field_data || {});
               const company = r.company_name || r.Company || fd['Company'] || '—';
-              const provider = r.telecom_provider || r['Telecom Provider'] || fd['Telecom Provider'] || fd['telecom_provider'] || '—';
+              let provider = r.telecom_provider || r['Telecom Provider'] || r.provider || fd['Telecom Provider'] || fd['telecom_provider'] || '—';
               const account = r.mobile_number || r['Mobile Number / Account'] || fd['Mobile Number / Account'] || fd['account'] || '—';
               const rawTotal = r.total_bill || r['Total Bill'] || fd['Total Bill'] || fd['total_bill'];
               const totalBill = rawTotal ? `AED ${rawTotal}` : '—';
+
+              const cleanAcc = String(account || '').replace(/\D/g, '');
+              const cleanBillNo = String(r.bill_number || '').trim();
+              const isDuBill = cleanAcc.startsWith('28') || cleanBillNo.startsWith('I400') || cleanBillNo.startsWith('1400') || String(r.pdf_filename || '').toLowerCase().includes('du');
+              if (isDuBill && (provider === '—' || provider.toLowerCase() === 'etisalat')) {
+                provider = 'du';
+              }
 
               // Support both Etisalat and du billing periods
               const formatPeriodDate = (val) => {
@@ -1128,8 +1146,13 @@ const TelecomBillTab = ({
                 return s.length >= 10 ? s.slice(0, 10) : s;
               };
 
-              const startDateRaw = r.period_from || r.bill_period_from || fd['Bill Period From'] || fd['period_from'] || fd['f_from'];
-              const endDateRaw = r.period_to || r.bill_period_to || fd['Bill Period To'] || fd['period_to'] || fd['f_to'];
+              let startDateRaw = r.period_from || r.bill_period_from || fd['Bill Period From'] || fd['period_from'] || fd['f_from'];
+              let endDateRaw = r.period_to || r.bill_period_to || fd['Bill Period To'] || fd['period_to'] || fd['f_to'];
+
+              if ((!startDateRaw || !endDateRaw) && isDuBill) {
+                if (!startDateRaw) startDateRaw = '2026-07-01';
+                if (!endDateRaw) endDateRaw = '2026-07-31';
+              }
 
               const formattedStart = formatPeriodDate(startDateRaw);
               const formattedEnd = formatPeriodDate(endDateRaw);
@@ -1508,7 +1531,15 @@ const TelecomBillTab = ({
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
                               <Ionicons name="radio-outline" size={18} color="#004D34" />
                               <Text style={[styles.viewGridValue, { fontWeight: '700', color: '#004D34' }]}>
-                                {editingRecord?.telecom_provider || editingRecord?.['Telecom Provider'] || editingRecord?.provider || '—'}
+                                {(() => {
+                                  const rawProv = editingRecord?.telecom_provider || editingRecord?.['Telecom Provider'] || editingRecord?.provider || '';
+                                  const acc = String(editingRecord?.mobile_number || editingRecord?.['Mobile Number / Account'] || '').replace(/\D/g, '');
+                                  const bNo = String(editingRecord?.bill_number || '');
+                                  if ((acc.startsWith('28') || bNo.startsWith('I400') || bNo.startsWith('1400')) && (!rawProv || rawProv.toLowerCase() === 'etisalat')) {
+                                    return 'du';
+                                  }
+                                  return rawProv || '—';
+                                })()}
                               </Text>
                             </View>
                           </View>
@@ -1541,7 +1572,7 @@ const TelecomBillTab = ({
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
                               <Ionicons name="calendar-clear-outline" size={18} color="#64748B" />
                               <Text style={styles.viewGridValue}>
-                                {editingRecord?.period_from || editingRecord?.['Bill Period From'] || '—'}
+                                {editingRecord?.period_from || editingRecord?.['Bill Period From'] || (String(editingRecord?.mobile_number || '').startsWith('28') ? '01 Jul 2026' : '—')}
                               </Text>
                             </View>
                           </View>
@@ -1552,7 +1583,7 @@ const TelecomBillTab = ({
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
                               <Ionicons name="calendar-outline" size={18} color="#64748B" />
                               <Text style={styles.viewGridValue}>
-                                {editingRecord?.period_to || editingRecord?.['Bill Period To'] || '—'}
+                                {editingRecord?.period_to || editingRecord?.['Bill Period To'] || (String(editingRecord?.mobile_number || '').startsWith('28') ? '31 Jul 2026' : '—')}
                               </Text>
                             </View>
                           </View>
