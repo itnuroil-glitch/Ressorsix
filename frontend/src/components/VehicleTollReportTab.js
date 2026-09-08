@@ -38,8 +38,8 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
   // Filter States
   const [filterCompany, setFilterCompany] = useState('ALL');
   const [filterTollSystem, setFilterTollSystem] = useState('ALL');
-  const [filterAccountNo, setFilterAccountNo] = useState('');
-  const [filterPlate, setFilterPlate] = useState('');
+  const [filterAccountNo, setFilterAccountNo] = useState('ALL');
+  const [filterPlate, setFilterPlate] = useState('ALL');
   const [filterTag, setFilterTag] = useState('');
   const [filterFromDate, setFilterFromDate] = useState('');
   const [filterToDate, setFilterToDate] = useState('');
@@ -176,12 +176,55 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
     }
   };
 
+  // Collect unique accounts for the dropdown
+  const accountOptions = useMemo(() => {
+    const accMap = new Map();
+    tollAccounts.forEach(a => {
+      if (a.account_no) {
+        accMap.set(String(a.account_no).trim(), a.name ? `${a.account_no} (${a.name})` : a.account_no);
+      }
+    });
+    records.forEach(r => {
+      const accNo = r.account_number || r.account_no;
+      if (accNo && !accMap.has(String(accNo).trim())) {
+        accMap.set(String(accNo).trim(), String(accNo).trim());
+      }
+    });
+    return Array.from(accMap.entries()).map(([value, label]) => ({ value, label }));
+  }, [tollAccounts, records]);
+
+  // Collect unique vehicles as "Vehicle Name - Plate Number"
+  const vehicleOptions = useMemo(() => {
+    const map = new Map();
+    records.forEach(r => {
+      let p = r.plate;
+      let vName = r.vehicle_name;
+      if (r.field_data) {
+        let fd = r.field_data;
+        if (typeof fd === 'string') { try { fd = JSON.parse(fd); } catch (e) { fd = {}; } }
+        if (!p) p = fd?.['Plate Number'] || fd?.['Plate'] || fd?.['Plate No'] || fd?.plate;
+        if (!vName) vName = fd?.['Vehicle Name'] || fd?.['vehicle_name'] || fd?.vehicle_name;
+      }
+      if (p && String(p).trim()) {
+        const plateStr = String(p).trim();
+        const nameStr = vName && String(vName).trim() && String(vName).trim() !== 'Unassigned' 
+          ? String(vName).trim() 
+          : null;
+        const label = nameStr ? `${nameStr} - ${plateStr}` : plateStr;
+        if (!map.has(plateStr)) {
+          map.set(plateStr, { value: plateStr, label });
+        }
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [records]);
+
   const handleApplyFilter = () => {
     setActiveFilters({
       company: filterCompany,
       tollSystem: filterTollSystem,
-      accountNo: filterAccountNo.trim().toLowerCase(),
-      plate: filterPlate.trim().toLowerCase(),
+      accountNo: (!filterAccountNo || filterAccountNo === 'ALL') ? '' : filterAccountNo.trim().toLowerCase(),
+      plate: (!filterPlate || filterPlate === 'ALL') ? '' : filterPlate.trim().toLowerCase(),
       tag: filterTag.trim().toLowerCase(),
       fromDate: filterFromDate,
       toDate: filterToDate,
@@ -192,8 +235,8 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
   const handleResetFilter = () => {
     setFilterCompany('ALL');
     setFilterTollSystem('ALL');
-    setFilterAccountNo('');
-    setFilterPlate('');
+    setFilterAccountNo('ALL');
+    setFilterPlate('ALL');
     setFilterTag('');
     setFilterFromDate('');
     setFilterToDate('');
@@ -778,34 +821,62 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
             </select>
           </View>
 
-          {/* Account Number */}
-          <View style={{ minWidth: 140, flex: 1 }}>
+          {/* Account Number Dropdown */}
+          <View style={{ minWidth: 150, flex: 1 }}>
             <Text style={{ fontSize: 11, fontWeight: '600', color: COLORS.textSecondary, marginBottom: 4 }}>Account Number</Text>
-            <input
-              type="text"
-              list="toll-account-numbers-list"
-              placeholder="Account / Txn No..."
+            <select
               value={filterAccountNo}
               onChange={(e) => setFilterAccountNo(e.target.value)}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #E2E8F0', backgroundColor: '#F8FAFC', fontSize: 13, color: '#0F172A', outline: 'none' }}
-            />
-            <datalist id="toll-account-numbers-list">
-              {tollAccounts.map((acc, idx) => (
-                <option key={idx} value={acc.account_no}>{acc.account_no} ({acc.name || 'Toll Account'})</option>
+              style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #E2E8F0', backgroundColor: '#F8FAFC', fontSize: 13, color: '#0F172A', outline: 'none', cursor: 'pointer' }}
+            >
+              <option value="ALL">All Accounts</option>
+              {accountOptions.map((acc, idx) => (
+                <option key={idx} value={acc.value}>{acc.label}</option>
               ))}
-            </datalist>
+            </select>
           </View>
 
-          {/* Vehicle / Plate Number */}
-          <View style={{ minWidth: 140, flex: 1 }}>
-            <Text style={{ fontSize: 11, fontWeight: '600', color: COLORS.textSecondary, marginBottom: 4 }}>Plate Number</Text>
-            <input
-              type="text"
-              placeholder="Plate Number..."
+          {/* Vehicle Name Dropdown (Vehicle Name - Plate Number) */}
+          <View style={{ minWidth: 150, flex: 1 }}>
+            <Text style={{ fontSize: 11, fontWeight: '600', color: COLORS.textSecondary, marginBottom: 4 }}>Vehicle Name</Text>
+            <select
               value={filterPlate}
-              onChange={(e) => setFilterPlate(e.target.value)}
-              style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #E2E8F0', backgroundColor: '#F8FAFC', fontSize: 13, color: '#0F172A', outline: 'none' }}
-            />
+              onChange={(e) => {
+                const chosenPlate = e.target.value;
+                setFilterPlate(chosenPlate);
+
+                if (chosenPlate && chosenPlate !== 'ALL') {
+                  const matchedRecord = records.find(r => {
+                    let p = r.plate;
+                    if (!p && r.field_data) {
+                      let fd = r.field_data;
+                      if (typeof fd === 'string') { try { fd = JSON.parse(fd); } catch (err) { fd = {}; } }
+                      p = fd?.['Plate Number'] || fd?.['Plate'] || fd?.['Plate No'] || fd?.plate;
+                    }
+                    return p && String(p).trim().toLowerCase() === chosenPlate.trim().toLowerCase();
+                  });
+
+                  let foundTag = '';
+                  if (matchedRecord) {
+                    foundTag = matchedRecord.tag_number || matchedRecord.tag || '';
+                    if (!foundTag && matchedRecord.field_data) {
+                      let fd = matchedRecord.field_data;
+                      if (typeof fd === 'string') { try { fd = JSON.parse(fd); } catch (err) { fd = {}; } }
+                      foundTag = fd?.['Tag Number'] || fd?.['Tag'] || fd?.tag_number || fd?.tag || '';
+                    }
+                  }
+                  setFilterTag(foundTag ? String(foundTag) : '');
+                } else {
+                  setFilterTag('');
+                }
+              }}
+              style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #E2E8F0', backgroundColor: '#F8FAFC', fontSize: 13, color: '#0F172A', outline: 'none', cursor: 'pointer' }}
+            >
+              <option value="ALL">All Vehicles</option>
+              {vehicleOptions.map((v, idx) => (
+                <option key={idx} value={v.value}>{v.label}</option>
+              ))}
+            </select>
           </View>
 
           {/* Tag Number */}

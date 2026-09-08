@@ -266,7 +266,9 @@ exports.parsePdfDocument = async (req, res) => {
     let matchedPeriodFrom = '';
     let matchedPeriodTo = '';
     const periodPatterns = [
-      /(?:bill\s*period|billing\s*period|period|duration)\s*[:.-]?\s*[\r\n]*\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})\s*(?:-|to|until)\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})/i
+      /(?:bill\s*period|billing\s*period|bill\s*cycle|usage\s*period|period|duration)\s*[:.-]?\s*[\r\n]*\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})\s*(?:[-–—−~]|to|until)\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})/i,
+      /(?:from)\s*[:.-]?\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})\s*(?:[-–—−~]|to|until)\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})/i,
+      /(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})\s*(?:[-–—−~]|to|until)\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})/i
     ];
     for (const pat of periodPatterns) {
       const m = rawText.match(pat);
@@ -657,7 +659,7 @@ exports.parsePdfDocument = async (req, res) => {
         call_date: matchedIssueDate || new Date().toISOString().split('T')[0],
         call_time: '12:00',
         destination_number: 'Shortcode',
-        duration: '00:00:00',
+        duration: null,
         category: 'Premium SMS',
         amount: 9.28
       });
