@@ -2711,59 +2711,6 @@ export default function DashboardScreen({ user, onSignOut }) {
           ) : null}
         </View>
 
-        {/* Sidebar Footer User Details */}
-        <View style={[styles.sidebarFooter, isSidebarCollapsed && { paddingHorizontal: 0, alignItems: 'center', borderTopWidth: 0 }]}>
-          {!isSidebarCollapsed ? (
-            <View style={styles.sidebarUserSection}>
-              <View style={styles.sidebarUserCardRow}>
-                <View style={styles.sidebarAvatar}>
-                  <Text style={styles.sidebarAvatarText}>
-                    {user.name ? user.name.split(' ').map(n => n[0]).join('').slice(0, 2) : 'JS'}
-                  </Text>
-                </View>
-                <View style={styles.sidebarUserInfo}>
-                  <Text style={styles.sidebarUserName} numberOfLines={1}>{user.name || 'John Smith'}</Text>
-                  <Text style={styles.sidebarUserRole} numberOfLines={1}>{user.roleName || user.email || 'Administrator'}</Text>
-                </View>
-              </View>
-              <View style={styles.sidebarUserDivider} />
-              <TouchableOpacity style={styles.sidebarSignOutBtn} onPress={onSignOut} activeOpacity={0.7}>
-                <Ionicons name="exit-outline" size={18} color="#FFFFFF" />
-                <Text style={styles.sidebarSignOutText}>Sign Out</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={{ alignItems: 'center', gap: 12 }}>
-              <TouchableOpacity
-                style={styles.sidebarAvatar}
-                onMouseEnter={() => setHoveredItemId('avatar')}
-                onMouseLeave={() => setHoveredItemId(null)}
-              >
-                <Text style={styles.sidebarAvatarText}>
-                  {user.name ? user.name.split(' ').map(n => n[0]).join('').slice(0, 2) : 'JS'}
-                </Text>
-                {hoveredItemId === 'avatar' && (
-                  <View style={styles.tooltip}>
-                    <Text style={styles.tooltipText}>{user.name || 'John Smith'}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.sidebarSignOutCollapsed}
-                onPress={onSignOut}
-                onMouseEnter={() => setHoveredItemId('signout')}
-                onMouseLeave={() => setHoveredItemId(null)}
-              >
-                <Ionicons name="exit-outline" size={20} color="#FFFFFF" />
-                {hoveredItemId === 'signout' && (
-                  <View style={[styles.tooltip, { bottom: 10 }]}>
-                    <Text style={[styles.tooltipText, { color: '#FFFFFF' }]}>Sign Out</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
       </ScrollView>
     );
   };
