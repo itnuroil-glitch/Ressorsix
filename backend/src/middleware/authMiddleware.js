@@ -72,8 +72,8 @@ module.exports = async function authMiddleware(req, res, next) {
       return res.status(401).json({ message: 'User account has been deactivated.' });
     }
 
-    // Check subject consistency
-    if (session.db_sub && session.db_sub !== session.authentik_sub) {
+    // Check subject consistency (do not trigger mismatch on local sessions)
+    if (session.db_sub && session.authentik_sub && !session.authentik_sub.startsWith('local_') && session.db_sub !== session.authentik_sub) {
       await db.query('DELETE FROM tbl_sessions WHERE id = $1', [session.session_id]);
       res.clearCookie('trakio_session', { path: '/' });
       return res.status(401).json({ message: 'Subject identity mismatch.' });
