@@ -60,6 +60,7 @@ export default function SimDetailsTab({
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [wizardStep, setWizardStep] = useState(1); // 1: Configuration, 2: Form Data
+  const [configLoading, setConfigLoading] = useState(false);
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [successDetails, setSuccessDetails] = useState(null);
 
@@ -532,11 +533,18 @@ export default function SimDetailsTab({
 
   const handleNextStep = async () => {
     if (!selectedClient) {
-      showToast('Please select a Client', 'error');
+      showToast && showToast('Please select a Client', 'error');
       return;
     }
-    await fetchFormConfiguration(selectedClient, selectedCompany);
-    setWizardStep(2);
+    setConfigLoading(true);
+    try {
+      await fetchFormConfiguration(selectedClient, selectedCompany);
+    } catch (err) {
+      console.error('Error fetching form configuration:', err);
+    } finally {
+      setWizardStep(2);
+      setConfigLoading(false);
+    }
   };
 
   const getFieldValue = (field) => {
@@ -1678,12 +1686,20 @@ export default function SimDetailsTab({
                   <TouchableOpacity
                     style={[
                       styles.submitBtn,
-                      { backgroundColor: selectedClient ? '#8FA89B' : '#CBD5E1', marginTop: 16 }
+                      {
+                        backgroundColor: selectedClient ? '#166534' : '#CBD5E1',
+                        marginTop: 16,
+                        opacity: (!selectedClient || configLoading) ? 0.6 : 1
+                      }
                     ]}
-                    disabled={!selectedClient}
+                    disabled={!selectedClient || configLoading}
                     onPress={handleNextStep}
                   >
-                    <Text style={styles.submitBtnText}>Next</Text>
+                    {configLoading ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.submitBtnText}>Next</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
               </ScrollView>
@@ -2946,7 +2962,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   submitBtn: {
-    backgroundColor: '#8FA89B',
+    backgroundColor: '#166534',
     borderRadius: 8,
     paddingVertical: 12,
     paddingHorizontal: 32,
