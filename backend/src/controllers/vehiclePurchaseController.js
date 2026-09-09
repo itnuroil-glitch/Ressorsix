@@ -238,6 +238,23 @@ exports.saveVehiclePurchase = async (req, res) => {
     if (!resolvedVehicleId && processedFieldData) {
       resolvedVehicleId = await resolveVehicleId(processedFieldData, clientid);
     }
+
+    // Auto-fill any missing Date fields for this configuration
+    if (processedFieldData && typeof processedFieldData === 'object' && custom_field_id) {
+      try {
+        const dateFieldsRes = await db.query(
+          "SELECT field_id FROM tbl_customfield_details WHERE custom_fieldsid = $1 AND field_type IN ('Date', 'DateTime') AND is_active = true AND isdelete = false",
+          [custom_field_id]
+        );
+        for (const df of dateFieldsRes.rows) {
+          if (!processedFieldData[df.field_id]) {
+            processedFieldData[df.field_id] = new Date().toISOString().split('T')[0];
+          }
+        }
+      } catch (e) {
+        console.error('Error auto-filling date fields on save:', e);
+      }
+    }
     
     // Convert field_data to JSON string
     const jsonData = JSON.stringify(processedFieldData);
@@ -389,6 +406,22 @@ exports.getVehiclePurchase = async (req, res) => {
         }
       }
 
+      // Fallback: check if direct keys in fieldData have a date value, or use row.created_at
+      if (!purchaseDate) {
+        for (const [key, val] of Object.entries(fieldData)) {
+          const kLower = key.toLowerCase();
+          if ((kLower.includes('date') || kLower.includes('purchase')) && typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val)) {
+            purchaseDate = val;
+            break;
+          }
+        }
+      }
+      if (!purchaseDate && row.created_at) {
+        try {
+          purchaseDate = new Date(row.created_at).toISOString().split('T')[0];
+        } catch (e) {}
+      }
+
       let supplier = '';
       for (const fid of supplierFieldIds) {
         if (fieldData[fid] && typeof fieldData[fid] === 'string' && fieldData[fid].trim()) {
@@ -536,6 +569,23 @@ exports.updateVehiclePurchase = async (req, res) => {
     let resolvedVehicleId = vehicle_id;
     if (!resolvedVehicleId && processedFieldData) {
       resolvedVehicleId = await resolveVehicleId(processedFieldData, clientid);
+    }
+
+    // Auto-fill any missing Date fields for this configuration
+    if (processedFieldData && typeof processedFieldData === 'object' && custom_field_id) {
+      try {
+        const dateFieldsRes = await db.query(
+          "SELECT field_id FROM tbl_customfield_details WHERE custom_fieldsid = $1 AND field_type IN ('Date', 'DateTime') AND is_active = true AND isdelete = false",
+          [custom_field_id]
+        );
+        for (const df of dateFieldsRes.rows) {
+          if (!processedFieldData[df.field_id]) {
+            processedFieldData[df.field_id] = new Date().toISOString().split('T')[0];
+          }
+        }
+      } catch (e) {
+        console.error('Error auto-filling date fields on update:', e);
+      }
     }
 
     const jsonData = JSON.stringify(processedFieldData);
