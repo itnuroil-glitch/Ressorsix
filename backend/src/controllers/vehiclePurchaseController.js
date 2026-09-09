@@ -300,11 +300,19 @@ exports.getVehiclePurchase = async (req, res) => {
           OR LOWER(field_name) LIKE '%vendor%'
           OR LOWER(field_name) LIKE '%price%'
           OR LOWER(field_name) LIKE '%cost%'
-          OR LOWER(field_name) LIKE '%amount%')
+          OR LOWER(field_name) LIKE '%amount%'
+          OR LOWER(field_name) LIKE '%value%')
     `);
 
     const vehicleNameFieldIds = fieldsRes.rows
-      .filter(f => f.field_name.toLowerCase().includes('vehicle'))
+      .filter(f => {
+        const name = f.field_name.toLowerCase();
+        return name.includes('vehicle') &&
+          !name.includes('value') &&
+          !name.includes('price') &&
+          !name.includes('cost') &&
+          !name.includes('amount');
+      })
       .sort((a, b) => {
         const aName = a.field_name.toLowerCase();
         const bName = b.field_name.toLowerCase();
@@ -340,7 +348,7 @@ exports.getVehiclePurchase = async (req, res) => {
     const priceFieldIds = fieldsRes.rows
       .filter(f => {
         const name = f.field_name.toLowerCase();
-        return name.includes('price') || name.includes('cost') || name.includes('amount');
+        return name.includes('price') || name.includes('cost') || name.includes('amount') || name.includes('value');
       })
       .map(f => f.field_id);
 
@@ -394,6 +402,17 @@ exports.getVehiclePurchase = async (req, res) => {
         if (fieldData[fid] !== undefined && fieldData[fid] !== null && String(fieldData[fid]).trim() !== '') {
           purchasePrice = String(fieldData[fid]);
           break;
+        }
+      }
+
+      // Fallback: also check direct keys in fieldData if not matched by custom field IDs
+      if (!purchasePrice) {
+        for (const [key, val] of Object.entries(fieldData)) {
+          const kLower = key.toLowerCase();
+          if ((kLower.includes('price') || kLower.includes('cost') || kLower.includes('amount') || kLower.includes('value')) && val !== undefined && val !== null && String(val).trim() !== '') {
+            purchasePrice = String(val);
+            break;
+          }
         }
       }
 

@@ -1714,7 +1714,7 @@ export default function SimDetailsTab({
             ) : (
               <View style={styles.emptyView}>
                 <Ionicons name="hardware-chip-outline" size={44} color={COLORS.textMuted} />
-                <Text style={styles.emptyText}>{records.length === 0 ? "No SIM details added yet." : "No matching SIM details found."}</Text>
+                <Text style={styles.emptyText}>{records.length === 0 ? `No ${title.toLowerCase()} added yet.` : `No matching ${title.toLowerCase()} found.`}</Text>
               </View>
             )}
           </>
@@ -1731,7 +1731,9 @@ export default function SimDetailsTab({
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <Ionicons name="document-text" size={24} color="#166534" />
                 <Text style={styles.modalTitle}>
-                  {isViewOnly ? `View SIM Details Record #${editingId}` : (editingId ? `Edit SIM Details Record #${editingId}` : 'Add SIM Details')}
+                  {isAddOnMode
+                    ? (isViewOnly ? `View Add-on Details Record #${editingId}` : (editingId ? `Edit Add-on Details Record #${editingId}` : 'Add Telecom Add-on'))
+                    : (isViewOnly ? `View ${title} Record #${editingId}` : (editingId ? `Edit ${title} Record #${editingId}` : `Add ${title}`))}
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setIsModalOpen(false)} style={styles.closeButton}>
@@ -2315,7 +2317,7 @@ export default function SimDetailsTab({
                     fieldsLayout.map((section, index) => (
                       <View key={section.id || index} style={[styles.sectionCard, { marginTop: index > 0 ? SPACING.md : 0 }]}>
                         <View style={styles.sectionHeader}>
-                          <Text style={styles.sectionTitle}>{(section.name || 'SIM DETAILS').toUpperCase()}</Text>
+                          <Text style={styles.sectionTitle}>{(section.name || 'TELECOM DETAILS').replace(/telecome/gi, 'Telecom').toUpperCase()}</Text>
                         </View>
                         <View style={styles.sectionBody}>
                           {section.fields && section.fields.map((field) => (
