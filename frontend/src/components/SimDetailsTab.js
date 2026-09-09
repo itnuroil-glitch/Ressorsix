@@ -202,6 +202,21 @@ export default function SimDetailsTab({
     fetchCompaniesForClient(clientId);
   };
 
+  const fetchEmployeesForCompany = async (companyId) => {
+    if (!companyId) return;
+    try {
+      const res = await fetch(`${API_URL}/api/employees/base-company/${companyId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setEmployees(data);
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching employees for company:', e);
+    }
+  };
+
   const handleChange = (key, value) => {
     setFormData(prev => ({ ...prev, [key]: value }));
   };
@@ -209,38 +224,141 @@ export default function SimDetailsTab({
   const fetchFormConfiguration = async (clientId, companyId = null) => {
     try {
       const activeCompanyId = companyId || selectedCompany || formData.company_id || formData.company || '';
+      if (activeCompanyId) {
+        fetchEmployeesForCompany(activeCompanyId);
+      }
+
+      // 1. Fetch Field Permissions first so we know what module and permissions are configured for this client
+      let permissionsList = [];
+      let activePerm = null;
+      let permittedFields = null;
+      let activePermModuleId = null;
+
+      try {
+        const permRes = await fetch(`${API_URL}/api/field-permissions`, { credentials: 'include' });
+        if (permRes.ok) {
+          permissionsList = await permRes.json();
+          if (Array.isArray(permissionsList)) {
+            // Find active permission for this client (or global) matching Telecom Details / SIM Details
+            activePerm = permissionsList.find(p => {
+              const pClientId = String(p.clientid || p.client_id || '');
+              const matchesClient = clientId ? (pClientId === String(clientId)) : !pClientId;
+              if (!matchesClient) return false;
+
+              const mName = String(p.module_name || '').toLowerCase();
+              const mId = String(p.moduleid || p.module_id || '');
+
+              // Strict exclusions: Not bills, documents, extra charges, toll, usage
+              if (
+                mName.includes('bill') ||
+                mName.includes('doc') ||
+                mName.includes('toll') ||
+                mName.includes('extra') ||
+                mName.includes('usage') ||
+                mName.includes('charge')
+              ) {
+                return false;
+              }
+
+              if (isTelecomDataView) {
+                return mName.includes('telecom data') || mName.includes('telecome data') || mId === '59';
+              } else {
+                return (
+                  mName.includes('telecom detail') ||
+                  mName.includes('telecome detail') ||
+                  mName === 'telecome_details' ||
+                  mName === 'telecom_details' ||
+                  mName.includes('sim')
+                );
+              }
+            });
+
+            // If not found with strict client match, try any matching client permission for telecom details
+            if (!activePerm && clientId) {
+              activePerm = permissionsList.find(p => {
+                const pClientId = String(p.clientid || p.client_id || '');
+                if (pClientId !== String(clientId)) return false;
+                const mName = String(p.module_name || '').toLowerCase();
+                if (mName.includes('bill') || mName.includes('doc') || mName.includes('toll') || mName.includes('extra')) return false;
+                return mName.includes('telecom') || mName.includes('telecome') || mName.includes('sim');
+              });
+            }
+
+            if (activePerm) {
+              activePermModuleId = String(activePerm.moduleid || activePerm.module_id || '');
+              if (activePerm.permitted_fields) {
+                permittedFields = typeof activePerm.permitted_fields === 'string'
+                  ? JSON.parse(activePerm.permitted_fields)
+                  : activePerm.permitted_fields;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching field permissions:', e);
+      }
+
+      // 2. Fetch Custom Fields Definitions
       const cfRes = await fetch(`${API_URL}/api/custom-fields`, { credentials: 'include' });
       if (!cfRes.ok) return;
       const customFields = await cfRes.json();
-
-      const expectedModId = isTelecomDataView ? '59' : '58';
+      if (!Array.isArray(customFields)) return;
 
       const isSimModule = (cf) => {
         const modId = String(cf.moduleid || cf.module_id || '');
         const modName = String(cf.module_name || '').toLowerCase();
-        
-        // 1. Direct ID match takes absolute precedence
-        if (modId === expectedModId) return true;
-
-        // Exclude Toll modules and Toll data
-        if (['50', '52', '53', '54'].includes(modId) || modName.includes('toll')) return false;
-
-        // Exclude Documents
-        if (modId === '61' || modName.includes('document')) return false;
-
-        // Check if section name in field_data contains extra charges or toll
         let fdStr = '';
         if (typeof cf.field_data === 'string') {
           fdStr = cf.field_data.toLowerCase();
         } else if (cf.field_data) {
           fdStr = JSON.stringify(cf.field_data).toLowerCase();
         }
-        if (fdStr.includes('premium & extra charge') || fdStr.includes('extra charge') || fdStr.includes('toll data') || fdStr.includes('toll name')) return false;
+
+        // STRICT EXCLUSION 1: Premium & Extra Charges, Usage Charges, Call Logs, Toll Data
+        if (
+          fdStr.includes('premium & extra charge') ||
+          fdStr.includes('extra charge') ||
+          fdStr.includes('usage charge') ||
+          fdStr.includes('f_premium_type') ||
+          fdStr.includes('f_extra_amount') ||
+          fdStr.includes('toll data') ||
+          fdStr.includes('toll name') ||
+          modName.includes('extra charge') ||
+          modName.includes('usage charge') ||
+          modName.includes('toll')
+        ) {
+          return false;
+        }
+
+        // STRICT EXCLUSION 2: Documents (module 61)
+        if (modId === '61' || modName.includes('document') || fdStr.includes('telecom document')) {
+          return false;
+        }
+
+        // STRICT EXCLUSION 3: Telecom Bills
+        if (modName.includes('bill') || fdStr.includes('bill & subscription')) {
+          return false;
+        }
+
+        // STRICT EXCLUSION 4: Known Toll module IDs
+        if (['50', '52', '53', '54'].includes(modId) && !fdStr.includes('telecom') && !fdStr.includes('telecome') && !fdStr.includes('sim')) {
+          return false;
+        }
 
         if (isTelecomDataView) {
-          return modName.includes('telecom data') || modName.includes('telecome data');
+          return modName.includes('telecom data') || modName.includes('telecome data') || fdStr.includes('telecom data');
         } else {
-          return modName.includes('sim') || modName.includes('telecom detail') || modName.includes('telecome detail') || fdStr.includes('telecom') || fdStr.includes('telecome');
+          return (
+            fdStr.includes('telecome details') ||
+            fdStr.includes('telecom details') ||
+            fdStr.includes('telecom detail') ||
+            fdStr.includes('telecome detail') ||
+            (fdStr.includes('provider') && (fdStr.includes('iccid') || fdStr.includes('connection type') || fdStr.includes('cug') || fdStr.includes('contract from'))) ||
+            modName.includes('telecom detail') ||
+            modName.includes('telecome detail') ||
+            modName.includes('sim') ||
+            (activePermModuleId && modId === activePermModuleId)
+          );
         }
       };
 
@@ -252,25 +370,36 @@ export default function SimDetailsTab({
         const modName = String(cf.module_name || '').toLowerCase();
         let fdStr = typeof cf.field_data === 'string' ? cf.field_data.toLowerCase() : JSON.stringify(cf.field_data || '').toLowerCase();
 
-        // Direct ID match gets massive top priority!
-        if (modId === expectedModId) {
-          score += 500;
+        // 1. Exact Section Name Match: "Telecome Details" or "Telecom Details" (Highest Priority)
+        if (fdStr.includes('"name":"telecome details"') || fdStr.includes('"name":"telecom details"')) {
+          score += 2000;
+        } else if (fdStr.includes('telecome details') || fdStr.includes('telecom details')) {
+          score += 1200;
         }
 
-        // Target client match
+        // 2. Specific telecom fields presence
+        if (fdStr.includes('provider') && fdStr.includes('connection type')) score += 500;
+        if (fdStr.includes('iccid')) score += 400;
+        if (fdStr.includes('contract from') || fdStr.includes('contract no')) score += 300;
+        if (fdStr.includes('cug')) score += 200;
+
+        // 3. Direct match with active permission module ID
+        if (activePermModuleId && modId === activePermModuleId) {
+          score += 800;
+        }
+
+        // 4. Client ID match
         if (clientId && String(cf.client_id || cf.clientid) === String(clientId)) {
-          score += 100;
+          score += 200;
         } else if (!cf.client_id && !cf.clientid) {
           score += 50; // Global custom field
         }
 
-        // Section name match
-        if (fdStr.includes('telecom detail') || fdStr.includes('telecome detail')) {
-          score += 50;
-        } else if (modName.includes('telecom detail') || modName.includes('telecome detail')) {
-          score += 30;
-        } else if (fdStr.includes('sim') || modName.includes('sim')) {
-          score += 20;
+        // 5. Module name match
+        if (modName.includes('telecom detail') || modName.includes('telecome detail')) {
+          score += 150;
+        } else if (modName.includes('sim')) {
+          score += 100;
         }
 
         return score;
@@ -284,29 +413,19 @@ export default function SimDetailsTab({
       let matchingFieldDef = candidateFields.length > 0 ? candidateFields[0].cf : null;
 
       if (matchingFieldDef) {
-        // Fetch field permissions
-        let permittedFields = null;
-        try {
-          const permRes = await fetch(`${API_URL}/api/field-permissions`, { credentials: 'include' });
-          if (permRes.ok) {
-            const permissionsList = await permRes.json();
-            const activePerm = permissionsList.find(p =>
-              (String(p.clientid || p.client_id) === String(clientId) || !p.clientid) &&
-              (
-                String(p.moduleid || p.module_id) === '58' ||
-                String(p.moduleid || p.module_id) === '59' ||
-                String(p.moduleid || p.module_id) === String(matchingFieldDef.moduleid || matchingFieldDef.module_id) ||
-                String(p.module_name || '').toLowerCase().includes('telecom') ||
-                String(p.module_name || '').toLowerCase().includes('sim')
-              )
-            );
-            if (activePerm && activePerm.permitted_fields) {
-              permittedFields = typeof activePerm.permitted_fields === 'string'
-                ? JSON.parse(activePerm.permitted_fields)
-                : activePerm.permitted_fields;
-            }
+        // If permittedFields was not resolved from activePerm, attempt lookup by matchingFieldDef.moduleid
+        if (!permittedFields && permissionsList.length > 0) {
+          const targetModId = String(matchingFieldDef.moduleid || matchingFieldDef.module_id || '');
+          const permForMod = permissionsList.find(p =>
+            (String(p.clientid || p.client_id) === String(clientId) || !p.clientid) &&
+            String(p.moduleid || p.module_id) === targetModId
+          );
+          if (permForMod && permForMod.permitted_fields) {
+            permittedFields = typeof permForMod.permitted_fields === 'string'
+              ? JSON.parse(permForMod.permitted_fields)
+              : permForMod.permitted_fields;
           }
-        } catch (e) {}
+        }
 
         setCustomFieldId(matchingFieldDef.id);
         const cId = matchingFieldDef.country_id || matchingFieldDef.countryid || user?.country_id || user?.countryid || null;
@@ -334,9 +453,8 @@ export default function SimDetailsTab({
               } else {
                 return [];
               }
-            } else if (activeCompanyId && processedPath.includes('/api/employees') && !processedPath.includes('company')) {
-              const sep = processedPath.includes('?') ? '&' : '?';
-              processedPath = `${processedPath}${sep}company_id=${activeCompanyId}`;
+            } else if (activeCompanyId && processedPath.includes('/api/employees')) {
+              processedPath = `/api/employees/base-company/${activeCompanyId}`;
             }
 
             if (processedPath.includes('client') && clientId) {
@@ -606,9 +724,12 @@ export default function SimDetailsTab({
             const targetCId = selectedCompany || formData.company_id || formData.company;
             const filteredEmps = targetCId ? employees.filter(e => 
               String(e.basecompany_id) === String(targetCId) || 
-              (Array.isArray(e.companies) && e.companies.some(c => String(c.id) === String(targetCId)))
+              (e.base_company_name && String(e.base_company_name).toLowerCase() === String(targetCId).toLowerCase())
             ) : employees;
             options = filteredEmps.map(e => e.full_name || e.employee_name || e.first_name || e.name).filter(Boolean);
+          } else if (fName.includes('connection') || fName.includes('type')) {
+            options = connectionTypes.map(c => c.name || c.connection_type || c.type_name).filter(Boolean);
+            if (options.length === 0) options = ['Postpaid', 'Prepaid', 'Data SIM', 'Voice & Data', 'M2M / IoT'];
           } else if (fName.includes('status')) {
             options = ['Active', 'Available', 'Assigned', 'Suspended', 'Lost', 'Damaged', 'Cancelled'];
           }
@@ -627,6 +748,7 @@ export default function SimDetailsTab({
               if (fName.includes('telecom') || fName.includes('provider')) handleChange('telecom_provider', val);
               if (fName.includes('company')) handleChange('company', val);
               if (fName.includes('plan')) handleChange('plan_name', val);
+              if (fName.includes('connection') || fName.includes('type')) handleChange('connection_type', val);
               if (fName.includes('employee') || fName.includes('assigned')) handleChange('assigned_employee', val);
               if (fName.includes('status')) handleChange('status', val);
             }}
@@ -1674,6 +1796,7 @@ export default function SimDetailsTab({
                         setSelectedCompany(val);
                         handleChange('assigned_employee', '');
                         handleChange('Assigned Employee', '');
+                        if (val) fetchEmployeesForCompany(val);
                       }}
                       placeholder="-- Select Company --"
                       searchPlaceholder="Search Company..."
