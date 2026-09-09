@@ -357,6 +357,33 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
         }))).filter(section => section.fields.length > 0);
 
         setFieldsLayout(filteredSections);
+
+        // Pre-fill default dates into formData for any empty Date/DateTime/Time fields
+        setFormData(prev => {
+          const updated = { ...prev };
+          const fillDefaults = (fields) => {
+            if (!fields || !Array.isArray(fields)) return;
+            fields.forEach(f => {
+              const fType = f.type || f.field_type;
+              if (fType === 'Date' && !updated[f.id]) {
+                updated[f.id] = new Date().toISOString().split('T')[0];
+              } else if (fType === 'DateTime' && !updated[f.id]) {
+                const d = new Date();
+                const date = d.toISOString().split('T')[0];
+                const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                updated[f.id] = `${date}T${time}`;
+              } else if (fType === 'Time' && !updated[f.id]) {
+                const d = new Date();
+                updated[f.id] = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+              }
+              if (f.subsections && Array.isArray(f.subsections)) {
+                f.subsections.forEach(sub => fillDefaults(sub.fields));
+              }
+            });
+          };
+          filteredSections.forEach(sec => fillDefaults(sec.fields));
+          return updated;
+        });
       } else {
         setFieldsLayout([]);
         setCustomFieldId(null);
@@ -457,10 +484,38 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
   const handleSave = async () => {
     setSaving(true);
     try {
+      const finalFormData = { ...formData };
+
+      // Ensure any untouched Date, DateTime, or Time fields from the layout are populated
+      const populateDefaults = (fields) => {
+        if (!fields || !Array.isArray(fields)) return;
+        fields.forEach(f => {
+          const fType = f.type || f.field_type;
+          if (fType === 'Date' && (finalFormData[f.id] === undefined || finalFormData[f.id] === null || finalFormData[f.id] === '')) {
+            finalFormData[f.id] = new Date().toISOString().split('T')[0];
+          } else if (fType === 'DateTime' && (finalFormData[f.id] === undefined || finalFormData[f.id] === null || finalFormData[f.id] === '')) {
+            const d = new Date();
+            const date = d.toISOString().split('T')[0];
+            const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            finalFormData[f.id] = `${date}T${time}`;
+          } else if (fType === 'Time' && (finalFormData[f.id] === undefined || finalFormData[f.id] === null || finalFormData[f.id] === '')) {
+            const d = new Date();
+            finalFormData[f.id] = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+          }
+          if (f.subsections && Array.isArray(f.subsections)) {
+            f.subsections.forEach(sub => populateDefaults(sub.fields));
+          }
+        });
+      };
+
+      if (fieldsLayout && Array.isArray(fieldsLayout)) {
+        fieldsLayout.forEach(sec => populateDefaults(sec.fields));
+      }
+
       const payload = {
         vehicle_id: null,
         custom_field_id: customFieldId,
-        field_data: formData,
+        field_data: finalFormData,
         clientid: configParams.clientid,
         country_id: configParams.country_id,
         moduleid: configParams.moduleid,
