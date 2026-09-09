@@ -8,6 +8,8 @@ router.route('/')
 
 router.post('/bulk-import', employeeController.bulkImportEmployees);
 
+router.get('/base-company/:companyId', employeeController.getEmployeesByBaseCompany);
+router.get('/base-company', employeeController.getEmployeesByBaseCompany);
 router.get('/company/:companyId', employeeController.getEmployeesByCompany);
 router.get('/company', employeeController.getEmployeesByCompany);
 

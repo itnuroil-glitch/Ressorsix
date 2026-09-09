@@ -14,11 +14,13 @@ import {
   ActivityIndicator,
   Picker,
   Switch,
+  Image,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS } from '../theme';
 import { API_URL } from '../config';
+const orbisLogo = require('../../assets/orbis_asset_logo.png');
 import CustomFieldsTab, { SearchableDropdown } from './CustomFieldsTab';
 import FieldPermissionsTab from './FieldPermissionsTab';
 import VehicleInsuranceTab from './VehicleInsuranceTab';
@@ -2510,15 +2512,17 @@ export default function DashboardScreen({ user, onSignOut }) {
           <View style={[styles.sidebarLogoContainer, isSidebarCollapsed && { paddingHorizontal: 0, justifyContent: 'center' }]}>
             {!isSidebarCollapsed ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                  <View style={styles.brandLogoBox}>
-                    <View style={styles.brandLogoInnerSquare} />
-                  </View>
-                  <View>
-                    <Text style={styles.sidebarBrandName}>Trakio</Text>
-                    <Text style={styles.sidebarBrandSubtitle}>PORTAL</Text>
-                  </View>
-                </View>
+                <TouchableOpacity
+                  onPress={() => setActiveTab('dashboard')}
+                  activeOpacity={0.8}
+                  style={{ flexDirection: 'row', alignItems: 'center', flex: 1, paddingRight: 6 }}
+                >
+                  <Image
+                    source={orbisLogo}
+                    style={styles.sidebarLogoImage}
+                    resizeMode="contain"
+                  />
+                </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => setIsSidebarCollapsed(true)}
                   style={{ padding: 4 }}
@@ -10203,10 +10207,13 @@ const styles = StyleSheet.create({
   sidebarLogoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 24,
+    paddingHorizontal: 16,
+    paddingTop: 18,
     paddingBottom: 16,
-    gap: 12,
+  },
+  sidebarLogoImage: {
+    width: 175,
+    height: 44,
   },
   sidebarBrandName: {
     color: '#FFFFFF',

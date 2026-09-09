@@ -585,3 +585,54 @@ exports.getEmployeesByCompany = async (req, res) => {
   }
 };
 
+exports.getEmployeesByBaseCompany = async (req, res) => {
+  try {
+    await ensureColumnsExist();
+    const companyParam = req.params.companyId || req.query.company_id || req.query.companyId;
+    const { clientid } = req.query;
+
+    if (!companyParam) {
+      return res.status(200).json([]);
+    }
+
+    const trimmedParam = String(companyParam).trim();
+    const isNumeric = /^\d+$/.test(trimmedParam);
+
+    let queryText = `
+      SELECT e.*, 
+             e.full_name AS employee_name,
+             COALESCE(e.assigned_password, u.assigned_password) as assigned_password,
+             (SELECT string_agg(role, ', ') FROM role WHERE e.roleid IS NOT NULL AND e.roleid::text != '' AND id::text = ANY(array_remove(string_to_array(e.roleid::text, ','), ''))) as role_name, 
+             d.department_name,
+             bc.company_name as base_company_name
+      FROM employee e
+      INNER JOIN company bc ON e.basecompany_id = bc.id
+      LEFT JOIN department d ON e.department_id = d.id
+      LEFT JOIN users u ON LOWER(TRIM(e.email)) = LOWER(TRIM(u.email))
+      WHERE e.is_deleted = false
+    `;
+
+    const params = [];
+    if (isNumeric) {
+      params.push(trimmedParam);
+      queryText += ` AND (e.basecompany_id::text = $${params.length} OR LOWER(TRIM(bc.company_name)) = LOWER(TRIM($${params.length})))`;
+    } else {
+      params.push(trimmedParam);
+      queryText += ` AND LOWER(TRIM(bc.company_name)) = LOWER(TRIM($${params.length}))`;
+    }
+
+    if (clientid) {
+      params.push(String(clientid).trim());
+      queryText += ` AND e.clientid::text = $${params.length}`;
+    }
+
+    queryText += ` ORDER BY e.full_name ASC`;
+
+    const result = await db.query(queryText, params);
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Error fetching employees by base company:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
+
