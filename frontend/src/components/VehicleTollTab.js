@@ -151,7 +151,9 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
         action = isViewOnly ? 'view' : (editingRecord ? 'edit' : 'create');
       }
       const emailParam = user?.email ? `?email=${encodeURIComponent(user.email)}` : '';
-      const actionQuery = `&module_id=vehicle_toll&action=${action}`;
+      const currentModuleSlug = isTransaction ? 'toll_transactions' : (isOverview ? 'vehicle_toll_overview' : 'vehicle_toll');
+      const moduleParam = selectedModule ? selectedModule : currentModuleSlug;
+      const actionQuery = `&module_id=${moduleParam}&action=${action}`;
       const res = await fetch(`${API_URL}/api/companies/client/${clientId}${emailParam}${actionQuery}`);
       if (res.ok) {
         let data = await res.json();
@@ -164,7 +166,10 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
             const resPerm = await fetch(`${API_URL}/api/roles/${user.roleId}/permissions`);
             if (resPerm.ok) {
               const permData = await resPerm.json();
-              const targetModuleIds = isTransaction ? ['71', '53'] : (isOverview ? ['70', '52'] : ['50', '54']);
+              const targetModuleIds = [
+                selectedModule,
+                ...(isTransaction ? ['71', '53'] : (isOverview ? ['70', '52'] : ['50', '54']))
+              ].filter(Boolean).map(String);
 
               if (Array.isArray(permData.companyPermissions) && permData.companyPermissions.length > 0) {
                 const allowedCompIdsForToll = permData.companyPermissions

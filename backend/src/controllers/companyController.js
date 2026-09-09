@@ -383,33 +383,61 @@ exports.getCompaniesByClient = async (req, res) => {
     const actionParam = req.query.action;
     let assignedCompanyIds = null;
 
+    let employeeId = null;
+    let roleId = req.query.role_id || req.headers['roleid'] || null;
+
     if (email && email.trim() !== '') {
-      // 1. Look up employee by email
+      // 1. Look up in employee table
       const empRes = await pool.query(
         'SELECT id, roleid FROM employee WHERE email = $1 AND is_deleted = false',
         [email.trim().toLowerCase()]
       );
       if (empRes.rows.length > 0) {
-        const employeeId = empRes.rows[0].id;
-        const roleId = empRes.rows[0].roleid;
-        
-        // Parse multi role IDs
-        const roleIds = roleId ? String(roleId).split(',').map(r => r.trim()).filter(Boolean) : [];
-        const isSuperAdminOrClientAdmin = roleIds.some(r => r === '1' || r === '2');
+        employeeId = empRes.rows[0].id;
+        roleId = empRes.rows[0].roleid;
+      } else {
+        // Fallback: check users table
+        const userRes = await pool.query(
+          'SELECT id, roleid FROM users WHERE LOWER(email) = $1',
+          [email.trim().toLowerCase()]
+        );
+        if (userRes.rows.length > 0) {
+          roleId = userRes.rows[0].roleid;
+        }
+      }
+    }
 
-        // Only restrict if they are not superadmin/client admin
-        if (!isSuperAdminOrClientAdmin) {
-          // Fetch assigned companies from employee_company
-          const compRes = await pool.query(
-            'SELECT company_id FROM employee_company WHERE employee_id = $1',
-            [employeeId]
+    if (roleId) {
+      // Parse multi role IDs
+      const roleIds = String(roleId).split(',').map(r => r.trim()).filter(Boolean);
+      const isSuperAdmin = roleIds.some(r => r === '1');
+      const isClientAdmin = roleIds.some(r => r === '2');
+
+      // Only skip restrictions for Super Admin (Role 1)
+      if (!isSuperAdmin) {
+        let baseCompanyIds = [];
+        if (isClientAdmin) {
+          // Client admin defaults to all companies under this client
+          const allClientCompRes = await pool.query(
+            'SELECT id FROM company WHERE clientid = $1 AND (is_deleted = false OR is_deleted IS NULL)',
+            [clientId]
           );
-          const empCompanyIds = compRes.rows.map(r => r.company_id);
+          baseCompanyIds = allClientCompRes.rows.map(r => r.id);
+        } else {
+          // Fetch assigned companies from employee_company
+          let empCompanyIds = [];
+          if (employeeId) {
+            const compRes = await pool.query(
+              'SELECT company_id FROM employee_company WHERE employee_id = $1',
+              [employeeId]
+            );
+            empCompanyIds = compRes.rows.map(r => r.company_id);
+          }
 
           // Fetch assigned companies from role's companyids (multi roles supported via ANY)
           const roleRes = await pool.query(
             'SELECT companyids FROM role WHERE id = ANY(string_to_array($1, \',\')::int[]) AND is_deleted = false',
-            [roleId]
+            [String(roleId)]
           );
           const roleCompanyIds = [];
           roleRes.rows.forEach(r => {
@@ -419,11 +447,12 @@ exports.getCompaniesByClient = async (req, res) => {
           });
 
           // Merge both lists to ensure employee gets access to all configured companies
-          const mergedSet = new Set([...empCompanyIds, ...roleCompanyIds]);
-          assignedCompanyIds = Array.from(mergedSet);
+          baseCompanyIds = Array.from(new Set([...empCompanyIds, ...roleCompanyIds]));
+        }
+        assignedCompanyIds = baseCompanyIds;
 
-          // Perform company-specific role permissions check if module_id & action are specified
-          if (moduleIdParam && actionParam) {
+        // Perform company-specific role permissions check if module_id & action are specified
+        if (moduleIdParam && actionParam) {
             const colCheck = await pool.query(`
               SELECT 1 FROM information_schema.columns 
               WHERE table_name = 'role_permission' AND column_name = 'company_id'
@@ -453,6 +482,11 @@ exports.getCompaniesByClient = async (req, res) => {
                 if (r.includes('vehicle') && r.includes('insurance') || n.includes('vehicle') && n.includes('insurance')) return 'vehicle_insurance';
                 if (r.includes('vehicle') && r.includes('detail') || n.includes('vehicle') && n.includes('detail')) return 'vehicle_details';
                 if (r.includes('vehicle') && r.includes('purchase') || n.includes('vehicle') && n.includes('purchase') || r.includes('vehile') && r.includes('purchase') || n.includes('vehile') && n.includes('purchase')) return 'vehicle_purchase';
+                if (r.includes('toll') && r.includes('overview') || n.includes('toll') && n.includes('overview')) return 'vehicle_toll_overview';
+                if (r.includes('transaction') || n.includes('transaction')) return 'toll_transactions';
+                if (r.includes('toll') && r.includes('report') || n.includes('toll') && n.includes('report')) return 'vehicle_toll_report';
+                if (r.includes('toll') || n.includes('toll') || r.includes('vehcile') && r.includes('toll')) return 'vehicle_toll';
+                if (r.includes('maintenance') || n.includes('maintenance')) return 'vehicle_maintenance';
                 if (r.includes('primise') && r.includes('detail') || n.includes('primise') && n.includes('detail') || r.includes('premise') && r.includes('detail') || n.includes('premise') && n.includes('detail')) return 'premises_details';
                 if (r.includes('asset') && r.includes('detail') || n.includes('asset') && n.includes('detail')) return 'asset_details';
                 if (r.includes('asset') && r.includes('category') || n.includes('asset') && n.includes('category')) return 'asset_category';
@@ -463,7 +497,10 @@ exports.getCompaniesByClient = async (req, res) => {
                 return '';
               };
 
-              const matchedModules = modulesRes.rows.filter(m => getTabIdByRoute(m.module_name, m.route) === moduleIdParam);
+              const matchedModules = modulesRes.rows.filter(m => 
+                String(m.id) === String(moduleIdParam) || 
+                getTabIdByRoute(m.module_name, m.route) === moduleIdParam
+              );
               if (matchedModules.length > 0) {
                 const moduleDbIds = matchedModules.map(m => m.id);
 
@@ -524,7 +561,6 @@ exports.getCompaniesByClient = async (req, res) => {
           }
         }
       }
-    }
 
     let query = `
       SELECT id, company_name, country 
