@@ -2269,10 +2269,54 @@ export default function DashboardScreen({ user, onSignOut }) {
     }
   };
 
-  // Dynamic Route Tab Decider mapping database route to our layout state
-  const getTabIdByRoute = (name, route) => {
+  // Dynamic Route Tab Decider mapping database route and module ID to our layout state
+  const getTabIdByRoute = (name, route, id = null) => {
+    const modId = id !== null && id !== undefined ? String(id) : '';
     let r = route ? route.toLowerCase().trim() : '';
     let n = name ? name.toLowerCase().trim() : '';
+
+    const isTele = n.includes('tele') || r.includes('tele') || n.includes('sim') || r.includes('sim');
+    const isToll = n.includes('toll') || r.includes('toll');
+
+    // 1. Telecom Section Priority (Separated to prevent ID collisions across Local and Live databases)
+    if (isTele) {
+      if (r === '/telecom-details' || r === '/telecome-details' || n.includes('detail') || r.includes('detail')) return 'sim_details';
+      if (r === '/telecom-bill-form' || r === '/telecom-bill' || n.includes('bill') || r.includes('bill')) return 'telecom_bill';
+      if (r === '/telecom-report' || r === '/telecome-report' || r === '/telecome_report' || r === '/telecom_report' || n.includes('report') || r.includes('report')) return 'telecom_report';
+      if (r === '/telecom-document' || r === '/telecom-documents' || r === '/telecome-document' || n.includes('doc') || r.includes('doc')) return 'telecom_document';
+      if (n.includes('data') || r.includes('data')) return 'telecom_data';
+      if (n.includes('usage') || r.includes('usage')) return 'usage_charges';
+      if ((n.includes('charge') || r.includes('charge')) && (n.includes('type') || r.includes('type'))) return 'tele_charge_type';
+      if (n.includes('category') || r.includes('category')) return 'tele_category';
+      if (modId === '58' || modId === '52') return 'sim_details';
+      if (modId === '59' || modId === '53') return 'telecom_bill';
+      if (modId === '60') return 'telecom_report';
+      if (modId === '61' || modId === '54') return 'telecom_document';
+      if (modId === '57' || modId === '51') return null; // Top-level Telecom Parent container (no tab)
+    }
+
+    // 2. Vehicle Toll Section Priority
+    if (isToll) {
+      if (r === '/vehicle-toll-overview' || n.includes('overview') || r.includes('overview')) return 'vehicle_toll_overview';
+      if (r === '/toll-transactions' || n.includes('transaction') || r.includes('transaction')) return 'toll_transactions';
+      if (r === '/vehcile-toll-report' || r === '/vehicle-toll-report' || n.includes('report') || r.includes('report')) return 'vehicle_toll_report';
+      if (r === '/vehicle-toll' || n.includes('vehicle') || r.includes('vehicle')) return 'vehicle_toll';
+      if (modId === '52') return 'vehicle_toll_overview';
+      if (modId === '53') return 'toll_transactions';
+      if (modId === '54') return 'vehicle_toll_report';
+      if (modId === '50') return 'vehicle_toll';
+    }
+
+    // 3. Explicit Route matches
+    if (r === '/telecom-details' || r === '/telecome-details') return 'sim_details';
+    if (r === '/telecom-bill-form' || r === '/telecom-bill') return 'telecom_bill';
+    if (r === '/telecom-report' || r === '/telecome-report' || r === '/telecome_report' || r === '/telecom_report') return 'telecom_report';
+    if (r === '/telecom-document' || r === '/telecom-documents' || r === '/telecome-document') return 'telecom_document';
+    if (r === '/toll-transactions') return 'toll_transactions';
+    if (r === '/vehicle-toll-overview') return 'vehicle_toll_overview';
+    if (r === '/vehcile-toll-report' || r === '/vehicle-toll-report') return 'vehicle_toll_report';
+    if (r === '/vehicle-toll') return 'vehicle_toll';
+
     if (n === 'telecome report' || n === 'telecom report' || r === '/telecome_report' || r === '/telecom_report' || r === '/telecom-report' || (n.includes('tele') && n.includes('report')) || (r.includes('tele') && r.includes('report'))) return 'telecom_report';
     if (n.includes('licensing') || n.includes('license_auth') || r.includes('company-license') || r.includes('licensing-authority')) return 'company_license_auth';
     if ((n.includes('system') || n.includes('sytem')) && n.includes('setting') || r.includes('system-setting') || n === 'system_settings') return 'system_settings';
@@ -2384,7 +2428,7 @@ export default function DashboardScreen({ user, onSignOut }) {
   // Sync activeModuleId when modules load or activeTab changes if activeModuleId is not set
   useEffect(() => {
     if (modules && modules.length > 0) {
-      const matched = modules.find(m => getTabIdByRoute(m.module_name, m.route) === activeTab);
+      const matched = modules.find(m => getTabIdByRoute(m.module_name, m.route, m.id) === activeTab);
       if (matched) {
         setActiveModuleId(matched.id);
       }
@@ -2425,7 +2469,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (tabId === 'dashboard' || tabId === 'profile' || tabId === 'shipments' || tabId === 'analytics' || tabId === 'tele_doc_type' || tabId === 'telecom_report' || tabId === 'telecome_report') {
       return true;
     }
-    const tabModules = modules.filter(m => getTabIdByRoute(m.module_name, m.route) === tabId);
+    const tabModules = modules.filter(m => getTabIdByRoute(m.module_name, m.route, m.id) === tabId);
     if (tabModules.length === 0) return true;
     return tabModules.some(m => hasViewPermission(m.id));
   };
@@ -2540,7 +2584,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                       onPress={() => {
                         if (!hasChildren) {
                           setActiveModuleId(parent.id);
-                          const tabId = getTabIdByRoute(parent.module_name, parent.route);
+                          const tabId = getTabIdByRoute(parent.module_name, parent.route, parent.id);
                           if (tabId) setActiveTab(tabId);
                         }
                       }}
@@ -2574,7 +2618,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                                       ? child.id.toString().replace('virtual-parent-', '')
                                       : child.id;
                                     setActiveModuleId(modId);
-                                    const tabId = getTabIdByRoute(child.module_name, child.route);
+                                    const tabId = getTabIdByRoute(child.module_name, child.route, modId);
                                     if (tabId) setActiveTab(tabId);
                                     setHoveredItemId(null);
                                   }}
@@ -2622,7 +2666,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                           }));
                         } else {
                           setActiveModuleId(parent.id);
-                          const targetTab = getTabIdByRoute(parent.module_name, parent.route);
+                          const targetTab = getTabIdByRoute(parent.module_name, parent.route, parent.id);
                           if (targetTab) setActiveTab(targetTab);
                         }
                         setIsMobileSidebarOpen(false);
@@ -2678,7 +2722,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                                   ? child.id.toString().replace('virtual-parent-', '')
                                   : child.id;
                                 setActiveModuleId(modId);
-                                const targetTab = getTabIdByRoute(child.module_name, child.route);
+                                const targetTab = getTabIdByRoute(child.module_name, child.route, modId);
                                 if (targetTab) setActiveTab(targetTab);
                                 setIsMobileSidebarOpen(false);
                               }}

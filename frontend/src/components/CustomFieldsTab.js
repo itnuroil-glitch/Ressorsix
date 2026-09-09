@@ -774,10 +774,10 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
     setLoading(true);
     try {
       const [cfRes, clientsRes, modulesRes, countriesRes] = await Promise.all([
-        fetch(`${API_URL}/api/custom-fields`),
-        fetch(`${API_URL}/api/clients`),
-        fetch(`${API_URL}/api/modules`),
-        fetch(`${API_URL}/api/countries`)
+        fetch(`${API_URL}/api/custom-fields`, { credentials: 'include' }),
+        fetch(`${API_URL}/api/clients`, { credentials: 'include' }),
+        fetch(`${API_URL}/api/modules`, { credentials: 'include' }),
+        fetch(`${API_URL}/api/countries`, { credentials: 'include' })
       ]);
       const cfData = await cfRes.json();
       const clientsData = await clientsRes.json();
@@ -836,6 +836,7 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(payload)
       });
       if (!res.ok) throw new Error('Save failed');
@@ -853,7 +854,7 @@ export default function CustomFieldsTab({ user, showToast, renderTableToolbar, r
   const handleDelete = async (id) => {
     if (!confirm('Are you sure you want to delete this custom field?')) return;
     try {
-      const res = await fetch(`${API_URL}/api/custom-fields/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_URL}/api/custom-fields/${id}`, { method: 'DELETE', credentials: 'include' });
       if (!res.ok) throw new Error('Delete failed');
       showToast('Deleted successfully', 'success');
       fetchData();
