@@ -36,6 +36,7 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isViewOnly, setIsViewOnly] = useState(false);
   const [insuranceRecords, setInsuranceRecords] = useState([]);
+  const [clientVehicles, setClientVehicles] = useState([]);
 
   // Table state
   const [searchQuery, setSearchQuery] = useState('');
@@ -272,6 +273,18 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
             if (!res.ok) return [];
             const data = await res.json();
             if (!Array.isArray(data)) return [];
+
+            if (processedPath.includes('vehicle-details') || processedPath.includes('vehicles')) {
+              setClientVehicles(prev => {
+                const combined = [...(prev || [])];
+                data.forEach(item => {
+                  if (item && item.id && !combined.some(c => String(c.id) === String(item.id))) {
+                    combined.push(item);
+                  }
+                });
+                return combined;
+              });
+            }
 
             const fNameLower = (fieldName || '').toLowerCase();
 
@@ -624,6 +637,86 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
     }
   };
 
+  const handleVehicleSelectAutoFill = async (val) => {
+    if (!val) {
+      setFormData(prev => {
+        const updated = { ...prev };
+        if (fieldsLayout) {
+          fieldsLayout.forEach(sec => {
+            (sec.fields || []).forEach(f => {
+              const fn = (f.name || f.label || '').toLowerCase();
+              if (fn.includes('plate') && !fn.includes('vehicle')) {
+                delete updated[f.id];
+              }
+            });
+          });
+        }
+        return updated;
+      });
+      return;
+    }
+
+    const strVal = String(val).trim();
+    let parts = strVal.includes(' - ') ? strVal.split(' - ') : [strVal];
+    const vName = parts[0]?.trim()?.toLowerCase();
+    const pNo = parts[1]?.trim()?.toLowerCase();
+
+    // 1. Try to find in clientVehicles
+    let matched = (clientVehicles || []).find(v => {
+      const vDisp = String(v.Vehiclename || v.vehiclename || v.vehicle_display_name || '').toLowerCase();
+      const vPlate = String(v.Plateno || v.plateno || v.plate_no || '').toLowerCase();
+      const vId = String(v.id || v.vehicle_id || '').toLowerCase();
+      if (strVal.toLowerCase() === vDisp || strVal.toLowerCase() === vId) return true;
+      if (pNo && vPlate === pNo) return true;
+      if (vName && vDisp.includes(vName)) return true;
+      return false;
+    });
+
+    // 2. If not found in state, fetch fresh from server
+    const cId = selectedClient || user?.clientid || user?.client_id;
+    if (!matched && cId) {
+      try {
+        const res = await fetch(`${API_URL}/api/vehicle-details/client/${cId}`);
+        if (res.ok) {
+          const vList = await res.json();
+          if (Array.isArray(vList)) {
+            setClientVehicles(prev => [...(prev || []), ...vList]);
+            matched = vList.find(v => {
+              const vDisp = String(v.Vehiclename || v.vehiclename || v.vehicle_display_name || '').toLowerCase();
+              const vPlate = String(v.Plateno || v.plateno || v.plate_no || '').toLowerCase();
+              const vId = String(v.id || v.vehicle_id || '').toLowerCase();
+              if (strVal.toLowerCase() === vDisp || strVal.toLowerCase() === vId) return true;
+              if (pNo && vPlate === pNo) return true;
+              if (vName && vDisp.includes(vName)) return true;
+              return false;
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('Error fetching vehicle details for auto-fill:', e);
+      }
+    }
+
+    const extractedPlate = matched ? (matched.Plateno || matched.plateno || matched.plate_no || parts[1]?.trim()) : parts[1]?.trim();
+
+    if (extractedPlate) {
+      setFormData(prev => {
+        const updated = { ...prev };
+        if (fieldsLayout) {
+          fieldsLayout.forEach(sec => {
+            (sec.fields || []).forEach(f => {
+              const fn = (f.name || f.label || '').toLowerCase();
+              if (fn.includes('plate') && !fn.includes('vehicle')) {
+                updated[f.id] = extractedPlate;
+              }
+            });
+          });
+        }
+        return updated;
+      });
+    }
+  };
+
   const handleInputChange = (fieldId, value) => {
     setFormData(prev => ({ ...prev, [fieldId]: value }));
   };
@@ -656,11 +749,21 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
           currentValue = String(currentValue).split(' - ')[0].trim();
         }
 
+        // If currentValue exists (such as auto-filled plate) but is not in dropdownData, add it!
+        if (currentValue && !dropdownData.some(d => String(d.value) === String(currentValue) || String(d.label) === String(currentValue))) {
+          dropdownData.unshift({ label: String(currentValue), value: String(currentValue) });
+        }
+
         return (
           <SearchableDropdown
             data={dropdownData}
             value={currentValue}
-            onChange={(val) => handleInputChange(field.id, val)}
+            onChange={(val) => {
+              handleInputChange(field.id, val);
+              if (fNameLower.includes('vehicle') || field.id === 'vehicle_id') {
+                handleVehicleSelectAutoFill(val);
+              }
+            }}
             placeholder={`-- Select ${field.name} --`}
             searchPlaceholder={`Search ${field.name}...`}
             displayKey="label"
