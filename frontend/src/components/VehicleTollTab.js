@@ -456,6 +456,139 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
     setIsFormOpen(true);
   };
 
+  const resolveOverviewFields = (parsedData, record) => {
+    if (!parsedData || typeof parsedData !== 'object') {
+      return { accountNo: 'N/A', tollName: 'N/A', extraFields: [] };
+    }
+
+    // Build field label map from allCustomFields
+    const fieldMap = {};
+    if (Array.isArray(allCustomFields)) {
+      allCustomFields.forEach(cf => {
+        let sections = [];
+        try {
+          sections = typeof cf.field_data === 'string' ? JSON.parse(cf.field_data) : (cf.field_data || []);
+        } catch (e) {}
+        if (Array.isArray(sections)) {
+          sections.forEach(sec => {
+            (sec.fields || []).forEach(f => {
+              if (f && f.id) {
+                fieldMap[String(f.id)] = f.name || f.label || '';
+              }
+              (f?.subsections || []).forEach(sub => {
+                (sub.fields || []).forEach(sf => {
+                  if (sf && sf.id) {
+                    fieldMap[String(sf.id)] = sf.name || sf.label || '';
+                  }
+                });
+              });
+            });
+          });
+        }
+      });
+    }
+
+    let accountNo = '';
+    let tollName = '';
+    const extraFields = [];
+
+    // Check direct known keys first
+    const directAccountKeys = ['Account No', 'ACCOUNT NO', 'account_no', 'Acc No', 'Account Number', 'Toll ID', 'toll_id', '1786629206891'];
+    for (const k of directAccountKeys) {
+      if (parsedData[k] !== undefined && parsedData[k] !== null && String(parsedData[k]).trim() !== '') {
+        accountNo = String(parsedData[k]).trim();
+        break;
+      }
+    }
+
+    const directTollKeys = ['Toll Name', 'TOLL NAME', 'toll_name', 'Toll Type', 'toll_type', 'Toll Gate', 'toll_gate', '1786629185586'];
+    for (const k of directTollKeys) {
+      if (parsedData[k] !== undefined && parsedData[k] !== null && String(parsedData[k]).trim() !== '') {
+        tollName = String(parsedData[k]).trim();
+        break;
+      }
+    }
+
+    // Iterate through all keys in parsedData
+    const entries = Object.entries(parsedData);
+    for (const [key, val] of entries) {
+      if (val === undefined || val === null || String(val).trim() === '') continue;
+      const strVal = typeof val === 'object' ? (Array.isArray(val) ? val.map(v => v.name || v).join(', ') : (val.name || JSON.stringify(val))) : String(val).trim();
+      const mappedName = fieldMap[String(key)] || key;
+      const lowerName = mappedName.toLowerCase();
+
+      // Check if this field corresponds to account number
+      if (!accountNo && (lowerName.includes('acc') || lowerName.includes('account') || lowerName.includes('toll id') || lowerName.includes('tag'))) {
+        accountNo = strVal;
+        continue;
+      }
+
+      // Check if this field corresponds to toll name
+      if (!tollName && (lowerName.includes('toll name') || lowerName.includes('toll type') || lowerName.includes('salik') || lowerName.includes('darb') || lowerName === 'toll')) {
+        tollName = strVal;
+        continue;
+      }
+
+      // Value heuristic if not yet found:
+      if (!tollName && (strVal.toLowerCase() === 'salik' || strVal.toLowerCase() === 'darb')) {
+        tollName = strVal;
+        continue;
+      }
+
+      if (!accountNo && /^\d{6,15}$/.test(strVal)) {
+        accountNo = strVal;
+        continue;
+      }
+
+      // If key is an internal ID (pure numeric)
+      if (/^\d{10,}$/.test(String(key))) {
+        if (!tollName && (strVal.toLowerCase().includes('salik') || strVal.toLowerCase().includes('darb'))) {
+          tollName = strVal;
+          continue;
+        }
+        if (!accountNo && /^\d+$/.test(strVal)) {
+          accountNo = strVal;
+          continue;
+        }
+      }
+
+      // Otherwise if it's another attribute, add to extraFields
+      if (strVal !== accountNo && strVal !== tollName) {
+        const displayLabel = fieldMap[String(key)] || (/^\d+$/.test(key) ? `Field #${key.slice(-4)}` : key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()));
+        extraFields.push({
+          label: displayLabel,
+          value: strVal
+        });
+      }
+    }
+
+    // Fallbacks
+    if (!tollName && entries.length > 0) {
+      for (const [, val] of entries) {
+        const s = String(val).trim();
+        if (s.toLowerCase().includes('salik') || s.toLowerCase().includes('darb')) {
+          tollName = s;
+          break;
+        }
+      }
+    }
+    if (!accountNo && entries.length > 0) {
+      for (const [, val] of entries) {
+        const s = String(val).trim();
+        if (s !== tollName && /^\d+$/.test(s)) {
+          accountNo = s;
+          break;
+        }
+      }
+    }
+
+    return {
+      accountNo: accountNo || (record?.id ? `Acc #${record.id}` : 'N/A'),
+      tollName: tollName || 'Salik / Darb',
+      extraFields
+    };
+  };
+
   const handleView = (record) => {
     let parsed = {};
     if (record.field_data) {
@@ -960,6 +1093,20 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
     }
   };
 
+  const overviewDetails = (!isTransaction && selectedViewRecord)
+    ? resolveOverviewFields(selectedViewRecord.parsedData, selectedViewRecord)
+    : null;
+
+  const getTransactionTotal = (rec) => {
+    if (!rec) return 'AED 0.00';
+    const rawTot = rec.total_amount !== null && rec.total_amount !== undefined
+      ? rec.total_amount
+      : (rec.amount !== null && rec.amount !== undefined
+        ? (parseFloat(rec.amount) * 1.05)
+        : (rec.parsedData?.['Total Amount (AED) (Incl. VAT)'] || rec.parsedData?.['total_amount'] || rec.parsedData?.['Amount (AED)'] || rec.parsedData?.['Amount(AED)'] || rec.parsedData?.['amount'] || 0));
+    return `AED ${(parseFloat(rawTot) || 0).toFixed(2)}`;
+  };
+
   return (
     <View style={styles.container}>
       {/* MAIN HEADER */}
@@ -1274,43 +1421,9 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                       const firstKey = Object.keys(parsedData)[0] ? Object.keys(parsedData)[0].replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()) : 'No Data';
 
                       // Extract Account No and Toll Type from parsedData JSON
-                      let formAccountNoVal = '';
-                      let formTollTypeVal = '';
-
-                      if (parsedData && typeof parsedData === 'object') {
-                        // Direct key lookup for Account No / Toll ID
-                        formAccountNoVal =
-                          parsedData['Account No'] ||
-                          parsedData['ACCOUNT NO'] ||
-                          parsedData['account_no'] ||
-                          parsedData['1786629206891'] ||
-                          parsedData['Toll ID'] ||
-                          parsedData['toll_id'] ||
-                          '';
-
-                        // Direct key lookup for Toll Name / Type
-                        formTollTypeVal =
-                          parsedData['Toll Name'] ||
-                          parsedData['TOLL NAME'] ||
-                          parsedData['toll_name'] ||
-                          parsedData['1786629185586'] ||
-                          '';
-
-                        if (!formAccountNoVal || !formTollTypeVal) {
-                          const entries = Object.entries(parsedData);
-                          if (!formAccountNoVal && entries.length > 1) {
-                            formAccountNoVal = String(entries[1][1] || '');
-                          }
-                          if (!formTollTypeVal && entries.length > 0) {
-                            formTollTypeVal = String(entries[0][1] || '');
-                          }
-                        }
-                      }
-
-                      if (!formTollTypeVal) formTollTypeVal = firstValue !== '-' ? firstValue : 'Salik / Darb';
-                      if (!formAccountNoVal || formAccountNoVal === formTollTypeVal) {
-                        formAccountNoVal = `Acc: #${record.id}`;
-                      }
+                      const resolvedOverview = isOverview ? resolveOverviewFields(parsedData, record) : null;
+                      const formAccountNoVal = resolvedOverview ? resolvedOverview.accountNo : (parsedData['Account No'] || `Acc: #${record.id}`);
+                      const formTollTypeVal = resolvedOverview ? resolvedOverview.tollName : (firstValue !== '-' ? firstValue : 'Salik / Darb');
 
                       return (
                         <View key={record.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
@@ -2141,9 +2254,6 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                   <Text style={{ fontSize: 16, fontWeight: '700', color: '#0F172A' }}>
                     {isTransaction ? 'Toll Transaction Details' : (isOverview ? 'Vehicle Toll Account Details' : 'Vehicle Toll Details')}
                   </Text>
-                  <Text style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>
-                    {selectedViewRecord ? `DB Record ID: #${selectedViewRecord.id}` : ''}
-                  </Text>
                 </View>
               </View>
 
@@ -2166,8 +2276,8 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                     </Text>
                     <Text style={{ fontSize: 18, fontWeight: '800', color: '#0F172A', marginTop: 4 }}>
                       {isTransaction
-                        ? (selectedViewRecord.transaction_id || selectedViewRecord.parsedData['Transaction ID'] || `#${selectedViewRecord.id}`)
-                        : (selectedViewRecord.parsedData['1786629206891'] || selectedViewRecord.parsedData['Account No'] || `Acc #${selectedViewRecord.id}`)}
+                        ? (selectedViewRecord.transaction_id || selectedViewRecord.parsedData?.['Transaction ID'] || `#${selectedViewRecord.id}`)
+                        : ((overviewDetails && overviewDetails.accountNo !== 'N/A') ? overviewDetails.accountNo : `Acc #${selectedViewRecord.id}`)}
                     </Text>
                   </View>
 
@@ -2175,14 +2285,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                     <View style={{ alignItems: 'flex-end' }}>
                       <Text style={{ fontSize: 11, fontWeight: '800', color: '#0369A1', textTransform: 'uppercase', letterSpacing: 0.5 }}>TOTAL AMOUNT</Text>
                       <Text style={{ fontSize: 20, fontWeight: '800', color: '#166534', marginTop: 4 }}>
-                        {(() => {
-                          const rawTot = selectedViewRecord.total_amount !== null && selectedViewRecord.total_amount !== undefined
-                            ? selectedViewRecord.total_amount
-                            : (selectedViewRecord.amount !== null && selectedViewRecord.amount !== undefined
-                              ? (parseFloat(selectedViewRecord.amount) * 1.05)
-                              : (selectedViewRecord.parsedData['Total Amount (AED) (Incl. VAT)'] || selectedViewRecord.parsedData['total_amount'] || selectedViewRecord.parsedData['Amount (AED)'] || selectedViewRecord.parsedData['Amount(AED)'] || selectedViewRecord.parsedData['amount'] || 0));
-                          return `AED ${(parseFloat(rawTot) || 0).toFixed(2)}`;
-                        })()}
+                        {getTransactionTotal(selectedViewRecord)}
                       </Text>
                     </View>
                   )}
@@ -2198,11 +2301,11 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                     <>
                       <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
                         <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Plate Number</Text>
-                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>{selectedViewRecord.plate || selectedViewRecord.parsedData['Plate'] || 'N/A'}</Text>
+                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>{selectedViewRecord.plate || selectedViewRecord.parsedData?.['Plate'] || 'N/A'}</Text>
                       </View>
                       <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
                         <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Tag Number</Text>
-                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>{selectedViewRecord.tag_number || selectedViewRecord.parsedData['Tag Number'] || 'N/A'}</Text>
+                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>{selectedViewRecord.tag_number || selectedViewRecord.parsedData?.['Tag Number'] || 'N/A'}</Text>
                       </View>
                       <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
                         <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Vehicle Name</Text>
@@ -2212,15 +2315,15 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                       </View>
                       <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
                         <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Toll Gateway / Name</Text>
-                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>{selectedViewRecord.toll_name || selectedViewRecord.parsedData['Toll Name'] || 'Salik / Darb'}</Text>
+                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>{selectedViewRecord.toll_name || selectedViewRecord.parsedData?.['Toll Name'] || 'Salik / Darb'}</Text>
                       </View>
                       <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
                         <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Toll Gate</Text>
-                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>{selectedViewRecord.toll_gate || selectedViewRecord.parsedData['Toll Gate'] || 'N/A'}</Text>
+                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>{selectedViewRecord.toll_gate || selectedViewRecord.parsedData?.['Toll Gate'] || 'N/A'}</Text>
                       </View>
                       <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
                         <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Direction</Text>
-                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>{selectedViewRecord.direction || selectedViewRecord.parsedData['Direction'] || 'N/A'}</Text>
+                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>{selectedViewRecord.direction || selectedViewRecord.parsedData?.['Direction'] || 'N/A'}</Text>
                       </View>
                       <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
                         <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Trip Date & Time</Text>
@@ -2240,38 +2343,24 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                       <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
                         <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Account No</Text>
                         <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>
-                          {selectedViewRecord.parsedData['1786629206891'] || selectedViewRecord.parsedData['Account No'] || 'N/A'}
+                          {overviewDetails ? overviewDetails.accountNo : 'N/A'}
                         </Text>
                       </View>
                       <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
                         <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Toll Name</Text>
                         <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>
-                          {selectedViewRecord.parsedData['1786629185586'] || selectedViewRecord.parsedData['Toll Name'] || 'N/A'}
+                          {overviewDetails ? overviewDetails.tollName : 'N/A'}
                         </Text>
                       </View>
+                      {overviewDetails && overviewDetails.extraFields && overviewDetails.extraFields.map((ef, idx) => (
+                        <View key={idx} style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                          <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>{ef.label}</Text>
+                          <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>{ef.value}</Text>
+                        </View>
+                      ))}
                     </>
                   )}
                 </View>
-
-                {/* Raw JSON / Excel Key-Values */}
-                {selectedViewRecord.parsedData && Object.keys(selectedViewRecord.parsedData).length > 0 && (
-                  <View style={{ marginTop: 8 }}>
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#475569', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                      Full Excel Raw Attributes
-                    </Text>
-                    <View style={{ backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden' }}>
-                      {Object.entries(selectedViewRecord.parsedData).map(([k, v], idx) => {
-                        const labelKey = k === '1786629185586' ? 'Toll Name' : (k === '1786629206891' ? 'Account No' : k);
-                        return (
-                          <View key={k} style={{ flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 16, borderBottomWidth: idx === Object.keys(selectedViewRecord.parsedData).length - 1 ? 0 : 1, borderBottomColor: '#F1F5F9', backgroundColor: idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC' }}>
-                            <Text style={{ flex: 1, fontSize: 12, fontWeight: '600', color: '#64748B' }}>{labelKey}</Text>
-                            <Text style={{ flex: 1.5, fontSize: 12, fontWeight: '700', color: '#0F172A' }}>{String(v !== null && v !== undefined ? v : '-')}</Text>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  </View>
-                )}
               </ScrollView>
             )}
 
