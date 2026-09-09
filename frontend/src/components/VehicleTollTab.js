@@ -216,7 +216,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
       await fetchFormConfiguration(
         selectedClient,
         targetCountry,
-        selectedModule || (isTransaction ? '71' : (isOverview ? '70' : '50'))
+        selectedModule || (isTransaction ? '53' : (isOverview ? '52' : '50'))
       );
     } else {
       setWizardStep(1);
@@ -229,7 +229,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
     setWizardStep(2);
     try {
       // 1. Fetch custom fields for this configuration
-      const cfRes = await fetch(`${API_URL}/api/custom-fields`);
+      const cfRes = await fetch(`${API_URL}/api/custom-fields`, { credentials: 'include' });
       const customFields = await cfRes.json();
 
       const isCountryMatch = (cfCountry, targetCountry) => {
@@ -239,7 +239,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
         return c1 === c2 || (c1 === '1' && (c2 === 'uae' || c2.includes('emirates'))) || (c2 === '1' && (c1 === 'uae' || c1.includes('emirates')));
       };
 
-      const targetModIds = isTransaction ? ['71', '53'] : (isOverview ? ['70', '52'] : ['50', '54']);
+      const targetModIds = isTransaction ? ['53', '71'] : (isOverview ? ['52', '70'] : ['50', '54']);
 
       let matchingFieldDef = customFields.find(cf =>
         String(cf.client_id || cf.clientid) === String(clientId) &&
@@ -268,7 +268,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
       }
 
       // 2. Fetch permissions
-      const permRes = await fetch(`${API_URL}/api/field-permissions`);
+      const permRes = await fetch(`${API_URL}/api/field-permissions`, { credentials: 'include' });
       const permissionsList = await permRes.json();
 
       let activePerm = permissionsList.find(p =>
@@ -1573,7 +1573,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                       disabled={!selectedClient || !selectedCompany}
                       onPress={() => {
                         const countryToUse = selectedCountry || '1';
-                        const fallbackMod = isTransaction ? '71' : (isOverview ? '70' : '50');
+                        const fallbackMod = isTransaction ? '53' : (isOverview ? '52' : '50');
                         fetchFormConfiguration(selectedClient, countryToUse, selectedModule || fallbackMod);
                       }}
                     >

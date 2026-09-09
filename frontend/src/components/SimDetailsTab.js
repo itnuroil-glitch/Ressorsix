@@ -208,14 +208,19 @@ export default function SimDetailsTab({
   const fetchFormConfiguration = async (clientId, companyId = null) => {
     try {
       const activeCompanyId = companyId || selectedCompany || formData.company_id || formData.company || '';
-      const cfRes = await fetch(`${API_URL}/api/custom-fields`);
+      const cfRes = await fetch(`${API_URL}/api/custom-fields`, { credentials: 'include' });
       if (!cfRes.ok) return;
       const customFields = await cfRes.json();
+
+      const expectedModId = isTelecomDataView ? '59' : '58';
 
       const isSimModule = (cf) => {
         const modId = String(cf.moduleid || cf.module_id || '');
         const modName = String(cf.module_name || '').toLowerCase();
         
+        // 1. Direct ID match takes absolute precedence
+        if (modId === expectedModId) return true;
+
         // Exclude Toll modules and Toll data
         if (['50', '52', '53', '54'].includes(modId) || modName.includes('toll')) return false;
 
@@ -232,10 +237,8 @@ export default function SimDetailsTab({
         if (fdStr.includes('premium & extra charge') || fdStr.includes('extra charge') || fdStr.includes('toll data') || fdStr.includes('toll name')) return false;
 
         if (isTelecomDataView) {
-          if (modId === '59') return true;
           return modName.includes('telecom data') || modName.includes('telecome data');
         } else {
-          if (modId === '58') return true;
           return modName.includes('sim') || modName.includes('telecom detail') || modName.includes('telecome detail') || fdStr.includes('telecom') || fdStr.includes('telecome');
         }
       };
@@ -248,20 +251,19 @@ export default function SimDetailsTab({
         const modName = String(cf.module_name || '').toLowerCase();
         let fdStr = typeof cf.field_data === 'string' ? cf.field_data.toLowerCase() : JSON.stringify(cf.field_data || '').toLowerCase();
 
-        // Target client match gets highest priority
+        // Direct ID match gets massive top priority!
+        if (modId === expectedModId) {
+          score += 500;
+        }
+
+        // Target client match
         if (clientId && String(cf.client_id || cf.clientid) === String(clientId)) {
           score += 100;
         } else if (!cf.client_id && !cf.clientid) {
           score += 50; // Global custom field
         }
 
-        // Module ID match (58 for Telecom Details, 59 for Telecom Data)
-        const expectedModId = isTelecomDataView ? '59' : '58';
-        if (modId === expectedModId) {
-          score += 40;
-        }
-
-        // Section name match ('Telecome Details' / 'Telecom Details')
+        // Section name match
         if (fdStr.includes('telecom detail') || fdStr.includes('telecome detail')) {
           score += 50;
         } else if (modName.includes('telecom detail') || modName.includes('telecome detail')) {
@@ -284,7 +286,7 @@ export default function SimDetailsTab({
         // Fetch field permissions
         let permittedFields = null;
         try {
-          const permRes = await fetch(`${API_URL}/api/field-permissions`);
+          const permRes = await fetch(`${API_URL}/api/field-permissions`, { credentials: 'include' });
           if (permRes.ok) {
             const permissionsList = await permRes.json();
             const activePerm = permissionsList.find(p =>

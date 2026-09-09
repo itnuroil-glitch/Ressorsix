@@ -501,7 +501,26 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
   };
 
   const handleVehicleSelectAutoFill = async (val) => {
-    if (!val) return;
+    if (!val) {
+      setFormData(prev => {
+        const updated = { ...prev };
+        if (fieldsLayout) {
+          fieldsLayout.forEach(sec => {
+            (sec.fields || []).forEach(f => {
+              const fn = (f.name || f.label || '').toLowerCase();
+              if (fn.includes('plate') && !fn.includes('vehicle')) {
+                delete updated[f.id];
+              }
+              if (fn.includes('chassis') || fn.includes('chasis') || fn.includes('vin')) {
+                delete updated[f.id];
+              }
+            });
+          });
+        }
+        return updated;
+      });
+      return;
+    }
     const strVal = String(val).trim();
     let parts = strVal.includes(' - ') ? strVal.split(' - ') : [strVal];
     const vName = parts[0]?.trim()?.toLowerCase();
@@ -571,6 +590,7 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
       case 'Dropdown':
       case 'Searchable Dropdown': {
         const fNameLower = (field.name || field.label || '').toLowerCase();
+        const isChassisField = fNameLower.includes('chassis') || fNameLower.includes('chasis') || fNameLower.includes('vin');
         const options = (field.allowedOptions && field.allowedOptions.length > 0)
           ? field.allowedOptions
           : (field.options || '').split(',').map(o => o.trim()).filter(Boolean);
@@ -594,6 +614,8 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
           dropdownData.unshift({ label: String(currentValue), value: String(currentValue) });
         }
 
+        const isFieldDisabled = isViewOnly || (isChassisField && Boolean(currentValue));
+
         return (
           <SearchableDropdown
             data={dropdownData}
@@ -608,7 +630,7 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
             searchPlaceholder={`Search ${field.name}...`}
             displayKey="label"
             valueKey="value"
-            disabled={isViewOnly}
+            disabled={isFieldDisabled}
           />
         );
       }
@@ -958,18 +980,24 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
           </View>
         );
       }
-      default:
+      default: {
         // Default text input
+        const fNameLower = (field.name || field.label || '').toLowerCase();
+        const isChassisField = fNameLower.includes('chassis') || fNameLower.includes('chasis') || fNameLower.includes('vin');
+        const currentValue = formData[field.id] || '';
+        const isFieldDisabled = isViewOnly || (isChassisField && Boolean(currentValue));
+
         return (
           <TextInput
-            style={[styles.input, isViewOnly && { backgroundColor: '#F1F5F9', color: '#64748B' }]}
+            style={[styles.input, isFieldDisabled && { backgroundColor: '#F1F5F9', color: '#64748B' }]}
             placeholder={`Enter ${field.name}`}
             placeholderTextColor={COLORS.textMuted}
-            value={formData[field.id] || ''}
+            value={currentValue}
             onChangeText={(val) => handleInputChange(field.id, val)}
-            editable={!isViewOnly}
+            editable={!isFieldDisabled}
           />
         );
+      }
     }
   };
 
