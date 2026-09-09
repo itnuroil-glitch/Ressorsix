@@ -239,11 +239,11 @@ exports.saveVehiclePurchase = async (req, res) => {
       resolvedVehicleId = await resolveVehicleId(processedFieldData, clientid);
     }
 
-    // Auto-fill any missing Date fields for this configuration
+    // Auto-fill any missing top-level Date fields (e.g. Purchase Date) for this configuration
     if (processedFieldData && typeof processedFieldData === 'object' && custom_field_id) {
       try {
         const dateFieldsRes = await db.query(
-          "SELECT field_id FROM tbl_customfield_details WHERE custom_fieldsid = $1 AND field_type IN ('Date', 'DateTime') AND is_active = true AND isdelete = false",
+          "SELECT field_id FROM tbl_customfield_details WHERE custom_fieldsid = $1 AND parent_fieldid IS NULL AND field_type IN ('Date', 'DateTime') AND is_active = true AND isdelete = false",
           [custom_field_id]
         );
         for (const df of dateFieldsRes.rows) {
@@ -571,11 +571,11 @@ exports.updateVehiclePurchase = async (req, res) => {
       resolvedVehicleId = await resolveVehicleId(processedFieldData, clientid);
     }
 
-    // Auto-fill any missing Date fields for this configuration
+    // Auto-fill any missing top-level Date fields (e.g. Purchase Date) for this configuration
     if (processedFieldData && typeof processedFieldData === 'object' && custom_field_id) {
       try {
         const dateFieldsRes = await db.query(
-          "SELECT field_id FROM tbl_customfield_details WHERE custom_fieldsid = $1 AND field_type IN ('Date', 'DateTime') AND is_active = true AND isdelete = false",
+          "SELECT field_id FROM tbl_customfield_details WHERE custom_fieldsid = $1 AND parent_fieldid IS NULL AND field_type IN ('Date', 'DateTime') AND is_active = true AND isdelete = false",
           [custom_field_id]
         );
         for (const df of dateFieldsRes.rows) {

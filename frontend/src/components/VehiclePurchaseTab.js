@@ -358,30 +358,18 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
 
         setFieldsLayout(filteredSections);
 
-        // Pre-fill default dates into formData for any empty Date/DateTime/Time fields
+        // Pre-fill default dates into formData ONLY for main top-level Date fields (e.g. Purchase Date)
         setFormData(prev => {
           const updated = { ...prev };
-          const fillDefaults = (fields) => {
-            if (!fields || !Array.isArray(fields)) return;
-            fields.forEach(f => {
+          filteredSections.forEach(sec => {
+            (sec.fields || []).forEach(f => {
               const fType = f.type || f.field_type;
-              if (fType === 'Date' && !updated[f.id]) {
+              const fName = (f.name || f.label || '').toLowerCase();
+              if (fType === 'Date' && fName.includes('purchase') && !updated[f.id]) {
                 updated[f.id] = new Date().toISOString().split('T')[0];
-              } else if (fType === 'DateTime' && !updated[f.id]) {
-                const d = new Date();
-                const date = d.toISOString().split('T')[0];
-                const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-                updated[f.id] = `${date}T${time}`;
-              } else if (fType === 'Time' && !updated[f.id]) {
-                const d = new Date();
-                updated[f.id] = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-              }
-              if (f.subsections && Array.isArray(f.subsections)) {
-                f.subsections.forEach(sub => fillDefaults(sub.fields));
               }
             });
-          };
-          filteredSections.forEach(sec => fillDefaults(sec.fields));
+          });
           return updated;
         });
       } else {
@@ -486,30 +474,39 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
     try {
       const finalFormData = { ...formData };
 
-      // Ensure any untouched Date, DateTime, or Time fields from the layout are populated
-      const populateDefaults = (fields) => {
-        if (!fields || !Array.isArray(fields)) return;
-        fields.forEach(f => {
-          const fType = f.type || f.field_type;
-          if (fType === 'Date' && (finalFormData[f.id] === undefined || finalFormData[f.id] === null || finalFormData[f.id] === '')) {
-            finalFormData[f.id] = new Date().toISOString().split('T')[0];
-          } else if (fType === 'DateTime' && (finalFormData[f.id] === undefined || finalFormData[f.id] === null || finalFormData[f.id] === '')) {
-            const d = new Date();
-            const date = d.toISOString().split('T')[0];
-            const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-            finalFormData[f.id] = `${date}T${time}`;
-          } else if (fType === 'Time' && (finalFormData[f.id] === undefined || finalFormData[f.id] === null || finalFormData[f.id] === '')) {
-            const d = new Date();
-            finalFormData[f.id] = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-          }
-          if (f.subsections && Array.isArray(f.subsections)) {
-            f.subsections.forEach(sub => populateDefaults(sub.fields));
-          }
-        });
-      };
-
+      // 1. Ensure untouched main Purchase Date field is populated
       if (fieldsLayout && Array.isArray(fieldsLayout)) {
-        fieldsLayout.forEach(sec => populateDefaults(sec.fields));
+        fieldsLayout.forEach(sec => {
+          (sec.fields || []).forEach(f => {
+            const fType = f.type || f.field_type;
+            const fName = (f.name || f.label || '').toLowerCase();
+            if (fType === 'Date' && fName.includes('purchase') && (!finalFormData[f.id] || finalFormData[f.id] === '')) {
+              finalFormData[f.id] = new Date().toISOString().split('T')[0];
+            }
+
+            // 2. Handle subsections: only save subfields if the subsection is actually VISIBLE
+            if (f.subsections && Array.isArray(f.subsections)) {
+              f.subsections.forEach(sub => {
+                const parentValue = finalFormData[f.id];
+                const isSubVisible = !sub.triggerValue || (parentValue && String(parentValue).trim().toLowerCase() === String(sub.triggerValue).trim().toLowerCase());
+                if (isSubVisible) {
+                  // If subsection is visible (e.g. Bank Finance), populate its untouched date fields
+                  (sub.fields || []).forEach(sf => {
+                    const sfType = sf.type || sf.field_type;
+                    if (sfType === 'Date' && (!finalFormData[sf.id] || finalFormData[sf.id] === '')) {
+                      finalFormData[sf.id] = new Date().toISOString().split('T')[0];
+                    }
+                  });
+                } else {
+                  // If subsection is HIDDEN (e.g. Cash), delete its subfields from payload so they are never saved!
+                  (sub.fields || []).forEach(sf => {
+                    delete finalFormData[sf.id];
+                  });
+                }
+              });
+            }
+          });
+        });
       }
 
       const payload = {
