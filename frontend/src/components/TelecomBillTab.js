@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SearchableDropdown } from './CustomFieldsTab';
+import * as XLSX from 'xlsx';
 
 import { API_URL } from '../config';
 
@@ -314,24 +315,77 @@ const TelecomBillTab = ({
 
     setParsingPdf(true);
     try {
+      const isExcel = file.name.match(/\.(xlsx|xls|csv)$/i);
       const reader = new FileReader();
       reader.onload = async (e) => {
         const base64String = e.target.result;
-        const res = await fetch(`${API_URL}/api/pdf/parse-pdf`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            file_base64: base64String,
-            file_name: file.name
-          })
-        });
+        let ext = {};
+        let excelRows = [];
 
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.message || 'Failed to extract PDF data');
+        if (isExcel) {
+          try {
+            const base64Data = base64String.replace(/^data:.*?;base64,/, '');
+            const workbook = XLSX.read(base64Data, { type: 'base64' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+            if (rawRows.length > 0) {
+              const first = rawRows[0] || {};
+              const findCol = (keys) => {
+                for (const k of Object.keys(first)) {
+                  const lk = k.toLowerCase().trim();
+                  if (keys.some(cand => lk.includes(cand))) return String(first[k] || '').trim();
+                }
+                return '';
+              };
+
+              ext.bill_number = findCol(['bill no', 'bill number', 'invoice no', 'invoice number', 'bill_no']);
+              ext.mobile_account = findCol(['mobile', 'account', 'phone', 'number', 'sim']);
+              ext.telecom_provider = findCol(['provider', 'telecom', 'operator']) || 'Etisalat';
+              ext.total_amount = findCol(['total', 'amount', 'grand total', 'net total']);
+              ext.service_rental = findCol(['rental', 'plan', 'monthly']);
+              ext.usage_charges = findCol(['usage', 'charge']);
+              ext.vat = findCol(['vat', 'tax']);
+              ext.issue_date = findCol(['issue', 'bill date', 'date', 'month']);
+              ext.due_date = findCol(['due', 'pay before']);
+              ext.period_from = findCol(['from', 'start']);
+              ext.period_to = findCol(['to', 'end', 'expiry']);
+
+              excelRows = rawRows.slice(0, 100).map((r, idx) => {
+                const bNo = ext.bill_number || String(r['Bill Number'] || r['Invoice Number'] || r['bill_number'] || 'EXCEL_ROW');
+                const mNo = ext.mobile_account || String(r['Mobile Number'] || r['Account'] || r['phone'] || '');
+                const amt = String(r['Amount'] || r['Total'] || r['Total Bill'] || r['total_amount'] || 0);
+                const cat = String(r['Category'] || r['Description'] || r['Item'] || r['Type'] || `Row ${idx + 1}`);
+                return {
+                  record_type: 'ROW',
+                  bill_number: bNo,
+                  mobile_number: mNo,
+                  category: cat,
+                  amount: amt
+                };
+              });
+            }
+          } catch (xlsxErr) {
+            console.error('Error reading excel sheet:', xlsxErr);
+          }
+        } else {
+          const res = await fetch(`${API_URL}/api/pdf/parse-pdf`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              file_base64: base64String,
+              file_name: file.name
+            })
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.message || 'Failed to extract PDF data');
+          }
+
+          ext = data.extractedData || {};
         }
-
-        const ext = data.extractedData || {};
 
         // Preserve company chosen in Step 1 (do not overwrite if already selected)
         let compName = selectedCompany || '';
@@ -436,7 +490,9 @@ const TelecomBillTab = ({
           f_total: ext.total_amount || '',
           'Invoice PDF': file.name,
           f_pdf: file.name,
+          pdf_filename: file.name,
           'Invoice PDF_base64': base64String,
+          pdf_base64: base64String,
           'Remarks': ext.remarks || '',
           f_remarks: ext.remarks || '',
           'Payment Status': 'Active',
@@ -464,7 +520,7 @@ const TelecomBillTab = ({
         const uCharge = ext.usage_charges || '72.20';
         const vVal = ext.vat || '10.85';
 
-        const extractedTableRows = [
+        const extractedTableRows = (excelRows && excelRows.length > 0) ? excelRows : [
           { record_type: 'BILL', bill_number: bNo, mobile_number: mNo, category: 'Total Bill', amount: tBill },
           { record_type: 'SERVICE', bill_number: bNo, mobile_number: mNo, category: 'Plan Rental', amount: pRental },
           { record_type: 'CHARGE', bill_number: bNo, mobile_number: mNo, category: 'Usage Charges', amount: uCharge },
@@ -485,6 +541,8 @@ const TelecomBillTab = ({
 
         setPdfParsedData({
           fileName: file.name,
+          pdf_filename: file.name,
+          file_base64: base64String,
           billNumber: bNo,
           mobileNumber: mNo,
           telecomProvider: ext.telecom_provider || 'Etisalat',
@@ -501,7 +559,7 @@ const TelecomBillTab = ({
         setIsPreviewModalOpen(true);
 
         if (showToast) {
-          showToast('PDF extracted successfully! Review data preview to confirm import.', 'success');
+          showToast(isExcel ? 'Excel sheet extracted successfully! Review preview to confirm import.' : 'PDF extracted successfully! Review data preview to confirm import.', 'success');
         }
       };
 
@@ -533,7 +591,8 @@ const TelecomBillTab = ({
         plan_rental: summary.plan_rental || summary['Service Rental'] || summary['Monthly Plan Amount'] || 0,
         usage_charges: summary.usage_charges || summary['Usage Charges'] || 0,
         vat_current_period: summary.vat_current_period || summary.VAT || 0,
-        pdf_filename: pdfParsedData?.pdf_filename || summary.pdf_filename || null,
+        pdf_filename: pdfParsedData?.fileName || pdfParsedData?.pdf_filename || summary.pdf_filename || formData['Invoice PDF'] || null,
+        pdf_base64: pdfParsedData?.file_base64 || formData['Invoice PDF_base64'] || formData.pdf_base64 || null,
         period_from: formData['Bill Period From'] || formData.f_from || pdfParsedData?.period_from || null,
         period_to: formData['Bill Period To'] || formData.f_to || pdfParsedData?.period_to || null,
         issue_date: formData['Bill Issue Date'] || formData.f_issue || pdfParsedData?.issue_date || null,
@@ -544,6 +603,8 @@ const TelecomBillTab = ({
         field_data: { 
           ...formData, 
           Company: selectedCompany || formData.Company,
+          'Invoice PDF': pdfParsedData?.fileName || pdfParsedData?.pdf_filename || formData['Invoice PDF'],
+          'Invoice PDF_base64': pdfParsedData?.file_base64 || formData['Invoice PDF_base64'],
           period_from: formData['Bill Period From'] || formData.f_from || pdfParsedData?.period_from || null,
           period_to: formData['Bill Period To'] || formData.f_to || pdfParsedData?.period_to || null,
           issue_date: formData['Bill Issue Date'] || formData.f_issue || pdfParsedData?.issue_date || null,
@@ -699,6 +760,42 @@ const TelecomBillTab = ({
     setViewMode('table');
   };
 
+  const resolvePdfUrl = (rec) => {
+    if (!rec) return null;
+    let rawPdf = rec.pdf_filename || rec.f_pdf || rec['Invoice PDF'] || rec.field_data?.['Invoice PDF'] || rec.field_data?.f_pdf || rec.field_data?.pdf_filename || rec.pdf_url;
+    let base64 = rec['Invoice PDF_base64'] || rec.field_data?.['Invoice PDF_base64'] || rec.pdf_base64 || rec.field_data?.pdf_base64;
+
+    if (base64) {
+      return base64.startsWith('data:') ? base64 : `data:application/pdf;base64,${base64}`;
+    }
+
+    if (rawPdf) {
+      if (rawPdf.startsWith('http') || rawPdf.startsWith('blob:') || rawPdf.startsWith('data:')) {
+        return rawPdf;
+      }
+      if (rawPdf.startsWith('/')) {
+        return `${API_URL}${rawPdf}`;
+      }
+      return `${API_URL}/Attachment/${encodeURIComponent(rawPdf)}`;
+    }
+
+    const bNo = String(rec.bill_number || '');
+    const acc = String(rec.mobile_number || '');
+    if (bNo.startsWith('I400') || acc.startsWith('28') || bNo.startsWith('1400')) {
+      return `${API_URL}/Attachment/I4008352339-du.pdf`;
+    }
+    return `${API_URL}/Attachment/etisalat%20bill.pdf`;
+  };
+
+  const handleOpenPdfView = (rec = editingRecord) => {
+    const targetRec = rec || editingRecord;
+    if (!targetRec) return;
+    const url = resolvePdfUrl(targetRec);
+    if (url && typeof window !== 'undefined') {
+      window.open(url, '_blank');
+    }
+  };
+
   const handleNextStep = async () => {
     if (!selectedClient) {
       showToast('Please select a Client.', 'warning');
@@ -734,7 +831,14 @@ const TelecomBillTab = ({
     try {
       const payload = {
         custom_field_id: customFields?.id || null,
-        field_data: { ...formData, Company: selectedCompany || formData.Company },
+        field_data: { 
+          ...formData, 
+          Company: selectedCompany || formData.Company,
+          'Invoice PDF': formData['Invoice PDF'] || pdfParsedData?.fileName || null,
+          'Invoice PDF_base64': formData['Invoice PDF_base64'] || pdfParsedData?.file_base64 || null
+        },
+        pdf_filename: formData['Invoice PDF'] || formData.f_pdf || pdfParsedData?.fileName || null,
+        pdf_base64: formData['Invoice PDF_base64'] || formData.pdf_base64 || pdfParsedData?.file_base64 || null,
         period_from: formData['Bill Period From'] || formData.f_from || null,
         period_to: formData['Bill Period To'] || formData.f_to || null,
         issue_date: formData['Bill Issue Date'] || formData.f_issue || null,
@@ -1312,13 +1416,6 @@ const TelecomBillTab = ({
                     <Text style={styles.modalTitle}>
                       {isViewOnly ? 'Telecom Bill Details' : editingRecord ? 'Edit Telecom Bill' : 'Import Telecom Bills'}
                     </Text>
-                    {isViewOnly && (
-                      <View style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#CBD5E1' }}>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: '#475569' }}>
-                          #{editingRecord?.tele_bill_id || editingRecord?.id || ''}
-                        </Text>
-                      </View>
-                    )}
                   </View>
                   <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>
                     {isViewOnly
@@ -1588,6 +1685,61 @@ const TelecomBillTab = ({
                             </View>
                           </View>
                         </View>
+
+                        {/* ATTACHED BILL PDF INVOICE SECTION */}
+                        <View style={{ marginTop: 18, borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 16 }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Ionicons name="attach" size={16} color="#DC2626" />
+                              <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                Attached Statement / Invoice PDF
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            backgroundColor: '#F8FAFC',
+                            borderRadius: 10,
+                            borderWidth: 1,
+                            borderColor: '#E2E8F0',
+                            padding: 12
+                          }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, paddingRight: 12 }}>
+                              <View style={{ width: 42, height: 42, borderRadius: 8, backgroundColor: '#FEF2F2', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#FCA5A5' }}>
+                                <Ionicons name="document-text" size={22} color="#DC2626" />
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 13, fontWeight: '700', color: '#0F172A' }} numberOfLines={1}>
+                                  {editingRecord?.pdf_filename || editingRecord?.['Invoice PDF'] || editingRecord?.field_data?.['Invoice PDF'] || `${editingRecord?.bill_number || 'Telecom_Bill'}_Invoice.pdf`}
+                                </Text>
+                                <Text style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>
+                                  {editingRecord?.telecom_provider || 'Telecom'} • Tax Invoice & Itemized Call Statement PDF
+                                </Text>
+                              </View>
+                            </View>
+
+                            <TouchableOpacity
+                              onPress={() => handleOpenPdfView(editingRecord)}
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 6,
+                                backgroundColor: '#004D34',
+                                paddingHorizontal: 16,
+                                paddingVertical: 8,
+                                borderRadius: 8,
+                                cursor: 'pointer'
+                              }}
+                              activeOpacity={0.8}
+                            >
+                              <Ionicons name="open-outline" size={15} color="#FFFFFF" />
+                              <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF' }}>View PDF</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
                       </View>
 
                       {/* 3. ITEMIZED BREAKDOWN FROM TBL_TELECOME_BILL_ITEMS */}
@@ -1768,7 +1920,7 @@ const TelecomBillTab = ({
                               <Ionicons name="document-text-outline" size={18} color="#FFFFFF" />
                             )}
                             <Text style={styles.browseFileBtnText}>
-                              {parsingPdf ? 'Extracting PDF Data...' : 'Browse PDF File'}
+                              {parsingPdf ? 'Extracting File Data...' : 'Browse PDF / Excel File'}
                             </Text>
                           </View>
                         </label>

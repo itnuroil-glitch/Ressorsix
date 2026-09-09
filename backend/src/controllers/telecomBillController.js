@@ -1,5 +1,81 @@
 // Telecom Bill Controller - Parity & Analytics Sync 2026-08-24 17:58
 const db = require('../config/db');
+const fs = require('fs');
+const path = require('path');
+
+const saveAttachmentLocally = (base64String, fileName) => {
+  if (!base64String) return null;
+  const matches = base64String.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+  let buffer;
+  if (matches && matches.length === 3) {
+    buffer = Buffer.from(matches[2], 'base64');
+  } else {
+    buffer = Buffer.from(base64String, 'base64');
+  }
+
+  const attachmentDir = path.join(__dirname, '../../Attachment');
+  if (!fs.existsSync(attachmentDir)) {
+    fs.mkdirSync(attachmentDir, { recursive: true });
+  }
+
+  const cleanName = fileName ? fileName.replace(/[^a-zA-Z0-9._-]/g, '_') : 'telecom_bill.pdf';
+  const uniqueName = `${Date.now()}-${cleanName}`;
+  const filePath = path.join(attachmentDir, uniqueName);
+
+  fs.writeFileSync(filePath, buffer);
+  return `/backend/Attachment/${uniqueName}`;
+};
+
+const saveToAttachmentTable = async ({ clientid, companyid, company_name, savedPath, attachmentType = 'Telecom Bill' }) => {
+  if (!savedPath) return;
+  try {
+    let finalClientId = null;
+    if (clientid) {
+      const parsedClient = parseInt(clientid, 10);
+      if (!isNaN(parsedClient)) finalClientId = parsedClient;
+    }
+
+    let finalCompanyId = null;
+    if (companyid) {
+      const parsedComp = parseInt(companyid, 10);
+      if (!isNaN(parsedComp)) finalCompanyId = parsedComp;
+    }
+
+    if (!finalCompanyId && company_name) {
+      try {
+        const compRes = await db.query(
+          'SELECT id FROM company WHERE company_name ILIKE $1 OR name ILIKE $1 LIMIT 1',
+          [String(company_name).trim()]
+        );
+        if (compRes.rows.length > 0) {
+          finalCompanyId = compRes.rows[0].id;
+        }
+      } catch (e) {}
+    }
+
+    if (!finalCompanyId && finalClientId) {
+      try {
+        const compRes = await db.query(
+          'SELECT id FROM company WHERE clientid = $1 AND (is_deleted = false OR is_deleted IS NULL) ORDER BY id ASC LIMIT 1',
+          [finalClientId]
+        );
+        if (compRes.rows.length > 0) {
+          finalCompanyId = compRes.rows[0].id;
+        }
+      } catch (e) {}
+    }
+
+    const insertQuery = `
+      INSERT INTO attachment (clientid, companyid, attachment, type, expire_date, status, is_deleted, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, NULL, 1, false, NOW(), NOW())
+      RETURNING *
+    `;
+    await db.query(insertQuery, [finalClientId, finalCompanyId, savedPath, attachmentType]);
+    console.log(`[ATTACHMENT SYNC] Successfully saved attachment record to table for ${savedPath}`);
+  } catch (e) {
+    console.error('Error inserting into attachment table:', e);
+  }
+};
 
 let billPkCol = null;
 
@@ -401,7 +477,34 @@ exports.createTelecomBill = async (req, res) => {
 
     const clientid = body.clientid ? String(body.clientid) : null;
     const status = body.status && body.status.toLowerCase() !== 'pending' ? body.status : (fd['Payment Status'] && fd['Payment Status'].toLowerCase() !== 'pending' ? fd['Payment Status'] : 'Active');
-    const pdf_filename = body.pdf_filename || fd['Invoice PDF'] || null;
+    let pdf_filename = body.pdf_filename || fd['Invoice PDF'] || fd.f_pdf || null;
+    const pdf_base64 = body.pdf_base64 || body.file_base64 || fd['Invoice PDF_base64'] || fd.pdf_base64 || null;
+
+    if (pdf_base64 && typeof pdf_base64 === 'string') {
+      const savedPath = saveAttachmentLocally(pdf_base64, pdf_filename || body.file_name || 'telecom_bill.pdf');
+      if (savedPath) {
+        pdf_filename = savedPath;
+        await saveToAttachmentTable({
+          clientid,
+          companyid: body.company_id || body.companyid,
+          company_name,
+          savedPath,
+          attachmentType: 'Telecom Bill'
+        });
+      }
+    } else if (pdf_filename) {
+      const cleanPath = pdf_filename.startsWith('/') ? pdf_filename : `/backend/Attachment/${pdf_filename}`;
+      const chk = await db.query('SELECT id FROM attachment WHERE attachment = $1 OR attachment LIKE $2 LIMIT 1', [cleanPath, `%${pdf_filename}%`]).catch(() => ({ rows: [] }));
+      if (chk.rows.length === 0) {
+        await saveToAttachmentTable({
+          clientid,
+          companyid: body.company_id || body.companyid,
+          company_name,
+          savedPath: cleanPath,
+          attachmentType: 'Telecom Bill'
+        });
+      }
+    }
 
     const period_from = body.period_from || fd['Bill Period From'] || fd.f_from || fd.period_from || null;
     const period_to = body.period_to || fd['Bill Period To'] || fd.f_to || fd.period_to || null;
@@ -495,6 +598,9 @@ exports.createTelecomBill = async (req, res) => {
       insertCols.push('field_data');
       values.push(JSON.stringify({
         ...fd,
+        'Invoice PDF': pdf_filename,
+        f_pdf: pdf_filename,
+        pdf_filename: pdf_filename,
         period_from,
         period_to,
         issue_date,
@@ -666,6 +772,26 @@ exports.updateTelecomBill = async (req, res) => {
     if (status && existingCols.has('status')) { setClauses.push(`status = $${pIdx++}`); params.push(status); }
     if (clientid && existingCols.has('clientid')) { setClauses.push(`clientid = $${pIdx++}`); params.push(String(clientid)); }
 
+    let pdf_filename = body.pdf_filename || fd['Invoice PDF'] || fd.f_pdf;
+    const pdf_base64 = body.pdf_base64 || body.file_base64 || fd['Invoice PDF_base64'] || fd.pdf_base64;
+    if (pdf_base64 && typeof pdf_base64 === 'string') {
+      const savedPath = saveAttachmentLocally(pdf_base64, pdf_filename || body.file_name || 'telecom_bill.pdf');
+      if (savedPath) {
+        pdf_filename = savedPath;
+        await saveToAttachmentTable({
+          clientid,
+          companyid: body.company_id || body.companyid,
+          company_name,
+          savedPath,
+          attachmentType: 'Telecom Bill'
+        });
+      }
+    }
+    if (pdf_filename && existingCols.has('pdf_filename')) {
+      setClauses.push(`pdf_filename = $${pIdx++}`);
+      params.push(pdf_filename);
+    }
+
     const period_from = body.period_from || fd['Bill Period From'] || fd.f_from || fd.period_from;
     const period_to = body.period_to || fd['Bill Period To'] || fd.f_to || fd.period_to;
     const issue_date = body.issue_date || body.bill_date || fd['Bill Issue Date'] || fd.f_issue || fd.issue_date;
@@ -680,7 +806,20 @@ exports.updateTelecomBill = async (req, res) => {
     if (bill_month && existingCols.has('bill_month')) { setClauses.push(`bill_month = $${pIdx++}`); params.push(bill_month); }
     if (existingCols.has('field_data')) {
       setClauses.push(`field_data = $${pIdx++}`);
-      params.push(JSON.stringify({ ...fd, period_from, period_to, issue_date, due_date, bill_month }));
+      const updatedFd = {
+        ...fd,
+        period_from,
+        period_to,
+        issue_date,
+        due_date,
+        bill_month
+      };
+      if (pdf_filename) {
+        updatedFd['Invoice PDF'] = pdf_filename;
+        updatedFd.f_pdf = pdf_filename;
+        updatedFd.pdf_filename = pdf_filename;
+      }
+      params.push(JSON.stringify(updatedFd));
     }
 
     if (setClauses.length === 0) {
