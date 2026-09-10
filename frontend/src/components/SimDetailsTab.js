@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS } from '../theme';
-import { API_URL } from '../config';
+import { API_URL, resolveFileUrl } from '../config';
 import { SearchableDropdown } from './CustomFieldsTab';
 import PhoneInputWithCountryCode from './PhoneInputWithCountryCode';
 
@@ -75,7 +75,10 @@ export default function SimDetailsTab({
     setLoadingAddOns(true);
     try {
       const clientId = selectedClient || user?.clientid || '';
-      const res = await fetch(`${API_URL}/api/add-ons?client_id=${clientId}`);
+      const queryStr = clientId ? `?client_id=${clientId}` : '';
+      const res = await fetch(`${API_URL}/api/add-ons${queryStr}`, {
+        credentials: 'include'
+      });
       if (res.ok) {
         const data = await res.json();
         setAddOnRecords(Array.isArray(data) ? data : []);
@@ -90,7 +93,10 @@ export default function SimDetailsTab({
   const deleteAddOnRecord = async (id) => {
     if (window.confirm && !window.confirm('Are you sure you want to delete this Add-On record?')) return;
     try {
-      const res = await fetch(`${API_URL}/api/add-ons/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_URL}/api/add-ons/${id}`, { 
+        method: 'DELETE',
+        credentials: 'include'
+      });
       if (res.ok) {
         showToast('Add-On record deleted successfully', 'success');
         fetchAddOnRecords();
@@ -539,28 +545,35 @@ export default function SimDetailsTab({
         }))).filter(sec => sec.fields.length > 0);
 
         setFieldsLayout(processedSections);
+        return processedSections;
       } else {
         setFieldsLayout([]);
         setCustomFieldId(null);
+        return [];
       }
     } catch (err) {
       console.error('Error fetching SIM details custom fields:', err);
+      return [];
     }
   };
 
   const openModal = async (record = null, viewMode = false, addOnMode = false) => {
     setIsViewOnly(viewMode);
     setIsAddOnMode(addOnMode);
-    const targetClient = record?.clientid ? String(record.clientid) : (user?.clientid ? String(user.clientid) : selectedClient);
+    const targetClient = record?.client_id ? String(record.client_id) : (record?.clientid ? String(record.clientid) : (user?.clientid ? String(user.clientid) : selectedClient));
     const targetCompany = record?.company_id ? String(record.company_id) : selectedCompany;
+    let activeLayout = fieldsLayout;
     if (targetClient) {
-      await fetchFormConfiguration(targetClient, targetCompany);
+      const fetchedLayout = await fetchFormConfiguration(targetClient, targetCompany);
+      if (fetchedLayout && fetchedLayout.length > 0) {
+        activeLayout = fetchedLayout;
+      }
     }
     if (record) {
-      setEditingId(record.tele_id || record.id);
-      setSelectedClient(record.clientid ? String(record.clientid) : '');
-      if (record.clientid) {
-        fetchCompaniesForClient(String(record.clientid));
+      setEditingId(addOnMode ? (record.id || record.tele_id) : (record.tele_id || record.id));
+      setSelectedClient(record.client_id ? String(record.client_id) : (record.clientid ? String(record.clientid) : ''));
+      if (record.client_id || record.clientid) {
+        fetchCompaniesForClient(String(record.client_id || record.clientid));
       }
       setSelectedCompany(record.company_id ? String(record.company_id) : '');
       setSelectedCountry(record.country_id ? String(record.country_id) : (record.countryid ? String(record.countryid) : ''));
@@ -568,9 +581,103 @@ export default function SimDetailsTab({
       let fd = {};
       try {
         fd = typeof record.field_data === 'string' ? JSON.parse(record.field_data) : (record.field_data || {});
+        if (fd && typeof fd.field_data === 'string') {
+          try { fd = { ...fd, ...JSON.parse(fd.field_data) }; } catch (e) {}
+        } else if (fd && typeof fd.field_data === 'object' && fd.field_data !== null) {
+          fd = { ...fd, ...fd.field_data };
+        }
       } catch (e) {
         fd = {};
       }
+
+      // Map any legacy words from fd to their corresponding custom field ID
+      if (activeLayout && activeLayout.length > 0) {
+        activeLayout.forEach(sec => {
+          (sec.fields || []).forEach(f => {
+            const fId = String(f.id);
+            if (fd[fId] === undefined || fd[fId] === null || fd[fId] === '') {
+              const legacyVal = fd[f.name] !== undefined ? fd[f.name] : (fd[f.name?.trim()] !== undefined ? fd[f.name?.trim()] : fd[f.label]);
+              if (legacyVal !== undefined && legacyVal !== null && legacyVal !== '') {
+                fd[fId] = legacyVal;
+              }
+            }
+          });
+        });
+      }
+
+      // Safe parse document attachments
+      let rawDocs = record.document_attachments || record.attached_documents || fd.document_attachments || fd.attached_documents || [];
+      if (typeof rawDocs === 'string') {
+        try {
+          rawDocs = JSON.parse(rawDocs);
+        } catch (e) {
+          rawDocs = rawDocs.split(',').map(s => s.trim()).filter(Boolean);
+        }
+      }
+      if (!Array.isArray(rawDocs)) rawDocs = [];
+
+      // Safe clean activation date for HTML date input (YYYY-MM-DD)
+      let actDate = record.activation_date || fd.activation_date || fd['Activation Date'] || '';
+      if (actDate) {
+        const str = String(actDate).trim();
+        const dmy = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+        if (dmy) {
+          actDate = `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+        } else {
+          try { actDate = str.split('T')[0]; } catch (e) {}
+        }
+      }
+
+      // Safe plan amount
+      let pAmount = record.plan_amount !== undefined && record.plan_amount !== null
+        ? record.plan_amount
+        : (record.monthly_plan_amount || fd.monthly_plan_amount || fd['Monthly Plan Amount '] || fd['Plan Amount'] || '');
+      if (String(pAmount) === 'NaN' || Number.isNaN(pAmount)) pAmount = '';
+
+      // Parse dynamic voice/roaming details from record.addon_details
+      const rawAddonDetails = record.addon_details || fd.addon_details || fd['Addon Details'] || '';
+      const dynamicDetails = {};
+
+      if (rawAddonDetails && typeof rawAddonDetails === 'string') {
+        const parts = rawAddonDetails.split(';');
+        parts.forEach(p => {
+          const colonIdx = p.indexOf(':');
+          if (colonIdx > -1) {
+            const cat = p.slice(0, colonIdx).trim();
+            const val = p.slice(colonIdx + 1).trim();
+            if (cat && val) {
+              const cleanKey = cat.toLowerCase().replace(/[^a-z0-9]/g, '_');
+              dynamicDetails[`voice_details_${cleanKey}`] = val;
+              dynamicDetails[`roaming_details_${cleanKey}`] = val;
+              dynamicDetails[`${cat} Details`] = val;
+              dynamicDetails[`${cat} Roaming Details`] = val;
+            }
+          }
+        });
+
+        const roamingCat = record.roaming_category || fd.roaming_category || fd['Roaming Category'] || '';
+        const voiceCat = record.voice_minute_type || record.voice_category || fd.voice_minute_type || fd['Voice Category'] || fd['Voice Minute Type'] || '';
+
+        if (Object.keys(dynamicDetails).length === 0 && rawAddonDetails) {
+          if (roamingCat) {
+            const rCats = String(roamingCat).split(',').map(s => s.trim()).filter(Boolean);
+            rCats.forEach(rc => {
+              const cleanKey = rc.toLowerCase().replace(/[^a-z0-9]/g, '_');
+              dynamicDetails[`roaming_details_${cleanKey}`] = rawAddonDetails;
+              dynamicDetails[`${rc} Roaming Details`] = rawAddonDetails;
+            });
+          }
+          if (voiceCat) {
+            const vCats = String(voiceCat).split(',').map(s => s.trim()).filter(Boolean);
+            vCats.forEach(vc => {
+              const cleanKey = vc.toLowerCase().replace(/[^a-z0-9]/g, '_');
+              dynamicDetails[`voice_details_${cleanKey}`] = rawAddonDetails;
+              dynamicDetails[`${vc} Details`] = rawAddonDetails;
+            });
+          }
+        }
+      }
+
       setFormData({
         ...record,
         ...fd,
@@ -594,19 +701,35 @@ export default function SimDetailsTab({
         vat: record.vat || fd.vat || '',
         total_amount: record.total_amount || fd.total_amount || '',
         plan_name: record.plan_name || fd.plan_name || fd['Plan Name'] || fd['Package Plan '] || '',
-        monthly_plan_amount: record.monthly_plan_amount || fd.monthly_plan_amount || fd['Monthly Plan Amount '] || '',
+        plan_amount: pAmount,
+        monthly_plan_amount: pAmount,
+        'Plan Amount': pAmount,
+        'Monthly Plan Amount ': pAmount,
         data_allowance: record.data_allowance || fd.data_allowance || fd['Data Allowance'] || '',
         local_minutes: record.local_minutes || fd.local_minutes || fd['Local Minutes'] || '',
         international_minutes: record.international_minutes || fd.international_minutes || fd['International Minutes'] || '',
         local_sms_allowance: record.local_sms_allowance || fd.local_sms_allowance || fd['Local SMS'] || '',
         international_sms_allowance: record.international_sms_allowance || fd.international_sms_allowance || fd['International SMS'] || '',
-        activation_date: record.activation_date || fd.activation_date || fd['Activation Date'] || '',
+        activation_date: actDate,
+        'Activation Date': actDate,
         contract_start_date: record.contract_start_date || fd.contract_start_date || fd['Contract Start Date'] || fd['Contract From'] || '',
         contract_expiry_date: record.contract_expiry_date || fd.contract_expiry_date || fd['Contract Expiry Date'] || fd['Contract To'] || '',
         assigned_employee: record.assigned_employee || fd.assigned_employee || fd['Assigned Employee'] || '',
         department: record.department || fd.department || fd['Department'] || '',
         status: record.status || fd.status || fd['SIM Status'] || 'Active',
-        remarks: record.remarks || fd.remarks || fd['Remarks'] || fd['Notes '] || ''
+        remarks: record.remarks || fd.remarks || fd['Remarks'] || fd['Notes '] || '',
+        addon_type: record.addon_type || fd.addon_type || fd['Addon Type'] || fd.add_on || 'Data',
+        voice_minute_type: record.voice_minute_type || record.voice_category || fd.voice_minute_type || fd['Voice Category'] || fd['Voice Minute Type'] || '',
+        'Voice Minute Type': record.voice_minute_type || record.voice_category || fd.voice_minute_type || fd['Voice Category'] || fd['Voice Minute Type'] || '',
+        roaming_category: record.roaming_category || fd.roaming_category || fd['Roaming Category'] || '',
+        'Roaming Category': record.roaming_category || fd.roaming_category || fd['Roaming Category'] || '',
+        addon_details: rawAddonDetails,
+        subscription_type: record.subscription_type || record.subscription || fd.subscription || fd['Subscription'] || 'One Time',
+        subscription: record.subscription_type || record.subscription || fd.subscription || fd['Subscription'] || 'One Time',
+        attached_documents: rawDocs,
+        document_attachments: rawDocs,
+        'Document Attachment': rawDocs.join(', '),
+        ...dynamicDetails,
       });
       setAttachedPdfName(record.pdf_name || fd.attached_pdf || fd.invoice_pdf || '');
       setPdfBase64(record.pdf_base64 || '');
@@ -631,6 +754,7 @@ export default function SimDetailsTab({
         sim_number: '',
         account_number: '',
         plan_name: '',
+        plan_amount: '',
         monthly_plan_amount: '',
         data_allowance: '',
         local_minutes: '',
@@ -643,9 +767,16 @@ export default function SimDetailsTab({
         assigned_employee: '',
         department: '',
         status: 'Active',
-        remarks: ''
+        remarks: '',
+        addon_type: 'Data',
+        addon_details: '',
+        subscription_type: 'One Time',
+        subscription: 'One Time',
+        attached_documents: [],
+        document_attachments: []
       });
     }
+
     setIsModalOpen(true);
   };
 
@@ -999,28 +1130,57 @@ export default function SimDetailsTab({
     try {
       const endpoint = isAddOnMode ? 'add-ons' : (isTelecomDataView ? 'telecom-data' : 'sim-details');
       
+      const matchedTele = records?.find(r => {
+        let fd = {};
+        try { fd = typeof r.field_data === 'string' ? JSON.parse(r.field_data) : (r.field_data || {}); } catch (e) {}
+        const acc = r.account_number || fd.account_number || fd['Account No'] || fd['Account Number'] || r.sim_number || fd.sim_number || fd['SIM Number / ICCID'] || r.mobile_number;
+        return (formData.account_number && String(acc) === String(formData.account_number)) ||
+               (formData.sim_number && (String(r.sim_number) === String(formData.sim_number) || String(fd.sim_number) === String(formData.sim_number)));
+      });
+
       const payload = isAddOnMode ? {
-        account_number: formData.account_number || formData['Account No'] || formData.sim_number || '',
-        sim_number: formData.sim_number || formData['Sim No'] || '',
+        tele_id: formData.tele_id || matchedTele?.tele_id || matchedTele?.id || null,
+        account_number: formData.account_number || formData['Account No'] || '',
+        sim_number: null,
         activation_date: formData.activation_date || formData['Activation Date'] || new Date().toISOString().split('T')[0],
         plan_name: formData.plan_name || formData['Plan Name'] || '',
-        plan_amount: formData.plan_amount || formData['Plan Amount'] || 0,
+        plan_amount: formData.plan_amount || formData.monthly_plan_amount || formData['Plan Amount'] || 0,
         subscription_type: formData.subscription_type || formData.subscription || formData['Subscription'] || 'One Time',
-        document_attachments: formData.document_attachments || [],
+        document_attachments: formData.document_attachments || formData.attached_documents || [],
+        files_data: formData.files_data || [],
+        pdf_base64: (formData.files_data && formData.files_data.length > 0) ? formData.files_data[0].data : (pdfBase64 || null),
         addon_type: formData.addon_type || formData['Addon Type'] || formData.add_on || 'Data',
         voice_minute_type: formData.voice_minute_type || formData['Voice Category'] || formData['Voice Minute Type'] || null,
         roaming_category: formData.roaming_category || formData['Roaming Category'] || null,
+        ...formData,
         addon_details: (() => {
-          if (formData.addon_details || formData['Addon Details']) return formData.addon_details || formData['Addon Details'];
-          const detailParts = [];
-          Object.keys(formData).forEach(k => {
-            if ((k.startsWith('voice_details_') || k.startsWith('roaming_details_') || k.endsWith(' Details')) && formData[k] && typeof formData[k] === 'string' && k !== 'Addon Details' && k !== 'addon_details') {
-              let label = k.replace('voice_details_', '').replace('roaming_details_', '').replace(/_/g, ' ');
-              label = label.charAt(0).toUpperCase() + label.slice(1);
-              detailParts.push(`${label}: ${formData[k]}`);
-            }
-          });
-          return detailParts.length > 0 ? detailParts.join('; ') : null;
+          const type = formData.addon_type || formData['Addon Type'] || formData.add_on || 'Data';
+          if (type === 'Roaming') {
+            const catStr = formData.roaming_category || formData['Roaming Category'] || '';
+            const cats = String(catStr).split(',').map(s => s.trim()).filter(Boolean);
+            const detailParts = [];
+            cats.forEach(c => {
+              const cleanKey = c.toLowerCase().replace(/[^a-z0-9]/g, '_');
+              const val = formData[`roaming_details_${cleanKey}`] || formData[`${c} Roaming Details`];
+              if (val && typeof val === 'string' && val.trim()) {
+                detailParts.push(`${c}: ${val.trim()}`);
+              }
+            });
+            if (detailParts.length > 0) return detailParts.join('; ');
+          } else if (type === 'Voice') {
+            const catStr = formData.voice_minute_type || formData['Voice Minute Type'] || formData['Voice Category'] || '';
+            const cats = String(catStr).split(',').map(s => s.trim()).filter(Boolean);
+            const detailParts = [];
+            cats.forEach(c => {
+              const cleanKey = c.toLowerCase().replace(/[^a-z0-9]/g, '_');
+              const val = formData[`voice_details_${cleanKey}`] || formData[`${c} Details`];
+              if (val && typeof val === 'string' && val.trim()) {
+                detailParts.push(`${c}: ${val.trim()}`);
+              }
+            });
+            if (detailParts.length > 0) return detailParts.join('; ');
+          }
+          return formData.addon_details || formData['Addon Details'] || null;
         })(),
         client_id: selectedClient || user?.clientid || null,
         company_id: selectedCompany || null,
@@ -1030,9 +1190,6 @@ export default function SimDetailsTab({
         field_data: formData,
         status: formData.status || 'Active'
       } : {
-        ...formData,
-        field_data: formData,
-        ...extractedPdfData,
         custom_field_id: customFieldId || null,
         clientid: selectedClient || user?.clientid || null,
         country_id: selectedCountry || formData.country_id || user?.country_id || user?.countryid || 1,
@@ -1044,7 +1201,29 @@ export default function SimDetailsTab({
         attached_pdf: attachedPdfName || null,
         pdf_base64: pdfBase64 || null,
         extracted_data: extractedPdfData || {},
-        status: formData.status || 'Active'
+        status: formData.status || 'Active',
+        field_data: (() => {
+          const fieldDataById = {};
+          if (fieldsLayout && fieldsLayout.length > 0) {
+            fieldsLayout.forEach(sec => {
+              (sec.fields || []).forEach(f => {
+                const fId = String(f.id).trim();
+                const val = formData[fId] !== undefined ? formData[fId] : (formData[f.name] !== undefined ? formData[f.name] : formData[f.name?.trim()]);
+                if (val !== undefined && val !== null && val !== '') {
+                  fieldDataById[fId] = val;
+                }
+              });
+            });
+          }
+          // Include any keys that are custom field IDs (numeric/timestamp)
+          Object.keys(formData).forEach(k => {
+            const tk = k.trim();
+            if (/^\d+$/.test(tk) && formData[k] !== undefined && formData[k] !== null && formData[k] !== '') {
+              fieldDataById[tk] = formData[k];
+            }
+          });
+          return fieldDataById;
+        })()
       };
 
       const url = editingId ? `${API_URL}/api/${endpoint}/${editingId}` : `${API_URL}/api/${endpoint}`;
@@ -1053,7 +1232,8 @@ export default function SimDetailsTab({
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        credentials: 'include'
       });
 
       if (!res.ok) {
@@ -1067,8 +1247,10 @@ export default function SimDetailsTab({
 
       showToast(successMsg, 'success');
       setIsModalOpen(false);
-      setSuccessDetails(payload);
-      setShowSuccessDialog(true);
+      if (!isAddOnMode) {
+        setSuccessDetails(payload);
+        setShowSuccessDialog(true);
+      }
       fetchInitialData();
       fetchAddOnRecords();
     } catch (err) {
@@ -1232,26 +1414,9 @@ export default function SimDetailsTab({
               <Text style={styles.addBtnText}>{buttonLabel}</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.addBtn, { backgroundColor: '#475569' }]} onPress={() => openModal(null, false, true)} activeOpacity={0.8}>
-              <Ionicons name="add-circle-outline" size={18} color={COLORS.white} />
+            <TouchableOpacity style={styles.addBtn} onPress={() => openModal(null, false, true)} activeOpacity={0.8}>
+              <Ionicons name="add-circle" size={18} color={COLORS.white} />
               <Text style={styles.addBtnText}>+ Add On</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.addBtn, { backgroundColor: viewMode === 'addon' ? '#166534' : '#0284c7' }]}
-              onPress={() => {
-                if (viewMode === 'addon') {
-                  setViewMode('sim');
-                } else {
-                  fetchAddOnRecords();
-                  setViewMode('addon');
-                  setAddOnPage(1);
-                }
-              }}
-              activeOpacity={0.8}
-            >
-              <Ionicons name={viewMode === 'addon' ? "list-outline" : "eye-outline"} size={18} color={COLORS.white} />
-              <Text style={styles.addBtnText}>{viewMode === 'addon' ? 'SIM Records View' : 'Add On View'}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -1289,7 +1454,7 @@ export default function SimDetailsTab({
               paddingHorizontal: 16,
               paddingVertical: 8,
               borderRadius: 8,
-              backgroundColor: viewMode === 'addon' ? '#0284c7' : '#F1F5F9',
+              backgroundColor: viewMode === 'addon' ? '#166534' : '#F1F5F9',
             }}
             activeOpacity={0.8}
           >
@@ -1308,7 +1473,7 @@ export default function SimDetailsTab({
 
             {loadingAddOns ? (
               <View style={styles.tableLoaderContainer}>
-                <ActivityIndicator size="large" color="#0284c7" />
+                <ActivityIndicator size="large" color="#166534" />
                 <Text style={styles.loaderText}>Loading Add-On records...</Text>
               </View>
             ) : (() => {
@@ -1324,7 +1489,10 @@ export default function SimDetailsTab({
                   (item.user_name && item.user_name.toLowerCase().includes(q)) ||
                   (item.telecom_provider && item.telecom_provider.toLowerCase().includes(q)) ||
                   (item.plan_name && item.plan_name.toLowerCase().includes(q)) ||
-                  (item.addon_type && item.addon_type.toLowerCase().includes(q))
+                  (item.addon_type && item.addon_type.toLowerCase().includes(q)) ||
+                  (item.subscription_type && item.subscription_type.toLowerCase().includes(q)) ||
+                  (item.subscription && item.subscription.toLowerCase().includes(q)) ||
+                  (item.addon_details && item.addon_details.toLowerCase().includes(q))
                 );
               });
 
@@ -1352,7 +1520,7 @@ export default function SimDetailsTab({
                           <Text style={[styles.thCell, { flex: 0.8 }]}>ID</Text>
                           <Text style={[styles.thCell, { flex: 2.0 }]}>COMPANY NAME</Text>
                           <Text style={[styles.thCell, { flex: 1.8 }]}>TELECOM PROVIDER</Text>
-                          <Text style={[styles.thCell, { flex: 2.0 }]}>USER NAME</Text>
+                          <Text style={[styles.thCell, { flex: 2.0 }]}>SUBSCRIPTION DETAILS</Text>
                           <Text style={[styles.thCell, { flex: 1.8 }]}>PLAN NAME</Text>
                           <Text style={[styles.thCell, { flex: 1.6 }]}>MONTHLY AMOUNT</Text>
                           <Text style={[styles.thCell, { flex: 1.2, textAlign: 'center' }]}>STATUS</Text>
@@ -1383,9 +1551,9 @@ export default function SimDetailsTab({
                                 {item.telecom_provider || 'Etisalat'}
                               </Text>
 
-                              {/* USER NAME */}
+                              {/* SUBSCRIPTION DETAILS */}
                               <Text style={[styles.tdCell, { flex: 2.0, fontWeight: '600', color: COLORS.textPrimary }]}>
-                                {item.user_name || item.assigned_employee || 'N/A'}
+                                {item.subscription_type || item.subscription || 'One Time'}
                               </Text>
 
                               {/* PLAN NAME */}
@@ -1857,13 +2025,20 @@ export default function SimDetailsTab({
                                 const accNo = item.account_number || fd.account_number || fd['Account No'] || fd['Account Number'] || item.sim_number || fd.sim_number || fd['SIM Number / ICCID'] || item.mobile_number || `Account #${item.tele_id || item.id}`;
                                 return { label: String(accNo), value: String(accNo) };
                               }).filter((v, i, a) => a.findIndex(t => t.value === v.value) === i)}
-                              value={formData.account_number || formData['Account No'] || formData.sim_number || ''}
+                              value={formData.account_number || formData['Account No'] || ''}
                               onChange={(val) => {
+                                const matched = records?.find(item => {
+                                  let fd = {};
+                                  try { fd = typeof item.field_data === 'string' ? JSON.parse(item.field_data) : (item.field_data || {}); } catch(e) {}
+                                  const acc = item.account_number || fd.account_number || fd['Account No'] || fd['Account Number'] || item.sim_number || fd.sim_number || fd['SIM Number / ICCID'] || item.mobile_number || `Account #${item.tele_id || item.id}`;
+                                  return String(acc) === String(val);
+                                });
                                 handleChange('account_number', val);
                                 handleChange('Account No', val);
                                 handleChange('Account Number', val);
-                                handleChange('sim_number', val);
-                                handleChange('Sim No', val);
+                                if (matched) {
+                                  handleChange('tele_id', matched.tele_id || matched.id);
+                                }
                               }}
                               placeholder="-- Select or Enter Account No --"
                               searchPlaceholder="Search Account No..."
@@ -1875,13 +2050,11 @@ export default function SimDetailsTab({
                             <TextInput
                               style={[styles.input, isViewOnly && styles.readOnlyInput]}
                               placeholder="Enter Account No"
-                              value={formData.account_number || formData['Account No'] || formData.sim_number || ''}
+                              value={formData.account_number || formData['Account No'] || ''}
                               onChangeText={(val) => {
                                 handleChange('account_number', val);
                                 handleChange('Account No', val);
                                 handleChange('Account Number', val);
-                                handleChange('sim_number', val);
-                                handleChange('Sim No', val);
                               }}
                               editable={!isViewOnly}
                             />
@@ -1896,7 +2069,11 @@ export default function SimDetailsTab({
                           <View style={{ position: 'relative', width: '100%', justifyContent: 'center' }}>
                             <input
                               type="date"
-                              value={formData.activation_date || ''}
+                              value={(() => {
+                                const d = formData.activation_date || formData['Activation Date'] || '';
+                                if (!d) return '';
+                                try { return String(d).split('T')[0].split(' ')[0]; } catch (e) { return ''; }
+                              })()}
                               onChange={(e) => {
                                 handleChange('activation_date', e.target.value);
                                 handleChange('Activation Date', e.target.value);
@@ -1937,8 +2114,15 @@ export default function SimDetailsTab({
                             style={[styles.input, isViewOnly && styles.readOnlyInput]}
                             placeholder="Enter Plan Amount (e.g. 250)"
                             keyboardType="numeric"
-                            value={String(formData.monthly_plan_amount || '')}
+                            value={String(
+                              formData.plan_amount !== undefined && formData.plan_amount !== null && formData.plan_amount !== ''
+                                ? formData.plan_amount
+                                : (formData.monthly_plan_amount !== undefined && formData.monthly_plan_amount !== null && formData.monthly_plan_amount !== ''
+                                  ? formData.monthly_plan_amount
+                                  : (formData['Plan Amount'] || formData['Monthly Plan Amount '] || ''))
+                            )}
                             onChangeText={(val) => {
+                              handleChange('plan_amount', val);
                               handleChange('monthly_plan_amount', val);
                               handleChange('Plan Amount', val);
                               handleChange('Monthly Plan Amount ', val);
@@ -1971,78 +2155,182 @@ export default function SimDetailsTab({
                           />
                         </View>
 
-                        {/* 6. DOCUMENT ATTACHMENT (Multiple Files) */}
+                        {/* 6. DOCUMENT ATTACHMENT */}
                         <View style={styles.fieldContainer}>
                           <Text style={styles.fieldLabel}>
                             Document Attachment
                           </Text>
-                          <input
-                            type="file"
-                            id="addonDocAttachmentInput"
-                            multiple
-                            style={{ display: 'none' }}
-                            disabled={isViewOnly}
-                            onChange={(e) => {
-                              const files = Array.from(e.target.files || []);
-                              if (files.length > 0) {
-                                const newFiles = files.map(f => f.name);
-                                const existing = Array.isArray(formData.attached_documents)
-                                  ? formData.attached_documents
-                                  : (formData.attached_documents ? String(formData.attached_documents).split(', ') : []);
-                                const combined = Array.from(new Set([...existing, ...newFiles]));
-                                handleChange('attached_documents', combined);
-                                handleChange('Document Attachment', combined.join(', '));
-                              }
-                            }}
-                          />
-                          <label htmlFor="addonDocAttachmentInput" style={{ cursor: isViewOnly ? 'not-allowed' : 'pointer', width: '100%' }}>
-                            <View style={[
-                              styles.input,
-                              { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: isViewOnly ? '#F1F5F9' : '#FFFFFF' }
-                            ]}>
-                              <Text style={{ fontSize: 13, color: (formData.attached_documents && formData.attached_documents.length > 0) ? COLORS.textPrimary : '#94A3B8' }} numberOfLines={1}>
-                                {formData.attached_documents && formData.attached_documents.length > 0
-                                  ? `${formData.attached_documents.length} File(s) Selected`
-                                  : 'Choose Multiple Files...'}
-                              </Text>
-                              <Ionicons name="cloud-upload-outline" size={18} color={COLORS.primary} />
-                            </View>
-                          </label>
+                          {(() => {
+                            const rawDocs = Array.isArray(formData.attached_documents) && formData.attached_documents.length > 0
+                              ? formData.attached_documents
+                              : (Array.isArray(formData.document_attachments) && formData.document_attachments.length > 0
+                                ? formData.document_attachments
+                                : (formData.attached_documents && typeof formData.attached_documents === 'string'
+                                  ? formData.attached_documents.split(',').map(s => s.trim()).filter(Boolean)
+                                  : []));
 
-                          {/* Render File Chips below */}
-                          {Array.isArray(formData.attached_documents) && formData.attached_documents.length > 0 && (
-                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                              {formData.attached_documents.map((fileName, idx) => (
-                                <View key={idx} style={{
-                                  flexDirection: 'row',
-                                  alignItems: 'center',
-                                  backgroundColor: '#EFF6FF',
-                                  borderColor: '#BFDBFE',
-                                  borderWidth: 1,
-                                  borderRadius: 16,
-                                  paddingHorizontal: 10,
-                                  paddingVertical: 4,
-                                  gap: 6
-                                }}>
-                                  <Ionicons name="document-text-outline" size={14} color="#2563EB" />
-                                  <Text style={{ fontSize: 12, color: '#1E40AF', maxWidth: 120 }} numberOfLines={1}>
-                                    {fileName}
-                                  </Text>
-                                  {!isViewOnly && (
-                                    <TouchableOpacity
-                                      onPress={() => {
-                                        const updated = formData.attached_documents.filter((_, i) => i !== idx);
-                                        handleChange('attached_documents', updated);
-                                        handleChange('Document Attachment', updated.join(', '));
-                                      }}
-                                    >
-                                      <Ionicons name="close-circle" size={14} color="#60A5FA" />
-                                    </TouchableOpacity>
-                                  )}
+                            if (isViewOnly) {
+                              if (rawDocs.length === 0) {
+                                return (
+                                  <View style={[
+                                    styles.input,
+                                    styles.readOnlyInput,
+                                    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F8FAFC' }
+                                  ]}>
+                                    <Text style={{ fontSize: 13, color: '#94A3B8', fontStyle: 'italic' }}>
+                                      No Document Attached
+                                    </Text>
+                                    <Ionicons name="document-text-outline" size={18} color="#94A3B8" />
+                                  </View>
+                                );
+                              }
+
+                              return (
+                                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                                  {rawDocs.map((docPath, idx) => {
+                                    const docName = String(docPath).split('/').pop().split('\\').pop();
+                                    const fileUrl = resolveFileUrl(docPath);
+                                    return (
+                                      <TouchableOpacity
+                                        key={idx}
+                                        onPress={() => {
+                                          if (fileUrl) {
+                                            window.open(fileUrl, '_blank');
+                                          }
+                                        }}
+                                        style={{
+                                          flexDirection: 'row',
+                                          alignItems: 'center',
+                                          backgroundColor: '#EFF6FF',
+                                          borderColor: '#93C5FD',
+                                          borderWidth: 1,
+                                          borderRadius: 8,
+                                          paddingHorizontal: 12,
+                                          paddingVertical: 8,
+                                          gap: 8,
+                                          cursor: 'pointer'
+                                        }}
+                                        activeOpacity={0.7}
+                                      >
+                                        <Ionicons name="document-text" size={16} color="#2563EB" />
+                                        <Text style={{ fontSize: 13, fontWeight: '600', color: '#1E40AF', maxWidth: 220 }} numberOfLines={1}>
+                                          {docName}
+                                        </Text>
+                                        <Ionicons name="open-outline" size={14} color="#3B82F6" />
+                                      </TouchableOpacity>
+                                    );
+                                  })}
                                 </View>
-                              ))}
-                            </View>
-                          )}
+                              );
+                            }
+
+                            // Edit / Add Mode
+                            return (
+                              <>
+                                <input
+                                  type="file"
+                                  id="addonDocAttachmentInput"
+                                  multiple
+                                  style={{ display: 'none' }}
+                                  onChange={async (e) => {
+                                    const files = Array.from(e.target.files || []);
+                                    if (files.length > 0) {
+                                      const processed = await Promise.all(
+                                        files.map(file => {
+                                          return new Promise((resolve) => {
+                                            const reader = new FileReader();
+                                            reader.onload = () => {
+                                              resolve({
+                                                name: file.name,
+                                                type: file.type,
+                                                size: file.size,
+                                                data: reader.result
+                                              });
+                                            };
+                                            reader.onerror = () => resolve({ name: file.name, data: null });
+                                            reader.readAsDataURL(file);
+                                          });
+                                        })
+                                      );
+
+                                      const newNames = processed.map(f => f.name);
+                                      const combinedNames = Array.from(new Set([...rawDocs, ...newNames]));
+                                      handleChange('attached_documents', combinedNames);
+                                      handleChange('document_attachments', combinedNames);
+                                      handleChange('Document Attachment', combinedNames.join(', '));
+
+                                      const existingFilesData = Array.isArray(formData.files_data) ? formData.files_data : [];
+                                      const combinedFilesData = [...existingFilesData, ...processed.filter(p => p.data)];
+                                      handleChange('files_data', combinedFilesData);
+                                      if (processed.length > 0 && processed[0].data) {
+                                        setPdfBase64(processed[0].data);
+                                      }
+                                    }
+                                  }}
+                                />
+                                <label htmlFor="addonDocAttachmentInput" style={{ cursor: 'pointer', width: '100%' }}>
+                                  <View style={[
+                                    styles.input,
+                                    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFFFFF' }
+                                  ]}>
+                                    <Text style={{ fontSize: 13, color: rawDocs.length > 0 ? COLORS.textPrimary : '#94A3B8' }} numberOfLines={1}>
+                                      {rawDocs.length > 0
+                                        ? `${rawDocs.length} File(s) Selected - Click to Add More`
+                                        : 'Choose Multiple Files...'}
+                                    </Text>
+                                    <Ionicons name="cloud-upload-outline" size={18} color={COLORS.primary} />
+                                  </View>
+                                </label>
+
+                                {rawDocs.length > 0 && (
+                                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                                    {rawDocs.map((docPath, idx) => {
+                                      const docName = String(docPath).split('/').pop().split('\\').pop();
+                                      const fileUrl = resolveFileUrl(docPath);
+                                      return (
+                                        <View key={idx} style={{
+                                          flexDirection: 'row',
+                                          alignItems: 'center',
+                                          backgroundColor: '#EFF6FF',
+                                          borderColor: '#BFDBFE',
+                                          borderWidth: 1,
+                                          borderRadius: 16,
+                                          paddingHorizontal: 10,
+                                          paddingVertical: 4,
+                                          gap: 6
+                                        }}>
+                                          <TouchableOpacity
+                                            onPress={() => fileUrl && window.open(fileUrl, '_blank')}
+                                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, cursor: 'pointer' }}
+                                          >
+                                            <Ionicons name="document-text-outline" size={14} color="#2563EB" />
+                                            <Text style={{ fontSize: 12, color: '#1E40AF', maxWidth: 140 }} numberOfLines={1}>
+                                              {docName}
+                                            </Text>
+                                          </TouchableOpacity>
+                                          <TouchableOpacity
+                                            onPress={() => {
+                                              const updated = rawDocs.filter((_, i) => i !== idx);
+                                              handleChange('attached_documents', updated);
+                                              handleChange('document_attachments', updated);
+                                              handleChange('Document Attachment', updated.join(', '));
+                                              if (Array.isArray(formData.files_data)) {
+                                                const updatedFilesData = formData.files_data.filter(f => f.name !== docName);
+                                                handleChange('files_data', updatedFilesData);
+                                              }
+                                            }}
+                                            style={{ cursor: 'pointer' }}
+                                          >
+                                            <Ionicons name="close-circle" size={14} color="#60A5FA" />
+                                          </TouchableOpacity>
+                                        </View>
+                                      );
+                                    })}
+                                  </View>
+                                )}
+                              </>
+                            );
+                          })()}
                         </View>
 
                         {/* 6. ADDON TYPE */}
@@ -2200,7 +2488,15 @@ export default function SimDetailsTab({
                                 <TextInput
                                   style={[styles.input, isViewOnly && styles.readOnlyInput]}
                                   placeholder={`Enter ${cat} Details (e.g. 500 Mins / 10GB)`}
-                                  value={formData[keyName] || formData[`${cat} Details`] || ''}
+                                  value={
+                                    formData[keyName] !== undefined && formData[keyName] !== ''
+                                      ? formData[keyName]
+                                      : (formData[`${cat} Details`] !== undefined && formData[`${cat} Details`] !== ''
+                                        ? formData[`${cat} Details`]
+                                        : ((formData.voice_minute_type === cat || !String(formData.voice_minute_type || '').includes(',')) && formData.addon_details && !formData.addon_details.includes(':')
+                                          ? formData.addon_details
+                                          : ''))
+                                  }
                                   onChangeText={(val) => {
                                     handleChange(keyName, val);
                                     handleChange(`${cat} Details`, val);
@@ -2228,7 +2524,15 @@ export default function SimDetailsTab({
                                 <TextInput
                                   style={[styles.input, isViewOnly && styles.readOnlyInput]}
                                   placeholder={`Enter ${cat} Roaming Details (e.g. 5GB / 100 Mins)`}
-                                  value={formData[keyName] || formData[`${cat} Roaming Details`] || ''}
+                                  value={
+                                    formData[keyName] !== undefined && formData[keyName] !== ''
+                                      ? formData[keyName]
+                                      : (formData[`${cat} Roaming Details`] !== undefined && formData[`${cat} Roaming Details`] !== ''
+                                        ? formData[`${cat} Roaming Details`]
+                                        : ((formData.roaming_category === cat || !String(formData.roaming_category || '').includes(',')) && formData.addon_details && !formData.addon_details.includes(':')
+                                          ? formData.addon_details
+                                          : ''))
+                                  }
                                   onChangeText={(val) => {
                                     handleChange(keyName, val);
                                     handleChange(`${cat} Roaming Details`, val);
@@ -2726,7 +3030,10 @@ export default function SimDetailsTab({
                 Record Saved Successfully!
               </Text>
               <Text style={{ fontSize: 13, color: '#64748B', textAlign: 'center', marginTop: 4 }}>
-                The record has been stored in <Text style={{ fontWeight: '600', color: '#0F172A' }}>tbl_telecome_data</Text>.
+                The record has been stored in{' '}
+                <Text style={{ fontWeight: '600', color: '#0F172A' }}>
+                  {isAddOnMode ? 'tbl_add_on' : 'tbl_telecome_data'}
+                </Text>.
               </Text>
             </View>
 
@@ -2738,53 +3045,90 @@ export default function SimDetailsTab({
                 </Text>
 
                 <View style={{ gap: 8 }}>
-                  {successDetails.company && (
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                      <Text style={{ fontSize: 13, color: '#64748B' }}>Company:</Text>
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#0F172A' }}>{successDetails.company}</Text>
-                    </View>
-                  )}
+                  {isAddOnMode ? (
+                    <>
+                      {successDetails.account_number && (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                          <Text style={{ fontSize: 13, color: '#64748B' }}>Account No:</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: '#0F172A' }}>{successDetails.account_number}</Text>
+                        </View>
+                      )}
+                      {successDetails.plan_name && (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                          <Text style={{ fontSize: 13, color: '#64748B' }}>Plan Name:</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: '#1E40AF' }}>{successDetails.plan_name}</Text>
+                        </View>
+                      )}
+                      {successDetails.plan_amount !== undefined && (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                          <Text style={{ fontSize: 13, color: '#64748B' }}>Plan Amount:</Text>
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: '#15803D' }}>{successDetails.plan_amount} AED</Text>
+                        </View>
+                      )}
+                      {successDetails.addon_type && (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                          <Text style={{ fontSize: 13, color: '#64748B' }}>Addon Type:</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: '#0F172A' }}>{successDetails.addon_type}</Text>
+                        </View>
+                      )}
+                      {successDetails.subscription_type && (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                          <Text style={{ fontSize: 13, color: '#64748B' }}>Subscription:</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '500', color: '#334155' }}>{successDetails.subscription_type}</Text>
+                        </View>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {successDetails.company && (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                          <Text style={{ fontSize: 13, color: '#64748B' }}>Company:</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: '#0F172A' }}>{successDetails.company}</Text>
+                        </View>
+                      )}
 
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text style={{ fontSize: 13, color: '#64748B' }}>Telecom Service:</Text>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#1E40AF' }}>{successDetails.telecom_provider || successDetails.provider || 'Etisalat'}</Text>
-                  </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                        <Text style={{ fontSize: 13, color: '#64748B' }}>Telecom Service:</Text>
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: '#1E40AF' }}>{successDetails.telecom_provider || successDetails.provider || 'Etisalat'}</Text>
+                      </View>
 
-                  {(successDetails.mobile_account || successDetails.mobile_number) && (
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                      <Text style={{ fontSize: 13, color: '#64748B' }}>Mobile Account / No:</Text>
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#0F172A' }}>{successDetails.mobile_account || successDetails.mobile_number}</Text>
-                    </View>
-                  )}
+                      {(successDetails.mobile_account || successDetails.mobile_number) && (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                          <Text style={{ fontSize: 13, color: '#64748B' }}>Mobile Account / No:</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: '#0F172A' }}>{successDetails.mobile_account || successDetails.mobile_number}</Text>
+                        </View>
+                      )}
 
-                  {(successDetails.bill_number || successDetails.doc_number) && (
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                      <Text style={{ fontSize: 13, color: '#64748B' }}>Bill Number:</Text>
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#0F172A' }}>{successDetails.bill_number || successDetails.doc_number}</Text>
-                    </View>
-                  )}
+                      {(successDetails.bill_number || successDetails.doc_number) && (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                          <Text style={{ fontSize: 13, color: '#64748B' }}>Bill Number:</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: '#0F172A' }}>{successDetails.bill_number || successDetails.doc_number}</Text>
+                        </View>
+                      )}
 
-                  {(successDetails.period_from || successDetails.period_to) && (
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                      <Text style={{ fontSize: 13, color: '#64748B' }}>Bill Period:</Text>
-                      <Text style={{ fontSize: 13, fontWeight: '500', color: '#334155' }}>
-                        {successDetails.period_from || 'N/A'} to {successDetails.period_to || 'N/A'}
-                      </Text>
-                    </View>
-                  )}
+                      {(successDetails.period_from || successDetails.period_to) && (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                          <Text style={{ fontSize: 13, color: '#64748B' }}>Bill Period:</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '500', color: '#334155' }}>
+                            {successDetails.period_from || 'N/A'} to {successDetails.period_to || 'N/A'}
+                          </Text>
+                        </View>
+                      )}
 
-                  {successDetails.total_amount && (
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingTop: 6, borderTopWidth: 1, borderTopColor: '#E2E8F0' }}>
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#0F172A' }}>Total Amount:</Text>
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: '#15803D' }}>{successDetails.total_amount} AED</Text>
-                    </View>
-                  )}
+                      {successDetails.total_amount && (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingTop: 6, borderTopWidth: 1, borderTopColor: '#E2E8F0' }}>
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: '#0F172A' }}>Total Amount:</Text>
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: '#15803D' }}>{successDetails.total_amount} AED</Text>
+                        </View>
+                      )}
 
-                  {(successDetails.pdf_name || successDetails.attached_pdf) && (
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
-                      <Text style={{ fontSize: 12, color: '#64748B' }}>Attached PDF:</Text>
-                      <Text style={{ fontSize: 12, color: '#2563EB', fontWeight: '500' }}>{successDetails.pdf_name || successDetails.attached_pdf}</Text>
-                    </View>
+                      {(successDetails.pdf_name || successDetails.attached_pdf) && (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
+                          <Text style={{ fontSize: 12, color: '#64748B' }}>Attached PDF:</Text>
+                          <Text style={{ fontSize: 12, color: '#2563EB', fontWeight: '500' }}>{successDetails.pdf_name || successDetails.attached_pdf}</Text>
+                        </View>
+                      )}
+                    </>
                   )}
                 </View>
               </View>

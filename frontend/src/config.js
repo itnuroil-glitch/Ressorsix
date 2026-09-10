@@ -46,5 +46,8 @@ export const resolveFileUrl = (filePath) => {
   if (!cleanPath.startsWith('/')) {
     cleanPath = `/${cleanPath}`;
   }
+  if (!cleanPath.toLowerCase().startsWith('/attachment') && !cleanPath.toLowerCase().startsWith('/upload') && !cleanPath.toLowerCase().startsWith('/api')) {
+    cleanPath = `/Attachment${cleanPath}`;
+  }
   return `${API_URL}${cleanPath}`;
 };

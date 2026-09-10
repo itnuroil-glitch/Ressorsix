@@ -27,6 +27,9 @@ exports.getAllSimDetails = async (req, res) => {
     query += ' ORDER BY sd.tele_id DESC';
     const result = await db.query(query, params);
 
+    // Fetch field definitions to map custom field IDs to column names
+    const { idToName } = await getFieldDefinitions();
+
     const formattedRows = result.rows.map(row => {
       let fd = row.field_data;
       if (typeof fd === 'string') {
@@ -40,61 +43,65 @@ exports.getAllSimDetails = async (req, res) => {
         fd = { ...fd, ...fd.field_data };
       }
 
-      let planName =
-        row.plan_name ||
-        fd.plan_name ||
-        fd['Plan Name'] ||
-        fd['Package Plan'] ||
-        fd['Package Plan '] ||
-        fd.package_plan ||
-        fd.sim_plan ||
-        fd['1786100996941'] ||
-        null;
+      let telecomProvider = row.telecom_provider || null;
+      let mobileNumber = row.mobile_number || row.mobile_account || null;
+      let simNumber = row.sim_number || null;
+      let accountNumber = row.account_number || null;
+      let assignedEmployee = row.assigned_employee || null;
+      let planName = row.plan_name || null;
+      let monthlyAmount = row.monthly_plan_amount || row.monthly_amount || null;
 
-      if (!planName) {
-        for (const [k, v] of Object.entries(fd)) {
-          if (!v || typeof v === 'object') continue;
-          const lk = k.trim().toLowerCase();
-          if ((lk.includes('plan') || lk.includes('package')) && !lk.includes('amount') && !lk.includes('cost') && !lk.includes('rental')) {
-            const sv = String(v).trim();
-            if (sv && sv !== 'null' && sv !== 'undefined') {
-              planName = sv;
-              break;
-            }
-          }
+      // Extract values from fd using idToName custom field mapping
+      for (const [k, v] of Object.entries(fd)) {
+        if (v === undefined || v === null || typeof v === 'object') continue;
+        const sv = String(v).trim();
+        if (!sv || sv === 'null' || sv === 'undefined') continue;
+
+        const fn = (idToName[k] || k).trim().toLowerCase();
+
+        // Plan Name
+        if (!planName && (fn.includes('plan') || fn.includes('package')) && !fn.includes('amount') && !fn.includes('cost') && !fn.includes('rental') && !fn.includes('price')) {
+          planName = sv;
         }
-      }
 
-      let monthlyAmount =
-        row.monthly_plan_amount ||
-        row.monthly_amount ||
-        row.plan_amount ||
-        fd.monthly_plan_amount ||
-        fd.monthly_amount ||
-        fd['Monthly Plan Amount'] ||
-        fd['Monthly Plan Amount '] ||
-        fd['Monthly Amount'] ||
-        fd['Plan Amount'] ||
-        fd['Monthly Rental'] ||
-        fd['1786101020492'] ||
-        null;
+        // Monthly Amount
+        if (!monthlyAmount && (fn.includes('monthly') || fn.includes('rental') || (fn.includes('plan') && (fn.includes('amount') || fn.includes('cost') || fn.includes('price'))))) {
+          monthlyAmount = sv;
+        }
 
-      if (!monthlyAmount) {
-        for (const [k, v] of Object.entries(fd)) {
-          if (v === undefined || v === null || typeof v === 'object') continue;
-          const lk = k.trim().toLowerCase();
-          if (lk.includes('monthly') || lk.includes('rental') || (lk.includes('plan') && (lk.includes('amount') || lk.includes('cost') || lk.includes('price')))) {
-            const sv = String(v).trim();
-            if (sv && sv !== 'null' && sv !== 'undefined') {
-              monthlyAmount = sv;
-              break;
-            }
-          }
+        // Telecom Provider
+        if (!telecomProvider && (fn.includes('telecom') || fn.includes('provider'))) {
+          telecomProvider = sv;
+        }
+
+        // Mobile Number
+        if (!mobileNumber && (fn.includes('mobile') || fn.includes('phone'))) {
+          mobileNumber = sv;
+        }
+
+        // SIM Number
+        if (!simNumber && fn.includes('sim') && (fn.includes('number') || fn.includes('no') || fn.includes('iccid'))) {
+          simNumber = sv;
+        }
+
+        // Account Number
+        if (!accountNumber && fn.includes('account')) {
+          accountNumber = sv;
+        }
+
+        // Assigned Employee
+        if (!assignedEmployee && (fn.includes('employee') || fn.includes('assigned') || fn.includes('user name'))) {
+          assignedEmployee = sv;
         }
       }
 
       return {
         ...row,
+        telecom_provider: telecomProvider || row.telecom_provider || 'Etisalat',
+        mobile_number: mobileNumber || row.mobile_number || null,
+        sim_number: simNumber || row.sim_number || null,
+        account_number: accountNumber || row.account_number || null,
+        assigned_employee: assignedEmployee || row.assigned_employee || null,
         plan_name: planName || row.plan_name || null,
         monthly_plan_amount: monthlyAmount || row.monthly_plan_amount || null
       };
@@ -128,36 +135,168 @@ exports.getSimDetailById = async (req, res) => {
   }
 };
 
-const sanitizeFieldData = (data) => {
-  if (!data || typeof data !== 'object') return data || {};
+// Helper to load all custom field definitions: fieldId -> fieldName and fieldName -> fieldId
+let cachedFieldMaps = null;
+let lastFieldMapFetch = 0;
+
+async function getFieldDefinitions() {
+  const now = Date.now();
+  if (cachedFieldMaps && (now - lastFieldMapFetch < 60000)) {
+    return cachedFieldMaps;
+  }
+
+  const idToName = {};
+  const nameToId = {};
+
+  try {
+    const fieldDefsRes = await db.query(
+      `SELECT field_id, field_name FROM tbl_customfield_details`
+    ).catch(() => ({ rows: [] }));
+    fieldDefsRes.rows.forEach(r => {
+      if (r.field_id && r.field_name) {
+        const fid = String(r.field_id).trim();
+        const fname = r.field_name.trim();
+        idToName[fid] = fname.toLowerCase();
+        nameToId[fname.toLowerCase()] = fid;
+      }
+    });
+
+    const cfRes = await db.query(
+      `SELECT field_data FROM tbl_customfields WHERE isdelete = false OR isdelete IS NULL`
+    ).catch(() => ({ rows: [] }));
+    cfRes.rows.forEach(r => {
+      let cfd = r.field_data;
+      if (typeof cfd === 'string') {
+        try { cfd = JSON.parse(cfd); } catch (e) { cfd = []; }
+      }
+      if (Array.isArray(cfd)) {
+        cfd.forEach(sec => {
+          (sec.fields || []).forEach(f => {
+            if (f.id && f.name) {
+              const fid = String(f.id).trim();
+              const fname = f.name.trim();
+              idToName[fid] = fname.toLowerCase();
+              nameToId[fname.toLowerCase()] = fid;
+            }
+          });
+        });
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching custom field definitions:', err);
+  }
+
+  cachedFieldMaps = { idToName, nameToId };
+  lastFieldMapFetch = now;
+  return cachedFieldMaps;
+}
+
+// Ensure field_data stores strictly numeric Custom Field IDs only
+const sanitizeFieldData = async (data) => {
+  if (!data || typeof data !== 'object') return {};
+  const { nameToId } = await getFieldDefinitions();
   const cleanData = {};
 
   for (let [key, val] of Object.entries(data)) {
-    // 1. Skip numeric timestamp keys (e.g. "1786100933533")
-    if (/^\d{10,}$/.test(key)) continue;
-
-    // 2. Trim leading/trailing spaces from key name
+    if (val === '' || val === null || val === undefined) continue;
     const trimmedKey = key.trim();
 
-    // 3. Skip empty snake_case keys (e.g. "local_minutes": "", "monthly_plan_amount": "")
-    const isSnakeCase = /^[a-z0-9_]+$/.test(trimmedKey) && trimmedKey.includes('_');
-    if (isSnakeCase && (val === '' || val === null || val === undefined)) {
+    // 1. If key is already a numeric custom field ID, keep it
+    if (/^\d+$/.test(trimmedKey)) {
+      cleanData[trimmedKey] = val;
       continue;
     }
 
-    // 4. Preserve non-empty value if duplicate key encountered
-    if (Object.prototype.hasOwnProperty.call(cleanData, trimmedKey)) {
-      const existingVal = cleanData[trimmedKey];
-      if ((existingVal === '' || existingVal === null || existingVal === undefined) && (val !== '' && val !== null && val !== undefined)) {
-        cleanData[trimmedKey] = val;
+    // 2. If key is an English word/label, resolve its corresponding custom field ID
+    const lowerKey = trimmedKey.toLowerCase();
+    let matchedId = nameToId[lowerKey];
+    if (!matchedId) {
+      for (const [name, fid] of Object.entries(nameToId)) {
+        if (/^\d+$/.test(fid) && (name.includes(lowerKey) || lowerKey.includes(name))) {
+          matchedId = fid;
+          break;
+        }
       }
-    } else {
-      cleanData[trimmedKey] = val;
+    }
+
+    if (matchedId && /^\d+$/.test(matchedId) && cleanData[matchedId] === undefined) {
+      cleanData[matchedId] = val;
     }
   }
 
-  return cleanData;
+  // Strictly enforce only numeric custom field ID keys
+  const finalClean = {};
+  for (const [k, v] of Object.entries(cleanData)) {
+    if (/^\d+$/.test(k.trim())) {
+      finalClean[k.trim()] = v;
+    }
+  }
+
+  return finalClean;
 };
+
+// Background migration to convert existing legacy records in tbl_sim_details to custom field IDs only
+let migrationDone = false;
+async function migrateExistingSimRecordsToIdsOnly() {
+  if (migrationDone) return;
+  migrationDone = true;
+  try {
+    const { nameToId } = await getFieldDefinitions();
+    const res = await db.query(`SELECT tele_id, field_data FROM tbl_sim_details WHERE is_deleted = 0`);
+
+    for (const row of res.rows) {
+      let fd = row.field_data;
+      if (typeof fd === 'string') {
+        try { fd = JSON.parse(fd); } catch (e) { fd = {}; }
+      }
+      if (!fd || typeof fd !== 'object') continue;
+      if (fd.field_data && typeof fd.field_data === 'object') {
+        fd = { ...fd, ...fd.field_data };
+      }
+
+      // Check if any word keys exist
+      const keys = Object.keys(fd);
+      const hasWordKeys = keys.some(k => !/^\d+$/.test(k.trim()));
+      if (!hasWordKeys) continue;
+
+      const idOnlyFd = {};
+      for (const [k, v] of Object.entries(fd)) {
+        if (v === '' || v === null || v === undefined) continue;
+        const tk = k.trim();
+        if (/^\d+$/.test(tk)) {
+          idOnlyFd[tk] = v;
+        } else {
+          const lk = tk.toLowerCase();
+          let targetId = nameToId[lk];
+          if (!targetId) {
+            for (const [name, fid] of Object.entries(nameToId)) {
+              if (/^\d+$/.test(fid) && (name.includes(lk) || lk.includes(name))) {
+                targetId = fid;
+                break;
+              }
+            }
+          }
+          if (targetId && !idOnlyFd[targetId]) {
+            idOnlyFd[targetId] = v;
+          }
+        }
+      }
+
+      await db.query(
+        `UPDATE tbl_sim_details SET field_data = $1 WHERE tele_id = $2`,
+        [JSON.stringify(idOnlyFd), row.tele_id]
+      );
+      console.log(`[SIM Migration] Cleaned tele_id ${row.tele_id} to Custom Field IDs only.`);
+    }
+  } catch (err) {
+    console.error('Error running SIM details ID-only migration:', err);
+  }
+}
+
+// Auto-run migration shortly after server boot
+setTimeout(() => {
+  migrateExistingSimRecordsToIdsOnly();
+}, 2000);
 
 exports.createSimDetail = async (req, res) => {
   try {
@@ -165,7 +304,7 @@ exports.createSimDetail = async (req, res) => {
 
     // Use field_data if provided, or build field_data from remaining request body properties
     const rawFieldData = field_data || (Object.keys(rest).length > 0 ? rest : {});
-    const finalFieldData = sanitizeFieldData(rawFieldData);
+    const finalFieldData = await sanitizeFieldData(rawFieldData);
 
     const result = await db.query(
       `INSERT INTO tbl_sim_details 
@@ -197,7 +336,7 @@ exports.updateSimDetail = async (req, res) => {
     const { custom_field_id, field_data, clientid, country_id, moduleid, user_id, company_id, status, ...rest } = req.body;
 
     const rawFieldData = field_data || (Object.keys(rest).length > 0 ? rest : null);
-    const finalFieldData = rawFieldData ? sanitizeFieldData(rawFieldData) : null;
+    const finalFieldData = rawFieldData ? await sanitizeFieldData(rawFieldData) : null;
 
     const result = await db.query(
       `UPDATE tbl_sim_details 
