@@ -740,10 +740,11 @@ export default function SimDetailsTab({
         ...fd,
         company: record.company || record.company_id || fd.company || '',
         telecom_provider: record.telecom_provider || fd.telecom_provider || fd['Telecom Provider'] || '',
-        mobile_number: record.mobile_number || record.mobile_account || fd['1786100950188'] || fd.mobile_number || fd['mobile_number'] || fd['Mobile Number'] || fd['Phone Number'] || fd['Phone'] || '',
-        mobile_account: record.mobile_account || record.mobile_number || fd['1786100950188'] || fd.mobile_account || '',
+        mobile_number: record.mobile_number || fd['1786109549415'] || fd.mobile_number || fd['mobile_number'] || fd['Mobile Number'] || fd['Phone Number'] || fd['Phone'] || '',
+        mobile_account: record.mobile_account || fd['1786109466050'] || fd['1787404908551'] || fd.mobile_account || '',
         sim_number: record.sim_number || fd.sim_number || fd['SIM Number / ICCID'] || fd['Sim No'] || '',
-        account_number: record.account_number || record.mobile_account || fd.account_number || fd['Account Number'] || fd['Account No '] || fd['Account No'] || '',
+        account_number: record.account_number || fd['1786109466050'] || fd['1787404908551'] || fd.account_number || fd['Account Number'] || fd['Account No '] || fd['Account No'] || '',
+        contract_number: record.contract_number || fd['1786100950188'] || fd.contract_number || fd['Contract No'] || fd['Contract No '] || '',
         bill_number: record.bill_number || record.doc_number || fd.bill_number || '',
         doc_number: record.doc_number || record.bill_number || fd.doc_number || '',
         period_from: record.period_from || fd.period_from || '',
@@ -1443,11 +1444,13 @@ export default function SimDetailsTab({
       ed = {};
     }
     const searchLower = search.toLowerCase();
-    const acc = String(item.account_number || fd.account_number || fd['Account Number'] || fd['Account No'] || item.mobile_number || item.mobile_account || fd['1786100950188'] || fd.mobile_account || ed.mobile_account || fd.mobile_number || fd.phone_number || fd['Mobile Number'] || fd['Phone Number'] || '');
+    const acc = String(item.account_number || fd.account_number || fd['Account Number'] || fd['Account No'] || fd['1786109466050'] || fd['1787404908551'] || fd['1786109549415'] || item.mobile_account || ed.account_number || ed.mobile_account || '');
+    const mob = String(item.mobile_number || fd.mobile_number || fd.phone_number || fd['Mobile Number'] || fd['Phone Number'] || '');
     const prov = String(item.telecom_provider || fd.telecom_provider || ed.telecom_provider || fd.provider || '');
     return (
       String(item.id).includes(searchLower) ||
       acc.toLowerCase().includes(searchLower) ||
+      mob.toLowerCase().includes(searchLower) ||
       prov.toLowerCase().includes(searchLower) ||
       (fd.plan_name && String(fd.plan_name).toLowerCase().includes(searchLower)) ||
       (item.plan_name && String(item.plan_name).toLowerCase().includes(searchLower)) ||
@@ -1842,9 +1845,54 @@ export default function SimDetailsTab({
                           if (fd['Account Number'] && String(fd['Account Number']).trim()) return String(fd['Account Number']).trim();
                           if (fd['Account No'] && String(fd['Account No']).trim()) return String(fd['Account No']).trim();
                           if (fd['Account No '] && String(fd['Account No ']).trim()) return String(fd['Account No ']).trim();
-                          if (fd['1786100950188'] && String(fd['1786100950188']).trim()) {
-                            return String(fd['1786100950188']).trim();
+
+                          // Dynamic lookup via fieldsLayout: find field whose name includes 'account' and NOT 'contract'
+                          if (fieldsLayout && Array.isArray(fieldsLayout)) {
+                            for (const sec of fieldsLayout) {
+                              for (const f of (sec.fields || [])) {
+                                const fn = String(f.name || '').trim().toLowerCase();
+                                if (fn.includes('account') && !fn.includes('contract')) {
+                                  const val = fd[String(f.id)];
+                                  if (val && String(val).trim() && String(val).trim() !== 'null' && String(val).trim() !== 'undefined') {
+                                    return String(val).trim();
+                                  }
+                                }
+                              }
+                            }
                           }
+
+                          // Known live custom field IDs for Account Number
+                          if (fd['1786109466050'] && String(fd['1786109466050']).trim()) return String(fd['1786109466050']).trim();
+                          if (fd['1787404908551'] && String(fd['1787404908551']).trim()) return String(fd['1787404908551']).trim();
+
+                          // Scan fd for any key with 'account' (excluding 'contract' and contract key 1786100950188)
+                          for (const [k, v] of Object.entries(fd)) {
+                            if (v === undefined || v === null || typeof v === 'object') continue;
+                            const lk = k.trim().toLowerCase();
+                            if (lk.includes('contract') || k.trim() === '1786100950188') continue;
+                            if (lk.includes('account')) {
+                              const sv = String(v).trim();
+                              if (sv && sv !== 'null' && sv !== 'undefined') return sv;
+                            }
+                          }
+
+                          if (ed.account_number && String(ed.account_number).trim()) return String(ed.account_number).trim();
+                          if (item.mobile_account && String(item.mobile_account).trim() && String(item.mobile_account).trim() !== 'null') {
+                            return String(item.mobile_account).trim();
+                          }
+                          if (fd.mobile_account && String(fd.mobile_account).trim()) return String(fd.mobile_account).trim();
+                          if (ed.mobile_account && String(ed.mobile_account).trim()) return String(ed.mobile_account).trim();
+
+                          // Fallback to phone number field if account number is not separately provided
+                          if (fd['1786109549415'] && String(fd['1786109549415']).trim()) return String(fd['1786109549415']).trim();
+                          if (item.mobile_number && String(item.mobile_number).trim() && String(item.mobile_number).trim() !== 'null') {
+                            return String(item.mobile_number).trim();
+                          }
+                          return 'N/A';
+                        })();
+
+                        const phoneNumber = (() => {
+                          if (fd['1786109549415'] && String(fd['1786109549415']).trim()) return String(fd['1786109549415']).trim();
                           if (item.mobile_number && String(item.mobile_number).trim() && String(item.mobile_number).trim() !== 'null') {
                             return String(item.mobile_number).trim();
                           }
@@ -1852,15 +1900,8 @@ export default function SimDetailsTab({
                           if (fd.phone_number && String(fd.phone_number).trim()) return String(fd.phone_number).trim();
                           if (fd['Mobile Number'] && String(fd['Mobile Number']).trim()) return String(fd['Mobile Number']).trim();
                           if (fd['Phone Number'] && String(fd['Phone Number']).trim()) return String(fd['Phone Number']).trim();
-                          if (fd['Phone'] && String(fd['Phone']).trim()) return String(fd['Phone']).trim();
-                          if (item.mobile_account && String(item.mobile_account).trim()) return String(item.mobile_account).trim();
-                          if (fd.mobile_account && String(fd.mobile_account).trim()) return String(fd.mobile_account).trim();
-                          if (ed.mobile_account && String(ed.mobile_account).trim()) return String(ed.mobile_account).trim();
-                          if (ed.account_number && String(ed.account_number).trim()) return String(ed.account_number).trim();
-                          return mobileNo && mobileNo !== 'N/A' ? mobileNo : 'N/A';
+                          return accountNumber !== 'N/A' ? accountNumber : '';
                         })();
-
-                        const phoneNumber = accountNumber;
 
                         const telecomProviderName = (() => {
                           // 1. Direct item.telecom_provider
