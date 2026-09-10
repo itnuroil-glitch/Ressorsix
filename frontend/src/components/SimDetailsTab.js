@@ -64,6 +64,18 @@ export default function SimDetailsTab({
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [successDetails, setSuccessDetails] = useState(null);
 
+  // Custom Delete Confirmation Dialog State
+  const [deleteDialog, setDeleteDialog] = useState({
+    isOpen: false,
+    id: null,
+    isAddOn: false,
+    title: 'Confirm Deletion',
+    targetType: 'record',
+    itemName: ''
+  });
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
   // Add On View State
   const [addOnRecords, setAddOnRecords] = useState([]);
   const [loadingAddOns, setLoadingAddOns] = useState(false);
@@ -90,25 +102,66 @@ export default function SimDetailsTab({
     }
   };
 
-  const deleteAddOnRecord = async (id) => {
-    if (window.confirm && !window.confirm('Are you sure you want to delete this Add-On record?')) return;
-    try {
-      const res = await fetch(`${API_URL}/api/add-ons/${id}`, { 
-        method: 'DELETE',
-        credentials: 'include'
-      });
-      if (res.ok) {
-        showToast('Add-On record deleted successfully', 'success');
-        fetchAddOnRecords();
+  const deleteAddOnRecord = (id, item = null) => {
+    let label = `Record #${id}`;
+    let targetType = 'add-on record';
+    if (item) {
+      if (item.user_name || item.employee_name || item.assigned_employee) {
+        label = item.user_name || item.employee_name || item.assigned_employee;
+        targetType = 'employee';
+      } else {
+        label = item.account_number || item.plan_name || `Record #${id}`;
+        targetType = 'add-on record';
       }
-    } catch (e) {
-      showToast('Failed to delete Add-On record', 'error');
     }
+    setDeleteConfirmText('');
+    setDeleteDialog({
+      isOpen: true,
+      id,
+      isAddOn: true,
+      title: 'Confirm Deletion',
+      targetType,
+      itemName: label
+    });
   };
 
   // Custom Fields & Layout State
   const [fieldsLayout, setFieldsLayout] = useState(null);
   const [customFieldId, setCustomFieldId] = useState(null);
+
+  // Dynamic Account Numbers for Add-on
+  const [accountNumberOptions, setAccountNumberOptions] = useState([]);
+  const [loadingAccountNumbers, setLoadingAccountNumbers] = useState(false);
+
+  const fetchAccountNumbersForCompanyAndClient = async (clientId, companyId) => {
+    if (!clientId && !companyId) {
+      setAccountNumberOptions([]);
+      return;
+    }
+    setLoadingAccountNumbers(true);
+    try {
+      const params = new URLSearchParams();
+      if (clientId) params.append('client_id', clientId);
+      if (companyId) params.append('company_id', companyId);
+
+      const res = await fetch(`${API_URL}/api/add-ons/account-numbers?${params.toString()}`, {
+        credentials: 'include'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setAccountNumberOptions(data);
+          return;
+        }
+      }
+      setAccountNumberOptions([]);
+    } catch (e) {
+      console.error('Error fetching account numbers:', e);
+      setAccountNumberOptions([]);
+    } finally {
+      setLoadingAccountNumbers(false);
+    }
+  };
 
   // Selected Configuration values
   const [selectedClient, setSelectedClient] = useState('');
@@ -206,6 +259,7 @@ export default function SimDetailsTab({
     setSelectedClient(clientId);
     setSelectedCompany('');
     fetchCompaniesForClient(clientId);
+    fetchAccountNumbersForCompanyAndClient(clientId, '');
   };
 
   const fetchEmployeesForCompany = async (companyId) => {
@@ -562,6 +616,9 @@ export default function SimDetailsTab({
     setIsAddOnMode(addOnMode);
     const targetClient = record?.client_id ? String(record.client_id) : (record?.clientid ? String(record.clientid) : (user?.clientid ? String(user.clientid) : selectedClient));
     const targetCompany = record?.company_id ? String(record.company_id) : selectedCompany;
+    if (addOnMode) {
+      fetchAccountNumbersForCompanyAndClient(targetClient, targetCompany);
+    }
     let activeLayout = fieldsLayout;
     if (targetClient) {
       const fetchedLayout = await fetchFormConfiguration(targetClient, targetCompany);
@@ -683,8 +740,8 @@ export default function SimDetailsTab({
         ...fd,
         company: record.company || record.company_id || fd.company || '',
         telecom_provider: record.telecom_provider || fd.telecom_provider || fd['Telecom Provider'] || '',
-        mobile_number: record.mobile_number || record.mobile_account || fd.mobile_number || fd['mobile_number'] || '',
-        mobile_account: record.mobile_account || record.mobile_number || fd.mobile_account || '',
+        mobile_number: record.mobile_number || record.mobile_account || fd['1786100950188'] || fd.mobile_number || fd['mobile_number'] || fd['Mobile Number'] || fd['Phone Number'] || fd['Phone'] || '',
+        mobile_account: record.mobile_account || record.mobile_number || fd['1786100950188'] || fd.mobile_account || '',
         sim_number: record.sim_number || fd.sim_number || fd['SIM Number / ICCID'] || fd['Sim No'] || '',
         account_number: record.account_number || record.mobile_account || fd.account_number || fd['Account Number'] || fd['Account No '] || fd['Account No'] || '',
         bill_number: record.bill_number || record.doc_number || fd.bill_number || '',
@@ -787,6 +844,9 @@ export default function SimDetailsTab({
     }
     setConfigLoading(true);
     try {
+      if (isAddOnMode) {
+        fetchAccountNumbersForCompanyAndClient(selectedClient, selectedCompany);
+      }
       await fetchFormConfiguration(selectedClient, selectedCompany);
     } catch (err) {
       console.error('Error fetching form configuration:', err);
@@ -1261,17 +1321,107 @@ export default function SimDetailsTab({
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this record?')) return;
+  const handleDelete = (id, item = null) => {
+    let name = `#${id}`;
+    let targetType = 'record';
+    if (item) {
+      let fd = {};
+      let ed = {};
+      try {
+        fd = typeof item.field_data === 'string' ? JSON.parse(item.field_data) : (item.field_data || {});
+        if (fd && typeof fd.field_data === 'string') {
+          try { fd = { ...fd, ...JSON.parse(fd.field_data) }; } catch (e) {}
+        } else if (fd && typeof fd.field_data === 'object' && fd.field_data !== null) {
+          fd = { ...fd, ...fd.field_data };
+        }
+        ed = typeof item.extracted_data === 'string' ? JSON.parse(item.extracted_data) : (item.extracted_data || {});
+      } catch (e) {}
+
+      const cleanPhone = (str) => {
+        if (!str) return '';
+        let cleaned = String(str).replace(/[\s\+\-\(\)]/g, '');
+        if (cleaned.startsWith('971')) cleaned = cleaned.slice(3);
+        if (cleaned.startsWith('0')) cleaned = cleaned.slice(1);
+        return cleaned;
+      };
+
+      const mobileNo = item.mobile_number || item.mobile_account || fd.mobile_account || ed.mobile_account || fd.mobile_number || fd.phone_number || '';
+      const matchedEmp = employees.find(e => {
+        const empP = cleanPhone(e.phone || e.mobile_number || e.phone_number);
+        const mobP = cleanPhone(mobileNo);
+        return empP && mobP && (empP === mobP || empP.endsWith(mobP) || mobP.endsWith(empP));
+      });
+
+      const empName = item.assigned_employee || 
+        fd.assigned_employee || 
+        fd['Assigned Employee'] || 
+        fd['Employee Name'] || 
+        fd.employee_name || 
+        item.employee_name || 
+        ed.assigned_employee || 
+        ed.employee_name || 
+        item.user_name || 
+        fd.user_name ||
+        (matchedEmp ? (matchedEmp.full_name || matchedEmp.employee_name || matchedEmp.name) : '');
+
+      if (empName && String(empName).trim() && String(empName).trim() !== 'Unassigned') {
+        name = String(empName).trim();
+        targetType = 'employee';
+      } else {
+        name = item.mobile_number || 
+          item.account_number || 
+          fd.account_number || 
+          fd.mobile_number || 
+          item.sim_number || 
+          fd.sim_number || 
+          `Record #${id}`;
+        targetType = 'record';
+      }
+    }
+    setDeleteConfirmText('');
+    setDeleteDialog({
+      isOpen: true,
+      id,
+      isAddOn: false,
+      title: 'Confirm Deletion',
+      targetType,
+      itemName: name
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteDialog.id || deleteConfirmText.trim().toUpperCase() !== 'YES') return;
+    const { id, isAddOn } = deleteDialog;
+    setDeleting(true);
+
     try {
-      const endpoint = isTelecomDataView ? 'telecom-data' : 'sim-details';
-      const res = await fetch(`${API_URL}/api/${endpoint}/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Delete failed');
-      showToast('Record deleted successfully', 'success');
-      fetchInitialData();
+      if (isAddOn) {
+        const res = await fetch(`${API_URL}/api/add-ons/${id}`, { 
+          method: 'DELETE',
+          credentials: 'include'
+        });
+        if (res.ok) {
+          showToast('Add-On record deleted successfully', 'success');
+          fetchAddOnRecords();
+          setDeleteConfirmText('');
+          setDeleteDialog({ isOpen: false, id: null, isAddOn: false, title: '', targetType: '', itemName: '' });
+        } else {
+          showToast('Failed to delete Add-On record', 'error');
+        }
+      } else {
+        const endpoint = isTelecomDataView ? 'telecom-data' : 'sim-details';
+        const res = await fetch(`${API_URL}/api/${endpoint}/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Delete failed');
+        showToast('Record deleted successfully', 'success');
+        fetchInitialData();
+        setDeleteConfirmText('');
+        setDeleteDialog({ isOpen: false, id: null, isAddOn: false, title: '', targetType: '', itemName: '' });
+      }
     } catch (err) {
       console.error(err);
       showToast('Error deleting record', 'error');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -1282,19 +1432,27 @@ export default function SimDetailsTab({
     let ed = {};
     try {
       fd = typeof item.field_data === 'string' ? JSON.parse(item.field_data) : (item.field_data || {});
+      if (fd && typeof fd.field_data === 'string') {
+        try { fd = { ...fd, ...JSON.parse(fd.field_data) }; } catch (e) {}
+      } else if (fd && typeof fd.field_data === 'object' && fd.field_data !== null) {
+        fd = { ...fd, ...fd.field_data };
+      }
       ed = typeof item.extracted_data === 'string' ? JSON.parse(item.extracted_data) : (item.extracted_data || {});
     } catch (e) {
       fd = {};
       ed = {};
     }
     const searchLower = search.toLowerCase();
-    const mob = fd.mobile_account || ed.mobile_account || fd.mobile_number || fd.sim_number || '';
-    const prov = fd.telecom_provider || ed.telecom_provider || fd.provider || '';
+    const acc = String(item.account_number || fd.account_number || fd['Account Number'] || fd['Account No'] || item.mobile_number || item.mobile_account || fd['1786100950188'] || fd.mobile_account || ed.mobile_account || fd.mobile_number || fd.phone_number || fd['Mobile Number'] || fd['Phone Number'] || '');
+    const prov = String(item.telecom_provider || fd.telecom_provider || ed.telecom_provider || fd.provider || '');
     return (
       String(item.id).includes(searchLower) ||
-      mob.toLowerCase().includes(searchLower) ||
+      acc.toLowerCase().includes(searchLower) ||
       prov.toLowerCase().includes(searchLower) ||
-      (fd.plan_name && fd.plan_name.toLowerCase().includes(searchLower)) ||
+      (fd.plan_name && String(fd.plan_name).toLowerCase().includes(searchLower)) ||
+      (item.plan_name && String(item.plan_name).toLowerCase().includes(searchLower)) ||
+      (item.employee_name && String(item.employee_name).toLowerCase().includes(searchLower)) ||
+      (fd.employee_name && String(fd.employee_name).toLowerCase().includes(searchLower)) ||
       (item.client_name && item.client_name.toLowerCase().includes(searchLower)) ||
       (item.company_name && item.company_name.toLowerCase().includes(searchLower))
     );
@@ -1587,7 +1745,7 @@ export default function SimDetailsTab({
                                 <TouchableOpacity onPress={() => openModal(item, false, true)}>
                                   <Ionicons name="pencil-outline" size={18} color="#166534" />
                                 </TouchableOpacity>
-                                <TouchableOpacity onPress={() => deleteAddOnRecord(item.id)}>
+                                <TouchableOpacity onPress={() => deleteAddOnRecord(item.id, item)}>
                                   <Ionicons name="trash-outline" size={18} color={COLORS.error} />
                                 </TouchableOpacity>
                               </View>
@@ -1608,7 +1766,7 @@ export default function SimDetailsTab({
         ) : (
           <>
             {renderTableToolbar
-              ? renderTableToolbar(search, setSearch, setPage, 'Search by ID, mobile number, provider...')
+              ? renderTableToolbar(search, setSearch, setPage, 'Search by ID, account number, provider...')
               : null}
 
             {loading ? (
@@ -1619,7 +1777,7 @@ export default function SimDetailsTab({
             ) : filteredRecords.length > 0 ? (
               <>
                 <ScrollView horizontal={true} showsHorizontalScrollIndicator={true} style={{ width: '100%' }} contentContainerStyle={{ minWidth: '100%' }}>
-                  <View style={[styles.tableWrapper, { minWidth: isTelecomDataView ? 1700 : 900 }]}>
+                  <View style={[styles.tableWrapper, { minWidth: isTelecomDataView ? 1700 : 1050 }]}>
                     <View style={{ paddingBottom: 10 }}>
                       {/* Table Header Row */}
                       <View style={styles.tableHeader}>
@@ -1642,6 +1800,7 @@ export default function SimDetailsTab({
                           <>
                             <Text style={[styles.thCell, { flex: 2.0 }]}>COMPANY NAME</Text>
                             <Text style={[styles.thCell, { flex: 1.8 }]}>TELECOM PROVIDER</Text>
+                            <Text style={[styles.thCell, { flex: 1.8 }]}>ACCOUNT NUMBER</Text>
                             <Text style={[styles.thCell, { flex: 2.0 }]}>USER NAME</Text>
                             <Text style={[styles.thCell, { flex: 1.8 }]}>PLAN NAME</Text>
                             <Text style={[styles.thCell, { flex: 1.6 }]}>MONTHLY AMOUNT</Text>
@@ -1671,8 +1830,79 @@ export default function SimDetailsTab({
                         const isInactive = item.status === 'Inactive' || item.status === 'Suspended' || item.status === 'Cancelled';
 
                         const companyName = item.company_name || item.company || fd.company || fd.company_name || item.client_name || 'N/A';
-                        const mobileService = item.telecom_provider || fd.telecom_provider || ed.telecom_provider || fd.provider || 'Etisalat';
                         const mobileNo = item.mobile_number || item.mobile_account || fd.mobile_account || ed.mobile_account || fd.mobile_number || fd.phone_number || 'N/A';
+
+                        const accountNumber = (() => {
+                          if (item.account_number && String(item.account_number).trim() && String(item.account_number).trim() !== 'null') {
+                            return String(item.account_number).trim();
+                          }
+                          if (fd.account_number && String(fd.account_number).trim() && String(fd.account_number).trim() !== 'null') {
+                            return String(fd.account_number).trim();
+                          }
+                          if (fd['Account Number'] && String(fd['Account Number']).trim()) return String(fd['Account Number']).trim();
+                          if (fd['Account No'] && String(fd['Account No']).trim()) return String(fd['Account No']).trim();
+                          if (fd['Account No '] && String(fd['Account No ']).trim()) return String(fd['Account No ']).trim();
+                          if (fd['1786100950188'] && String(fd['1786100950188']).trim()) {
+                            return String(fd['1786100950188']).trim();
+                          }
+                          if (item.mobile_number && String(item.mobile_number).trim() && String(item.mobile_number).trim() !== 'null') {
+                            return String(item.mobile_number).trim();
+                          }
+                          if (fd.mobile_number && String(fd.mobile_number).trim()) return String(fd.mobile_number).trim();
+                          if (fd.phone_number && String(fd.phone_number).trim()) return String(fd.phone_number).trim();
+                          if (fd['Mobile Number'] && String(fd['Mobile Number']).trim()) return String(fd['Mobile Number']).trim();
+                          if (fd['Phone Number'] && String(fd['Phone Number']).trim()) return String(fd['Phone Number']).trim();
+                          if (fd['Phone'] && String(fd['Phone']).trim()) return String(fd['Phone']).trim();
+                          if (item.mobile_account && String(item.mobile_account).trim()) return String(item.mobile_account).trim();
+                          if (fd.mobile_account && String(fd.mobile_account).trim()) return String(fd.mobile_account).trim();
+                          if (ed.mobile_account && String(ed.mobile_account).trim()) return String(ed.mobile_account).trim();
+                          if (ed.account_number && String(ed.account_number).trim()) return String(ed.account_number).trim();
+                          return mobileNo && mobileNo !== 'N/A' ? mobileNo : 'N/A';
+                        })();
+
+                        const phoneNumber = accountNumber;
+
+                        const telecomProviderName = (() => {
+                          // 1. Direct item.telecom_provider
+                          const directP = item.telecom_provider;
+                          if (directP) {
+                            const found = providers.find(p => String(p.id) === String(directP) || (p.provider_name && p.provider_name.toLowerCase() === String(directP).toLowerCase()));
+                            if (found && (found.provider_name || found.name)) return found.provider_name || found.name;
+                            if (isNaN(directP) && String(directP).trim() !== '') return String(directP).trim();
+                          }
+
+                          // 2. Field data telecom_provider / Telecom Provider / provider
+                          const fdp = fd.telecom_provider || fd['Telecom Provider'] || fd.provider;
+                          if (fdp) {
+                            const found = providers.find(p => String(p.id) === String(fdp) || (p.provider_name && p.provider_name.toLowerCase() === String(fdp).toLowerCase()));
+                            if (found && (found.provider_name || found.name)) return found.provider_name || found.name;
+                            if (isNaN(fdp) && String(fdp).trim() !== '') return String(fdp).trim();
+                          }
+
+                          // 3. Extracted data telecom_provider
+                          if (ed.telecom_provider) {
+                            const found = providers.find(p => String(p.id) === String(ed.telecom_provider) || (p.provider_name && p.provider_name.toLowerCase() === String(ed.telecom_provider).toLowerCase()));
+                            if (found && (found.provider_name || found.name)) return found.provider_name || found.name;
+                            if (isNaN(ed.telecom_provider)) return String(ed.telecom_provider).trim();
+                          }
+
+                          // 4. Scan fd for any key with 'provider' or 'telecom' where value is non-numeric
+                          for (const [k, v] of Object.entries(fd)) {
+                            if (!v || typeof v === 'object') continue;
+                            const lk = k.toLowerCase();
+                            if ((lk.includes('provider') || lk.includes('telecom')) && isNaN(v)) {
+                              const sv = String(v).trim();
+                              if (sv && sv.toLowerCase() !== 'null' && sv.toLowerCase() !== 'undefined') {
+                                const found = providers.find(p => (p.provider_name && p.provider_name.toLowerCase() === sv.toLowerCase()));
+                                return found ? (found.provider_name || found.name) : sv;
+                              }
+                            }
+                          }
+
+                          return 'Etisalat';
+                        })();
+
+                        const mobileService = telecomProviderName || 'Etisalat';
                         
                         const registeredEmpName = 
                           item.assigned_employee || 
@@ -1695,7 +1925,7 @@ export default function SimDetailsTab({
 
                         const matchedEmp = employees.find(e => {
                           const empP = cleanPhone(e.phone || e.mobile_number || e.phone_number);
-                          const mobP = cleanPhone(mobileNo);
+                          const mobP = cleanPhone(phoneNumber !== 'N/A' ? phoneNumber : mobileNo);
                           return empP && mobP && (empP === mobP || empP.endsWith(mobP) || mobP.endsWith(empP));
                         });
 
@@ -1782,7 +2012,12 @@ export default function SimDetailsTab({
 
                                 {/* TELECOM PROVIDER */}
                                 <Text style={[styles.tdCell, { flex: 1.8, fontWeight: '600', color: COLORS.textPrimary }]}>
-                                  {fd.telecom_provider || fd['Telecom Provider'] || fd['1786100950188'] || item.telecom_provider || 'Etisalat'}
+                                  {telecomProviderName}
+                                </Text>
+
+                                {/* ACCOUNT NUMBER */}
+                                <Text style={[styles.tdCell, { flex: 1.8, fontWeight: '600', color: '#1E40AF' }]}>
+                                  {accountNumber}
                                 </Text>
 
                                 {/* USER NAME */}
@@ -1864,7 +2099,7 @@ export default function SimDetailsTab({
                               <TouchableOpacity onPress={() => openModal(item, false)}>
                                 <Ionicons name="pencil-outline" size={18} color="#166534" />
                               </TouchableOpacity>
-                              <TouchableOpacity onPress={() => handleDelete(item.id)}>
+                              <TouchableOpacity onPress={() => handleDelete(item.id || item.tele_id, item)}>
                                 <Ionicons name="trash-outline" size={18} color={COLORS.error} />
                               </TouchableOpacity>
                             </View>
@@ -1964,9 +2199,20 @@ export default function SimDetailsTab({
                       value={selectedCompany}
                       onChange={(val) => {
                         setSelectedCompany(val);
+                        handleChange('company', val);
+                        handleChange('company_id', val);
+                        handleChange('account_number', '');
+                        handleChange('Account No', '');
+                        handleChange('Account Number', '');
+                        handleChange('tele_id', '');
                         handleChange('assigned_employee', '');
                         handleChange('Assigned Employee', '');
-                        if (val) fetchEmployeesForCompany(val);
+                        if (val) {
+                          fetchEmployeesForCompany(val);
+                          if (isAddOnMode) {
+                            fetchAccountNumbersForCompanyAndClient(selectedClient, val);
+                          }
+                        }
                       }}
                       placeholder="-- Select Company --"
                       searchPlaceholder="Search Company..."
@@ -2013,52 +2259,79 @@ export default function SimDetailsTab({
                           <Text style={styles.fieldLabel}>
                             Account No <Text style={{ color: COLORS.error }}>*</Text>
                           </Text>
-                          {records && records.length > 0 ? (
-                            <SearchableDropdown
-                              data={records.map(item => {
+                          {(() => {
+                            const activeClientId = selectedClient || formData.client_id || formData.clientid || user?.clientid;
+                            const activeCompanyId = selectedCompany || formData.company_id || formData.company;
+
+                            // Local fallback from records if API is loading or returned empty
+                            const localSimAccounts = (records || []).filter(item => {
+                              if (activeClientId) {
+                                const itemClient = String(item.clientid || item.client_id || '');
+                                if (itemClient && itemClient !== String(activeClientId)) return false;
+                              }
+                              if (activeCompanyId) {
                                 let fd = {};
-                                try {
-                                  fd = typeof item.field_data === 'string' ? JSON.parse(item.field_data) : (item.field_data || {});
-                                } catch (e) {
-                                  fd = {};
-                                }
-                                const accNo = item.account_number || fd.account_number || fd['Account No'] || fd['Account Number'] || item.sim_number || fd.sim_number || fd['SIM Number / ICCID'] || item.mobile_number || `Account #${item.tele_id || item.id}`;
-                                return { label: String(accNo), value: String(accNo) };
-                              }).filter((v, i, a) => a.findIndex(t => t.value === v.value) === i)}
-                              value={formData.account_number || formData['Account No'] || ''}
-                              onChange={(val) => {
-                                const matched = records?.find(item => {
-                                  let fd = {};
-                                  try { fd = typeof item.field_data === 'string' ? JSON.parse(item.field_data) : (item.field_data || {}); } catch(e) {}
-                                  const acc = item.account_number || fd.account_number || fd['Account No'] || fd['Account Number'] || item.sim_number || fd.sim_number || fd['SIM Number / ICCID'] || item.mobile_number || `Account #${item.tele_id || item.id}`;
-                                  return String(acc) === String(val);
-                                });
-                                handleChange('account_number', val);
-                                handleChange('Account No', val);
-                                handleChange('Account Number', val);
-                                if (matched) {
-                                  handleChange('tele_id', matched.tele_id || matched.id);
-                                }
-                              }}
-                              placeholder="-- Select or Enter Account No --"
-                              searchPlaceholder="Search Account No..."
-                              displayKey="label"
-                              valueKey="value"
-                              disabled={isViewOnly}
-                            />
-                          ) : (
-                            <TextInput
-                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
-                              placeholder="Enter Account No"
-                              value={formData.account_number || formData['Account No'] || ''}
-                              onChangeText={(val) => {
-                                handleChange('account_number', val);
-                                handleChange('Account No', val);
-                                handleChange('Account Number', val);
-                              }}
-                              editable={!isViewOnly}
-                            />
-                          )}
+                                try { fd = typeof item.field_data === 'string' ? JSON.parse(item.field_data) : (item.field_data || {}); } catch (e) {}
+                                const itemComp = String(item.company_id || item.company || fd.company_id || fd.company || '');
+                                const compIds = itemComp.split(',').map(s => s.trim());
+                                if (itemComp && !compIds.includes(String(activeCompanyId))) return false;
+                              }
+                              return true;
+                            }).map(item => {
+                              let fd = {};
+                              try { fd = typeof item.field_data === 'string' ? JSON.parse(item.field_data) : (item.field_data || {}); } catch (e) {}
+                              const accNo = item.account_number || fd.account_number || fd['Account No'] || fd['Account Number'] || item.sim_number || fd.sim_number || fd['SIM Number / ICCID'] || item.mobile_number || `Account #${item.tele_id || item.id}`;
+                              return {
+                                label: String(accNo),
+                                value: String(accNo),
+                                account_number: String(accNo),
+                                tele_id: item.tele_id || item.id,
+                                plan_name: item.plan_name || fd.plan_name,
+                                plan_amount: item.monthly_plan_amount || fd.monthly_plan_amount || fd.plan_amount,
+                                telecom_provider: item.telecom_provider || fd.telecom_provider
+                              };
+                            });
+
+                            // Merge fetched backend options with any local matches, deduplicated by value
+                            const mergedOptions = [...accountNumberOptions, ...localSimAccounts];
+                            const dropdownOptions = mergedOptions.filter((v, i, a) => v.value && a.findIndex(t => String(t.value).trim() === String(v.value).trim()) === i);
+
+                            return (
+                              <SearchableDropdown
+                                data={dropdownOptions}
+                                value={formData.account_number || formData['Account No'] || ''}
+                                onChange={(val) => {
+                                  const matched = dropdownOptions.find(item => String(item.value).trim() === String(val).trim());
+                                  handleChange('account_number', val);
+                                  handleChange('Account No', val);
+                                  handleChange('Account Number', val);
+                                  if (matched) {
+                                    handleChange('tele_id', matched.tele_id || matched.id);
+                                    if (matched.plan_name && !formData.plan_name) {
+                                      handleChange('plan_name', matched.plan_name);
+                                      handleChange('Plan Name', matched.plan_name);
+                                    }
+                                    const matchedAmt = matched.plan_amount || matched.monthly_plan_amount;
+                                    if (matchedAmt && !formData.plan_amount) {
+                                      handleChange('plan_amount', matchedAmt);
+                                      handleChange('Plan Amount', matchedAmt);
+                                    }
+                                    if (matched.telecom_provider && !formData.telecom_provider) {
+                                      handleChange('telecom_provider', matched.telecom_provider);
+                                    }
+                                    if (matched.assigned_employee && !formData.assigned_employee) {
+                                      handleChange('assigned_employee', matched.assigned_employee);
+                                    }
+                                  }
+                                }}
+                                placeholder={loadingAccountNumbers ? "Loading account numbers..." : (dropdownOptions.length > 0 ? "-- Select or Enter Account No --" : "-- No accounts found for this company --")}
+                                searchPlaceholder="Search Account No..."
+                                displayKey="label"
+                                valueKey="value"
+                                disabled={isViewOnly}
+                              />
+                            );
+                          })()}
                         </View>
 
                         {/* 2. ACTIVATION DATE */}
@@ -3146,6 +3419,144 @@ export default function SimDetailsTab({
         </View>
       </Modal>
 
+      {/* CONFIRM DELETION MODAL MATCHING STANDARD APP TEMPLATE */}
+      <Modal
+        visible={deleteDialog.isOpen}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          if (!deleting) {
+            setDeleteConfirmText('');
+            setDeleteDialog(prev => ({ ...prev, isOpen: false }));
+          }
+        }}
+      >
+        <View style={{
+          flex: 1,
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 20
+        }}>
+          <View style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: 16,
+            width: '90%',
+            maxWidth: 480,
+            padding: 24,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 10 },
+            shadowOpacity: 0.15,
+            shadowRadius: 20,
+            elevation: 8
+          }}>
+            {/* Modal Header */}
+            <View style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              borderBottomWidth: 1,
+              borderBottomColor: '#FEE2E2',
+              paddingBottom: 16,
+              marginBottom: 16
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Ionicons name="warning" size={24} color="#EF4444" />
+                <Text style={{ fontSize: 20, fontWeight: '700', color: '#EF4444' }}>
+                  Confirm Deletion
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  setDeleteConfirmText('');
+                  setDeleteDialog(prev => ({ ...prev, isOpen: false }));
+                }}
+                disabled={deleting}
+              >
+                <Ionicons name="close" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Modal Body */}
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ fontSize: 15, color: '#334155', lineHeight: 22, marginBottom: 8 }}>
+                Are you sure you want to delete <Text style={{ fontWeight: '700', color: '#0F172A' }}>{deleteDialog.itemName}</Text>?
+              </Text>
+              <Text style={{ fontSize: 13, color: '#64748B', lineHeight: 20 }}>
+                This will soft-delete the selected {deleteDialog.targetType || 'record'}. This action is reversible but requires database administrative intervention.
+              </Text>
+            </View>
+
+            {/* Input Requirement */}
+            <View style={{ marginBottom: 24 }}>
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#334155', marginBottom: 8 }}>
+                TYPE <Text style={{ color: '#EF4444', fontWeight: '800' }}>YES</Text> TO CONFIRM *
+              </Text>
+              <TextInput
+                style={{
+                  borderWidth: 1,
+                  borderColor: '#CBD5E1',
+                  borderRadius: 8,
+                  height: 44,
+                  paddingHorizontal: 12,
+                  fontSize: 14,
+                  color: '#334155',
+                  outlineStyle: 'none'
+                }}
+                placeholder="Type YES here"
+                placeholderTextColor="#94A3B8"
+                value={deleteConfirmText}
+                onChangeText={setDeleteConfirmText}
+                autoCapitalize="characters"
+                editable={!deleting}
+              />
+            </View>
+
+            {/* Modal Footer Actions */}
+            <View style={{
+              flexDirection: 'row',
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+              gap: 12,
+              borderTopWidth: 1,
+              borderTopColor: '#F1F5F9',
+              paddingTop: 16
+            }}>
+              <TouchableOpacity
+                onPress={() => {
+                  setDeleteConfirmText('');
+                  setDeleteDialog(prev => ({ ...prev, isOpen: false }));
+                }}
+                disabled={deleting}
+                style={{ paddingHorizontal: 16, paddingVertical: 8 }}
+              >
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#64748B' }}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                disabled={deleteConfirmText.trim().toUpperCase() !== 'YES' || deleting}
+                onPress={handleConfirmDelete}
+                style={{
+                  backgroundColor: deleteConfirmText.trim().toUpperCase() === 'YES' ? '#EF4444' : '#FECDD3',
+                  paddingHorizontal: 28,
+                  paddingVertical: 10,
+                  borderRadius: 8,
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                activeOpacity={deleteConfirmText.trim().toUpperCase() === 'YES' ? 0.8 : 1}
+              >
+                <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>
+                  {deleting ? 'Deleting...' : 'YES'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+          </View>
+        </View>
+      </Modal>
 
     </ScrollView>
   );

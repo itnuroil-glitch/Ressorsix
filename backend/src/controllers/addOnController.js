@@ -558,3 +558,209 @@ exports.deleteAddOn = async (req, res) => {
   }
 };
 
+// Get all distinct account numbers filtered by company and client
+exports.getAccountNumbers = async (req, res) => {
+  try {
+    const { client_id, company_id, clientid } = req.query;
+    const activeClientId = client_id || clientid;
+    const activeCompanyId = company_id;
+
+    // Resolve company name if company_id is provided
+    let companyName = null;
+    if (activeCompanyId) {
+      try {
+        const compRes = await db.query(
+          'SELECT id, company_name FROM company WHERE id = $1',
+          [activeCompanyId]
+        );
+        if (compRes.rows.length > 0) {
+          companyName = compRes.rows[0].company_name;
+        }
+      } catch (e) {}
+    }
+
+    // Helper to extract custom field names
+    let idToName = {};
+    try {
+      const fieldDefsRes = await db.query(
+        'SELECT field_id, field_name FROM tbl_customfield_details'
+      ).catch(() => ({ rows: [] }));
+      fieldDefsRes.rows.forEach(r => {
+        if (r.field_id && r.field_name) {
+          idToName[String(r.field_id).trim()] = r.field_name.trim().toLowerCase();
+        }
+      });
+      const cfRes = await db.query(
+        'SELECT field_data FROM tbl_customfields WHERE isdelete = false OR isdelete IS NULL'
+      ).catch(() => ({ rows: [] }));
+      cfRes.rows.forEach(r => {
+        let cfd = r.field_data;
+        if (typeof cfd === 'string') {
+          try { cfd = JSON.parse(cfd); } catch (e) { cfd = []; }
+        }
+        if (Array.isArray(cfd)) {
+          cfd.forEach(sec => {
+            (sec.fields || []).forEach(f => {
+              if (f.id && f.name) {
+                idToName[String(f.id).trim()] = f.name.trim().toLowerCase();
+              }
+            });
+          });
+        }
+      });
+    } catch (e) {}
+
+    // 1. Fetch from tbl_sim_details
+    let simDetailsQuery = `
+      SELECT 
+        sd.tele_id AS id,
+        sd.clientid,
+        sd.company_id,
+        sd.field_data,
+        sd.status
+      FROM tbl_sim_details sd
+      WHERE (sd.is_deleted = 0 OR sd.is_deleted IS NULL)
+    `;
+    let simParams = [];
+    if (activeClientId) {
+      simParams.push(String(activeClientId));
+      simDetailsQuery += ` AND (sd.clientid::text = $${simParams.length} OR sd.field_data->>'client_id' = $${simParams.length} OR sd.field_data->>'clientid' = $${simParams.length})`;
+    }
+    const simRes = await db.query(simDetailsQuery, simParams).catch(e => ({ rows: [] }));
+
+    // 2. Fetch from tbl_telecome_data
+    let teleDataQuery = `
+      SELECT 
+        td.id,
+        td.clientid,
+        td.company_id,
+        td.field_data,
+        td.extracted_data,
+        td.status
+      FROM tbl_telecome_data td
+      WHERE (td.is_deleted = 0 OR td.is_deleted IS NULL)
+    `;
+    let teleParams = [];
+    if (activeClientId) {
+      teleParams.push(String(activeClientId));
+      teleDataQuery += ` AND (td.clientid::text = $${teleParams.length} OR td.field_data->>'client_id' = $${teleParams.length} OR td.field_data->>'clientid' = $${teleParams.length})`;
+    }
+    const teleRes = await db.query(teleDataQuery, teleParams).catch(e => ({ rows: [] }));
+
+    const accountsMap = new Map();
+
+    const processRecord = (row, source) => {
+      let fd = row.field_data;
+      if (typeof fd === 'string') {
+        try { fd = JSON.parse(fd); } catch (e) { fd = {}; }
+      }
+      if (!fd || typeof fd !== 'object') fd = {};
+      if (fd.field_data && typeof fd.field_data === 'object') {
+        fd = { ...fd, ...fd.field_data };
+      }
+
+      let ed = row.extracted_data;
+      if (typeof ed === 'string') {
+        try { ed = JSON.parse(ed); } catch (e) { ed = {}; }
+      }
+      if (!ed || typeof ed !== 'object') ed = {};
+
+      // Filter by company if activeCompanyId is specified
+      if (activeCompanyId) {
+        const rCompId = String(row.company_id || fd.company_id || fd.company || '').trim();
+        const rCompName = String(row.company_name || fd.company_name || fd.company || '').trim();
+
+        let matchesCompany = false;
+        if (rCompId) {
+          const ids = rCompId.split(',').map(s => s.trim());
+          if (ids.includes(String(activeCompanyId))) {
+            matchesCompany = true;
+          }
+        }
+        if (!matchesCompany && companyName && rCompName) {
+          if (rCompName.toLowerCase() === companyName.toLowerCase() || rCompName.toLowerCase().includes(companyName.toLowerCase())) {
+            matchesCompany = true;
+          }
+        }
+        if (!matchesCompany) {
+          return;
+        }
+      }
+
+      // Look for account number
+      let accNo = row.account_number || fd.account_number || fd['Account Number'] || fd['Account No'] || fd['Account No '] || ed.account_number || ed.mobile_account;
+
+      // Extract custom field mapping
+      let planName = row.plan_name || fd.plan_name || ed.plan_name;
+      let planAmount = row.monthly_plan_amount || fd.monthly_plan_amount || ed.monthly_plan_amount || fd.plan_amount;
+      let provider = row.telecom_provider || fd.telecom_provider || ed.telecom_provider;
+      let employee = row.assigned_employee || fd.assigned_employee || ed.assigned_employee;
+      let simNo = row.sim_number || fd.sim_number || ed.sim_number;
+      let mobileNo = row.mobile_number || fd.mobile_number || ed.mobile_number;
+
+      for (const [k, v] of Object.entries(fd)) {
+        if (v === undefined || v === null || typeof v === 'object') continue;
+        const sv = String(v).trim();
+        if (!sv || sv === 'null' || sv === 'undefined') continue;
+
+        const fn = (idToName[k] || k).trim().toLowerCase();
+        if (!accNo && fn.includes('account')) {
+          accNo = sv;
+        }
+        if (!planName && (fn.includes('plan') || fn.includes('package')) && !fn.includes('amount')) {
+          planName = sv;
+        }
+        if (!planAmount && (fn.includes('monthly') || fn.includes('rental') || (fn.includes('plan') && fn.includes('amount')))) {
+          planAmount = sv;
+        }
+        if (!provider && (fn.includes('telecom') || fn.includes('provider'))) {
+          provider = sv;
+        }
+        if (!employee && (fn.includes('employee') || fn.includes('assigned'))) {
+          employee = sv;
+        }
+        if (!simNo && fn.includes('sim') && (fn.includes('number') || fn.includes('no') || fn.includes('iccid'))) {
+          simNo = sv;
+        }
+        if (!mobileNo && (fn.includes('mobile') || fn.includes('phone'))) {
+          mobileNo = sv;
+        }
+      }
+
+      // Fallback for accNo if not explicitly called "account"
+      if (!accNo) {
+        accNo = row.mobile_account || ed.mobile_account || mobileNo || simNo;
+      }
+
+      if (accNo && String(accNo).trim()) {
+        const cleanAcc = String(accNo).trim();
+        if (!accountsMap.has(cleanAcc)) {
+          accountsMap.set(cleanAcc, {
+            value: cleanAcc,
+            label: cleanAcc,
+            account_number: cleanAcc,
+            mobile_number: mobileNo || null,
+            sim_number: simNo || null,
+            plan_name: planName || null,
+            plan_amount: planAmount || null,
+            monthly_plan_amount: planAmount || null,
+            telecom_provider: provider || 'Etisalat',
+            assigned_employee: employee || null,
+            tele_id: row.id || row.tele_id,
+            source
+          });
+        }
+      }
+    };
+
+    (simRes.rows || []).forEach(r => processRecord(r, 'sim_details'));
+    (teleRes.rows || []).forEach(r => processRecord(r, 'telecom_data'));
+
+    const result = Array.from(accountsMap.values());
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('Error fetching account numbers:', error);
+    res.status(500).json({ message: 'Internal Server Error', error: error.message });
+  }
+};
+

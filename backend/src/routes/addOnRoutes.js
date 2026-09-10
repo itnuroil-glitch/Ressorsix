@@ -3,6 +3,7 @@ const router = express.Router();
 const addOnController = require('../controllers/addOnController');
 
 router.get('/', addOnController.getAllAddOns);
+router.get('/account-numbers', addOnController.getAccountNumbers);
 router.get('/:id', addOnController.getAddOnById);
 router.post('/', addOnController.createAddOn);
 router.put('/:id', addOnController.updateAddOn);
