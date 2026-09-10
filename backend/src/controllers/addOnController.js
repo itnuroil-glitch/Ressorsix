@@ -2,6 +2,21 @@ const db = require('../config/db');
 const fs = require('fs');
 const path = require('path');
 
+// Ensure sim_number column in tbl_add_on is nullable and clear any duplicate sim_number values
+(async () => {
+  try {
+    await db.query('ALTER TABLE tbl_add_on ALTER COLUMN sim_number DROP NOT NULL');
+    await db.query(`
+      UPDATE tbl_add_on 
+      SET account_number = COALESCE(NULLIF(account_number, ''), sim_number)
+      WHERE account_number IS NULL OR account_number = ''
+    `);
+    await db.query(`UPDATE tbl_add_on SET sim_number = NULL WHERE sim_number IS NOT NULL`);
+  } catch (e) {
+    // Ignore if table alteration already completed
+  }
+})();
+
 // Save base64 file attachment locally to backend/Attachment directory
 const saveAttachmentLocally = (base64String, fileName) => {
   if (!base64String) return null;
@@ -31,44 +46,116 @@ const saveAttachmentLocally = (base64String, fileName) => {
 };
 
 // Sync attachment into public.attachment table
-const syncToAttachmentTable = async (clientId, companyId, filePath, docType = 'Document Attachments') => {
+const syncToAttachmentTable = async (clientId, companyId, filePath, docType = 'Add-on Details') => {
   if (!filePath) return;
   try {
-    let resolvedCompanyId = companyId;
-    if (!resolvedCompanyId && clientId) {
+    let resolvedClientId = clientId ? parseInt(clientId, 10) : null;
+    if (isNaN(resolvedClientId)) resolvedClientId = null;
+
+    let resolvedCompanyId = companyId ? parseInt(companyId, 10) : null;
+    if (isNaN(resolvedCompanyId)) resolvedCompanyId = null;
+
+    if (!resolvedCompanyId && resolvedClientId) {
       const compRes = await db.query(
         'SELECT id FROM company WHERE clientid = $1 AND (is_deleted = false OR is_deleted IS NULL) ORDER BY id ASC LIMIT 1',
-        [clientId]
+        [resolvedClientId]
       );
       if (compRes.rows.length > 0) resolvedCompanyId = compRes.rows[0].id;
     }
 
-    const insertQuery = `
-      INSERT INTO attachment (clientid, companyid, attachment, type, expire_date, status, is_deleted, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, NULL, 1, false, NOW(), NOW())
-    `;
-    await db.query(insertQuery, [clientId || null, resolvedCompanyId || null, filePath, docType]);
-    console.log(`✅ Synced file ${filePath} into public.attachment table!`);
+    if (!resolvedCompanyId) {
+      const anyComp = await db.query('SELECT id FROM company ORDER BY id ASC LIMIT 1');
+      if (anyComp.rows.length > 0) resolvedCompanyId = anyComp.rows[0].id;
+    }
+
+    // Check if attachment already exists in attachment table to avoid duplicate rows
+    const existing = await db.query(
+      'SELECT id FROM attachment WHERE attachment = $1 AND (is_deleted = false OR is_deleted IS NULL) LIMIT 1',
+      [filePath]
+    );
+
+    if (existing.rows.length === 0) {
+      const insertQuery = `
+        INSERT INTO attachment (clientid, companyid, attachment, type, expire_date, status, is_deleted, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, NULL, 1, false, NOW(), NOW())
+        RETURNING *
+      `;
+      await db.query(insertQuery, [resolvedClientId, resolvedCompanyId, filePath, docType]);
+      console.log(`✅ Synced file ${filePath} into public.attachment table!`);
+    }
   } catch (e) {
     console.error('Error syncing file to public.attachment table:', e);
   }
 };
 
+// Helper to normalize any date format (DD/MM/YYYY, ISO, etc.) to YYYY-MM-DD
+const normalizeDate = (rawDate) => {
+  if (!rawDate) return null;
+  const str = String(rawDate).trim();
+  // Match DD/MM/YYYY or DD-MM-YYYY
+  const dmy = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+  if (dmy) {
+    return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  }
+  // Match ISO YYYY-MM-DD
+  const ymd = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
+  if (ymd) {
+    return `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`;
+  }
+  return str.split('T')[0];
+};
+
 // Helper to extract clean field values from body
 const extractAddonFields = (body = {}) => {
   const accountNumber = body.account_number || body['Account No'] || body.sim_number || '';
-  const simNumber = body.sim_number || body['Sim No'] || accountNumber;
-  const activationDate = body.activation_date || body['Activation Date'] || new Date().toISOString().split('T')[0];
+  const simNumber = null; // Only store in account_number column in tbl_add_on
+  const rawActDate = body.activation_date || body['Activation Date'];
+  const activationDate = normalizeDate(rawActDate) || new Date().toISOString().split('T')[0];
   const planName = body.plan_name || body['Plan Name'] || '';
-  const rawAmount = body.plan_amount || body['Plan Amount'] || 0;
+  const rawAmount = body.plan_amount || body['Plan Amount'] || body.monthly_plan_amount || 0;
   const planAmount = parseFloat(rawAmount) || 0;
   const subscriptionType = body.subscription_type || body.subscription || body['Subscription'] || 'One Time';
   const addonType = body.addon_type || body['Addon Type'] || body.add_on || 'Data';
   const voiceMinuteType = body.voice_minute_type || body['Voice Minute Type'] || body['Voice Category'] || null;
   const roamingCategory = body.roaming_category || body['Roaming Category'] || null;
 
-  // Build comprehensive addon_details string from all dynamic detail entries
-  let addonDetails = body.addon_details || body['Addon Details'] || null;
+  // Build comprehensive addon_details string from dynamic detail entries
+  let addonDetails = null;
+  const isRoaming = addonType === 'Roaming';
+  const isVoice = addonType === 'Voice';
+
+  if (isRoaming && roamingCategory) {
+    const cats = String(roamingCategory).split(',').map(s => s.trim()).filter(Boolean);
+    const detailParts = [];
+    cats.forEach(c => {
+      const cleanKey = c.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      const val = body[`roaming_details_${cleanKey}`] || body[`${c} Roaming Details`];
+      if (val && typeof val === 'string' && val.trim()) {
+        detailParts.push(`${c}: ${val.trim()}`);
+      }
+    });
+    if (detailParts.length > 0) {
+      addonDetails = detailParts.join('; ');
+    }
+  } else if (isVoice && voiceMinuteType) {
+    const cats = String(voiceMinuteType).split(',').map(s => s.trim()).filter(Boolean);
+    const detailParts = [];
+    cats.forEach(c => {
+      const cleanKey = c.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      const val = body[`voice_details_${cleanKey}`] || body[`${c} Details`];
+      if (val && typeof val === 'string' && val.trim()) {
+        detailParts.push(`${c}: ${val.trim()}`);
+      }
+    });
+    if (detailParts.length > 0) {
+      addonDetails = detailParts.join('; ');
+    }
+  }
+
+  // Fallback to direct addon_details or general dynamic search if not built above
+  if (!addonDetails) {
+    addonDetails = body.addon_details || body['Addon Details'] || null;
+  }
   if (!addonDetails) {
     const detailParts = [];
     Object.keys(body).forEach(key => {
@@ -94,18 +181,73 @@ const extractAddonFields = (body = {}) => {
 
   // Process attachments
   const pdfBase64 = body.pdf_base64 || null;
-  const fileName = body.attached_pdf || body.pdf_name || (Array.isArray(body.document_attachments) ? body.document_attachments[0] : body.document_attachments) || null;
+  const filesData = Array.isArray(body.files_data) ? body.files_data : [];
+  const rawDocs = body.document_attachments !== undefined
+    ? body.document_attachments
+    : (body.attached_documents !== undefined ? body.attached_documents : (body.attached_pdf || body.pdf_name || null));
 
-  let filePath = null;
-  if (pdfBase64) {
-    filePath = saveAttachmentLocally(pdfBase64, fileName);
-  } else if (fileName && typeof fileName === 'string' && fileName.trim()) {
-    filePath = fileName.startsWith('/backend/') || fileName.startsWith('upload/') ? fileName : `/backend/Attachment/${fileName}`;
+  let fileList = [];
+  if (Array.isArray(rawDocs)) {
+    fileList = [...rawDocs];
+  } else if (typeof rawDocs === 'string' && rawDocs.trim()) {
+    try {
+      const parsed = JSON.parse(rawDocs);
+      fileList = Array.isArray(parsed) ? parsed : [rawDocs];
+    } catch (e) {
+      fileList = rawDocs.split(',').map(s => s.trim()).filter(Boolean);
+    }
   }
 
+  const savedFilePaths = [];
+
+  // 1. Process files_data with base64 data
+  if (filesData.length > 0) {
+    for (const fItem of filesData) {
+      if (fItem && fItem.data && typeof fItem.data === 'string' && fItem.data.startsWith('data:')) {
+        const sp = saveAttachmentLocally(fItem.data, fItem.name);
+        if (sp) {
+          savedFilePaths.push(sp);
+          const baseName = fItem.name;
+          const idx = fileList.indexOf(baseName);
+          if (idx > -1) {
+            fileList[idx] = sp;
+          } else if (!fileList.includes(sp)) {
+            fileList.push(sp);
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Process single pdfBase64 if provided
+  let filePath = null;
+  if (pdfBase64 && savedFilePaths.length === 0) {
+    const singleName = body.attached_pdf || body.pdf_name || (fileList.length > 0 ? fileList[0] : 'document.pdf');
+    filePath = saveAttachmentLocally(pdfBase64, singleName);
+    if (filePath) {
+      savedFilePaths.push(filePath);
+      const idx = fileList.indexOf(singleName);
+      if (idx > -1) {
+        fileList[idx] = filePath;
+      } else if (!fileList.includes(filePath)) {
+        fileList.push(filePath);
+      }
+    }
+  }
+
+  const normalizedDocs = fileList.map(f => {
+    if (!f || typeof f !== 'string') return null;
+    if (f.startsWith('/backend/') || f.startsWith('upload/') || f.startsWith('/Attachment/') || f.startsWith('/upload/')) {
+      return f;
+    }
+    return `/backend/Attachment/${f}`;
+  }).filter(Boolean);
+
   let docJson = null;
-  if (filePath) {
-    docJson = JSON.stringify([filePath]);
+  if (body.document_attachments !== undefined || body.attached_documents !== undefined) {
+    docJson = JSON.stringify(normalizedDocs);
+  } else if (normalizedDocs.length > 0) {
+    docJson = JSON.stringify(normalizedDocs);
   }
 
   return {
@@ -120,55 +262,66 @@ const extractAddonFields = (body = {}) => {
     roamingCategory,
     addonDetails,
     docJson,
-    filePath
+    filePath,
+    normalizedDocs,
+    savedFilePaths
   };
 };
 
-// Get all Add-Ons from tbl_add_on_data (with client filtering if provided)
+// Get all Add-Ons from tbl_add_on (with client filtering if provided)
 exports.getAllAddOns = async (req, res) => {
   try {
     const clientId = req.query.client_id || req.query.clientid;
-    let queryText = `
-      SELECT 
-        a.*, 
-        c.client_name,
-        co.name as country_name,
-        (
-          SELECT string_agg(company_name, ', ') 
-          FROM company 
-          WHERE id = ANY(string_to_array(nullif(a.company_id, ''), ',')::integer[])
-        ) AS company_name,
-        COALESCE(
-          (SELECT first_name || ' ' || last_name FROM employee WHERE id = a.user_id LIMIT 1),
-          a.assigned_employee,
-          'N/A'
-        ) AS user_name,
-        COALESCE(a.telecom_provider, 'e& (Etisalat)') AS telecom_provider
-      FROM tbl_add_on_data a
-      LEFT JOIN client c ON a.client_id = c.id
-      LEFT JOIN country co ON a.country_id = co.id
-      WHERE 1=1
-    `;
-    let params = [];
-    if (clientId) {
-      queryText += ` AND (a.client_id = $1 OR a.client_id IS NULL)`;
-      params.push(String(clientId));
-    }
-    queryText += ` ORDER BY a.id DESC`;
 
-    const result = await db.query(queryText, params);
-    res.status(200).json(result.rows);
+    // Direct, cast-free select from tbl_add_on
+    const result = await db.query('SELECT * FROM tbl_add_on ORDER BY id DESC');
+
+    // Safe lookup of masters in parallel
+    const [companiesRes, clientsRes, employeesRes] = await Promise.all([
+      db.query('SELECT id, company_name FROM company').catch(() => ({ rows: [] })),
+      db.query('SELECT id, client_name FROM client').catch(() => ({ rows: [] })),
+      db.query("SELECT id, first_name || ' ' || last_name AS full_name FROM employee").catch(() => ({ rows: [] }))
+    ]);
+
+    const compMap = {};
+    companiesRes.rows.forEach(c => { if (c.id) compMap[String(c.id)] = c.company_name; });
+
+    const clientMap = {};
+    clientsRes.rows.forEach(c => { if (c.id) clientMap[String(c.id)] = c.client_name; });
+
+    const empMap = {};
+    employeesRes.rows.forEach(e => { if (e.id) empMap[String(e.id)] = e.full_name; });
+
+    let rows = result.rows.map(row => {
+      const cName = compMap[String(row.company_id)] || 'N/A';
+      const clName = clientMap[String(row.client_id)] || 'N/A';
+      const uName = empMap[String(row.user_id)] || 'N/A';
+
+      return {
+        ...row,
+        company_name: cName,
+        client_name: clName,
+        user_name: uName,
+        telecom_provider: 'e& (Etisalat)'
+      };
+    });
+
+    if (clientId && clientId !== 'null' && clientId !== 'undefined' && String(clientId).trim() !== '') {
+      rows = rows.filter(r => String(r.client_id) === String(clientId) || !r.client_id);
+    }
+
+    res.status(200).json(rows);
   } catch (error) {
     console.error('Error fetching add-ons:', error);
     res.status(500).json({ message: 'Internal Server Error', error: error.message });
   }
 };
 
-// Get single Add-On by ID from tbl_add_on_data
+// Get single Add-On by ID from tbl_add_on
 exports.getAddOnById = async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await db.query('SELECT * FROM tbl_add_on_data WHERE id = $1', [id]);
+    const result = await db.query('SELECT * FROM tbl_add_on WHERE id = $1', [id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Add-On record not found' });
     }
@@ -179,7 +332,7 @@ exports.getAddOnById = async (req, res) => {
   }
 };
 
-// Create new Add-On record in tbl_add_on_data
+// Create new Add-On record in tbl_add_on
 exports.createAddOn = async (req, res) => {
   try {
     const body = req.body || {};
@@ -195,8 +348,21 @@ exports.createAddOn = async (req, res) => {
 
     const extracted = extractAddonFields(body);
 
+    let finalTeleId = tele_id || null;
+    if (!finalTeleId && (extracted.simNumber || extracted.accountNumber)) {
+      try {
+        const tRes = await db.query(
+          "SELECT id FROM tbl_telecome_data WHERE field_data->>'sim_number' = $1 OR field_data->>'account_number' = $2 LIMIT 1",
+          [extracted.simNumber || '', extracted.accountNumber || '']
+        );
+        if (tRes.rows.length > 0) {
+          finalTeleId = tRes.rows[0].id;
+        }
+      } catch (e) {}
+    }
+
     const queryText = `
-      INSERT INTO tbl_add_on_data (
+      INSERT INTO tbl_add_on (
         tele_id, client_id, company_id, country_id, role_id, user_id,
         account_number, sim_number, activation_date, plan_name, plan_amount,
         subscription_type, document_attachments, addon_type, voice_minute_type,
@@ -207,7 +373,7 @@ exports.createAddOn = async (req, res) => {
     `;
 
     const params = [
-      tele_id || null,
+      finalTeleId,
       client_id || null,
       company_id || null,
       country_id || null,
@@ -229,18 +395,11 @@ exports.createAddOn = async (req, res) => {
 
     const result = await db.query(queryText, params);
 
-    // Sync file to public.attachment table
-    if (extracted.filePath) {
-      await syncToAttachmentTable(client_id, company_id, extracted.filePath);
+    // Sync all attached files to public.attachment table
+    const filesToSync = Array.from(new Set([...(extracted.normalizedDocs || []), ...(extracted.savedFilePaths || [])]));
+    for (const fPath of filesToSync) {
+      await syncToAttachmentTable(client_id || body.clientid, company_id, fPath, 'Add-on Details');
     }
-    
-    // Mirror to tbl_add_on table for compatibility
-    try {
-      await db.query(
-        `INSERT INTO tbl_add_on (tele_id, client_id, company_id, country_id, role_id, user_id, account_number, sim_number, activation_date, plan_name, plan_amount, subscription_type, document_attachments, addon_type, voice_minute_type, roaming_category, addon_details, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
-        params
-      );
-    } catch(e) {}
 
     res.status(201).json({
       message: 'Add-On created successfully.',
@@ -252,7 +411,7 @@ exports.createAddOn = async (req, res) => {
   }
 };
 
-// Update Add-On record in tbl_add_on_data
+// Update Add-On record in tbl_add_on
 exports.updateAddOn = async (req, res) => {
   try {
     const { id } = req.params;
@@ -268,59 +427,110 @@ exports.updateAddOn = async (req, res) => {
 
     const extracted = extractAddonFields(body);
 
+    // 1. Inspect table columns and data types in tbl_add_on
+    const colRes = await db.query(
+      `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'tbl_add_on'`
+    );
+    const colMap = {};
+    colRes.rows.forEach(r => {
+      colMap[r.column_name.toLowerCase()] = r.data_type.toLowerCase();
+    });
+
+    const updateClauses = [];
+    const values = [];
+    let paramIdx = 1;
+
+    const addField = (colName, val) => {
+      const lower = colName.toLowerCase();
+      if (!colMap[lower]) return; // Skip if column does not exist in table
+
+      const dbType = colMap[lower];
+
+      if (dbType.includes('int')) {
+        const parsed = parseInt(val, 10);
+        updateClauses.push(`"${colName}" = $${paramIdx}`);
+        values.push(Number.isNaN(parsed) ? null : parsed);
+        paramIdx++;
+      } else if (dbType.includes('numeric') || dbType.includes('double') || dbType.includes('decimal') || dbType.includes('real')) {
+        const parsed = parseFloat(val);
+        updateClauses.push(`"${colName}" = $${paramIdx}`);
+        values.push(Number.isNaN(parsed) ? null : parsed);
+        paramIdx++;
+      } else if (dbType.includes('json')) {
+        updateClauses.push(`"${colName}" = $${paramIdx}::${dbType}`);
+        values.push(val ? (typeof val === 'string' ? val : JSON.stringify(val)) : '[]');
+        paramIdx++;
+      } else if (dbType.includes('date') || dbType.includes('time')) {
+        updateClauses.push(`"${colName}" = $${paramIdx}`);
+        values.push(val ? normalizeDate(val) : null);
+        paramIdx++;
+      } else {
+        updateClauses.push(`"${colName}" = $${paramIdx}`);
+        values.push(val !== undefined && val !== null ? String(val) : null);
+        paramIdx++;
+      }
+    };
+
+    if (tele_id !== undefined) addField('tele_id', tele_id);
+    if (client_id !== undefined) addField('client_id', client_id);
+    if (company_id !== undefined) addField('company_id', company_id);
+    if (country_id !== undefined) addField('country_id', country_id);
+
+    addField('account_number', extracted.accountNumber);
+    addField('sim_number', extracted.simNumber);
+    addField('activation_date', extracted.activationDate);
+    addField('plan_name', extracted.planName);
+    addField('plan_amount', extracted.planAmount);
+    addField('subscription_type', extracted.subscriptionType);
+
+    if (extracted.docJson !== null) {
+      addField('document_attachments', extracted.docJson);
+    }
+
+    addField('addon_type', extracted.addonType);
+    addField('voice_minute_type', extracted.voiceMinuteType);
+    addField('roaming_category', extracted.roamingCategory);
+    addField('addon_details', extracted.addonDetails);
+
+    if (status) addField('status', status);
+    if (updated_by) addField('updated_by', updated_by);
+    if (colMap['updated_at']) {
+      updateClauses.push(`"updated_at" = CURRENT_TIMESTAMP`);
+    }
+
+    if (updateClauses.length === 0) {
+      return res.status(400).json({ message: 'No valid fields provided to update.' });
+    }
+
+    values.push(id);
     const queryText = `
-      UPDATE tbl_add_on_data
-      SET tele_id = COALESCE($1, tele_id),
-          client_id = COALESCE($2, client_id),
-          company_id = COALESCE($3, company_id),
-          country_id = COALESCE($4, country_id),
-          account_number = COALESCE($5, account_number),
-          sim_number = COALESCE($6, sim_number),
-          activation_date = COALESCE($7, activation_date),
-          plan_name = COALESCE($8, plan_name),
-          plan_amount = COALESCE($9, plan_amount),
-          subscription_type = COALESCE($10, subscription_type),
-          document_attachments = COALESCE($11, document_attachments),
-          addon_type = COALESCE($12, addon_type),
-          voice_minute_type = COALESCE($13, voice_minute_type),
-          roaming_category = COALESCE($14, roaming_category),
-          addon_details = COALESCE($15, addon_details),
-          status = COALESCE($16, status),
-          updated_by = COALESCE($17, updated_by),
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = $18
+      UPDATE tbl_add_on
+      SET ${updateClauses.join(', ')}
+      WHERE id = $${paramIdx}
       RETURNING *
     `;
 
-    const params = [
-      tele_id || null,
-      client_id || null,
-      company_id || null,
-      country_id || null,
-      extracted.accountNumber,
-      extracted.simNumber,
-      extracted.activationDate,
-      extracted.planName,
-      extracted.planAmount,
-      extracted.subscriptionType,
-      extracted.docJson,
-      extracted.addonType,
-      extracted.voiceMinuteType,
-      extracted.roamingCategory,
-      extracted.addonDetails,
-      status || null,
-      updated_by || null,
-      id
-    ];
-
-    const result = await db.query(queryText, params);
+    const result = await db.query(queryText, values);
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Add-On record not found' });
     }
 
-    // Sync file to public.attachment table
-    if (extracted.filePath) {
-      await syncToAttachmentTable(client_id, company_id, extracted.filePath);
+    // Sync all attached files to public.attachment table
+    let finalClientId = client_id || body.clientid;
+    let finalCompanyId = company_id;
+    if (!finalClientId || !finalCompanyId) {
+      try {
+        const curRow = await db.query('SELECT client_id, company_id FROM tbl_add_on WHERE id = $1', [id]);
+        if (curRow.rows.length > 0) {
+          if (!finalClientId) finalClientId = curRow.rows[0].client_id;
+          if (!finalCompanyId) finalCompanyId = curRow.rows[0].company_id;
+        }
+      } catch (e) {}
+    }
+
+    const filesToSync = Array.from(new Set([...(extracted.normalizedDocs || []), ...(extracted.savedFilePaths || [])]));
+    for (const fPath of filesToSync) {
+      await syncToAttachmentTable(finalClientId, finalCompanyId, fPath, 'Add-on Details');
     }
 
     res.status(200).json({
@@ -333,11 +543,11 @@ exports.updateAddOn = async (req, res) => {
   }
 };
 
-// Delete Add-On record from tbl_add_on_data
+// Delete Add-On record from tbl_add_on
 exports.deleteAddOn = async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await db.query('DELETE FROM tbl_add_on_data WHERE id = $1 RETURNING *', [id]);
+    const result = await db.query('DELETE FROM tbl_add_on WHERE id = $1 RETURNING *', [id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Add-On record not found' });
     }
@@ -347,3 +557,4 @@ exports.deleteAddOn = async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error', error: error.message });
   }
 };
+
