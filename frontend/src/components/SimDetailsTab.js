@@ -1833,55 +1833,6 @@ export default function SimDetailsTab({
               <>
                 <ScrollView style={{ flex: 1, backgroundColor: '#F8FAFC', padding: 24 }}>
                   
-                  {/* AUTO-FILL FORM FROM PDF (Only in Client Logged Section) */}
-                  {isClientLogged && !isViewOnly && (
-                    <View style={{ marginBottom: 16 }}>
-                      <input
-                        type="file"
-                        id="telecomDataPdfInput"
-                        accept="application/pdf"
-                        style={{ display: 'none' }}
-                        onChange={handleAutoFillFromPdf}
-                        disabled={parsingPdf}
-                      />
-                      <label htmlFor="telecomDataPdfInput" style={{ cursor: 'pointer', display: 'inline-block' }}>
-                        <View style={styles.autoFillBtn}>
-                          {parsingPdf ? (
-                            <ActivityIndicator size="small" color="#7C3AED" />
-                          ) : (
-                            <Ionicons name="document-attach-outline" size={18} color="#7C3AED" />
-                          )}
-                          <Text style={styles.autoFillBtnText}>
-                            {parsingPdf ? 'Extracting PDF...' : 'Attach PDF'}
-                          </Text>
-                        </View>
-                      </label>
-
-                      {/* Attached PDF Badge / Display Chip */}
-                      {attachedPdfName ? (
-                        <View style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          backgroundColor: '#EFF6FF',
-                          borderColor: '#BFDBFE',
-                          borderWidth: 1,
-                          borderRadius: 8,
-                          paddingHorizontal: 12,
-                          paddingVertical: 8,
-                          marginTop: 10,
-                          gap: 8,
-                          alignSelf: 'flex-start'
-                        }}>
-                          <Ionicons name="document-text-outline" size={16} color="#2563EB" />
-                          <Text style={{ fontSize: 13, color: '#1E40AF', fontWeight: '600' }}>{attachedPdfName}</Text>
-                          <TouchableOpacity onPress={() => setAttachedPdfName('')} style={{ marginLeft: 6 }}>
-                            <Ionicons name="close-circle" size={16} color="#93C5FD" />
-                          </TouchableOpacity>
-                        </View>
-                      ) : null}
-                    </View>
-                  )}
-                  
                   {/* STATIC ADD-ON CONFIGURATION FIELDS */}
                   {isAddOnMode && (
                     <View style={styles.sectionCard}>
