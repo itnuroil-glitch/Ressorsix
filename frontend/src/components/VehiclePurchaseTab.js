@@ -1444,8 +1444,8 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={{ backgroundColor: deleteConfirmationText === 'YES' ? '#FECACA' : '#F1F5F9', paddingVertical: 10, paddingHorizontal: 24, borderRadius: 6 }}
-                disabled={deleteConfirmationText !== 'YES'}
+                style={{ backgroundColor: deleteConfirmationText.trim().toUpperCase() === 'YES' ? '#EF4444' : '#FECDD3', paddingVertical: 10, paddingHorizontal: 24, borderRadius: 6 }}
+                disabled={deleteConfirmationText.trim().toUpperCase() !== 'YES'}
                 onPress={handleConfirmDelete}
               >
                 <Text style={{ fontSize: 14, fontWeight: '700', color: '#FFFFFF' }}>YES</Text>
