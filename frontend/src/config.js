@@ -30,3 +30,21 @@ const getApiUrl = () => {
 };
 
 export const API_URL = getApiUrl();
+
+export const resolveFileUrl = (filePath) => {
+  if (!filePath || typeof filePath !== 'string') return '';
+  if (filePath.startsWith('http://') || filePath.startsWith('https://') || filePath.startsWith('blob:') || filePath.startsWith('data:')) {
+    return filePath;
+  }
+  let cleanPath = filePath;
+  // Normalize leading slashes and strip redundant '/backend' prefix so it maps cleanly to /Attachment or /upload
+  if (cleanPath.startsWith('/backend/')) {
+    cleanPath = cleanPath.replace(/^\/backend/, '');
+  } else if (cleanPath.startsWith('backend/')) {
+    cleanPath = cleanPath.replace(/^backend\//, '/');
+  }
+  if (!cleanPath.startsWith('/')) {
+    cleanPath = `/${cleanPath}`;
+  }
+  return `${API_URL}${cleanPath}`;
+};

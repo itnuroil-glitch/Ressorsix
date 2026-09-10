@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SearchableDropdown } from './CustomFieldsTab';
 import * as XLSX from 'xlsx';
 
-import { API_URL } from '../config';
+import { API_URL, resolveFileUrl } from '../config';
 
 const COLORS = {
   primary: '#004D34',
@@ -770,13 +770,7 @@ const TelecomBillTab = ({
     }
 
     if (rawPdf) {
-      if (rawPdf.startsWith('http') || rawPdf.startsWith('blob:') || rawPdf.startsWith('data:')) {
-        return rawPdf;
-      }
-      if (rawPdf.startsWith('/')) {
-        return `${API_URL}${rawPdf}`;
-      }
-      return `${API_URL}/Attachment/${encodeURIComponent(rawPdf)}`;
+      return resolveFileUrl(rawPdf);
     }
 
     const bNo = String(rec.bill_number || '');
@@ -1713,7 +1707,7 @@ const TelecomBillTab = ({
                               </View>
                               <View style={{ flex: 1 }}>
                                 <Text style={{ fontSize: 13, fontWeight: '700', color: '#0F172A' }} numberOfLines={1}>
-                                  {editingRecord?.pdf_filename || editingRecord?.['Invoice PDF'] || editingRecord?.field_data?.['Invoice PDF'] || `${editingRecord?.bill_number || 'Telecom_Bill'}_Invoice.pdf`}
+                                  {((editingRecord?.pdf_filename || editingRecord?.['Invoice PDF'] || editingRecord?.field_data?.['Invoice PDF'] || '').split('/').pop()) || `${editingRecord?.bill_number || 'Telecom_Bill'}_Invoice.pdf`}
                                 </Text>
                                 <Text style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>
                                   {editingRecord?.telecom_provider || 'Telecom'} • Tax Invoice & Itemized Call Statement PDF
