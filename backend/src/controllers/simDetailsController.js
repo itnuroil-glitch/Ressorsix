@@ -75,7 +75,7 @@ exports.getAllSimDetails = async (req, res) => {
         }
 
         // Mobile Number
-        if (!mobileNumber && (fn.includes('mobile') || fn.includes('phone'))) {
+        if (!mobileNumber && (k === '1786109549415' || ((fn.includes('mobile') || fn.includes('phone')) && !fn.includes('contract') && k !== '1786100950188'))) {
           mobileNumber = sv;
         }
 
@@ -85,7 +85,10 @@ exports.getAllSimDetails = async (req, res) => {
         }
 
         // Account Number
-        if (!accountNumber && fn.includes('account')) {
+        if (!accountNumber && fn.includes('account') && !fn.includes('contract') && k !== '1786100950188') {
+          accountNumber = sv;
+        }
+        if (!accountNumber && (k === '1786109466050' || k === '1787404908551')) {
           accountNumber = sv;
         }
 
