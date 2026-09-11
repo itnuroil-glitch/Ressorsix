@@ -17,6 +17,94 @@ import { API_URL, resolveFileUrl } from '../config';
 import { SearchableDropdown } from './CustomFieldsTab';
 import PhoneInputWithCountryCode from './PhoneInputWithCountryCode';
 
+// Automatically downscale and compress uploaded images to 100KB–300KB to prevent 413 Payload Too Large errors
+const compressImageFile = (file) => {
+  return new Promise((resolve) => {
+    // If not an image (e.g. PDF document), read directly as standard data URL
+    if (!file.type || !file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        resolve({
+          name: file.name,
+          type: file.type || 'application/octet-stream',
+          size: file.size,
+          data: reader.result
+        });
+      };
+      reader.onerror = () => resolve({ name: file.name, type: file.type, size: file.size, data: null });
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    // For images, load into an Image element and downscale using HTML5 Canvas
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const maxDim = 1280; // Max width/height to keep file compact
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Quality 0.7 gives crisp 100KB-300KB images
+          let quality = 0.7;
+          let compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+
+          // If still over 350KB, compress with quality 0.5
+          if (compressedBase64.length > 350 * 1024) {
+            compressedBase64 = canvas.toDataURL('image/jpeg', 0.5);
+          }
+
+          const approxBytes = Math.round((compressedBase64.length * 3) / 4);
+          const newName = file.name.replace(/\.[^/.]+$/, '') + '.jpg';
+
+          resolve({
+            name: newName,
+            type: 'image/jpeg',
+            size: approxBytes,
+            data: compressedBase64
+          });
+        } catch (err) {
+          console.error('Image compression error, fallback to original:', err);
+          resolve({
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            data: e.target.result
+          });
+        }
+      };
+      img.onerror = () => {
+        resolve({
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          data: e.target.result
+        });
+      };
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve({ name: file.name, type: file.type, size: file.size, data: null });
+    reader.readAsDataURL(file);
+  });
+};
+
 export default function SimDetailsTab({
   user,
   showToast,
@@ -2541,21 +2629,7 @@ export default function SimDetailsTab({
                                     const files = Array.from(e.target.files || []);
                                     if (files.length > 0) {
                                       const processed = await Promise.all(
-                                        files.map(file => {
-                                          return new Promise((resolve) => {
-                                            const reader = new FileReader();
-                                            reader.onload = () => {
-                                              resolve({
-                                                name: file.name,
-                                                type: file.type,
-                                                size: file.size,
-                                                data: reader.result
-                                              });
-                                            };
-                                            reader.onerror = () => resolve({ name: file.name, data: null });
-                                            reader.readAsDataURL(file);
-                                          });
-                                        })
+                                        files.map(file => compressImageFile(file))
                                       );
 
                                       const newNames = processed.map(f => f.name);
