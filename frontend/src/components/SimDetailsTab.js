@@ -2677,7 +2677,6 @@ export default function SimDetailsTab({
                                       if (processed.length > 0 && processed[0].data) {
                                         setPdfBase64(processed[0].data);
                                       }
-                                    }
                                   }}
                                 />
                                 <label htmlFor="addonDocAttachmentInput" style={{ cursor: 'pointer', width: '100%' }}>
