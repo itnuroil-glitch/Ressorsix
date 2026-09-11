@@ -1304,11 +1304,11 @@ export default function SimDetailsTab({
         subscription_type: formData.subscription_type || formData.subscription || formData['Subscription'] || 'One Time',
         document_attachments: formData.document_attachments || formData.attached_documents || [],
         files_data: formData.files_data || [],
-        pdf_base64: (formData.files_data && formData.files_data.length > 0) ? formData.files_data[0].data : (pdfBase64 || null),
         addon_type: formData.addon_type || formData['Addon Type'] || formData.add_on || 'Data',
         voice_minute_type: formData.voice_minute_type || formData['Voice Category'] || formData['Voice Minute Type'] || null,
         roaming_category: formData.roaming_category || formData['Roaming Category'] || null,
         ...formData,
+        pdf_base64: null,
         addon_details: (() => {
           const type = formData.addon_type || formData['Addon Type'] || formData.add_on || 'Data';
           if (type === 'Roaming') {
@@ -2636,47 +2636,52 @@ export default function SimDetailsTab({
                                     const files = Array.from(e.target.files || []);
                                     if (files.length === 0) return;
 
-                                    const MAX_SIZE = 1 * 1024 * 1024; // 1 MB limit
-                                    const oversized = files.find(f => !f.type.startsWith('image/') && f.size > MAX_SIZE);
-                                    if (oversized) {
-                                      const sizeMB = (oversized.size / (1024 * 1024)).toFixed(2);
-                                      setFileSizeAlert({
-                                        visible: true,
-                                        fileName: oversized.name,
-                                        fileSize: sizeMB
-                                      });
-                                      e.target.value = '';
-                                      return;
-                                    }
-
+                                    // Process files (with auto-compression for images)
                                     const processed = await Promise.all(
                                       files.map(file => compressImageFile(file))
                                     );
 
-                                    const stillOversized = processed.find(p => p.size > MAX_SIZE);
-                                    if (stillOversized) {
-                                      const sizeMB = (stillOversized.size / (1024 * 1024)).toFixed(2);
+                                    // Check COMBINED total size of all attachments together
+                                    const existingFilesData = Array.isArray(formData.files_data) ? formData.files_data : [];
+                                    const existingBytes = existingFilesData.reduce((acc, f) => acc + (f.size || 0), 0);
+                                    const newBytes = processed.reduce((acc, f) => acc + (f.size || 0), 0);
+                                    const totalCombinedBytes = existingBytes + newBytes;
+
+                                    // Safe limit for Nginx 1MB ceiling: Base64 expands by 33%, so 750KB is ~1MB in body
+                                    const MAX_COMBINED_BYTES = 750 * 1024;
+
+                                    if (totalCombinedBytes > MAX_COMBINED_BYTES) {
+                                      const totalMB = (totalCombinedBytes / (1024 * 1024)).toFixed(2);
+                                      const fileNames = files.map(f => f.name).join(', ');
+
+                                      // 1. Set custom modal state
                                       setFileSizeAlert({
                                         visible: true,
-                                        fileName: stillOversized.name,
-                                        fileSize: sizeMB
+                                        fileName: fileNames,
+                                        fileSize: totalMB
                                       });
+
+                                      // 2. Native browser alert fallback (guaranteed to display over any open modal)
+                                      try {
+                                        window.alert(
+                                          `File Size Not Accepted!\n\n` +
+                                          `The selected file(s) total ${totalMB} MB, which exceeds the 1 MB server limit.\n\n` +
+                                          `Files larger than 1 MB are not accepted. Please remove large files or attach a smaller document.`
+                                        );
+                                      } catch (err) {}
+
                                       e.target.value = '';
                                       return;
                                     }
 
-                                      const newNames = processed.map(f => f.name);
-                                      const combinedNames = Array.from(new Set([...rawDocs, ...newNames]));
-                                      handleChange('attached_documents', combinedNames);
-                                      handleChange('document_attachments', combinedNames);
-                                      handleChange('Document Attachment', combinedNames.join(', '));
+                                    const newNames = processed.map(f => f.name);
+                                    const combinedNames = Array.from(new Set([...rawDocs, ...newNames]));
+                                    handleChange('attached_documents', combinedNames);
+                                    handleChange('document_attachments', combinedNames);
+                                    handleChange('Document Attachment', combinedNames.join(', '));
 
-                                      const existingFilesData = Array.isArray(formData.files_data) ? formData.files_data : [];
-                                      const combinedFilesData = [...existingFilesData, ...processed.filter(p => p.data)];
-                                      handleChange('files_data', combinedFilesData);
-                                      if (processed.length > 0 && processed[0].data) {
-                                        setPdfBase64(processed[0].data);
-                                      }
+                                    const combinedFilesData = [...existingFilesData, ...processed.filter(p => p.data)];
+                                    handleChange('files_data', combinedFilesData);
                                   }}
                                 />
                                 <label htmlFor="addonDocAttachmentInput" style={{ cursor: 'pointer', width: '100%' }}>
@@ -3566,10 +3571,12 @@ export default function SimDetailsTab({
       >
         <View style={{
           flex: 1,
-          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          backgroundColor: 'rgba(15, 23, 42, 0.75)',
           justifyContent: 'center',
           alignItems: 'center',
-          padding: 20
+          padding: 20,
+          zIndex: 99999,
+          elevation: 20
         }}>
           <View style={{
             backgroundColor: '#FFFFFF',
