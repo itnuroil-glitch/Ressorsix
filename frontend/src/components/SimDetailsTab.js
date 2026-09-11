@@ -1282,6 +1282,21 @@ export default function SimDetailsTab({
       return;
     }
 
+    // Safety check: ensure total attachments payload does not exceed Nginx 1MB limit
+    if (isAddOnMode && Array.isArray(formData.files_data) && formData.files_data.length > 0) {
+      const totalBytes = formData.files_data.reduce((sum, f) => sum + (f.size || 0), 0);
+      if (totalBytes > 750 * 1024) {
+        const sizeMB = (totalBytes / (1024 * 1024)).toFixed(2);
+        try {
+          window.alert(
+            `Cannot save!\n\nThe attached files total ${sizeMB} MB, which exceeds the server limit of 1 MB.\n\nPlease remove one of the files or attach smaller documents.`
+          );
+        } catch (e) {}
+        showToast(`Total files (${sizeMB} MB) exceed the 1 MB server limit.`, 'error');
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const endpoint = isAddOnMode ? 'add-ons' : (isTelecomDataView ? 'telecom-data' : 'sim-details');
@@ -1294,7 +1309,12 @@ export default function SimDetailsTab({
                (formData.sim_number && (String(r.sim_number) === String(formData.sim_number) || String(fd.sim_number) === String(formData.sim_number)));
       });
 
+      const cleanFormData = { ...formData };
+      delete cleanFormData.files_data;
+      delete cleanFormData.pdf_base64;
+
       const payload = isAddOnMode ? {
+        ...cleanFormData,
         tele_id: formData.tele_id || matchedTele?.tele_id || matchedTele?.id || null,
         account_number: formData.account_number || formData['Account No'] || '',
         sim_number: null,
@@ -1307,7 +1327,6 @@ export default function SimDetailsTab({
         addon_type: formData.addon_type || formData['Addon Type'] || formData.add_on || 'Data',
         voice_minute_type: formData.voice_minute_type || formData['Voice Category'] || formData['Voice Minute Type'] || null,
         roaming_category: formData.roaming_category || formData['Roaming Category'] || null,
-        ...formData,
         pdf_base64: null,
         addon_details: (() => {
           const type = formData.addon_type || formData['Addon Type'] || formData.add_on || 'Data';
@@ -1343,7 +1362,7 @@ export default function SimDetailsTab({
         country_id: selectedCountry || user?.country_id || user?.countryid || 1,
         user_id: user?.id || user?.userId || user?.user_id || null,
         role_id: user?.roleId || null,
-        field_data: formData,
+        field_data: cleanFormData,
         status: formData.status || 'Active'
       } : {
         custom_field_id: customFieldId || null,
