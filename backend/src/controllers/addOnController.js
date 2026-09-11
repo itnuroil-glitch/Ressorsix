@@ -2,9 +2,34 @@ const db = require('../config/db');
 const fs = require('fs');
 const path = require('path');
 
-// Ensure sim_number column in tbl_add_on is nullable and clear any duplicate sim_number values
+// Ensure tbl_add_on table exists, sim_number column is nullable and clear any duplicate sim_number values
 (async () => {
   try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS tbl_add_on (
+        id SERIAL PRIMARY KEY,
+        tele_id INTEGER,
+        client_id INTEGER,
+        company_id INTEGER,
+        country_id INTEGER,
+        role_id INTEGER,
+        user_id INTEGER,
+        account_number VARCHAR(100),
+        sim_number VARCHAR(100),
+        activation_date DATE,
+        plan_name VARCHAR(255),
+        plan_amount NUMERIC(10,2),
+        subscription_type VARCHAR(100),
+        document_attachments TEXT,
+        addon_type VARCHAR(100),
+        voice_minute_type VARCHAR(255),
+        roaming_category VARCHAR(255),
+        addon_details TEXT,
+        status VARCHAR(50) DEFAULT 'Active',
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
     await db.query('ALTER TABLE tbl_add_on ALTER COLUMN sim_number DROP NOT NULL');
     await db.query(`
       UPDATE tbl_add_on 
