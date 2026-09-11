@@ -3,7 +3,8 @@ const router = express.Router();
 const supplierController = require('../controllers/supplierController');
 
 router.get('/joined-info', supplierController.getSuppliersJoinedInfo);
-router.get('/client/:clientid', supplierController.getSuppliersByClient);
+router.get('/client/:clientid?', supplierController.getSuppliersByClient);
+router.get('/client', supplierController.getSuppliersByClient);
 
 router.get('/', supplierController.getAllSuppliers);
 router.post('/', supplierController.createSupplier);

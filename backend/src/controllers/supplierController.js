@@ -3,15 +3,44 @@ const db = require('../config/db');
 exports.getAllSuppliers = async (req, res) => {
   try {
     const { clientid } = req.query;
+    const company_id = req.query.company_id || req.query.companyid;
+
     let query = `
-      SELECT s.*, c.company_name
+      SELECT 
+        s.*, 
+        c.company_name,
+        cl.client_name,
+        COALESCE(
+          s.field_data->>'supplier_name',
+          s.field_data->>'1781941788052',
+          (
+            SELECT x.value 
+            FROM jsonb_each_text(COALESCE(s.field_data, '{}'::jsonb)) x
+            LEFT JOIN tbl_customfield_details cfd ON cfd.field_id::text = x.key::text
+            WHERE (LOWER(cfd.field_name) LIKE '%supplier%' OR LOWER(x.key) LIKE '%supplier%')
+              AND (cfd.field_name IS NULL OR LOWER(cfd.field_name) NOT LIKE '%type%')
+            LIMIT 1
+          ),
+          (SELECT value FROM jsonb_each_text(COALESCE(s.field_data, '{}'::jsonb)) LIMIT 1)
+        ) AS supplier_name
       FROM tbl_suppliers s
       LEFT JOIN company c ON s.company_id::text = c.id::text
+      LEFT JOIN client cl ON s.clientid::text = cl.id::text
+      WHERE (s.isdelete = false OR s.isdelete IS NULL)
     `;
     let params = [];
-    if (clientid) {
-      query += ' WHERE s.clientid = $1';
+    if (clientid && clientid !== 'all' && clientid !== 'undefined') {
       params.push(clientid);
+      query += ` AND s.clientid::text = $${params.length}`;
+    }
+    if (company_id && company_id !== 'all' && company_id !== 'undefined') {
+      params.push(company_id);
+      query += ` AND (
+        s.company_id IS NULL 
+        OR s.company_id = '' 
+        OR s.company_id::text = $${params.length} 
+        OR string_to_array(nullif(s.company_id::text, ''), ',') && string_to_array(nullif($${params.length}::text, ''), ',')
+      )`;
     }
     query += ' ORDER BY s.id DESC';
     const result = await db.query(query, params);
@@ -66,13 +95,30 @@ exports.getSuppliersJoinedInfo = async (req, res) => {
     const query = `
       SELECT 
         s.id AS supplier_id,
+        s.id,
         s.clientid,
         c.client_name,
-        s.field_data->>'1781941788052' AS supplier_name,
+        s.company_id,
+        comp.company_name,
+        COALESCE(
+          s.field_data->>'supplier_name',
+          s.field_data->>'1781941788052',
+          (
+            SELECT x.value 
+            FROM jsonb_each_text(COALESCE(s.field_data, '{}'::jsonb)) x
+            LEFT JOIN tbl_customfield_details cfd ON cfd.field_id::text = x.key::text
+            WHERE (LOWER(cfd.field_name) LIKE '%supplier%' OR LOWER(x.key) LIKE '%supplier%')
+              AND (cfd.field_name IS NULL OR LOWER(cfd.field_name) NOT LIKE '%type%')
+            LIMIT 1
+          ),
+          (SELECT value FROM jsonb_each_text(COALESCE(s.field_data, '{}'::jsonb)) LIMIT 1)
+        ) AS supplier_name,
         s.status,
-        s.created_at
+        s.created_at,
+        s.field_data
       FROM tbl_suppliers s
-      LEFT JOIN client c ON s.clientid = c.id
+      LEFT JOIN client c ON s.clientid::text = c.id::text
+      LEFT JOIN company comp ON s.company_id::text = comp.id::text
       WHERE s.isdelete = false OR s.isdelete IS NULL
       ORDER BY s.id DESC
     `;
@@ -85,17 +131,60 @@ exports.getSuppliersJoinedInfo = async (req, res) => {
 
 exports.getSuppliersByClient = async (req, res) => {
   try {
-    const { clientid } = req.params;
-    const query = `
+    let clientid = req.params.clientid || req.query.clientid;
+    const company_id = req.query.company_id || req.query.companyid;
+
+    if (clientid && (clientid.startsWith(':') || clientid === 'undefined' || clientid === 'all')) {
+      clientid = req.query.clientid || null;
+    }
+
+    let query = `
       SELECT 
-        id,
-        field_data->>'1781941788052' AS supplier_name
-      FROM tbl_suppliers
-      WHERE clientid = $1 
-        AND (isdelete = false OR isdelete IS NULL)
-      ORDER BY id DESC
+        s.id AS supplier_id,
+        s.id,
+        s.clientid,
+        c.client_name,
+        s.company_id,
+        comp.company_name,
+        COALESCE(
+          s.field_data->>'supplier_name',
+          s.field_data->>'1781941788052',
+          (
+            SELECT x.value 
+            FROM jsonb_each_text(COALESCE(s.field_data, '{}'::jsonb)) x
+            LEFT JOIN tbl_customfield_details cfd ON cfd.field_id::text = x.key::text
+            WHERE (LOWER(cfd.field_name) LIKE '%supplier%' OR LOWER(x.key) LIKE '%supplier%')
+              AND (cfd.field_name IS NULL OR LOWER(cfd.field_name) NOT LIKE '%type%')
+            LIMIT 1
+          ),
+          (SELECT value FROM jsonb_each_text(COALESCE(s.field_data, '{}'::jsonb)) LIMIT 1)
+        ) AS supplier_name,
+        s.status,
+        s.created_at,
+        s.field_data
+      FROM tbl_suppliers s
+      LEFT JOIN client c ON s.clientid::text = c.id::text
+      LEFT JOIN company comp ON s.company_id::text = comp.id::text
+      WHERE (s.isdelete = false OR s.isdelete IS NULL)
     `;
-    const result = await db.query(query, [clientid]);
+
+    const params = [];
+    if (clientid && clientid !== 'all' && clientid !== 'undefined') {
+      params.push(clientid);
+      query += ` AND s.clientid::text = $${params.length}`;
+    }
+    if (company_id && company_id !== 'all' && company_id !== 'undefined') {
+      params.push(company_id);
+      query += ` AND (
+        s.company_id IS NULL 
+        OR s.company_id = '' 
+        OR s.company_id::text = $${params.length} 
+        OR string_to_array(nullif(s.company_id::text, ''), ',') && string_to_array(nullif($${params.length}::text, ''), ',')
+      )`;
+    }
+
+    query += ' ORDER BY c.client_name ASC NULLS LAST, s.id DESC';
+    const result = await db.query(query, params);
     res.status(200).json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
