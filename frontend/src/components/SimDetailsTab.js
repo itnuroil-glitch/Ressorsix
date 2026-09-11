@@ -2348,15 +2348,6 @@ export default function SimDetailsTab({
                                   handleChange('Account Number', val);
                                   if (matched) {
                                     handleChange('tele_id', matched.tele_id || matched.id);
-                                    if (matched.plan_name && !formData.plan_name) {
-                                      handleChange('plan_name', matched.plan_name);
-                                      handleChange('Plan Name', matched.plan_name);
-                                    }
-                                    const matchedAmt = matched.plan_amount || matched.monthly_plan_amount;
-                                    if (matchedAmt && !formData.plan_amount) {
-                                      handleChange('plan_amount', matchedAmt);
-                                      handleChange('Plan Amount', matchedAmt);
-                                    }
                                     if (matched.telecom_provider && !formData.telecom_provider) {
                                       handleChange('telecom_provider', matched.telecom_provider);
                                     }
