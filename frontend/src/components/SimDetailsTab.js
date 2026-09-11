@@ -164,6 +164,13 @@ export default function SimDetailsTab({
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
 
+  // File size limit dialog state (Max 1MB for documents)
+  const [fileSizeAlert, setFileSizeAlert] = useState({
+    visible: false,
+    fileName: '',
+    fileSize: ''
+  });
+
   // Add On View State
   const [addOnRecords, setAddOnRecords] = useState([]);
   const [loadingAddOns, setLoadingAddOns] = useState(false);
@@ -2627,10 +2634,36 @@ export default function SimDetailsTab({
                                   style={{ display: 'none' }}
                                   onChange={async (e) => {
                                     const files = Array.from(e.target.files || []);
-                                    if (files.length > 0) {
-                                      const processed = await Promise.all(
-                                        files.map(file => compressImageFile(file))
-                                      );
+                                    if (files.length === 0) return;
+
+                                    const MAX_SIZE = 1 * 1024 * 1024; // 1 MB limit
+                                    const oversized = files.find(f => !f.type.startsWith('image/') && f.size > MAX_SIZE);
+                                    if (oversized) {
+                                      const sizeMB = (oversized.size / (1024 * 1024)).toFixed(2);
+                                      setFileSizeAlert({
+                                        visible: true,
+                                        fileName: oversized.name,
+                                        fileSize: sizeMB
+                                      });
+                                      e.target.value = '';
+                                      return;
+                                    }
+
+                                    const processed = await Promise.all(
+                                      files.map(file => compressImageFile(file))
+                                    );
+
+                                    const stillOversized = processed.find(p => p.size > MAX_SIZE);
+                                    if (stillOversized) {
+                                      const sizeMB = (stillOversized.size / (1024 * 1024)).toFixed(2);
+                                      setFileSizeAlert({
+                                        visible: true,
+                                        fileName: stillOversized.name,
+                                        fileSize: sizeMB
+                                      });
+                                      e.target.value = '';
+                                      return;
+                                    }
 
                                       const newNames = processed.map(f => f.name);
                                       const combinedNames = Array.from(new Set([...rawDocs, ...newNames]));
@@ -3521,6 +3554,97 @@ export default function SimDetailsTab({
               <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '700' }}>OK, Close</Text>
             </TouchableOpacity>
 
+          </View>
+        </View>
+      </Modal>
+
+      {/* FILE SIZE LIMIT EXCEEDED MODAL DIALOGUE */}
+      <Modal
+        visible={fileSizeAlert.visible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setFileSizeAlert({ visible: false, fileName: '', fileSize: '' })}
+      >
+        <View style={{
+          flex: 1,
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 20
+        }}>
+          <View style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: 16,
+            width: '90%',
+            maxWidth: 440,
+            padding: 24,
+            alignItems: 'center',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 10 },
+            shadowOpacity: 0.15,
+            shadowRadius: 20,
+            elevation: 8
+          }}>
+            <View style={{
+              width: 56,
+              height: 56,
+              borderRadius: 28,
+              backgroundColor: '#FEE2E2',
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginBottom: 16
+            }}>
+              <Ionicons name="warning-outline" size={32} color="#DC2626" />
+            </View>
+
+            <Text style={{
+              fontSize: 18,
+              fontWeight: '700',
+              color: '#0F172A',
+              marginBottom: 8,
+              textAlign: 'center'
+            }}>
+              File Size Not Accepted
+            </Text>
+
+            <Text style={{
+              fontSize: 14,
+              color: '#64748B',
+              textAlign: 'center',
+              lineHeight: 20,
+              marginBottom: 12
+            }}>
+              The selected file <Text style={{ fontWeight: '700', color: '#0F172A' }}>"{fileSizeAlert.fileName}"</Text> ({fileSizeAlert.fileSize} MB) is larger than the allowed upload limit.
+            </Text>
+
+            <View style={{
+              backgroundColor: '#FEF2F2',
+              borderColor: '#FCA5A5',
+              borderWidth: 1,
+              borderRadius: 8,
+              paddingVertical: 10,
+              paddingHorizontal: 14,
+              marginBottom: 20,
+              width: '100%'
+            }}>
+              <Text style={{ fontSize: 13, color: '#B91C1C', textAlign: 'center', fontWeight: '600' }}>
+                Files larger than 1 MB are not accepted. Please select a smaller document.
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => setFileSizeAlert({ visible: false, fileName: '', fileSize: '' })}
+              style={{
+                backgroundColor: '#166534',
+                paddingVertical: 12,
+                paddingHorizontal: 32,
+                borderRadius: 8,
+                width: '100%',
+                alignItems: 'center'
+              }}
+            >
+              <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '700' }}>OK, Got It</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
