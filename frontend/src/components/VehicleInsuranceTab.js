@@ -1586,7 +1586,7 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
                 </View>
                 <View>
                   <Text style={{ fontSize: 18, fontWeight: '700', color: '#0F172A', letterSpacing: -0.2 }}>
-                    {isViewOnly ? `View Insurance Record #${editingRecord?.id}` : (editingRecord ? `Edit Insurance Record #${editingRecord.id}` : 'Add Vehicle Insurance')}
+                    {isViewOnly ? 'View Insurance Record' : (editingRecord ? 'Edit Insurance Record' : 'Add Vehicle Insurance')}
                   </Text>
                   <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>
                     {isViewOnly

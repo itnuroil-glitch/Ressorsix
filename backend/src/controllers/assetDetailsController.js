@@ -551,12 +551,18 @@ exports.getAssetDepartmentsByClient = async (req, res) => {
 exports.getAssetDropdownList = async (req, res) => {
   try {
     const clientid = req.query.clientid || req.query.client_id;
-    let query = 'SELECT * FROM tbl_asset';
+    const companyId = req.query.company_id || req.query.companyid;
+    let query = 'SELECT * FROM tbl_asset WHERE 1=1';
     const params = [];
 
-    if (clientid) {
-      query += ' WHERE clientid = $1';
-      params.push(clientid);
+    if (clientid && clientid !== 'undefined' && clientid !== 'null') {
+      params.push(String(clientid).trim());
+      query += ` AND clientid::text = $${params.length}`;
+    }
+
+    if (companyId && companyId !== 'undefined' && companyId !== 'null' && companyId !== 'All') {
+      params.push(String(companyId).trim());
+      query += ` AND (company_id::text = $${params.length} OR company_id IS NULL)`;
     }
 
     query += ' ORDER BY id DESC';
