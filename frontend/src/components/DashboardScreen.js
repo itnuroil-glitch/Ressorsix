@@ -3679,11 +3679,11 @@ export default function DashboardScreen({ user, onSignOut }) {
       let companyMatch = true;
       if (user && String(user.roleId) !== '1') {
         const matchesClient = user.clientid && Number(e.clientid) === Number(user.clientid);
-        const matchesCompany = user.companyid && e.companies && e.companies.some(c => Number(c.id) === Number(user.companyid));
-        if (user.clientid) {
-          companyMatch = matchesClient || matchesCompany;
-        } else if (user.companyid) {
+        const matchesCompany = user.companyid && Number(e.basecompany_id) === Number(user.companyid);
+        if (user.companyid) {
           companyMatch = matchesCompany;
+        } else if (user.clientid) {
+          companyMatch = matchesClient;
         }
       }
 

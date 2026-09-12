@@ -43,7 +43,7 @@ exports.getAllEmployees = async (req, res) => {
 
     if (targetCompId) {
       params.push(String(targetCompId).trim());
-      queryText += ` AND (e.basecompany_id::text = $${params.length} OR EXISTS (SELECT 1 FROM employee_company ec WHERE ec.employee_id = e.id AND ec.company_id::text = $${params.length}))`;
+      queryText += ` AND e.basecompany_id::text = $${params.length}`;
     }
 
     queryText += ` ORDER BY e.id DESC`;
@@ -531,15 +531,7 @@ exports.getEmployeesByCompany = async (req, res) => {
       LEFT JOIN company bc ON e.basecompany_id = bc.id
       LEFT JOIN users u ON LOWER(TRIM(e.email)) = LOWER(TRIM(u.email))
       WHERE e.is_deleted = false
-        AND (
-          e.basecompany_id::text = $1
-          OR EXISTS (
-            SELECT 1 
-            FROM employee_company ec 
-            WHERE ec.employee_id = e.id 
-              AND ec.company_id::text = $1
-          )
-        )
+        AND e.basecompany_id::text = $1
     `;
     const params = [String(companyId).trim()];
 
