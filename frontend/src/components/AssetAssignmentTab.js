@@ -157,12 +157,18 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
 
   const fetchInitialData = async () => {
     try {
+      const initialClient = user?.client_id || user?.clientid;
+      const initialCompany = user?.company_id || user?.companyid;
+      const assetsUrl = initialClient
+        ? `${API_URL}/api/asset-details/dropdown?clientid=${encodeURIComponent(initialClient)}${initialCompany ? `&company_id=${encodeURIComponent(initialCompany)}` : ''}`
+        : `${API_URL}/api/asset-details/dropdown`;
+
       const [clientsRes, countriesRes, modulesRes, recordsRes, assetsRes, employeesRes] = await Promise.all([
         fetch(`${API_URL}/api/clients`),
         fetch(`${API_URL}/api/countries`),
         fetch(`${API_URL}/api/modules`),
         fetch(`${API_URL}/api/asset-assignment${user && user.clientid ? `?clientid=${user.clientid}&email=${encodeURIComponent(user.email)}` : ''}`),
-        fetch(`${API_URL}/api/asset-details/dropdown`),
+        fetch(assetsUrl),
         fetch(`${API_URL}/api/employees${user && String(user.roleId) !== '1' && user.clientid ? `?clientid=${user.clientid}` : ''}`)
       ]);
       const [clientsData, countriesData, modulesData, recordsData, assetsData, employeesData] = await Promise.all([
@@ -197,6 +203,33 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const fetchAssetsForClient = async (clientId, companyId) => {
+    if (!clientId) {
+      setAssetOptions([]);
+      return [];
+    }
+    try {
+      let url = `${API_URL}/api/asset-details/dropdown?clientid=${encodeURIComponent(clientId)}`;
+      if (companyId && companyId !== 'All') {
+        url += `&company_id=${encodeURIComponent(companyId)}`;
+      }
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        const formatted = (Array.isArray(data) ? data : []).map(item => ({
+          label: item.name,
+          value: String(item.id),
+          rawData: item
+        }));
+        setAssetOptions(formatted);
+        return formatted;
+      }
+    } catch (err) {
+      console.error('Error fetching assets for dropdown:', err);
+    }
+    return [];
   };
 
   const fetchCompaniesForClient = async (clientId, overrideAction) => {
@@ -248,16 +281,19 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
     let currentCompanies = [];
     if (selectedClient) {
       currentCompanies = await fetchCompaniesForClient(selectedClient, 'create');
+      fetchAssetsForClient(selectedClient, selectedCompany);
     }
     if (currentCompanies.length === 1 && user && String(user.roleId) !== '1') {
       const singleComp = currentCompanies[0];
-      setSelectedCompany(String(singleComp.id));
+      const compId = String(singleComp.id);
+      setSelectedCompany(compId);
       const targetCountry = singleComp.country ? String(singleComp.country) : selectedCountry;
       if (singleComp.country) setSelectedCountry(String(singleComp.country));
       await fetchFormConfiguration(
         selectedClient,
         targetCountry,
-        selectedModule
+        selectedModule,
+        compId
       );
     } else {
       setWizardStep(1);
@@ -265,10 +301,12 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
     setIsFormOpen(true);
   };
 
-  const fetchFormConfiguration = async (clientId, countryId, moduleId) => {
+  const fetchFormConfiguration = async (clientId, countryId, moduleId, companyId) => {
+    const activeCompanyId = companyId !== undefined ? companyId : selectedCompany;
     setLoading(true);
     setWizardStep(2);
     try {
+      fetchAssetsForClient(clientId, activeCompanyId);
       // Fetch custom fields for this configuration
       const cfRes = await fetch(`${API_URL}/api/custom-fields`);
       const customFields = await cfRes.json();
@@ -343,10 +381,16 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
               const separator = processedPath.includes('?') ? '&' : '?';
               processedPath = `${processedPath}${separator}client_id=${clientId}`;
             }
-            // Automatically append clientid to employees dynamic path
-            if (processedPath.includes('employees') && clientId) {
-              const separator = processedPath.includes('?') ? '&' : '?';
-              processedPath = `${processedPath}${separator}clientid=${clientId}`;
+            // Automatically append clientid and company_id to employees dynamic path
+            if (processedPath.includes('employees')) {
+              if (clientId) {
+                const separator = processedPath.includes('?') ? '&' : '?';
+                processedPath = `${processedPath}${separator}clientid=${encodeURIComponent(clientId)}`;
+              }
+              if (activeCompanyId && activeCompanyId !== 'All') {
+                const separator = processedPath.includes('?') ? '&' : '?';
+                processedPath = `${processedPath}${separator}company_id=${encodeURIComponent(activeCompanyId)}`;
+              }
             }
             // Automatically append countryId if the path is designed for country lookup
             if (processedPath.includes('country') && countryId) {
@@ -483,11 +527,14 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
     setSelectedCountry(String(record.country_id || ''));
     setSelectedModule(String(record.moduleid || ''));
     await fetchCompaniesForClient(String(record.clientid || ''), 'edit');
-    setSelectedCompany(record.company_id ? String(record.company_id) : '');
+    const compIdEdit = record.company_id ? String(record.company_id) : '';
+    setSelectedCompany(compIdEdit);
+    fetchAssetsForClient(String(record.clientid || ''), compIdEdit);
     await fetchFormConfiguration(
       String(record.clientid || ''),
       String(record.country_id || ''),
-      String(record.moduleid || '')
+      String(record.moduleid || ''),
+      compIdEdit
     );
     setIsFormOpen(true);
   };
@@ -518,11 +565,14 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
     setSelectedCountry(String(record.country_id || ''));
     setSelectedModule(String(record.moduleid || ''));
     await fetchCompaniesForClient(String(record.clientid || ''), 'view');
-    setSelectedCompany(record.company_id ? String(record.company_id) : '');
+    const compIdView = record.company_id ? String(record.company_id) : '';
+    setSelectedCompany(compIdView);
+    fetchAssetsForClient(String(record.clientid || ''), compIdView);
     await fetchFormConfiguration(
       String(record.clientid || ''),
       String(record.country_id || ''),
-      String(record.moduleid || '')
+      String(record.moduleid || ''),
+      compIdView
     );
     setIsFormOpen(true);
   };
@@ -1123,7 +1173,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
             onPress={handleAddNewRecord}
           >
             <Ionicons name="add-circle" size={20} color="#FFFFFF" />
-            <Text style={styles.addButtonText}>Add Asset</Text>
+            <Text style={styles.addButtonText}>Add Asset Assignment</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -1184,7 +1234,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
                 onPress={handleAddNewRecord}
               >
                 <Ionicons name="add-circle" size={22} color="#FFFFFF" style={{ marginRight: 8 }} />
-                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>Add Asset</Text>
+                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>Add Asset Assignment</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1193,7 +1243,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
             <View style={styles.emptyState}>
               <Ionicons name="document-text-outline" size={48} color={COLORS.textMuted} />
               <Text style={styles.emptyStateText}>No asset assignment records found.</Text>
-              <Text style={styles.emptyStateSubtext}>Click 'Add Asset' to create a new record.</Text>
+              <Text style={styles.emptyStateSubtext}>Click 'Add Asset Assignment' to create a new record.</Text>
             </View>
           ) : (
             <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#F1F5F9', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1, overflow: 'hidden' }}>
@@ -1584,7 +1634,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <Ionicons name="document-text" size={24} color={COLORS.primary} />
-                <Text style={styles.modalTitle}>{isViewOnly ? `View Asset Assignment Record #${editingRecord?.id}` : (editingRecord ? `Edit Asset Assignment Record #${editingRecord.id}` : 'Add Asset')}</Text>
+                <Text style={styles.modalTitle}>{isViewOnly ? `View Asset Assignment Record #${editingRecord?.id}` : (editingRecord ? `Edit Asset Assignment Record #${editingRecord.id}` : 'Add Asset Assignment')}</Text>
               </View>
               <TouchableOpacity onPress={() => { setIsFormOpen(false); setEditingRecord(null); setFormData({}); setIsViewOnly(false); }} style={styles.closeButton}>
                 <Ionicons name="close" size={22} color={COLORS.textSecondary} />
@@ -1630,6 +1680,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
                           setSelectedClient(val);
                           setSelectedCompany('');
                           fetchCompaniesForClient(val);
+                          fetchAssetsForClient(val, '');
                         }}
                         placeholder="-- Select Client --"
                         searchPlaceholder="Search Client..."
@@ -1655,6 +1706,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
                         } else {
                           setSelectedCountry('');
                         }
+                        fetchAssetsForClient(selectedClient, val);
                       }}
                       placeholder="-- Select Company --"
                       searchPlaceholder="Search Company..."
@@ -1676,7 +1728,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
                   <TouchableOpacity
                     style={[styles.submitBtn, { opacity: selectedClient ? 1 : 0.5, marginTop: 16 }]}
                     disabled={!selectedClient}
-                    onPress={() => fetchFormConfiguration(selectedClient, selectedCountry, selectedModule)}
+                    onPress={() => fetchFormConfiguration(selectedClient, selectedCountry, selectedModule, selectedCompany)}
                   >
                     <Text style={styles.submitBtnText}>Next</Text>
                   </TouchableOpacity>
