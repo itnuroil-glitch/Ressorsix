@@ -46,7 +46,8 @@ const recalculateAssetInventory = async (assetId, clientid, country_id) => {
 
     const totalQty = openingQty + purchasedQty;
     const totalCost = (openingQty * openingValue) + purchasedCost;
-    const averageCost = totalQty > 0 ? (totalCost / totalQty) : 0;
+    const rawCost = totalQty > 0 ? (totalCost / totalQty) : 0;
+    const averageCost = Math.round(rawCost * 100) / 100;
 
     const resCount = await db.query('SELECT count(*) as count FROM "tbl_asset_opening_stock" WHERE asset_id = $1 AND status != \'Active\' AND is_deleted = false', [assetId]);
     const reservedQty = parseInt(resCount.rows[0].count) || 0;
