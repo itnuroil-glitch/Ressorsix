@@ -1597,7 +1597,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <Ionicons name="document-text" size={24} color={COLORS.primary} />
                 <Text style={styles.modalTitle}>
-                  {isViewOnly ? `View Vehicle Toll Details #${editingRecord?.id}` : (editingRecord ? `Edit Vehicle Toll #${editingRecord.id}` : 'Add Vehicle Toll')}
+                  {isViewOnly ? 'View Vehicle Toll Details' : (editingRecord ? 'Edit Vehicle Toll' : 'Add Vehicle Toll')}
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setIsFormOpen(false)} style={styles.closeButton}>
@@ -2334,12 +2334,6 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                         <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Trip Date & Time</Text>
                         <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>
                           {`${selectedViewRecord.trip_date || ''} ${selectedViewRecord.trip_time || ''}`.trim() || 'N/A'}
-                        </Text>
-                      </View>
-                      <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
-                        <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Linked Toll Overview ID</Text>
-                        <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>
-                          {selectedViewRecord.toll_overview_id ? `#${selectedViewRecord.toll_overview_id}` : 'Unlinked'}
                         </Text>
                       </View>
                     </>
