@@ -87,7 +87,7 @@ exports.createCompany = async (req, res) => {
       authorized_signatory_name, authorized_signatory_designation, default_bank,
       default_currency, asset_prefix, vehicle_prefix, employee_prefix,
       trade_license_alert_days, establishment_card_alert_days, insurance_alert_days,
-      plan_id, party_id,
+      plan_id,
       trade_license_attachment_base64, trade_license_attachment_name,
       company_logo_attachment_base64, company_logo_attachment_name
     } = req.body;
@@ -124,14 +124,14 @@ exports.createCompany = async (req, res) => {
         authorized_signatory_name, authorized_signatory_designation, default_bank,
         default_currency, asset_prefix, vehicle_prefix, employee_prefix,
         trade_license_alert_days, establishment_card_alert_days, insurance_alert_days,
-        plan_id, party_id, company_logo,
+        plan_id, company_logo,
         is_deleted, created_at, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
         $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
         $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
         $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,
-        $41, $42, $43, false, NOW(), NOW()
+        $41, $42, false, NOW(), NOW()
       ) RETURNING *;
     `;
 
@@ -145,7 +145,7 @@ exports.createCompany = async (req, res) => {
       authorized_signatory_name, authorized_signatory_designation, default_bank,
       default_currency, asset_prefix, vehicle_prefix, employee_prefix,
       trade_license_alert_days || 30, establishment_card_alert_days || 30, insurance_alert_days || 30,
-      plan_id ? parseInt(plan_id, 10) : null, party_id || null, initialLogoPath
+      plan_id ? parseInt(plan_id, 10) : null, initialLogoPath
     ];
 
     const { rows } = await pool.query(query, values);
@@ -239,7 +239,7 @@ exports.updateCompany = async (req, res) => {
       authorized_signatory_name, authorized_signatory_designation, default_bank,
       default_currency, asset_prefix, vehicle_prefix, employee_prefix,
       trade_license_alert_days, establishment_card_alert_days, insurance_alert_days,
-      plan_id, party_id,
+      plan_id,
       trade_license_attachment_base64, trade_license_attachment_name,
       company_logo_attachment_base64, company_logo_attachment_name
     } = req.body;
@@ -273,8 +273,8 @@ exports.updateCompany = async (req, res) => {
         authorized_signatory_name = $31, authorized_signatory_designation = $32, default_bank = $33,
         default_currency = $34, asset_prefix = $35, vehicle_prefix = $36, employee_prefix = $37,
         trade_license_alert_days = $38, establishment_card_alert_days = $39, insurance_alert_days = $40,
-        plan_id = $41, party_id = $42, company_logo = $43, updated_at = NOW()
-      WHERE id = $44 RETURNING *;
+        plan_id = $41, company_logo = $42, updated_at = NOW()
+      WHERE id = $43 RETURNING *;
     `;
 
     const values = [
@@ -287,7 +287,7 @@ exports.updateCompany = async (req, res) => {
       authorized_signatory_name, authorized_signatory_designation, default_bank,
       default_currency, asset_prefix, vehicle_prefix, employee_prefix,
       trade_license_alert_days, establishment_card_alert_days, insurance_alert_days,
-      plan_id ? parseInt(plan_id, 10) : null, party_id || null, updatedLogoPath,
+      plan_id ? parseInt(plan_id, 10) : null, updatedLogoPath,
       id
     ];
 
