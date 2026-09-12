@@ -394,7 +394,6 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [companyTradeLicenseAlertDays, setCompanyTradeLicenseAlertDays] = useState('30');
   const [companyEstablishmentCardAlertDays, setCompanyEstablishmentCardAlertDays] = useState('30');
   const [companyInsuranceAlertDays, setCompanyInsuranceAlertDays] = useState('30');
-  const [companyPlanId, setCompanyPlanId] = useState('');
   const [companyWizardStep, setCompanyWizardStep] = useState(1);
 
   // Employee state variables
@@ -1296,7 +1295,6 @@ export default function DashboardScreen({ user, onSignOut }) {
     setCompanyTradeLicenseAlertDays(item.trade_license_alert_days ? String(item.trade_license_alert_days) : '30');
     setCompanyEstablishmentCardAlertDays(item.establishment_card_alert_days ? String(item.establishment_card_alert_days) : '30');
     setCompanyInsuranceAlertDays(item.insurance_alert_days ? String(item.insurance_alert_days) : '30');
-    setCompanyPlanId(item.plan_id ? String(item.plan_id) : '');
     if (item.trade_license_attachment_path) {
       const fileName = item.trade_license_attachment_path.split('/').pop();
       setCompanyTradeLicenseFile({ name: fileName, isExisting: true });
@@ -1394,7 +1392,6 @@ export default function DashboardScreen({ user, onSignOut }) {
       trade_license_alert_days: parseInt(companyTradeLicenseAlertDays) || 30,
       establishment_card_alert_days: parseInt(companyEstablishmentCardAlertDays) || 30,
       insurance_alert_days: parseInt(companyInsuranceAlertDays) || 30,
-      plan_id: companyPlanId ? parseInt(companyPlanId, 10) : null,
 
       trade_license_attachment_base64: attachmentBase64,
       trade_license_attachment_name: attachmentName,
@@ -4333,7 +4330,6 @@ export default function DashboardScreen({ user, onSignOut }) {
               setCompanyTradeLicenseAlertDays('30');
               setCompanyEstablishmentCardAlertDays('30');
               setCompanyInsuranceAlertDays('30');
-              setCompanyPlanId('');
               setCompanyWizardStep(1);
               setIsCompanyModalOpen(true);
             }}
