@@ -69,6 +69,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
   const [lineItems, setLineItems] = useState([{ id: Date.now(), barcode: '', barcodes: [], serial_numbers: [], item_name: '', qty: 1, uom: '', unit_price: 0, vat: 0, subtotal: 0 }]);
   const [uomList, setUomList] = useState([]);
   const [assetsList, setAssetsList] = useState([]);
+  const [suppliersList, setSuppliersList] = useState([]);
   const [vatList, setVatList] = useState([]);
   const fieldMap = React.useMemo(() => {
     const map = {};
@@ -133,6 +134,39 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
       }
     } catch (e) {
       console.warn('Could not fetch Assets list', e);
+    }
+  };
+
+  const fetchSuppliersList = async (clientId, companyId) => {
+    try {
+      let url = `${API_URL}/api/suppliers/client`;
+      const queryParts = [];
+      if (clientId) queryParts.push(`clientid=${encodeURIComponent(clientId)}`);
+      if (companyId && companyId !== 'All') queryParts.push(`company_id=${encodeURIComponent(companyId)}`);
+      if (queryParts.length > 0) {
+        url += `?${queryParts.join('&')}`;
+      }
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : [];
+        const formatted = list
+          .filter(s => s && (s.supplier_name || s.name))
+          .map(s => {
+            const name = s.supplier_name || s.name;
+            return {
+              id: s.id || s.supplier_id,
+              name: name,
+              label: name,
+              value: name,
+              client_name: s.client_name,
+              company_name: s.company_name
+            };
+          });
+        setSuppliersList(formatted);
+      }
+    } catch (e) {
+      console.warn('Could not fetch Suppliers list', e);
     }
   };
 
@@ -480,12 +514,14 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
     setIsFormOpen(true);
   };
 
-  const fetchFormConfiguration = async (clientId, countryId, moduleId) => {
+  const fetchFormConfiguration = async (clientId, countryId, moduleId, companyId) => {
     setLoading(true);
     setWizardStep(2);
     try {
       // Load assets scoped to this client ID
       await fetchAssetsList(clientId);
+      // Load suppliers scoped to this client and company
+      await fetchSuppliersList(clientId, companyId !== undefined ? companyId : selectedCompany);
 
       // 3. Fetch custom fields for this configuration
       const cfRes = await fetch(`${API_URL}/api/custom-fields`);
@@ -549,12 +585,19 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
         const fetchDynamicOptions = async (path) => {
           try {
             let processedPath = (path || '').trim();
-            // Automatically append clientId if the path is designed for client lookup
-            if (processedPath.includes('client') && clientId) {
-              if (processedPath.endsWith('/client') || processedPath.endsWith('/client/')) {
+            // Automatically replace or append clientId if the path is designed for client lookup
+            if (clientId) {
+              if (processedPath.includes(':clientid')) {
+                processedPath = processedPath.replace(':clientid', clientId);
+              } else if (processedPath.endsWith('/client') || processedPath.endsWith('/client/')) {
                 const separator = processedPath.endsWith('/') ? '' : '/';
                 processedPath = `${processedPath}${separator}${clientId}`;
               }
+            }
+            // Automatically append company_id if company is selected and not already in path
+            if (selectedCompany && selectedCompany !== 'All' && !processedPath.includes('company_id')) {
+              const separator = processedPath.includes('?') ? '&' : '?';
+              processedPath = `${processedPath}${separator}company_id=${encodeURIComponent(selectedCompany)}`;
             }
             // Automatically append countryId if the path is designed for country lookup
             if (processedPath.includes('country') && countryId) {
@@ -718,7 +761,8 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
     await fetchFormConfiguration(
       String(record.clientid || ''),
       String(record.country_id || ''),
-      String(record.moduleid || '')
+      String(record.moduleid || ''),
+      record.company_id ? String(record.company_id) : ''
     );
     setIsFormOpen(true);
   };
@@ -772,7 +816,8 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
     await fetchFormConfiguration(
       String(record.clientid || ''),
       String(record.country_id || ''),
-      String(record.moduleid || '')
+      String(record.moduleid || ''),
+      record.company_id ? String(record.company_id) : ''
     );
     setIsFormOpen(true);
   };
@@ -875,10 +920,23 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
     switch (field.type) {
       case 'Dropdown':
       case 'Searchable Dropdown': {
-        const options = (field.allowedOptions && field.allowedOptions.length > 0)
+        const isSupplierField = (field.name || '').toLowerCase().includes('supplier');
+        const defaultOptions = (field.allowedOptions && field.allowedOptions.length > 0)
           ? field.allowedOptions
           : (field.options || '').split(',').map(o => o.trim()).filter(Boolean);
-        const dropdownData = options.map(opt => ({ label: opt, value: opt }));
+
+        let dropdownData = isSupplierField && suppliersList.length > 0
+          ? suppliersList
+          : defaultOptions.map(opt => ({ label: opt, value: opt }));
+
+        if (isSupplierField && formData[field.id]) {
+          const currentVal = String(formData[field.id]);
+          const exists = dropdownData.some(d => String(d.value) === currentVal || String(d.label) === currentVal);
+          if (!exists) {
+            dropdownData = [{ label: currentVal, value: currentVal }, ...dropdownData];
+          }
+        }
+
         return (
           <SearchableDropdown
             data={dropdownData}
@@ -1815,7 +1873,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
                   <TouchableOpacity
                     style={[styles.submitBtn, { opacity: selectedClient ? 1 : 0.5, marginTop: 16 }]}
                     disabled={!selectedClient}
-                    onPress={() => fetchFormConfiguration(selectedClient, selectedCountry, selectedModule)}
+                    onPress={() => fetchFormConfiguration(selectedClient, selectedCountry, selectedModule, selectedCompany)}
                   >
                     <Text style={styles.submitBtnText}>Next</Text>
                   </TouchableOpacity>
