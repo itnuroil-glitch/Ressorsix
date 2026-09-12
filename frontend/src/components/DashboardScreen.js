@@ -395,7 +395,6 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [companyEstablishmentCardAlertDays, setCompanyEstablishmentCardAlertDays] = useState('30');
   const [companyInsuranceAlertDays, setCompanyInsuranceAlertDays] = useState('30');
   const [companyPlanId, setCompanyPlanId] = useState('');
-  const [companyPartyId, setCompanyPartyId] = useState('');
   const [companyWizardStep, setCompanyWizardStep] = useState(1);
 
   // Employee state variables
@@ -1298,7 +1297,6 @@ export default function DashboardScreen({ user, onSignOut }) {
     setCompanyEstablishmentCardAlertDays(item.establishment_card_alert_days ? String(item.establishment_card_alert_days) : '30');
     setCompanyInsuranceAlertDays(item.insurance_alert_days ? String(item.insurance_alert_days) : '30');
     setCompanyPlanId(item.plan_id ? String(item.plan_id) : '');
-    setCompanyPartyId(item.party_id || '');
     if (item.trade_license_attachment_path) {
       const fileName = item.trade_license_attachment_path.split('/').pop();
       setCompanyTradeLicenseFile({ name: fileName, isExisting: true });
@@ -1397,7 +1395,6 @@ export default function DashboardScreen({ user, onSignOut }) {
       establishment_card_alert_days: parseInt(companyEstablishmentCardAlertDays) || 30,
       insurance_alert_days: parseInt(companyInsuranceAlertDays) || 30,
       plan_id: companyPlanId ? parseInt(companyPlanId, 10) : null,
-      party_id: companyPartyId,
 
       trade_license_attachment_base64: attachmentBase64,
       trade_license_attachment_name: attachmentName,
@@ -4262,17 +4259,6 @@ export default function DashboardScreen({ user, onSignOut }) {
         </View>
 
         {/* SECTION 6: OTHER DETAILS */}
-        <View style={{ backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', padding: 20, marginBottom: 18, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', paddingBottom: 12, marginBottom: 16 }}>
-            <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' }}>
-              <Ionicons name="ellipsis-horizontal-outline" size={18} color="#2563EB" />
-            </View>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: '#0F172A' }}>6. Other Details</Text>
-          </View>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 16, columnGap: 16 }}>
-            <View style={{ width: '97%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Party ID</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyPartyId || '-'}</Text></View>
-          </View>
-        </View>
       </View>
     );
   };
@@ -4348,7 +4334,6 @@ export default function DashboardScreen({ user, onSignOut }) {
               setCompanyEstablishmentCardAlertDays('30');
               setCompanyInsuranceAlertDays('30');
               setCompanyPlanId('');
-              setCompanyPartyId('');
               setCompanyWizardStep(1);
               setIsCompanyModalOpen(true);
             }}
@@ -8859,8 +8844,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                           { id: 2, label: 'License', icon: 'card-outline' },
                           { id: 3, label: 'Location', icon: 'location-outline' },
                           { id: 4, label: 'Modules', icon: 'grid-outline' },
-                          { id: 5, label: 'Limits', icon: 'options-outline' },
-                          { id: 6, label: 'Other', icon: 'ellipsis-horizontal-outline' }
+                          { id: 5, label: 'Limits', icon: 'options-outline' }
                         ].map((step, index, arr) => {
                           const isActive = companyWizardStep === step.id;
                           const isPast = companyWizardStep > step.id;
@@ -9298,21 +9282,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                       )}
 
 
-                      {companyWizardStep === 6 && (
-                        <>
-                          <View style={styles.modalInputGroup}>
-                            <Text style={styles.modalLabel}>Party ID</Text>
-                            <TextInput
-                              style={styles.modalInput}
-                              placeholder="Party ID"
-                              placeholderTextColor={COLORS.textMuted}
-                              value={companyPartyId}
-                              onChangeText={setCompanyPartyId}
-                            />
-                          </View>
 
-                        </>
-                      )}
 
                     </View>
                   )}
@@ -9358,7 +9328,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                           </TouchableOpacity>
                         )}
 
-                        {companyWizardStep < 6 ? (
+                        {companyWizardStep < 5 ? (
                           <TouchableOpacity
                             style={[styles.modalSaveBtn, { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, backgroundColor: '#0F172A' }]}
                             onPress={() => setCompanyWizardStep(prev => prev + 1)}
