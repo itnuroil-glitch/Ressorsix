@@ -283,7 +283,7 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [companiesPage, setCompaniesPage] = useState(1);
   const [companyNameInput, setCompanyNameInput] = useState('');
   const [companyShortCode, setCompanyShortCode] = useState('');
-  const [companyTrafficFileNumber, setCompanyTrafficFileNumber] = useState('');
+
   const [companyClientId, setCompanyClientId] = useState('');
   const [companyIndustry, setCompanyIndustry] = useState('');
   const [companyStatus, setCompanyStatus] = useState('Active');
@@ -1256,7 +1256,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     setEditingCompany(item);
     setCompanyNameInput(item.company_name || '');
     setCompanyShortCode(item.short_code || '');
-    setCompanyTrafficFileNumber(item.traffic_file_number || '');
+
     setCompanyClientId(item.clientid ? String(item.clientid) : '');
     setCompanyIndustry(item.industry || '');
     setCompanyStatus(item.company_status || 'Active');
@@ -1353,7 +1353,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     const payload = {
       company_name: companyNameInput,
       short_code: companyShortCode,
-      traffic_file_number: companyTrafficFileNumber,
+
       clientid: companyClientId ? parseInt(companyClientId) : (user?.clientid ? parseInt(user.clientid) : null),
       industry: companyIndustry,
       company_status: companyStatus,
@@ -4154,7 +4154,7 @@ export default function DashboardScreen({ user, onSignOut }) {
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 16, columnGap: 16 }}>
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Company Name</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyNameInput || '-'}</Text></View>
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Short Code</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyShortCode || '-'}</Text></View>
-            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Traffic File No</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyTrafficFileNumber || '-'}</Text></View>
+
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Industry</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyIndustry || '-'}</Text></View>
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Legal Form</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyLegalForm || '-'}</Text></View>
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Business Activity</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyBusinessActivity || '-'}</Text></View>
@@ -4289,7 +4289,7 @@ export default function DashboardScreen({ user, onSignOut }) {
               setEditingCompany(null);
               setCompanyNameInput('');
               setCompanyShortCode('');
-              setCompanyTrafficFileNumber('');
+
               setCompanyClientId('');
               setCompanyIndustry('');
               setCompanyStatus('Active');
@@ -8874,10 +8874,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                             <TextInput style={styles.modalInput} placeholder="Short Code" placeholderTextColor={COLORS.textMuted} value={companyShortCode} onChangeText={setCompanyShortCode} />
                           </View>
 
-                          <View style={styles.modalInputGroup}>
-                            <Text style={styles.modalLabel}>Traffic File No</Text>
-                            <TextInput style={styles.modalInput} placeholder="Traffic File No" placeholderTextColor={COLORS.textMuted} value={companyTrafficFileNumber} onChangeText={setCompanyTrafficFileNumber} />
-                          </View>
+
 
 
 
