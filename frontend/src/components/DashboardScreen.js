@@ -1297,13 +1297,13 @@ export default function DashboardScreen({ user, onSignOut }) {
     setCompanyInsuranceAlertDays(item.insurance_alert_days ? String(item.insurance_alert_days) : '30');
     if (item.trade_license_attachment_path) {
       const fileName = item.trade_license_attachment_path.split('/').pop();
-      setCompanyTradeLicenseFile({ name: fileName, isExisting: true });
+      setCompanyTradeLicenseFile({ name: fileName, isExisting: true, path: item.trade_license_attachment_path });
     } else {
       setCompanyTradeLicenseFile(null);
     }
     if (item.company_logo_path) {
       const logoFileName = item.company_logo_path.split('/').pop();
-      setCompanyLogoFile({ name: logoFileName, isExisting: true });
+      setCompanyLogoFile({ name: logoFileName, isExisting: true, path: item.company_logo_path });
     } else {
       setCompanyLogoFile(null);
     }
@@ -1318,36 +1318,53 @@ export default function DashboardScreen({ user, onSignOut }) {
       return;
     }
 
-    let attachmentBase64 = null;
-    let attachmentName = null;
-    if (companyTradeLicenseFile && !companyTradeLicenseFile.isExisting) {
-      try {
-        attachmentName = companyTradeLicenseFile.name;
-        attachmentBase64 = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(companyTradeLicenseFile);
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = error => reject(error);
-        });
-      } catch (err) {
-        console.error("Error reading file:", err);
+    const uploadBinaryFile = async (file) => {
+      if (!file || file.isExisting) return file?.path || null;
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch(API_URL + '/api/upload', {
+        method: 'POST',
+        body: formData
+      });
+      if (!res.ok) {
+        throw new Error('Failed to upload ' + (file.name || 'file'));
       }
+      const data = await res.json();
+      return data.filePath;
+    };
+
+    let tradeLicensePath = editingCompany?.trade_license_attachment_path || null;
+    if (companyTradeLicenseFile) {
+      if (companyTradeLicenseFile.isExisting) {
+        tradeLicensePath = companyTradeLicenseFile.path || editingCompany?.trade_license_attachment_path || null;
+      } else {
+        try {
+          tradeLicensePath = await uploadBinaryFile(companyTradeLicenseFile);
+        } catch (err) {
+          console.error("Error uploading trade license:", err);
+          showToast('Failed to upload Trade License document', 'error');
+          return;
+        }
+      }
+    } else {
+      tradeLicensePath = null;
     }
 
-    let logoBase64 = null;
-    let logoName = null;
-    if (companyLogoFile && !companyLogoFile.isExisting) {
-      try {
-        logoName = companyLogoFile.name;
-        logoBase64 = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(companyLogoFile);
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = error => reject(error);
-        });
-      } catch (err) {
-        console.error("Error reading logo file:", err);
+    let companyLogoPath = editingCompany?.company_logo_path || null;
+    if (companyLogoFile) {
+      if (companyLogoFile.isExisting) {
+        companyLogoPath = companyLogoFile.path || editingCompany?.company_logo_path || null;
+      } else {
+        try {
+          companyLogoPath = await uploadBinaryFile(companyLogoFile);
+        } catch (err) {
+          console.error("Error uploading logo:", err);
+          showToast('Failed to upload Company Logo', 'error');
+          return;
+        }
       }
+    } else {
+      companyLogoPath = null;
     }
 
     const payload = {
@@ -1393,10 +1410,8 @@ export default function DashboardScreen({ user, onSignOut }) {
       establishment_card_alert_days: parseInt(companyEstablishmentCardAlertDays) || 30,
       insurance_alert_days: parseInt(companyInsuranceAlertDays) || 30,
 
-      trade_license_attachment_base64: attachmentBase64,
-      trade_license_attachment_name: attachmentName,
-      company_logo_attachment_base64: logoBase64,
-      company_logo_attachment_name: logoName
+      trade_license_attachment_path: tradeLicensePath,
+      company_logo: companyLogoPath
     };
     const url = editingCompany ? API_URL + '/api/companies/' + editingCompany.id : API_URL + '/api/companies';
     const method = editingCompany ? 'PUT' : 'POST';
