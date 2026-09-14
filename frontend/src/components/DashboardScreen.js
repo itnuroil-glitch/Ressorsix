@@ -1334,13 +1334,20 @@ export default function DashboardScreen({ user, onSignOut }) {
         const chunk = file.slice ? file.slice(start, end) : file;
 
         const formData = new FormData();
-        formData.append('chunk', chunk);
         formData.append('fileId', fileId);
         formData.append('chunkIndex', String(i));
         formData.append('totalChunks', String(totalChunks));
         formData.append('fileName', file.name || 'attachment.file');
+        formData.append('chunk', chunk);
 
-        const res = await fetch(API_URL + '/api/upload/chunk', {
+        const queryParams = new URLSearchParams({
+          fileId,
+          chunkIndex: String(i),
+          totalChunks: String(totalChunks),
+          fileName: file.name || 'attachment.file'
+        }).toString();
+
+        const res = await fetch(`${API_URL}/api/upload/chunk?${queryParams}`, {
           method: 'POST',
           body: formData
         });
