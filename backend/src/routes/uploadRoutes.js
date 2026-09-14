@@ -19,7 +19,8 @@ if (!fs.existsSync(tempDir)) {
 // Temporary chunk storage
 const chunkStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const fileId = req.body.fileId ? req.body.fileId.replace(/[^a-zA-Z0-9_-]/g, '') : 'default_upload';
+    const rawFileId = req.query.fileId || req.body.fileId || '';
+    const fileId = rawFileId ? rawFileId.replace(/[^a-zA-Z0-9_-]/g, '') : 'default_upload';
     const sessionDir = path.join(tempDir, fileId);
     if (!fs.existsSync(sessionDir)) {
       fs.mkdirSync(sessionDir, { recursive: true });
@@ -27,7 +28,9 @@ const chunkStorage = multer.diskStorage({
     cb(null, sessionDir);
   },
   filename: (req, file, cb) => {
-    const chunkIndex = req.body.chunkIndex !== undefined ? req.body.chunkIndex : '0';
+    const chunkIndex = (req.query.chunkIndex !== undefined && req.query.chunkIndex !== '')
+      ? req.query.chunkIndex
+      : (req.body.chunkIndex !== undefined ? req.body.chunkIndex : '0');
     cb(null, `chunk_${chunkIndex}`);
   }
 });
@@ -60,7 +63,10 @@ router.post('/', upload.single('file'), (req, res) => {
 // POST /api/upload/chunk - Chunked file upload (512KB pieces to bypass Nginx 1MB limits)
 router.post('/chunk', chunkUpload.single('chunk'), async (req, res) => {
   try {
-    const { fileId, chunkIndex, totalChunks, fileName } = req.body;
+    const fileId = req.query.fileId || req.body.fileId;
+    const chunkIndex = req.query.chunkIndex !== undefined ? req.query.chunkIndex : req.body.chunkIndex;
+    const totalChunks = req.query.totalChunks || req.body.totalChunks;
+    const fileName = req.query.fileName || req.body.fileName;
 
     if (!fileId || chunkIndex === undefined || !totalChunks) {
       return res.status(400).json({ message: 'Missing chunk metadata (fileId, chunkIndex, totalChunks)' });
