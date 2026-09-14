@@ -117,6 +117,10 @@ app.use('/api/roles', roleRoutes);
 // Mounting department CRUD routes
 app.use('/api/departments', departmentRoutes);
 
+// Mounting generic file upload routes
+const uploadRoutes = require('./routes/uploadRoutes');
+app.use('/api/upload', uploadRoutes);
+
 // Mounting company CRUD routes
 app.use('/api/companies', companyRoutes);
 app.use('/api/company/view/all', companyRoutes);

@@ -88,7 +88,8 @@ exports.createCompany = async (req, res) => {
       default_currency, asset_prefix, vehicle_prefix, employee_prefix,
       trade_license_alert_days, establishment_card_alert_days, insurance_alert_days,
       trade_license_attachment_base64, trade_license_attachment_name,
-      company_logo_attachment_base64, company_logo_attachment_name
+      company_logo_attachment_base64, company_logo_attachment_name,
+      company_logo, trade_license_attachment_path
     } = req.body;
 
     if (!company_name) {
@@ -103,7 +104,7 @@ exports.createCompany = async (req, res) => {
       }
     }
 
-    let initialLogoPath = null;
+    let initialLogoPath = company_logo || null;
     if (company_logo_attachment_base64) {
       try {
         initialLogoPath = saveAttachmentLocally(company_logo_attachment_base64, company_logo_attachment_name);
@@ -150,10 +151,18 @@ exports.createCompany = async (req, res) => {
     const { rows } = await pool.query(query, values);
     const newCompany = rows[0];
 
-    // Save Trade License Attachment if provided
+    // Save Trade License Attachment if provided (as file path or base64)
+    let finalTradeLicensePath = trade_license_attachment_path || null;
     if (trade_license_attachment_base64) {
       try {
-        const savedFilePath = saveAttachmentLocally(trade_license_attachment_base64, trade_license_attachment_name);
+        finalTradeLicensePath = saveAttachmentLocally(trade_license_attachment_base64, trade_license_attachment_name);
+      } catch (err) {
+        console.error('Error saving trade license attachment base64:', err);
+      }
+    }
+
+    if (finalTradeLicensePath) {
+      try {
         const insertAttachmentQuery = `
           INSERT INTO attachment (clientid, companyid, attachment, type, expire_date, status, is_deleted, created_at, updated_at)
           VALUES ($1, $2, $3, $4, $5, 1, false, NOW(), NOW())
@@ -161,7 +170,7 @@ exports.createCompany = async (req, res) => {
         await pool.query(insertAttachmentQuery, [
           finalClientId,
           newCompany.id,
-          savedFilePath,
+          finalTradeLicensePath,
           'Trade License',
           trade_license_expiry_date || null
         ]);
@@ -239,7 +248,8 @@ exports.updateCompany = async (req, res) => {
       default_currency, asset_prefix, vehicle_prefix, employee_prefix,
       trade_license_alert_days, establishment_card_alert_days, insurance_alert_days,
       trade_license_attachment_base64, trade_license_attachment_name,
-      company_logo_attachment_base64, company_logo_attachment_name
+      company_logo_attachment_base64, company_logo_attachment_name,
+      company_logo, trade_license_attachment_path
     } = req.body;
 
     const checkQuery = 'SELECT * FROM company WHERE id = $1';
@@ -249,7 +259,7 @@ exports.updateCompany = async (req, res) => {
     }
     const existingCompany = checkResult.rows[0];
 
-    let updatedLogoPath = existingCompany.company_logo || null;
+    let updatedLogoPath = company_logo !== undefined ? company_logo : (existingCompany.company_logo || null);
     if (company_logo_attachment_base64) {
       try {
         updatedLogoPath = saveAttachmentLocally(company_logo_attachment_base64, company_logo_attachment_name);
@@ -292,20 +302,28 @@ exports.updateCompany = async (req, res) => {
     const { rows } = await pool.query(query, values);
     const updatedCompany = rows[0];
 
-    // Handle attachment
+    // Handle Trade License attachment (direct path or base64)
+    let finalTradeLicensePath = trade_license_attachment_path || null;
     if (trade_license_attachment_base64) {
       try {
-        const savedFilePath = saveAttachmentLocally(trade_license_attachment_base64, trade_license_attachment_name);
+        finalTradeLicensePath = saveAttachmentLocally(trade_license_attachment_base64, trade_license_attachment_name);
+      } catch (err) {
+        console.error('Error updating trade license attachment base64:', err);
+      }
+    }
+
+    if (finalTradeLicensePath) {
+      try {
         const checkAtt = await pool.query('SELECT id FROM attachment WHERE companyid = $1 AND type = $2', [id, 'Trade License']);
         if (checkAtt.rows.length > 0) {
           await pool.query(
             'UPDATE attachment SET attachment = $1, expire_date = $2, updated_at = NOW() WHERE id = $3',
-            [savedFilePath, trade_license_expiry_date || null, checkAtt.rows[0].id]
+            [finalTradeLicensePath, trade_license_expiry_date || null, checkAtt.rows[0].id]
           );
         } else {
           await pool.query(
             'INSERT INTO attachment (clientid, companyid, attachment, type, expire_date, status, is_deleted, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, 1, false, NOW(), NOW())',
-            [updatedCompany.clientid, id, savedFilePath, 'Trade License', trade_license_expiry_date || null]
+            [updatedCompany.clientid, id, finalTradeLicensePath, 'Trade License', trade_license_expiry_date || null]
           );
         }
       } catch (err) {
@@ -313,8 +331,8 @@ exports.updateCompany = async (req, res) => {
       }
     }
 
-    // Handle logo attachment
-    if (company_logo_attachment_base64 && updatedLogoPath) {
+    // Handle logo attachment in attachment table
+    if (updatedLogoPath) {
       try {
         const checkLogoAtt = await pool.query('SELECT id FROM attachment WHERE companyid = $1 AND type = $2 AND (is_deleted = false OR is_deleted IS NULL)', [id, 'Company Logo']);
         if (checkLogoAtt.rows.length > 0) {
