@@ -1320,17 +1320,42 @@ export default function DashboardScreen({ user, onSignOut }) {
 
     const uploadBinaryFile = async (file) => {
       if (!file || file.isExisting) return file?.path || null;
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await fetch(API_URL + '/api/upload', {
-        method: 'POST',
-        body: formData
-      });
-      if (!res.ok) {
-        throw new Error('Failed to upload ' + (file.name || 'file'));
+
+      // 512 KB chunks to guarantee every request stays strictly under Nginx's 1MB limit
+      const CHUNK_SIZE = 512 * 1024;
+      const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
+      const fileId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+      let finalFilePath = null;
+
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE;
+        const end = Math.min(start + CHUNK_SIZE, file.size);
+        const chunk = file.slice ? file.slice(start, end) : file;
+
+        const formData = new FormData();
+        formData.append('chunk', chunk);
+        formData.append('fileId', fileId);
+        formData.append('chunkIndex', String(i));
+        formData.append('totalChunks', String(totalChunks));
+        formData.append('fileName', file.name || 'attachment.file');
+
+        const res = await fetch(API_URL + '/api/upload/chunk', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!res.ok) {
+          throw new Error(`Failed to upload chunk ${i + 1} of ${totalChunks}`);
+        }
+
+        const data = await res.json();
+        if (data.completed) {
+          finalFilePath = data.filePath;
+        }
       }
-      const data = await res.json();
-      return data.filePath;
+
+      return finalFilePath;
     };
 
     let tradeLicensePath = editingCompany?.trade_license_attachment_path || null;
