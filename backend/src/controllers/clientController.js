@@ -1,6 +1,18 @@
 const db = require('../config/db');
 const bcrypt = require('bcryptjs');
 
+// Safe BigInt parser to avoid SyntaxError when inputs have spaces, +, or dashes
+const toBigIntSafe = (val) => {
+  if (!val) return null;
+  const digits = String(val).replace(/\D/g, '');
+  if (!digits) return null;
+  try {
+    return BigInt(digits);
+  } catch (e) {
+    return null;
+  }
+};
+
 // Helper: recalculate and update is_multi_country for a given client
 const recalculateMultiCountry = async (clientId) => {
   try {
@@ -106,9 +118,9 @@ exports.createClient = async (req, res) => {
       state ? state.trim() : null,
       city ? city.trim() : null,
       email ? email.toLowerCase().trim() : null,
-      trn_no ? BigInt(trn_no) : null,
-      contact_no ? BigInt(contact_no) : null,
-      phone_no ? BigInt(phone_no) : null,
+      toBigIntSafe(trn_no),
+      toBigIntSafe(contact_no),
+      toBigIntSafe(phone_no),
       website ? website.trim() : null,
       trade_licenseno ? trade_licenseno.trim() : null,
       max_companies ? parseInt(max_companies, 10) : null,
@@ -181,7 +193,9 @@ exports.createClient = async (req, res) => {
           }
           return password;
         };
-        const rawPassword = generatePassword();
+        const rawPassword = (req.body.password && String(req.body.password).trim().length >= 6)
+          ? String(req.body.password).trim()
+          : generatePassword();
 
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(rawPassword, salt);
@@ -253,7 +267,7 @@ exports.createClient = async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating client:', error);
-    res.status(500).json({ message: 'Internal Server Error while creating client.' });
+    res.status(500).json({ message: error.message || 'Internal Server Error while creating client.' });
   }
 };
 
@@ -331,9 +345,9 @@ exports.updateClient = async (req, res) => {
       state ? state.trim() : null,
       city ? city.trim() : null,
       email ? email.toLowerCase().trim() : null,
-      trn_no ? BigInt(trn_no) : null,
-      contact_no ? BigInt(contact_no) : null,
-      phone_no ? BigInt(phone_no) : null,
+      toBigIntSafe(trn_no),
+      toBigIntSafe(contact_no),
+      toBigIntSafe(phone_no),
       website ? website.trim() : null,
       trade_licenseno ? trade_licenseno.trim() : null,
       max_companies !== undefined ? parseInt(max_companies, 10) : null,
@@ -348,8 +362,80 @@ exports.updateClient = async (req, res) => {
     // Auto-calculate is_multi_country based on companies linked to this client
     await recalculateMultiCountry(id);
 
-    // Propagate country and state (emirate) update to the company table for the client
-    if (country || state) {
+    // Propagate company details to the company table and link user record
+    if (companyname) {
+      const compCheck = await db.query(
+        'SELECT id FROM company WHERE clientid = $1 AND (is_deleted = false OR is_deleted IS NULL) LIMIT 1',
+        [id]
+      );
+      let targetCompanyId = null;
+
+      if (compCheck.rows.length > 0) {
+        targetCompanyId = compCheck.rows[0].id;
+        await db.query(
+          `UPDATE company 
+           SET company_name = $1, 
+               short_code = COALESCE($2, short_code),
+               industry = COALESCE($3, industry),
+               registered_address = COALESCE($4, registered_address),
+               country = COALESCE($5, country),
+               emirate = COALESCE($6, emirate),
+               contact_email = COALESCE($7, contact_email),
+               trn = COALESCE($8, trn),
+               contact_phone = COALESCE($9, contact_phone),
+               website = COALESCE($10, website),
+               trade_license_number = COALESCE($11, trade_license_number)
+           WHERE id = $12`,
+          [
+            companyname.trim(),
+            company_shortname ? company_shortname.trim() : null,
+            industry ? industry.trim() : null,
+            address ? address.trim() : null,
+            country ? country.trim() : null,
+            state ? state.trim() : null,
+            email ? email.toLowerCase().trim() : null,
+            trn_no ? trn_no.toString() : null,
+            phone_no ? phone_no.toString() : null,
+            website ? website.trim() : null,
+            trade_licenseno ? trade_licenseno.trim() : null,
+            targetCompanyId
+          ]
+        );
+      } else {
+        const insComp = await db.query(
+          `INSERT INTO company (
+            clientid, company_name, short_code, industry, registered_address, 
+            country, emirate, contact_email, trn, contact_phone, website, 
+            trade_license_number, company_status
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'Active')
+          RETURNING id`,
+          [
+            id,
+            companyname.trim(),
+            company_shortname ? company_shortname.trim() : null,
+            industry ? industry.trim() : null,
+            address ? address.trim() : null,
+            country ? country.trim() : null,
+            state ? state.trim() : null,
+            email ? email.toLowerCase().trim() : null,
+            trn_no ? trn_no.toString() : null,
+            phone_no ? phone_no.toString() : null,
+            website ? website.trim() : null,
+            trade_licenseno ? trade_licenseno.trim() : null
+          ]
+        );
+        if (insComp.rows.length > 0) {
+          targetCompanyId = insComp.rows[0].id;
+        }
+      }
+
+      if (targetCompanyId) {
+        await db.query(
+          'UPDATE users SET companyid = $1 WHERE clientid = $2 AND (companyid IS NULL OR companyid = 0)',
+          [targetCompanyId, id]
+        );
+      }
+    } else if (country || state) {
       await db.query(
         `UPDATE company 
          SET country = COALESCE($1, country), 
@@ -371,7 +457,7 @@ exports.updateClient = async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating client:', error);
-    res.status(500).json({ message: 'Internal Server Error while updating client.' });
+    res.status(500).json({ message: error.message || 'Internal Server Error while updating client.' });
   }
 };
 

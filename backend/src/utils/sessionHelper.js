@@ -59,8 +59,9 @@ async function createAppSession(res, localUser, authentikSub, email, groupsArray
   const sessionToken = crypto.randomBytes(32).toString('hex');
   const sessionTokenHash = crypto.createHash('sha256').update(sessionToken).digest('hex');
 
-  // Expire session after 15 minutes
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+  // Expire session after 24 hours (or configurable via SESSION_EXPIRY_MS)
+  const sessionTtlMs = process.env.SESSION_EXPIRY_MS ? parseInt(process.env.SESSION_EXPIRY_MS, 10) : 24 * 60 * 60 * 1000;
+  const expiresAt = new Date(Date.now() + sessionTtlMs);
 
   // Delete any old sessions for this user
   await db.query('DELETE FROM tbl_sessions WHERE user_id = $1', [localUser.id]);
@@ -77,7 +78,7 @@ async function createAppSession(res, localUser, authentikSub, email, groupsArray
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 15 * 60 * 1000,
+    maxAge: sessionTtlMs,
     path: '/',
   });
 

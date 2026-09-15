@@ -8,7 +8,6 @@ const ensureColumnsExist = async () => {
   try {
     await db.query(`
       ALTER TABLE public.employee ADD COLUMN IF NOT EXISTS assigned_password TEXT;
-      ALTER TABLE public.users ADD COLUMN IF NOT EXISTS assigned_password TEXT;
     `);
     isColumnChecked = true;
   } catch (e) {
@@ -24,7 +23,7 @@ exports.getAllEmployees = async (req, res) => {
 
     let queryText = `
       SELECT e.*, 
-             COALESCE(e.assigned_password, u.assigned_password) as assigned_password,
+             e.assigned_password,
              (SELECT string_agg(role, ', ') FROM role WHERE e.roleid IS NOT NULL AND e.roleid::text != '' AND id::text = ANY(array_remove(string_to_array(e.roleid::text, ','), ''))) as role_name, 
              d.department_name,
              bc.company_name as base_company_name
@@ -149,13 +148,13 @@ exports.createEmployee = async (req, res) => {
 
       if (userCheck.rows.length === 0) {
         await client.query(
-          'INSERT INTO users (email, password, assigned_password, roleid, clientid, companyid) VALUES ($1, $2, $3, $4, $5, $6)',
-          [email, hashedPassword, tempPassword, finalRoleId, clientid ? parseInt(clientid) : null, parsedBaseCompId]
+          'INSERT INTO users (email, password, roleid, clientid, companyid) VALUES ($1, $2, $3, $4, $5)',
+          [email, hashedPassword, finalRoleId, clientid ? parseInt(clientid) : null, parsedBaseCompId]
         );
       } else {
         await client.query(
-          'UPDATE users SET password = $1, assigned_password = $2, roleid = $3, clientid = $4, companyid = $5 WHERE email = $6',
-          [hashedPassword, tempPassword, finalRoleId, clientid ? parseInt(clientid) : null, parsedBaseCompId, email]
+          'UPDATE users SET password = $1, roleid = $2, clientid = $3, companyid = $4 WHERE email = $5',
+          [hashedPassword, finalRoleId, clientid ? parseInt(clientid) : null, parsedBaseCompId, email]
         );
       }
       await client.query('UPDATE employee SET assigned_password = $1 WHERE id = $2', [tempPassword, newEmployee.id]);
@@ -283,11 +282,10 @@ exports.updateEmployee = async (req, res) => {
 
       if (userCheck.rows.length === 0) {
         await client.query(
-          'INSERT INTO users (email, password, assigned_password, roleid, clientid, companyid) VALUES ($1, $2, $3, $4, $5, $6)',
+          'INSERT INTO users (email, password, roleid, clientid, companyid) VALUES ($1, $2, $3, $4, $5)',
           [
             updatedEmployee.email,
             hashedPassword,
-            tempPassword,
             updatedEmployee.roleid ? String(updatedEmployee.roleid) : null,
             updatedEmployee.clientid ? parseInt(updatedEmployee.clientid) : null,
             parsedBaseCompId
@@ -295,10 +293,9 @@ exports.updateEmployee = async (req, res) => {
         );
       } else {
         await client.query(
-          'UPDATE users SET password = $1, assigned_password = $2, roleid = $3, clientid = $4, companyid = $5 WHERE email = $6',
+          'UPDATE users SET password = $1, roleid = $2, clientid = $3, companyid = $4 WHERE email = $5',
           [
             hashedPassword,
-            tempPassword,
             updatedEmployee.roleid ? String(updatedEmployee.roleid) : null,
             updatedEmployee.clientid ? parseInt(updatedEmployee.clientid) : null,
             parsedBaseCompId,
@@ -483,8 +480,8 @@ exports.bulkImportEmployees = async (req, res) => {
 
         if (userCheck.rows.length === 0) {
           await client.query(
-            'INSERT INTO users (email, password, assigned_password, roleid, clientid, companyid) VALUES ($1, $2, $3, $4, $5, $6)',
-            [email, hashedPassword, tempPassword, finalRoleId, finalClientId, parsedBaseCompId]
+            'INSERT INTO users (email, password, roleid, clientid, companyid) VALUES ($1, $2, $3, $4, $5)',
+            [email, hashedPassword, finalRoleId, finalClientId, parsedBaseCompId]
           );
         } else {
           await client.query(
@@ -522,7 +519,7 @@ exports.getEmployeesByCompany = async (req, res) => {
     let queryText = `
       SELECT e.*, 
              e.full_name AS employee_name,
-             COALESCE(e.assigned_password, u.assigned_password) as assigned_password,
+             e.assigned_password,
              (SELECT string_agg(role, ', ') FROM role WHERE e.roleid IS NOT NULL AND e.roleid::text != '' AND id::text = ANY(array_remove(string_to_array(e.roleid::text, ','), ''))) as role_name, 
              d.department_name,
              bc.company_name as base_company_name
@@ -593,7 +590,7 @@ exports.getEmployeesByBaseCompany = async (req, res) => {
     let queryText = `
       SELECT e.*, 
              e.full_name AS employee_name,
-             COALESCE(e.assigned_password, u.assigned_password) as assigned_password,
+             e.assigned_password,
              (SELECT string_agg(role, ', ') FROM role WHERE e.roleid IS NOT NULL AND e.roleid::text != '' AND id::text = ANY(array_remove(string_to_array(e.roleid::text, ','), ''))) as role_name, 
              d.department_name,
              bc.company_name as base_company_name

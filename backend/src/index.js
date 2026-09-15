@@ -35,7 +35,13 @@ const authMiddleware = require('./middleware/authMiddleware');
 const oidcController = require('./controllers/oidcController');
 require('dotenv').config();
 
+// Global BigInt JSON serialization support
+BigInt.prototype.toJSON = function () {
+  return this.toString();
+};
+
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 5000;
 
 // Security Headers
@@ -85,6 +91,29 @@ app.get('/', (req, res) => {
     status: 'Healthy',
     message: 'Trakio Backend Service is active and running.',
     timestamp: new Date()
+  });
+});
+
+// Local Network IP Discovery (Public Route)
+const os = require('os');
+const getLocalNetworkIp = () => {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return '127.0.0.1';
+};
+
+app.get('/api/network-ip', (req, res) => {
+  const ip = getLocalNetworkIp();
+  res.json({
+    ip,
+    backendUrl: `http://${ip}:${PORT}`,
+    frontendUrl: `http://${ip}:8081`
   });
 });
 
@@ -273,7 +302,12 @@ app.use((err, req, res, next) => {
 });
 
 // Launch server
-app.listen(PORT, () => {
-  console.log(`Trakio Server is running on port ${PORT}`);
-  console.log(`Endpoint: http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  const ip = getLocalNetworkIp();
+  console.log(`\n==================================================`);
+  console.log(`🚀 Trakio Server is running on port ${PORT}!`);
+  console.log(`📍 Local API:      http://localhost:${PORT}`);
+  console.log(`🌐 Network API:    http://${ip}:${PORT}`);
+  console.log(`📱 Network Web:    http://${ip}:8081`);
+  console.log(`==================================================\n`);
 });
