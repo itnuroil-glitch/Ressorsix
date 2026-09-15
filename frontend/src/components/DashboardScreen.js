@@ -460,6 +460,8 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [clientWizardStep, setClientWizardStep] = useState(1); // 1 = Identity, 2 = License, 3 = Location, 4 = Limits
   const [plans, setPlans] = useState([]);
   const [selectedPlanId, setSelectedPlanId] = useState('');
+  const [clientPassword, setClientPassword] = useState('');
+  const [showClientPassword, setShowClientPassword] = useState(false);
 
   // Country state variables
   const [countries, setCountries] = useState([]);
@@ -755,6 +757,7 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [showAdminConfirmPassword, setShowAdminConfirmPassword] = useState(false);
 
   const handleOpenPasswordResetModal = (emp) => {
+    setChangePasswordVisible(false);
     setAdminPasswordResetEmployee(emp);
     setAdminNewPassword('');
     setAdminConfirmPassword('');
@@ -990,6 +993,7 @@ export default function DashboardScreen({ user, onSignOut }) {
       fetchRoles();
       fetchUserPermissions();
       fetchEmployees();
+      fetchCompanies(); // Re-fetch with correct client-scoped URL now that user is available
     }
   }, [user]);
 
@@ -1008,7 +1012,11 @@ export default function DashboardScreen({ user, onSignOut }) {
 
   const fetchCompanies = () => {
     setCompaniesLoading(true);
-    fetch(API_URL + '/api/companies')
+    let url = `${API_URL}/api/companies`;
+    if (user && String(user.roleId) !== '1' && user.clientid) {
+      url = `${API_URL}/api/companies/client/${user.clientid}`;
+    }
+    fetch(url)
       .then(res => res.json())
       .then(data => {
         setCompanies(Array.isArray(data) ? data : []);
@@ -1403,7 +1411,11 @@ export default function DashboardScreen({ user, onSignOut }) {
       company_name: companyNameInput,
       short_code: companyShortCode,
 
-      clientid: companyClientId ? parseInt(companyClientId) : (user?.clientid ? parseInt(user.clientid) : null),
+      // If logged-in user is a client, always use their own clientid (never let companyClientId override).
+      // Super admins (no user.clientid) may select a client via the dropdown (companyClientId).
+      clientid: user?.clientid
+        ? parseInt(user.clientid)
+        : (companyClientId ? parseInt(companyClientId) : null),
       industry: companyIndustry,
       company_status: companyStatus,
 
@@ -1524,6 +1536,8 @@ export default function DashboardScreen({ user, onSignOut }) {
     setClientStatus(item.status !== undefined ? item.status : 1);
     setSelectedPlanId(item.plan_id ? String(item.plan_id) : '');
     setEnabledModule(item.enabled_module || '');
+    setClientPassword('');
+    setShowClientPassword(false);
     setClientFormError('');
     setClientWizardStep(1);
     setIsAddClientModalOpen(true);
@@ -1561,6 +1575,7 @@ export default function DashboardScreen({ user, onSignOut }) {
       status: clientStatus,
       plan_id: selectedPlanId ? parseInt(selectedPlanId, 10) : null,
       enabled_module: enabledModule.trim() || null,
+      password: clientPassword.trim() || undefined,
     };
 
     const url = editingClient
@@ -1598,6 +1613,8 @@ export default function DashboardScreen({ user, onSignOut }) {
         setStateName('');
         setCity('');
         setClientEmail('');
+        setClientPassword('');
+        setShowClientPassword(false);
         setTrnNo('');
         setContactNo('');
         setPhoneNo('');
@@ -4238,8 +4255,62 @@ export default function DashboardScreen({ user, onSignOut }) {
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Issue Date</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyTradeLicenseIssueDate ? companyTradeLicenseIssueDate.split('T')[0] : '-'}</Text></View>
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Expiry Date</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyTradeLicenseExpiryDate ? companyTradeLicenseExpiryDate.split('T')[0] : '-'}</Text></View>
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Default Currency</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyDefaultCurrency || '-'}</Text></View>
-            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Trade License File</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#2563EB' }}>{companyTradeLicenseFile?.name || (editingCompany?.trade_license_attachment_path ? editingCompany.trade_license_attachment_path.split('/').pop() : 'None Attached')}</Text></View>
-            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Company Logo</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#2563EB' }}>{companyLogoFile?.name || (editingCompany?.company_logo_path ? editingCompany.company_logo_path.split('/').pop() : 'None Attached')}</Text></View>
+            <View style={{ width: '47%' }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Trade License File</Text>
+              {(() => {
+                const filePath = companyTradeLicenseFile?.path || editingCompany?.trade_license_attachment_path;
+                const fileName = companyTradeLicenseFile?.name || (editingCompany?.trade_license_attachment_path ? editingCompany.trade_license_attachment_path.split('/').pop() : null);
+                if (!filePath && !fileName) {
+                  return <Text style={{ fontSize: 14, fontWeight: '600', color: '#64748B' }}>None Attached</Text>;
+                }
+                const fileUrl = filePath ? (filePath.startsWith('http') ? filePath : `${API_URL}/${filePath.replace(/^\/+/, '')}`) : null;
+                return (
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6, cursor: fileUrl ? 'pointer' : 'default', marginTop: 2 }}
+                    onPress={() => {
+                      if (fileUrl && typeof window !== 'undefined') {
+                        window.open(fileUrl, '_blank');
+                      }
+                    }}
+                  >
+                    <Ionicons name="document-text-outline" size={16} color="#2563EB" />
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#2563EB', textDecorationLine: fileUrl ? 'underline' : 'none', flexShrink: 1 }} numberOfLines={1}>
+                      {fileName || 'View Trade License PDF'}
+                    </Text>
+                    {fileUrl && <Ionicons name="open-outline" size={14} color="#2563EB" />}
+                  </TouchableOpacity>
+                );
+              })()}
+            </View>
+            <View style={{ width: '47%' }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Company Logo</Text>
+              {(() => {
+                const filePath = companyLogoFile?.path || editingCompany?.company_logo_path;
+                const fileName = companyLogoFile?.name || (editingCompany?.company_logo_path ? editingCompany.company_logo_path.split('/').pop() : null);
+                if (!filePath && !fileName) {
+                  return <Text style={{ fontSize: 14, fontWeight: '600', color: '#64748B' }}>None Attached</Text>;
+                }
+                const fileUrl = filePath ? (filePath.startsWith('http') ? filePath : `${API_URL}/${filePath.replace(/^\/+/, '')}`) : null;
+                return (
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6, cursor: fileUrl ? 'pointer' : 'default', marginTop: 2 }}
+                    onPress={() => {
+                      if (fileUrl && typeof window !== 'undefined') {
+                        window.open(fileUrl, '_blank');
+                      }
+                    }}
+                  >
+                    <Ionicons name="image-outline" size={16} color="#2563EB" />
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#2563EB', textDecorationLine: fileUrl ? 'underline' : 'none', flexShrink: 1 }} numberOfLines={1}>
+                      {fileName || 'View Company Logo'}
+                    </Text>
+                    {fileUrl && <Ionicons name="open-outline" size={14} color="#2563EB" />}
+                  </TouchableOpacity>
+                );
+              })()}
+            </View>
           </View>
         </View>
 
@@ -4309,8 +4380,12 @@ export default function DashboardScreen({ user, onSignOut }) {
 
   const renderCompanyTab = () => {
     const filtered = companies.filter(c => {
-      const matchClient = (!user || !user.clientid) ? true : (Number(c.clientid) === Number(user.clientid));
-      const matchSearch = c.company_name && c.company_name.toLowerCase().includes(companiesSearch.toLowerCase());
+      const matchClient = (!user || !user.clientid) ? true : (!c.clientid || Number(c.clientid) === Number(user.clientid));
+      const searchLower = (companiesSearch || '').toLowerCase().trim();
+      const matchSearch = !searchLower ||
+        (c.company_name && c.company_name.toLowerCase().includes(searchLower)) ||
+        (c.short_code && c.short_code.toLowerCase().includes(searchLower)) ||
+        (c.client_name && c.client_name.toLowerCase().includes(searchLower));
       return matchClient && matchSearch;
     });
     const displayPage = Math.min(companiesPage, Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE)));
@@ -4505,6 +4580,8 @@ export default function DashboardScreen({ user, onSignOut }) {
               setClientStatus(1);
               setEnabledModule('');
               setSelectedPlanId('');
+              setClientPassword('');
+              setShowClientPassword(false);
               setClientFormError('');
               setClientWizardStep(1);
               setIsAddClientModalOpen(true);
@@ -4638,7 +4715,8 @@ export default function DashboardScreen({ user, onSignOut }) {
                               showToast('This client does not have an email address associated with a portal account.', 'warning');
                               return;
                             }
-                            setAdminPasswordResetEmployee({
+                            setChangePasswordVisible(false);
+                            handleOpenPasswordResetModal({
                               email: item.email,
                               full_name: item.client_name
                             });
@@ -5656,7 +5734,10 @@ export default function DashboardScreen({ user, onSignOut }) {
               {/* Action Buttons */}
               <View style={{ padding: 24, flexDirection: isLargeScreen ? 'row' : 'column', gap: 16 }}>
                 <TouchableOpacity
-                  onPress={() => setChangePasswordVisible(true)}
+                  onPress={() => {
+                    setAdminPasswordResetEmployee(null);
+                    setChangePasswordVisible(true);
+                  }}
                   style={{
                     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
                     gap: 10, backgroundColor: '#4A001A',
@@ -6124,144 +6205,47 @@ export default function DashboardScreen({ user, onSignOut }) {
       </Modal>
 
       {/* CHANGE PASSWORD MODAL */}
-      <Modal
-        visible={changePasswordVisible}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => {
-          setChangePasswordVisible(false);
-          setPwdCurrent('');
-          setPwdNew('');
-          setPwdConfirm('');
-          setShowPwdCurrent(false);
-          setShowPwdNew(false);
-          setShowPwdConfirm(false);
-        }}
-      >
-        <TouchableOpacity style={dynamicModalOverlayStyle} activeOpacity={1} onPress={() => {
-          setChangePasswordVisible(false);
-          setPwdCurrent('');
-          setPwdNew('');
-          setPwdConfirm('');
-          setShowPwdCurrent(false);
-          setShowPwdNew(false);
-          setShowPwdConfirm(false);
-        }}>
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={() => { }}
-            style={[styles.modalCard, { width: width > 768 ? 440 : '95%', maxWidth: 440, padding: 0, overflow: 'hidden' }]}
-          >
-            {/* Header */}
-            <View style={{ backgroundColor: '#F8FAFC', paddingHorizontal: 24, paddingVertical: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' }}>
-                  <Ionicons name="shield-checkmark" size={20} color="#3B82F6" />
+      {changePasswordVisible && !adminPasswordResetEmployee && (
+        <Modal
+          visible={true}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={() => {
+            setChangePasswordVisible(false);
+            setPwdCurrent('');
+            setPwdNew('');
+            setPwdConfirm('');
+            setShowPwdCurrent(false);
+            setShowPwdNew(false);
+            setShowPwdConfirm(false);
+          }}
+        >
+          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => {
+            setChangePasswordVisible(false);
+            setPwdCurrent('');
+            setPwdNew('');
+            setPwdConfirm('');
+            setShowPwdCurrent(false);
+            setShowPwdNew(false);
+            setShowPwdConfirm(false);
+          }}>
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={() => { }}
+              style={[styles.modalCard, { width: width > 768 ? 440 : '95%', maxWidth: 440, padding: 0, overflow: 'hidden' }]}
+            >
+              {/* Header */}
+              <View style={{ backgroundColor: '#F8FAFC', paddingHorizontal: 24, paddingVertical: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="shield-checkmark" size={20} color="#3B82F6" />
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 18, fontWeight: '800', color: '#0F172A' }}>Change Password</Text>
+                    <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>Secure your account</Text>
+                  </View>
                 </View>
-                <View>
-                  <Text style={{ fontSize: 18, fontWeight: '800', color: '#0F172A' }}>Change Password</Text>
-                  <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>Secure your account</Text>
-                </View>
-              </View>
-              <TouchableOpacity onPress={() => {
-                setChangePasswordVisible(false);
-                setPwdCurrent('');
-                setPwdNew('');
-                setPwdConfirm('');
-                setShowPwdCurrent(false);
-                setShowPwdNew(false);
-                setShowPwdConfirm(false);
-              }} activeOpacity={0.7} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}>
-                <Ionicons name="close" size={18} color="#64748B" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Body */}
-            <View style={{ padding: 24, gap: 20 }}>
-              <View>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B', marginBottom: 8 }}>Current Password</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, backgroundColor: '#F8FAFC', paddingHorizontal: 14 }}>
-                  <Ionicons name="lock-open-outline" size={18} color="#94A3B8" />
-                  <TextInput
-                    style={{ flex: 1, paddingVertical: 14, paddingHorizontal: 10, fontSize: 14, color: '#0F172A', outlineStyle: 'none' }}
-                    placeholder="Enter current password"
-                    placeholderTextColor="#94A3B8"
-                    value={pwdCurrent}
-                    onChangeText={setPwdCurrent}
-                    secureTextEntry={!showPwdCurrent}
-                    autoComplete="current-password"
-                  />
-                  <TouchableOpacity
-                    onPress={() => setShowPwdCurrent(!showPwdCurrent)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  >
-                    <Ionicons
-                      name={showPwdCurrent ? 'eye-outline' : 'eye-off-outline'}
-                      size={18}
-                      color="#94A3B8"
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B', marginBottom: 8 }}>New Password</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, backgroundColor: '#F8FAFC', paddingHorizontal: 14 }}>
-                  <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" />
-                  <TextInput
-                    style={{ flex: 1, paddingVertical: 14, paddingHorizontal: 10, fontSize: 14, color: '#0F172A', outlineStyle: 'none' }}
-                    placeholder="Enter new password (min 6 chars)"
-                    placeholderTextColor="#94A3B8"
-                    value={pwdNew}
-                    onChangeText={setPwdNew}
-                    secureTextEntry={!showPwdNew}
-                    autoComplete="new-password"
-                  />
-                  <TouchableOpacity
-                    onPress={() => setShowPwdNew(!showPwdNew)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  >
-                    <Ionicons
-                      name={showPwdNew ? 'eye-outline' : 'eye-off-outline'}
-                      size={18}
-                      color="#94A3B8"
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B', marginBottom: 8 }}>Confirm New Password</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, backgroundColor: '#F8FAFC', paddingHorizontal: 14 }}>
-                  <Ionicons name="shield-checkmark-outline" size={18} color="#94A3B8" />
-                  <TextInput
-                    style={{ flex: 1, paddingVertical: 14, paddingHorizontal: 10, fontSize: 14, color: '#0F172A', outlineStyle: 'none' }}
-                    placeholder="Re-enter new password"
-                    placeholderTextColor="#94A3B8"
-                    value={pwdConfirm}
-                    onChangeText={setPwdConfirm}
-                    secureTextEntry={!showPwdConfirm}
-                    autoComplete="new-password"
-                  />
-                  <TouchableOpacity
-                    onPress={() => setShowPwdConfirm(!showPwdConfirm)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  >
-                    <Ionicons
-                      name={showPwdConfirm ? 'eye-outline' : 'eye-off-outline'}
-                      size={18}
-                      color="#94A3B8"
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-
-            {/* Footer */}
-            <View style={{ paddingHorizontal: 24, paddingVertical: 20, borderTopWidth: 1, borderTopColor: '#F1F5F9', backgroundColor: '#F8FAFC', flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
-              <TouchableOpacity
-                style={{ paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0' }}
-                onPress={() => {
+                <TouchableOpacity onPress={() => {
                   setChangePasswordVisible(false);
                   setPwdCurrent('');
                   setPwdNew('');
@@ -6269,171 +6253,272 @@ export default function DashboardScreen({ user, onSignOut }) {
                   setShowPwdCurrent(false);
                   setShowPwdNew(false);
                   setShowPwdConfirm(false);
-                }}
-              >
-                <Text style={{ color: '#475569', fontWeight: '700', fontSize: 14 }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[{ paddingVertical: 12, paddingHorizontal: 24, borderRadius: 10, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', gap: 8 }, pwdLoading && { opacity: 0.7 }]}
-                onPress={handleChangePassword}
-                disabled={pwdLoading}
-              >
-                {pwdLoading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
-                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Save Password</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
+                }} activeOpacity={0.7} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}>
+                  <Ionicons name="close" size={18} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Body */}
+              <View style={{ padding: 24, gap: 20 }}>
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B', marginBottom: 8 }}>Current Password</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, backgroundColor: '#F8FAFC', paddingHorizontal: 14 }}>
+                    <Ionicons name="lock-open-outline" size={18} color="#94A3B8" />
+                    <TextInput
+                      style={{ flex: 1, paddingVertical: 14, paddingHorizontal: 10, fontSize: 14, color: '#0F172A', outlineStyle: 'none' }}
+                      placeholder="Enter current password"
+                      placeholderTextColor="#94A3B8"
+                      value={pwdCurrent}
+                      onChangeText={setPwdCurrent}
+                      secureTextEntry={!showPwdCurrent}
+                      autoComplete="current-password"
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowPwdCurrent(!showPwdCurrent)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons
+                        name={showPwdCurrent ? 'eye-outline' : 'eye-off-outline'}
+                        size={18}
+                        color="#94A3B8"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B', marginBottom: 8 }}>New Password</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, backgroundColor: '#F8FAFC', paddingHorizontal: 14 }}>
+                    <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" />
+                    <TextInput
+                      style={{ flex: 1, paddingVertical: 14, paddingHorizontal: 10, fontSize: 14, color: '#0F172A', outlineStyle: 'none' }}
+                      placeholder="Enter new password (min 6 chars)"
+                      placeholderTextColor="#94A3B8"
+                      value={pwdNew}
+                      onChangeText={setPwdNew}
+                      secureTextEntry={!showPwdNew}
+                      autoComplete="new-password"
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowPwdNew(!showPwdNew)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons
+                        name={showPwdNew ? 'eye-outline' : 'eye-off-outline'}
+                        size={18}
+                        color="#94A3B8"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B', marginBottom: 8 }}>Confirm New Password</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, backgroundColor: '#F8FAFC', paddingHorizontal: 14 }}>
+                    <Ionicons name="shield-checkmark-outline" size={18} color="#94A3B8" />
+                    <TextInput
+                      style={{ flex: 1, paddingVertical: 14, paddingHorizontal: 10, fontSize: 14, color: '#0F172A', outlineStyle: 'none' }}
+                      placeholder="Re-enter new password"
+                      placeholderTextColor="#94A3B8"
+                      value={pwdConfirm}
+                      onChangeText={setPwdConfirm}
+                      secureTextEntry={!showPwdConfirm}
+                      autoComplete="new-password"
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowPwdConfirm(!showPwdConfirm)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons
+                        name={showPwdConfirm ? 'eye-outline' : 'eye-off-outline'}
+                        size={18}
+                        color="#94A3B8"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+
+              {/* Footer */}
+              <View style={{ paddingHorizontal: 24, paddingVertical: 20, borderTopWidth: 1, borderTopColor: '#F1F5F9', backgroundColor: '#F8FAFC', flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
+                <TouchableOpacity
+                  style={{ paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0' }}
+                  onPress={() => {
+                    setChangePasswordVisible(false);
+                    setPwdCurrent('');
+                    setPwdNew('');
+                    setPwdConfirm('');
+                    setShowPwdCurrent(false);
+                    setShowPwdNew(false);
+                    setShowPwdConfirm(false);
+                  }}
+                >
+                  <Text style={{ color: '#475569', fontWeight: '700', fontSize: 14 }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[{ paddingVertical: 12, paddingHorizontal: 24, borderRadius: 10, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', gap: 8 }, pwdLoading && { opacity: 0.7 }]}
+                  onPress={handleChangePassword}
+                  disabled={pwdLoading}
+                >
+                  {pwdLoading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
+                      <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Save Password</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
           </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+        </Modal>
+      )}
 
       {/* ADMIN CHANGE PASSWORD MODAL */}
-      <Modal
-        visible={!!adminPasswordResetEmployee}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => {
-          setAdminPasswordResetEmployee(null);
-          setAdminNewPassword('');
-          setAdminConfirmPassword('');
-          setShowAdminNewPassword(false);
-          setShowAdminConfirmPassword(false);
-        }}
-      >
-        <TouchableOpacity style={dynamicModalOverlayStyle} activeOpacity={1} onPress={() => {
-          setAdminPasswordResetEmployee(null);
-          setAdminNewPassword('');
-          setAdminConfirmPassword('');
-          setShowAdminNewPassword(false);
-          setShowAdminConfirmPassword(false);
-        }}>
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={() => { }}
-            style={[styles.modalCard, { width: width > 768 ? 440 : '95%', maxWidth: 440, padding: 0, overflow: 'hidden' }]}
-          >
-            {/* Header */}
-            <View style={{ backgroundColor: '#F8FAFC', paddingHorizontal: 24, paddingVertical: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: '#FEF3C7', justifyContent: 'center', alignItems: 'center' }}>
-                  <Ionicons name="key" size={20} color="#D97706" />
+      {!!adminPasswordResetEmployee && !changePasswordVisible && (
+        <Modal
+          visible={true}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={() => {
+            setAdminPasswordResetEmployee(null);
+            setAdminNewPassword('');
+            setAdminConfirmPassword('');
+            setShowAdminNewPassword(false);
+            setShowAdminConfirmPassword(false);
+          }}
+        >
+          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => {
+            setAdminPasswordResetEmployee(null);
+            setAdminNewPassword('');
+            setAdminConfirmPassword('');
+            setShowAdminNewPassword(false);
+            setShowAdminConfirmPassword(false);
+          }}>
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={() => { }}
+              style={[styles.modalCard, { width: width > 768 ? 440 : '95%', maxWidth: 440, padding: 0, overflow: 'hidden' }]}
+            >
+              {/* Header */}
+              <View style={{ backgroundColor: '#F8FAFC', paddingHorizontal: 24, paddingVertical: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: '#FEF3C7', justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="key" size={20} color="#D97706" />
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 16, fontWeight: '800', color: '#0F172A' }}>Reset Password</Text>
+                    <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }} numberOfLines={1}>
+                      {adminPasswordResetEmployee?.full_name ? `For: ${adminPasswordResetEmployee.full_name}` : 'Change employee password'}
+                    </Text>
+                  </View>
                 </View>
-                <View>
-                  <Text style={{ fontSize: 16, fontWeight: '800', color: '#0F172A' }}>Reset Password</Text>
-                  <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }} numberOfLines={1}>
-                    {adminPasswordResetEmployee?.full_name ? `For: ${adminPasswordResetEmployee.full_name}` : 'Change employee password'}
-                  </Text>
-                </View>
-              </View>
-              <TouchableOpacity onPress={() => {
-                setAdminPasswordResetEmployee(null);
-                setAdminNewPassword('');
-                setAdminConfirmPassword('');
-                setShowAdminNewPassword(false);
-                setShowAdminConfirmPassword(false);
-              }} activeOpacity={0.7} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}>
-                <Ionicons name="close" size={18} color="#64748B" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Body */}
-            <View style={{ padding: 24, gap: 20 }}>
-              <View>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B' }}>New Password</Text>
-                  <TouchableOpacity onPress={handleGenerateRandomPassword} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <Ionicons name="sparkles" size={13} color={COLORS.primary} />
-                    <Text style={{ fontSize: 12, color: COLORS.primary, fontWeight: '700' }}>Auto-Generate Key</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, backgroundColor: '#F8FAFC', paddingHorizontal: 14 }}>
-                  <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" />
-                  <TextInput
-                    style={{ flex: 1, paddingVertical: 14, paddingHorizontal: 10, fontSize: 14, color: '#0F172A', outlineStyle: 'none' }}
-                    placeholder="Enter new password (min 6 chars)"
-                    placeholderTextColor="#94A3B8"
-                    value={adminNewPassword}
-                    onChangeText={setAdminNewPassword}
-                    secureTextEntry={!showAdminNewPassword}
-                    autoComplete="new-password"
-                  />
-                  <TouchableOpacity
-                    onPress={() => setShowAdminNewPassword(!showAdminNewPassword)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  >
-                    <Ionicons
-                      name={showAdminNewPassword ? 'eye-outline' : 'eye-off-outline'}
-                      size={18}
-                      color="#94A3B8"
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View>
-                <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B', marginBottom: 8 }}>Confirm New Password</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, backgroundColor: '#F8FAFC', paddingHorizontal: 14 }}>
-                  <Ionicons name="shield-checkmark-outline" size={18} color="#94A3B8" />
-                  <TextInput
-                    style={{ flex: 1, paddingVertical: 14, paddingHorizontal: 10, fontSize: 14, color: '#0F172A', outlineStyle: 'none' }}
-                    placeholder="Re-enter new password"
-                    placeholderTextColor="#94A3B8"
-                    value={adminConfirmPassword}
-                    onChangeText={setAdminConfirmPassword}
-                    secureTextEntry={!showAdminConfirmPassword}
-                    autoComplete="new-password"
-                  />
-                  <TouchableOpacity
-                    onPress={() => setShowAdminConfirmPassword(!showAdminConfirmPassword)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  >
-                    <Ionicons
-                      name={showAdminConfirmPassword ? 'eye-outline' : 'eye-off-outline'}
-                      size={18}
-                      color="#94A3B8"
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-
-            {/* Footer */}
-            <View style={{ paddingHorizontal: 24, paddingVertical: 20, borderTopWidth: 1, borderTopColor: '#F1F5F9', backgroundColor: '#F8FAFC', flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
-              <TouchableOpacity
-                style={{ paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0' }}
-                onPress={() => {
+                <TouchableOpacity onPress={() => {
                   setAdminPasswordResetEmployee(null);
                   setAdminNewPassword('');
                   setAdminConfirmPassword('');
                   setShowAdminNewPassword(false);
                   setShowAdminConfirmPassword(false);
-                }}
-              >
-                <Text style={{ color: '#475569', fontWeight: '700', fontSize: 14 }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[{ paddingVertical: 12, paddingHorizontal: 24, borderRadius: 10, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', gap: 8 }, adminPwdLoading && { opacity: 0.7 }]}
-                onPress={handleAdminChangePassword}
-                disabled={adminPwdLoading}
-              >
-                {adminPwdLoading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
-                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Save Password</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
+                }} activeOpacity={0.7} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}>
+                  <Ionicons name="close" size={18} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Body */}
+              <View style={{ padding: 24, gap: 20 }}>
+                <View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B' }}>New Password</Text>
+                    <TouchableOpacity onPress={handleGenerateRandomPassword} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <Ionicons name="sparkles" size={13} color={COLORS.primary} />
+                      <Text style={{ fontSize: 12, color: COLORS.primary, fontWeight: '700' }}>Auto-Generate Key</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, backgroundColor: '#F8FAFC', paddingHorizontal: 14 }}>
+                    <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" />
+                    <TextInput
+                      style={{ flex: 1, paddingVertical: 14, paddingHorizontal: 10, fontSize: 14, color: '#0F172A', outlineStyle: 'none' }}
+                      placeholder="Enter new password (min 6 chars)"
+                      placeholderTextColor="#94A3B8"
+                      value={adminNewPassword}
+                      onChangeText={setAdminNewPassword}
+                      secureTextEntry={!showAdminNewPassword}
+                      autoComplete="new-password"
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowAdminNewPassword(!showAdminNewPassword)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons
+                        name={showAdminNewPassword ? 'eye-outline' : 'eye-off-outline'}
+                        size={18}
+                        color="#94A3B8"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B', marginBottom: 8 }}>Confirm New Password</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, backgroundColor: '#F8FAFC', paddingHorizontal: 14 }}>
+                    <Ionicons name="shield-checkmark-outline" size={18} color="#94A3B8" />
+                    <TextInput
+                      style={{ flex: 1, paddingVertical: 14, paddingHorizontal: 10, fontSize: 14, color: '#0F172A', outlineStyle: 'none' }}
+                      placeholder="Re-enter new password"
+                      placeholderTextColor="#94A3B8"
+                      value={adminConfirmPassword}
+                      onChangeText={setAdminConfirmPassword}
+                      secureTextEntry={!showAdminConfirmPassword}
+                      autoComplete="new-password"
+                    />
+                    <TouchableOpacity
+                      onPress={() => setShowAdminConfirmPassword(!showAdminConfirmPassword)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons
+                        name={showAdminConfirmPassword ? 'eye-outline' : 'eye-off-outline'}
+                        size={18}
+                        color="#94A3B8"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+
+              {/* Footer */}
+              <View style={{ paddingHorizontal: 24, paddingVertical: 20, borderTopWidth: 1, borderTopColor: '#F1F5F9', backgroundColor: '#F8FAFC', flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
+                <TouchableOpacity
+                  style={{ paddingVertical: 12, paddingHorizontal: 20, borderRadius: 10, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E2E8F0' }}
+                  onPress={() => {
+                    setAdminPasswordResetEmployee(null);
+                    setAdminNewPassword('');
+                    setAdminConfirmPassword('');
+                    setShowAdminNewPassword(false);
+                    setShowAdminConfirmPassword(false);
+                  }}
+                >
+                  <Text style={{ color: '#475569', fontWeight: '700', fontSize: 14 }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[{ paddingVertical: 12, paddingHorizontal: 24, borderRadius: 10, backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', gap: 8 }, adminPwdLoading && { opacity: 0.7 }]}
+                  onPress={handleAdminChangePassword}
+                  disabled={adminPwdLoading}
+                >
+                  {adminPwdLoading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark-circle-outline" size={18} color="#fff" />
+                      <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Save Password</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
           </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+        </Modal>
+      )}
 
       {/* DELETE CONFIRMATION MODAL OVERLAY */}
       <Modal
@@ -7124,6 +7209,41 @@ export default function DashboardScreen({ user, onSignOut }) {
                           value={website}
                           onChangeText={setWebsite}
                         />
+                      </View>
+                    </View>
+
+                    {/* Portal Login Password Field */}
+                    <View style={{ marginBottom: 12 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <Text style={styles.modalLabel}>Portal Login Password</Text>
+                        <TouchableOpacity
+                          onPress={() => {
+                            const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789!@#$';
+                            let pass = '';
+                            for (let i = 0; i < 10; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
+                            setClientPassword(pass);
+                            setShowClientPassword(true);
+                          }}
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                        >
+                          <Ionicons name="sparkles" size={13} color={COLORS.primary} />
+                          <Text style={{ fontSize: 11, color: COLORS.primary, fontWeight: '700' }}>Auto-Generate Key</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, backgroundColor: '#F8FAFC', paddingHorizontal: 12 }}>
+                        <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" />
+                        <TextInput
+                          style={{ flex: 1, paddingVertical: 10, paddingHorizontal: 8, fontSize: 14, color: '#0F172A', outlineStyle: 'none' }}
+                          placeholder={editingClient ? "Leave blank to keep existing password" : "Set initial password (min 6 chars, or leave blank to auto-generate)"}
+                          placeholderTextColor={COLORS.textMuted}
+                          value={clientPassword}
+                          onChangeText={setClientPassword}
+                          secureTextEntry={!showClientPassword}
+                          autoComplete="new-password"
+                        />
+                        <TouchableOpacity onPress={() => setShowClientPassword(!showClientPassword)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                          <Ionicons name={showClientPassword ? 'eye-outline' : 'eye-off-outline'} size={18} color="#94A3B8" />
+                        </TouchableOpacity>
                       </View>
                     </View>
 
@@ -9436,7 +9556,11 @@ export default function DashboardScreen({ user, onSignOut }) {
 
                 <TouchableOpacity
                   style={styles.userMenuItem}
-                  onPress={() => { setUserMenuOpen(false); setChangePasswordVisible(true); }}
+                  onPress={() => {
+                    setUserMenuOpen(false);
+                    setAdminPasswordResetEmployee(null);
+                    setChangePasswordVisible(true);
+                  }}
                   activeOpacity={0.7}
                 >
                   <View style={[styles.userMenuItemIcon, { backgroundColor: '#F0FDF4' }]}>

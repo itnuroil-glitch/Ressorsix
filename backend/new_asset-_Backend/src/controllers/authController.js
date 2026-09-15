@@ -188,9 +188,16 @@ exports.changePassword = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-    // Update password
-    const updatePasswordQuery = 'UPDATE users SET password = $1 WHERE id = $2';
-    await db.query(updatePasswordQuery, [hashedPassword, userId]);
+    // Update password in users table
+    const updatePasswordQuery = 'UPDATE users SET password = $1 WHERE id = $2 RETURNING email';
+    const updResult = await db.query(updatePasswordQuery, [hashedPassword, userId]);
+
+    if (updResult.rows.length > 0 && updResult.rows[0].email) {
+      await db.query(
+        'UPDATE employee SET assigned_password = $1 WHERE email = $2 AND (is_deleted = false OR is_deleted IS NULL)',
+        [newPassword, updResult.rows[0].email.toLowerCase().trim()]
+      );
+    }
 
     res.status(200).json({ message: 'Password updated successfully.' });
   } catch (error) {

@@ -154,8 +154,23 @@ exports.login = async (req, res) => {
     }
     associatedCompanyIds = [...new Set(associatedCompanyIds.map(String))].filter(Boolean);
 
+    // Auto-resolve company for client user if companyid is not directly set
+    let effectiveCompanyId = user.companyid;
+    if (!effectiveCompanyId && user.clientid) {
+      const compLookup = await db.query(
+        'SELECT id FROM company WHERE clientid = $1 AND (is_deleted = false OR is_deleted IS NULL) ORDER BY id ASC LIMIT 1',
+        [user.clientid]
+      );
+      if (compLookup.rows.length > 0) {
+        effectiveCompanyId = compLookup.rows[0].id;
+      }
+    }
+    if (effectiveCompanyId && !associatedCompanyIds.includes(String(effectiveCompanyId))) {
+      associatedCompanyIds.push(String(effectiveCompanyId));
+    }
+
     try {
-      await createAppSession(res, user, user.authentik_sub || `local_${user.id}`, user.email, []);
+      await createAppSession(res, { ...user, companyid: effectiveCompanyId }, user.authentik_sub || `local_${user.id}`, user.email, []);
     } catch (sessErr) {
       console.warn('[SERVER WARN] Could not create app session cookie:', sessErr.message);
     }
@@ -169,7 +184,7 @@ exports.login = async (req, res) => {
         name: name,
         roleId: user.roleid,
         clientid: user.clientid,
-        companyid: user.companyid,
+        companyid: effectiveCompanyId,
         associatedCompanyIds: associatedCompanyIds,
         createdAt: user.created_at,
       },
@@ -214,9 +229,16 @@ exports.changePassword = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-    // Update password
-    const updatePasswordQuery = 'UPDATE users SET password = $1 WHERE id = $2';
-    await db.query(updatePasswordQuery, [hashedPassword, userId]);
+    // Update password in users table
+    const updatePasswordQuery = 'UPDATE users SET password = $1 WHERE id = $2 RETURNING email';
+    const updResult = await db.query(updatePasswordQuery, [hashedPassword, userId]);
+
+    if (updResult.rows.length > 0 && updResult.rows[0].email) {
+      await db.query(
+        'UPDATE employee SET assigned_password = $1 WHERE email = $2 AND (is_deleted = false OR is_deleted IS NULL)',
+        [newPassword, updResult.rows[0].email.toLowerCase().trim()]
+      );
+    }
 
     res.status(200).json({ message: 'Password updated successfully.' });
   } catch (error) {
@@ -245,8 +267,8 @@ exports.adminChangePassword = async (req, res) => {
     const hashedPassword = await bcrypt.hash(newPassword, salt);
 
     // Update password in users table
-    const updatePasswordQuery = 'UPDATE users SET password = $1, assigned_password = $2 WHERE email = $3';
-    const result = await db.query(updatePasswordQuery, [hashedPassword, newPassword, email.toLowerCase().trim()]);
+    const updatePasswordQuery = 'UPDATE users SET password = $1 WHERE email = $2';
+    const result = await db.query(updatePasswordQuery, [hashedPassword, email.toLowerCase().trim()]);
 
     // Also update assigned_password in employee table
     await db.query('UPDATE employee SET assigned_password = $1 WHERE email = $2 AND is_deleted = false', [newPassword, email.toLowerCase().trim()]);

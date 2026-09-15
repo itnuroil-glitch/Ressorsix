@@ -46,6 +46,75 @@ module.exports = async function authMiddleware(req, res, next) {
     );
 
     if (sessionRes.rows.length === 0) {
+      // Fallback: Check if rawToken is a valid JWT (from standard login / Authorization header)
+      try {
+        const jwt = require('jsonwebtoken');
+        if (process.env.JWT_SECRET) {
+          const decoded = jwt.verify(rawToken, process.env.JWT_SECRET);
+          if (decoded && decoded.id) {
+            const userRes = await db.query(
+              `SELECT id, email AS user_email, roleid, clientid, companyid, isdelete, authentik_sub AS db_sub
+               FROM users WHERE id = $1`,
+              [decoded.id]
+            );
+            if (userRes.rows.length > 0 && !userRes.rows[0].isdelete) {
+              const userObj = userRes.rows[0];
+              let associatedCompanyIds = [];
+              let effectiveRoleId = userObj.roleid;
+              const empRes = await db.query(
+                'SELECT id, roleid FROM employee WHERE email = $1 AND (is_deleted = false OR is_deleted IS NULL)',
+                [userObj.user_email.toLowerCase().trim()]
+              );
+              if (empRes.rows.length > 0) {
+                const empId = empRes.rows[0].id;
+                if (!effectiveRoleId && empRes.rows[0].roleid) {
+                  effectiveRoleId = empRes.rows[0].roleid;
+                }
+                const compRes = await db.query('SELECT company_id FROM employee_company WHERE employee_id = $1', [empId]);
+                associatedCompanyIds = compRes.rows.map(r => r.company_id);
+              }
+              if (effectiveRoleId) {
+                const roleRes = await db.query(
+                  "SELECT companyids FROM role WHERE id = ANY(string_to_array($1, ',')::int[]) AND (is_deleted = false OR is_deleted IS NULL)",
+                  [String(effectiveRoleId)]
+                );
+                roleRes.rows.forEach(r => {
+                  if (Array.isArray(r.companyids)) {
+                    associatedCompanyIds.push(...r.companyids);
+                  }
+                });
+              }
+              let userCompanyId = userObj.companyid;
+              if (!userCompanyId && userObj.clientid) {
+                const compLookup = await db.query(
+                  'SELECT id FROM company WHERE clientid = $1 AND (is_deleted = false OR is_deleted IS NULL) ORDER BY id ASC LIMIT 1',
+                  [userObj.clientid]
+                );
+                if (compLookup.rows.length > 0) {
+                  userCompanyId = compLookup.rows[0].id;
+                }
+              }
+              if (userCompanyId && !associatedCompanyIds.includes(String(userCompanyId))) {
+                associatedCompanyIds.push(String(userCompanyId));
+              }
+
+              req.user = {
+                id: userObj.id,
+                email: userObj.user_email,
+                roleId: effectiveRoleId ? String(effectiveRoleId) : '1',
+                clientid: userObj.clientid,
+                companyid: userCompanyId,
+                associatedCompanyIds: [...new Set(associatedCompanyIds.map(String))].filter(Boolean),
+                authentik_sub: userObj.db_sub || `local_${userObj.id}`
+              };
+              return next();
+            }
+          }
+        }
+      } catch (jwtErr) {
+        // Not a valid JWT token, proceed to session error handling
+      }
+
       if (process.env.BYPASS_AUTH === 'true') {
         req.user = {
           id: 45,
@@ -118,13 +187,27 @@ module.exports = async function authMiddleware(req, res, next) {
     }
     associatedCompanyIds = [...new Set(associatedCompanyIds.map(String))].filter(Boolean);
 
+    let sessionCompanyId = session.companyid;
+    if (!sessionCompanyId && session.clientid) {
+      const compLookup = await db.query(
+        'SELECT id FROM company WHERE clientid = $1 AND (is_deleted = false OR is_deleted IS NULL) ORDER BY id ASC LIMIT 1',
+        [session.clientid]
+      );
+      if (compLookup.rows.length > 0) {
+        sessionCompanyId = compLookup.rows[0].id;
+      }
+    }
+    if (sessionCompanyId && !associatedCompanyIds.includes(String(sessionCompanyId))) {
+      associatedCompanyIds.push(String(sessionCompanyId));
+    }
+
     // Attach user payload & session details to req
     req.user = {
       id: session.user_id,
       email: session.user_email,
       roleId: session.roleid,
       clientid: session.clientid,
-      companyid: session.companyid,
+      companyid: sessionCompanyId,
       authentik_sub: session.authentik_sub,
       associatedCompanyIds,
     };

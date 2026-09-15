@@ -96,13 +96,11 @@ exports.createCompany = async (req, res) => {
       return res.status(400).json({ message: 'Company name is required.' });
     }
 
-    let finalClientId = clientid;
-    if (!finalClientId) {
-      const clientRes = await pool.query('SELECT id FROM client ORDER BY id ASC LIMIT 1');
-      if (clientRes.rows.length > 0) {
-        finalClientId = clientRes.rows[0].id;
-      }
-    }
+    // Use the provided clientid directly. The frontend always sends the correct
+    // clientid (the logged-in client's own id, or the admin-selected client id).
+    // We intentionally do NOT fall back to "first client in DB" here because that
+    // silently assigned new companies to the wrong client.
+    const finalClientId = clientid || null;
 
     let initialLogoPath = company_logo || null;
     if (company_logo_attachment_base64) {
@@ -433,9 +431,12 @@ exports.getCompaniesByClient = async (req, res) => {
       if (!isSuperAdmin) {
         let baseCompanyIds = [];
         if (isClientAdmin) {
-          // Client admin defaults to all companies under this client
+          // Client admin defaults to all companies under this client (or linked via user)
           const allClientCompRes = await pool.query(
-            'SELECT id FROM company WHERE clientid = $1 AND (is_deleted = false OR is_deleted IS NULL)',
+            `SELECT DISTINCT c.id FROM company c
+             LEFT JOIN users u ON u.companyid = c.id
+             WHERE (c.clientid = $1 OR u.clientid = $1)
+               AND (c.is_deleted = false OR c.is_deleted IS NULL)`,
             [clientId]
           );
           baseCompanyIds = allClientCompRes.rows.map(r => r.id);
@@ -579,26 +580,65 @@ exports.getCompaniesByClient = async (req, res) => {
       }
 
     let query = `
-      SELECT id, company_name, country 
-      FROM company 
-      WHERE clientid = $1 AND (is_deleted = false OR is_deleted IS NULL)
+      SELECT DISTINCT c.*, cl.client_name as client_name,
+             a.attachment as trade_license_attachment_path,
+             COALESCE(c.company_logo, logo_att.attachment) as company_logo_path
+      FROM company c
+      LEFT JOIN client cl ON c.clientid = cl.id
+      LEFT JOIN attachment a ON c.id = a.companyid AND a.type = 'Trade License' AND (a.is_deleted = false OR a.is_deleted IS NULL)
+      LEFT JOIN attachment logo_att ON c.id = logo_att.companyid AND logo_att.type = 'Company Logo' AND (logo_att.is_deleted = false OR logo_att.is_deleted IS NULL)
+      LEFT JOIN users u ON u.companyid = c.id
+      WHERE (c.clientid = $1 OR u.clientid = $1)
+        AND (c.is_deleted = false OR c.is_deleted IS NULL)
     `;
     const params = [clientId];
 
     if (assignedCompanyIds !== null) {
       if (assignedCompanyIds.length > 0) {
-        query += ` AND id = ANY($2)`;
+        query += ` AND c.id = ANY($2)`;
         params.push(assignedCompanyIds);
       } else {
-        query += ` AND id = -1`;
+        query += ` AND c.id = -1`;
       }
     }
 
-    query += ` ORDER BY id DESC`;
+    query += ` ORDER BY c.id DESC`;
 
-    const { rows } = await pool.query(query, params);
+    let { rows } = await pool.query(query, params);
+
+    // ── Fallback: if no companies found by query, try to find
+    //    the company via the users table directly (companyid field set at client creation)
+    if (rows.length === 0) {
+      const fallbackRes = await pool.query(
+        `SELECT DISTINCT c.*, cl.client_name as client_name,
+                 a.attachment as trade_license_attachment_path,
+                 COALESCE(c.company_logo, logo_att.attachment) as company_logo_path
+         FROM company c
+         LEFT JOIN client cl ON c.clientid = cl.id
+         LEFT JOIN attachment a ON c.id = a.companyid AND a.type = 'Trade License' AND (a.is_deleted = false OR a.is_deleted IS NULL)
+         LEFT JOIN attachment logo_att ON c.id = logo_att.companyid AND logo_att.type = 'Company Logo' AND (logo_att.is_deleted = false OR logo_att.is_deleted IS NULL)
+         JOIN users u ON u.companyid = c.id
+         WHERE u.clientid = $1
+           AND (c.is_deleted = false OR c.is_deleted IS NULL)
+         ORDER BY c.id DESC`,
+        [clientId]
+      );
+
+      if (fallbackRes.rows.length > 0) {
+        rows = fallbackRes.rows;
+        // Also repair the missing clientid on those company rows so future queries work
+        const companyIdsToFix = fallbackRes.rows.map(r => r.id);
+        await pool.query(
+          `UPDATE company SET clientid = $1
+           WHERE id = ANY($2) AND (clientid IS NULL OR clientid != $1)`,
+          [clientId, companyIdsToFix]
+        ).catch(err => console.warn('[FIX] Could not repair company clientid:', err.message));
+      }
+    }
 
     const formattedCompanies = rows.map(row => ({
+      ...row,
+      clientid: row.clientid || clientId,
       id: row.id,
       Id: row.id,
       company_name: row.company_name,
