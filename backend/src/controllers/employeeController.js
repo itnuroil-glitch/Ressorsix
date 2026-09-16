@@ -54,7 +54,7 @@ exports.getAllEmployees = async (req, res) => {
 
     if (clientid) {
       params.push(String(clientid).trim());
-      queryText += ` AND e.clientid::text = $${params.length}`;
+      queryText += ` AND (e.clientid::text = $${params.length} OR bc.clientid::text = $${params.length})`;
     }
 
     if (targetCompId) {

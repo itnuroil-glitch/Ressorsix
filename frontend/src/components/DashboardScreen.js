@@ -276,6 +276,7 @@ export default function DashboardScreen({ user, onSignOut }) {
   // Company state variables
   const [companies, setCompanies] = useState([]);
   const [companiesLoading, setCompaniesLoading] = useState(false);
+  const [companySaving, setCompanySaving] = useState(false);
   const [isCompanyModalOpen, setIsCompanyModalOpen] = useState(false);
   const [isCompanyViewOnly, setIsCompanyViewOnly] = useState(false);
   const [editingCompany, setEditingCompany] = useState(null);
@@ -1344,52 +1345,26 @@ export default function DashboardScreen({ user, onSignOut }) {
       showToast('Company Name is required', 'error');
       return;
     }
+    setCompanySaving(true);
+    try {
 
     const uploadBinaryFile = async (file) => {
       if (!file || file.isExisting) return file?.path || null;
 
-      // 512 KB chunks to guarantee every request stays strictly under Nginx's 1MB limit
-      const CHUNK_SIZE = 512 * 1024;
-      const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
-      const fileId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      const formData = new FormData();
+      formData.append('file', file);
 
-      let finalFilePath = null;
+      const res = await fetch(`${API_URL}/api/upload`, {
+        method: 'POST',
+        body: formData
+      });
 
-      for (let i = 0; i < totalChunks; i++) {
-        const start = i * CHUNK_SIZE;
-        const end = Math.min(start + CHUNK_SIZE, file.size);
-        const chunk = file.slice ? file.slice(start, end) : file;
-
-        const formData = new FormData();
-        formData.append('fileId', fileId);
-        formData.append('chunkIndex', String(i));
-        formData.append('totalChunks', String(totalChunks));
-        formData.append('fileName', file.name || 'attachment.file');
-        formData.append('chunk', chunk);
-
-        const queryParams = new URLSearchParams({
-          fileId,
-          chunkIndex: String(i),
-          totalChunks: String(totalChunks),
-          fileName: file.name || 'attachment.file'
-        }).toString();
-
-        const res = await fetch(`${API_URL}/api/upload/chunk?${queryParams}`, {
-          method: 'POST',
-          body: formData
-        });
-
-        if (!res.ok) {
-          throw new Error(`Failed to upload chunk ${i + 1} of ${totalChunks}`);
-        }
-
-        const data = await res.json();
-        if (data.completed) {
-          finalFilePath = data.filePath;
-        }
+      if (!res.ok) {
+        throw new Error('Failed to upload file');
       }
 
-      return finalFilePath;
+      const data = await res.json();
+      return data.filePath;
     };
 
     let tradeLicensePath = editingCompany?.trade_license_attachment_path || null;
@@ -1402,6 +1377,7 @@ export default function DashboardScreen({ user, onSignOut }) {
         } catch (err) {
           console.error("Error uploading trade license:", err);
           showToast('Failed to upload Trade License document', 'error');
+          setCompanySaving(false);
           return;
         }
       }
@@ -1419,6 +1395,7 @@ export default function DashboardScreen({ user, onSignOut }) {
         } catch (err) {
           console.error("Error uploading logo:", err);
           showToast('Failed to upload Company Logo', 'error');
+          setCompanySaving(false);
           return;
         }
       }
@@ -1479,21 +1456,29 @@ export default function DashboardScreen({ user, onSignOut }) {
     const url = editingCompany ? API_URL + '/api/companies/' + editingCompany.id : API_URL + '/api/companies';
     const method = editingCompany ? 'PUT' : 'POST';
 
-    fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
-      .then(res => {
-        if (!res.ok) throw new Error('Failed to save company');
-        showToast('Company ' + (editingCompany ? 'updated' : 'added') + ' successfully', 'success');
-        setIsCompanyModalOpen(false);
-        fetchCompanies();
+      fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       })
-      .catch(err => {
-        console.error(err);
-        showToast('Error saving company', 'error');
-      });
+        .then(res => {
+          if (!res.ok) throw new Error('Failed to save company');
+          showToast('Company ' + (editingCompany ? 'updated' : 'added') + ' successfully', 'success');
+          setIsCompanyModalOpen(false);
+          fetchCompanies();
+        })
+        .catch(err => {
+          console.error(err);
+          showToast('Error saving company', 'error');
+        })
+        .finally(() => {
+          setCompanySaving(false);
+        });
+    } catch (err) {
+      console.error('Error saving company:', err);
+      showToast('Error saving company', 'error');
+      setCompanySaving(false);
+    }
   };
 
   const handleDeleteCompany = (id) => {
@@ -3758,10 +3743,11 @@ export default function DashboardScreen({ user, onSignOut }) {
         const matchesClient = user.clientid && Number(e.clientid) === Number(user.clientid);
         const matchesCompany = user.companyid && Number(e.basecompany_id) === Number(user.companyid);
         const matchesAssociated = Array.isArray(user.associatedCompanyIds) && user.associatedCompanyIds.some(cid => Number(cid) === Number(e.basecompany_id));
+        const matchesClientCompanies = Array.isArray(companies) && companies.some(c => Number(c.id) === Number(e.basecompany_id));
         if (user.clientid) {
-          companyMatch = matchesClient || matchesCompany || matchesAssociated;
+          companyMatch = matchesClient || matchesCompany || matchesAssociated || matchesClientCompanies;
         } else if (user.companyid) {
-          companyMatch = matchesCompany || matchesAssociated;
+          companyMatch = matchesCompany || matchesAssociated || matchesClientCompanies;
         }
       }
 
@@ -9491,10 +9477,22 @@ export default function DashboardScreen({ user, onSignOut }) {
                           </TouchableOpacity>
                         ) : (
                           <TouchableOpacity
-                            style={[styles.modalSaveBtn, { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, backgroundColor: '#10B981' }]}
+                            style={[styles.modalSaveBtn, {
+                              paddingHorizontal: 24,
+                              paddingVertical: 12,
+                              borderRadius: 8,
+                              backgroundColor: companySaving ? '#9CA3AF' : '#10B981',
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 8
+                            }]}
                             onPress={handleSaveCompany}
+                            disabled={companySaving}
                           >
-                            <Text style={[styles.modalSaveText, { fontWeight: '700' }]}>Save Company</Text>
+                            {companySaving && <ActivityIndicator size="small" color="#FFFFFF" />}
+                            <Text style={[styles.modalSaveText, { fontWeight: '700' }]}>
+                              {companySaving ? 'Saving Company...' : 'Save Company'}
+                            </Text>
                           </TouchableOpacity>
                         )}
                       </View>
