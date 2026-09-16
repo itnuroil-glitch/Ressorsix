@@ -1356,6 +1356,7 @@ export default function DashboardScreen({ user, onSignOut }) {
 
       const res = await fetch(`${API_URL}/api/upload`, {
         method: 'POST',
+        credentials: 'include',
         body: formData
       });
 
