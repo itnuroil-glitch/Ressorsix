@@ -4305,62 +4305,6 @@ export default function DashboardScreen({ user, onSignOut }) {
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Issue Date</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyTradeLicenseIssueDate ? companyTradeLicenseIssueDate.split('T')[0] : '-'}</Text></View>
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Expiry Date</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyTradeLicenseExpiryDate ? companyTradeLicenseExpiryDate.split('T')[0] : '-'}</Text></View>
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Default Currency</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyDefaultCurrency || '-'}</Text></View>
-            <View style={{ width: '47%' }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Trade License File</Text>
-              {(() => {
-                const filePath = companyTradeLicenseFile?.path || editingCompany?.trade_license_attachment_path;
-                const fileName = companyTradeLicenseFile?.name || (editingCompany?.trade_license_attachment_path ? editingCompany.trade_license_attachment_path.split('/').pop() : null);
-                if (!filePath && !fileName) {
-                  return <Text style={{ fontSize: 14, fontWeight: '600', color: '#64748B' }}>None Attached</Text>;
-                }
-                const fileUrl = filePath ? (filePath.startsWith('http') ? filePath : `${API_URL}/${filePath.replace(/^\/+/, '')}`) : null;
-                return (
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6, cursor: fileUrl ? 'pointer' : 'default', marginTop: 2 }}
-                    onPress={() => {
-                      if (fileUrl && typeof window !== 'undefined') {
-                        window.open(fileUrl, '_blank');
-                      }
-                    }}
-                  >
-                    <Ionicons name="document-text-outline" size={16} color="#2563EB" />
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#2563EB', textDecorationLine: fileUrl ? 'underline' : 'none', flexShrink: 1 }} numberOfLines={1}>
-                      {fileName || 'View Trade License PDF'}
-                    </Text>
-                    {fileUrl && <Ionicons name="open-outline" size={14} color="#2563EB" />}
-                  </TouchableOpacity>
-                );
-              })()}
-            </View>
-            <View style={{ width: '47%' }}>
-              <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Company Logo</Text>
-              {(() => {
-                const filePath = companyLogoFile?.path || editingCompany?.company_logo_path;
-                const fileName = companyLogoFile?.name || (editingCompany?.company_logo_path ? editingCompany.company_logo_path.split('/').pop() : null);
-                if (!filePath && !fileName) {
-                  return <Text style={{ fontSize: 14, fontWeight: '600', color: '#64748B' }}>None Attached</Text>;
-                }
-                const fileUrl = filePath ? (filePath.startsWith('http') ? filePath : `${API_URL}/${filePath.replace(/^\/+/, '')}`) : null;
-                return (
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6, cursor: fileUrl ? 'pointer' : 'default', marginTop: 2 }}
-                    onPress={() => {
-                      if (fileUrl && typeof window !== 'undefined') {
-                        window.open(fileUrl, '_blank');
-                      }
-                    }}
-                  >
-                    <Ionicons name="image-outline" size={16} color="#2563EB" />
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#2563EB', textDecorationLine: fileUrl ? 'underline' : 'none', flexShrink: 1 }} numberOfLines={1}>
-                      {fileName || 'View Company Logo'}
-                    </Text>
-                    {fileUrl && <Ionicons name="open-outline" size={14} color="#2563EB" />}
-                  </TouchableOpacity>
-                );
-              })()}
-            </View>
           </View>
         </View>
 
