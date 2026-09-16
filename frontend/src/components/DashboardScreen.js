@@ -362,6 +362,8 @@ export default function DashboardScreen({ user, onSignOut }) {
   useEffect(() => {
     if (isCompanyModalOpen) {
       fetchCompanyDefCurrencyOptions();
+      if (!countries || countries.length === 0) fetchCountries();
+      if (!states || states.length === 0) fetchStates();
     }
   }, [isCompanyModalOpen]);
   const [companyTradeLicenseNumber, setCompanyTradeLicenseNumber] = useState('');
@@ -1071,13 +1073,22 @@ export default function DashboardScreen({ user, onSignOut }) {
     // Use exactly what was selected in the form — no overrides
     const finalCompanies = empAssociatedCompanies;
 
+    // Resolve clientid: use user.clientid if logged in as client; otherwise auto-derive from selected company
+    const selectedBaseComp = companies.find(c => String(c.id) === String(empBaseCompanyId));
+    const selectedAssocComp = (!selectedBaseComp && finalCompanies && finalCompanies.length > 0)
+      ? companies.find(c => String(c.id) === String(finalCompanies[0]))
+      : null;
+    const resolvedClientId = (user && user.clientid)
+      ? user.clientid
+      : (selectedBaseComp?.clientid || selectedAssocComp?.clientid || null);
+
     const payload = {
       full_name: empFullName.trim(),
       email: empEmail.trim(),
       phone: empPhone.trim(),
       roleid: empRoleIds.join(','),
       status: empStatus,
-      clientid: user && user.clientid ? user.clientid : null,
+      clientid: resolvedClientId,
       department_id: empDepartmentId,
       basecompany_id: empBaseCompanyId ? parseInt(empBaseCompanyId) : null,
       companies: finalCompanies,
@@ -1284,15 +1295,23 @@ export default function DashboardScreen({ user, onSignOut }) {
     setCompanyContactEmail(item.contact_email || '');
     setCompanyContactPhone(item.contact_phone || '');
     setCompanyWebsite(item.website || '');
-    setCompanyVatRegistered(!!item.vat_registered);
+    const parseFlag = (val) => {
+      if (val === true || val === 1 || val === '1') return true;
+      if (typeof val === 'string') {
+        const s = val.trim().toLowerCase();
+        return s === 'true' || s === 'yes' || s === '1';
+      }
+      return false;
+    };
+    setCompanyVatRegistered(parseFlag(item.vat_registered));
     setCompanyTrn(item.trn || '');
     setCompanyCorporateTaxRegistrationNumber(item.corporate_tax_registration_number || '');
     setCompanyEstablishmentCardNumber(item.establishment_card_number || '');
     setCompanyEstablishmentCardExpiryDate(item.establishment_card_expiry_date ? item.establishment_card_expiry_date.split('T')[0] : '');
     setCompanyMohreNumber(item.mohre_number || '');
-    setCompanyWpsRegistered(!!item.wps_registered);
-    setCompanyNafisEmiratisationApplicable(!!item.nafis_emiratisation_applicable);
-    setCompanyGpssaApplicable(!!item.gpssa_applicable);
+    setCompanyWpsRegistered(parseFlag(item.wps_registered));
+    setCompanyNafisEmiratisationApplicable(parseFlag(item.nafis_emiratisation_applicable));
+    setCompanyGpssaApplicable(parseFlag(item.gpssa_applicable));
     setCompanyAuthorizedSignatoryName(item.authorized_signatory_name || '');
     setCompanyAuthorizedSignatoryDesignation(item.authorized_signatory_designation || '');
     setCompanyDefaultBank(item.default_bank || '');
@@ -1434,15 +1453,15 @@ export default function DashboardScreen({ user, onSignOut }) {
       contact_email: companyContactEmail,
       contact_phone: companyContactPhone,
       website: companyWebsite,
-      vat_registered: companyVatRegistered,
+      vat_registered: companyVatRegistered ? 'Yes' : 'No',
       trn: companyTrn,
       corporate_tax_registration_number: companyCorporateTaxRegistrationNumber,
       establishment_card_number: companyEstablishmentCardNumber,
       establishment_card_expiry_date: companyEstablishmentCardExpiryDate || null,
       mohre_number: companyMohreNumber,
-      wps_registered: companyWpsRegistered,
-      nafis_emiratisation_applicable: companyNafisEmiratisationApplicable,
-      gpssa_applicable: companyGpssaApplicable,
+      wps_registered: companyWpsRegistered ? 'Yes' : 'No',
+      nafis_emiratisation_applicable: companyNafisEmiratisationApplicable ? 'Yes' : 'No',
+      gpssa_applicable: companyGpssaApplicable ? 'Yes' : 'No',
       authorized_signatory_name: companyAuthorizedSignatoryName,
       authorized_signatory_designation: companyAuthorizedSignatoryDesignation,
       default_bank: companyDefaultBank,
@@ -4228,15 +4247,45 @@ export default function DashboardScreen({ user, onSignOut }) {
                 <Text style={{ fontSize: 12, fontWeight: '700', color: companyStatus === 'Active' ? '#047857' : '#64748B' }}>{companyStatus}</Text>
               </View>
             </View>
-            {editingCompany?.company_logo_path && (
-              <View style={{ width: '100%', marginTop: 8 }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 6 }}>Company Logo Preview</Text>
+            <View style={{ width: '47%' }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Company Logo Preview</Text>
+              {editingCompany?.company_logo_path ? (
                 <Image
                   source={{ uri: API_URL + '/' + editingCompany.company_logo_path }}
-                  style={{ width: 90, height: 90, borderRadius: 8, borderWidth: 1, borderColor: '#CBD5E1', resizeMode: 'contain', backgroundColor: '#F8FAFC' }}
+                  style={{ width: 90, height: 90, borderRadius: 8, borderWidth: 1, borderColor: '#CBD5E1', resizeMode: 'contain', backgroundColor: '#F8FAFC', marginTop: 2 }}
                 />
-              </View>
-            )}
+              ) : (
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#64748B' }}>None Attached</Text>
+              )}
+            </View>
+            <View style={{ width: '47%' }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Trade License Attachment</Text>
+              {(() => {
+                const filePath = companyTradeLicenseFile?.path || editingCompany?.trade_license_attachment_path;
+                const fileName = companyTradeLicenseFile?.name || (editingCompany?.trade_license_attachment_path ? editingCompany.trade_license_attachment_path.split('/').pop() : null);
+                if (!filePath && !fileName) {
+                  return <Text style={{ fontSize: 14, fontWeight: '600', color: '#64748B' }}>None Attached</Text>;
+                }
+                const fileUrl = filePath ? (filePath.startsWith('http') ? filePath : `${API_URL}/${filePath.replace(/^\/+/, '')}`) : null;
+                return (
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6, cursor: fileUrl ? 'pointer' : 'default', marginTop: 2 }}
+                    onPress={() => {
+                      if (fileUrl && typeof window !== 'undefined') {
+                        window.open(fileUrl, '_blank');
+                      }
+                    }}
+                  >
+                    <Ionicons name="document-text-outline" size={16} color="#2563EB" />
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: '#2563EB', textDecorationLine: fileUrl ? 'underline' : 'none', flexShrink: 1 }} numberOfLines={1}>
+                      {fileName || 'View Trade License PDF'}
+                    </Text>
+                    {fileUrl && <Ionicons name="open-outline" size={14} color="#2563EB" />}
+                  </TouchableOpacity>
+                );
+              })()}
+            </View>
           </View>
         </View>
 
@@ -4323,8 +4372,8 @@ export default function DashboardScreen({ user, onSignOut }) {
             <Text style={{ fontSize: 16, fontWeight: '700', color: '#0F172A' }}>3. Location & Contact Details</Text>
           </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 16, columnGap: 16 }}>
-            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Country</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyCountry || '-'}</Text></View>
-            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Emirate / State</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyEmirate || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Country</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{countries.find(c => String(c.id) === String(companyCountry))?.name || companyCountry || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Emirate / State</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{states.find(s => String(s.id) === String(companyEmirate))?.name || companyEmirate || '-'}</Text></View>
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Registered Address</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyRegisteredAddress || '-'}</Text></View>
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>PO Box</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyPoBox || '-'}</Text></View>
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Contact Person</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyContactPerson || '-'}</Text></View>
