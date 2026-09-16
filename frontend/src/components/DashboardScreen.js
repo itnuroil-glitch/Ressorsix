@@ -927,7 +927,8 @@ export default function DashboardScreen({ user, onSignOut }) {
   // Fetch roles from the REST API
   const fetchRoles = () => {
     setRolesLoading(true);
-    fetch(`${API_URL}/api/roles?clientid=${user?.clientid || ''}&roleid=${user?.roleId || ''}`)
+    const effectiveClientId = user?.clientid || (companies && companies.length > 0 ? (companies[0].clientid || companies[0].client_id) : '');
+    fetch(`${API_URL}/api/roles?clientid=${effectiveClientId || ''}&roleid=${user?.roleId || ''}`)
       .then((res) => {
         if (!res.ok) throw new Error('Failed to retrieve roles.');
         return res.json();
@@ -2032,9 +2033,14 @@ export default function DashboardScreen({ user, onSignOut }) {
 
     setRoleFormSaving(true);
 
+    const resolvedRoleClientId = user?.clientid ||
+      (newRoleClientIds.length > 0 && companies.find(c => String(c.id) === String(newRoleClientIds[0]))?.clientid) ||
+      (companies && companies.length > 0 ? (companies[0].clientid || companies[0].client_id) : null);
+
     const payload = {
       role: newRoleName.trim(),
       status: newRoleStatus,
+      clientid: resolvedRoleClientId,
       companyids: newRoleClientIds.map(Number),
       clientids: newRoleClientIds.map(Number)
     };
@@ -3349,8 +3355,10 @@ export default function DashboardScreen({ user, onSignOut }) {
               setEditingRole(null);
               setNewRoleName('');
               setNewRoleStatus(1);
-              const clientCompanyIds = user && String(user.roleId) !== '1'
-                ? companies.filter(c => Number(c.clientid) === Number(user?.clientid)).map(c => String(c.id))
+              const effectiveClientId = user?.clientid || (companies && companies.length > 0 ? (companies[0].clientid || companies[0].client_id) : null);
+              const isSuperAdmin = user && String(user.roleId).split(',').includes('1');
+              const clientCompanyIds = !isSuperAdmin && effectiveClientId
+                ? companies.filter(c => Number(c.clientid || c.client_id) === Number(effectiveClientId)).map(c => String(c.id))
                 : [];
               setNewRoleClientIds(clientCompanyIds);
               setIsCompanyDropdownOpen(false);
@@ -5049,7 +5057,12 @@ export default function DashboardScreen({ user, onSignOut }) {
                 setEditingRole(null);
                 setNewRoleName('');
                 setNewRoleStatus(1);
-                setNewRoleClientIds([]);
+                const effectiveClientId = user?.clientid || (companies && companies.length > 0 ? (companies[0].clientid || companies[0].client_id) : null);
+                const isSuperAdmin = user && String(user.roleId).split(',').includes('1');
+                const clientCompanyIds = !isSuperAdmin && effectiveClientId
+                  ? companies.filter(c => Number(c.clientid || c.client_id) === Number(effectiveClientId)).map(c => String(c.id))
+                  : [];
+                setNewRoleClientIds(clientCompanyIds);
                 setRoleFormError('');
                 if (typeof initializeDefaultRolePermissions === 'function') {
                   initializeDefaultRolePermissions();

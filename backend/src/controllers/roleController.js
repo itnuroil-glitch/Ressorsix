@@ -21,10 +21,13 @@ exports.getAllRoles = async (req, res) => {
     if (roleid && String(roleid).split(',').includes('1')) {
       // Superadmin sees all roles, do not filter by clientid
     } else if (clientid) {
-      // Client sees ONLY roles associated with their companies
-      queryText += ` AND EXISTS (
-        SELECT 1 FROM company comp 
-        WHERE comp.id = ANY(r.companyids) AND comp.clientid = $1
+      // Client sees roles associated with their companies OR directly matching their clientid
+      queryText += ` AND (
+        r.clientid = $1
+        OR EXISTS (
+          SELECT 1 FROM company comp 
+          WHERE comp.id = ANY(r.companyids) AND (comp.clientid = $1 OR comp.clientid::text = $1::text)
+        )
       ) `;
       params.push(parseInt(clientid, 10));
     } else {
@@ -45,13 +48,34 @@ exports.createRole = async (req, res) => {
   try {
     const rawCompanyIds = req.body.companyids || req.body.company_ids || req.body.clientids;
     const { role, status } = req.body;
+    let explicitClientId = req.body.clientid ? parseInt(req.body.clientid, 10) : null;
 
     if (!role) {
       return res.status(400).json({ message: 'Role name is required.' });
     }
 
-    const firstClientId = Array.isArray(rawCompanyIds) && rawCompanyIds.length > 0 ? parseInt(rawCompanyIds[0], 10) : null;
-    const parsedCompanyIds = Array.isArray(rawCompanyIds) && rawCompanyIds.length > 0 ? rawCompanyIds.map(id => parseInt(id, 10)) : null;
+    let parsedCompanyIds = Array.isArray(rawCompanyIds) && rawCompanyIds.length > 0 ? rawCompanyIds.map(id => parseInt(id, 10)).filter(Boolean) : null;
+
+    // If client ID is provided but no company IDs were selected, auto-associate all active companies of the client
+    if ((!parsedCompanyIds || parsedCompanyIds.length === 0) && explicitClientId) {
+      const compRes = await db.query(
+        'SELECT id FROM company WHERE clientid = $1 AND (is_deleted = false OR is_deleted IS NULL)',
+        [explicitClientId]
+      );
+      if (compRes.rows.length > 0) {
+        parsedCompanyIds = compRes.rows.map(r => r.id);
+      }
+    }
+
+    // If company IDs are present but explicit client ID is missing, auto-derive client ID
+    if (!explicitClientId && parsedCompanyIds && parsedCompanyIds.length > 0) {
+      const compLookup = await db.query('SELECT clientid FROM company WHERE id = $1', [parsedCompanyIds[0]]);
+      if (compLookup.rows.length > 0 && compLookup.rows[0].clientid) {
+        explicitClientId = compLookup.rows[0].clientid;
+      }
+    }
+
+    const firstClientId = parsedCompanyIds && parsedCompanyIds.length > 0 ? parsedCompanyIds[0] : null;
 
     // Check if a role with the exact same name already exists
     const existingCheck = await db.query(
@@ -66,7 +90,7 @@ exports.createRole = async (req, res) => {
         : (Array.isArray(existingRole.clientids) ? existingRole.clientids : (existingRole.clientid ? [existingRole.clientid] : []));
       const newCompanyIds = parsedCompanyIds || [];
       const mergedCompanyIds = [...new Set([...existingCompanyIds, ...newCompanyIds])].map(Number).filter(Boolean);
-      const mergedFirstClientId = mergedCompanyIds.length > 0 ? mergedCompanyIds[0] : existingRole.clientid;
+      const mergedClientId = explicitClientId || (mergedCompanyIds.length > 0 ? mergedCompanyIds[0] : existingRole.clientid);
 
       const updateQuery = `
         UPDATE role
@@ -78,7 +102,7 @@ exports.createRole = async (req, res) => {
       `;
       const updateRes = await db.query(updateQuery, [
         mergedCompanyIds.length > 0 ? mergedCompanyIds : null,
-        mergedFirstClientId,
+        mergedClientId,
         status !== undefined ? parseInt(status, 10) : null,
         existingRole.id
       ]);
@@ -97,7 +121,7 @@ exports.createRole = async (req, res) => {
     const result = await db.query(queryText, [
       role.trim(),
       status !== undefined ? parseInt(status, 10) : 1,
-      firstClientId,
+      explicitClientId || firstClientId,
       parsedCompanyIds
     ]);
 
@@ -119,17 +143,27 @@ exports.updateRole = async (req, res) => {
     const { id } = req.params;
     const rawCompanyIds = req.body.companyids || req.body.company_ids || req.body.clientids;
     const { role, status } = req.body;
+    let explicitClientId = req.body.clientid ? parseInt(req.body.clientid, 10) : null;
 
     // Check if role exists
-    const checkQuery = 'SELECT id FROM role WHERE id = $1 AND is_deleted = false';
+    const checkQuery = 'SELECT id, clientid, companyids FROM role WHERE id = $1 AND is_deleted = false';
     const checkResult = await db.query(checkQuery, [id]);
 
     if (checkResult.rows.length === 0) {
       return res.status(404).json({ message: 'Role not found or has been deleted.' });
     }
 
-    const firstClientId = Array.isArray(rawCompanyIds) && rawCompanyIds.length > 0 ? parseInt(rawCompanyIds[0], 10) : null;
-    const parsedCompanyIds = Array.isArray(rawCompanyIds) && rawCompanyIds.length > 0 ? rawCompanyIds.map(id => parseInt(id, 10)) : null;
+    const existingRole = checkResult.rows[0];
+    let parsedCompanyIds = Array.isArray(rawCompanyIds) && rawCompanyIds.length > 0 ? rawCompanyIds.map(id => parseInt(id, 10)).filter(Boolean) : null;
+
+    if (!explicitClientId && parsedCompanyIds && parsedCompanyIds.length > 0) {
+      const compLookup = await db.query('SELECT clientid FROM company WHERE id = $1', [parsedCompanyIds[0]]);
+      if (compLookup.rows.length > 0 && compLookup.rows[0].clientid) {
+        explicitClientId = compLookup.rows[0].clientid;
+      }
+    }
+
+    const finalClientId = explicitClientId || existingRole.clientid;
 
     const queryText = `
       UPDATE role
@@ -144,7 +178,7 @@ exports.updateRole = async (req, res) => {
       role ? role.trim() : null,
       status !== undefined ? parseInt(status, 10) : null,
       parsedCompanyIds,
-      firstClientId,
+      finalClientId,
       id
     ]);
 
