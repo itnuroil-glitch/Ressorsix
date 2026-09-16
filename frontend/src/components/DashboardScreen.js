@@ -3757,10 +3757,11 @@ export default function DashboardScreen({ user, onSignOut }) {
       if (user && String(user.roleId) !== '1') {
         const matchesClient = user.clientid && Number(e.clientid) === Number(user.clientid);
         const matchesCompany = user.companyid && Number(e.basecompany_id) === Number(user.companyid);
-        if (user.companyid) {
-          companyMatch = matchesCompany;
-        } else if (user.clientid) {
-          companyMatch = matchesClient;
+        const matchesAssociated = Array.isArray(user.associatedCompanyIds) && user.associatedCompanyIds.some(cid => Number(cid) === Number(e.basecompany_id));
+        if (user.clientid) {
+          companyMatch = matchesClient || matchesCompany || matchesAssociated;
+        } else if (user.companyid) {
+          companyMatch = matchesCompany || matchesAssociated;
         }
       }
 

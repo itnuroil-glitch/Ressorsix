@@ -32,7 +32,6 @@ exports.getAllEmployees = async (req, res) => {
 
     let queryText = `
       SELECT e.*, 
-             e.assigned_password,
              (SELECT string_agg(role, ', ') FROM role WHERE e.roleid IS NOT NULL AND e.roleid::text != '' AND id::text = ANY(array_remove(string_to_array(e.roleid::text, ','), ''))) as role_name, 
              d.department_name,
              bc.company_name as base_company_name
@@ -45,8 +44,8 @@ exports.getAllEmployees = async (req, res) => {
     const params = [];
 
     if (clientid) {
-      params.push(clientid);
-      queryText += ` AND e.clientid = $${params.length}`;
+      params.push(String(clientid).trim());
+      queryText += ` AND e.clientid::text = $${params.length}`;
     }
 
     if (targetCompId) {
@@ -180,7 +179,11 @@ exports.createEmployee = async (req, res) => {
           [hashedPassword, finalRoleId, finalClientId, parsedBaseCompId, email]
         );
       }
-      await client.query('UPDATE employee SET assigned_password = $1 WHERE id = $2', [tempPassword, newEmployee.id]);
+      try {
+        await client.query('UPDATE employee SET assigned_password = $1 WHERE id = $2', [tempPassword, newEmployee.id]);
+      } catch (pwdErr) {
+        console.warn('Could not update assigned_password on employee table:', pwdErr.message);
+      }
       newEmployee.assigned_password = tempPassword;
       newEmployee.tempPassword = tempPassword;
 
@@ -326,7 +329,11 @@ exports.updateEmployee = async (req, res) => {
           ]
         );
       }
-      await client.query('UPDATE employee SET assigned_password = $1 WHERE id = $2', [tempPassword, updatedEmployee.id]);
+      try {
+        await client.query('UPDATE employee SET assigned_password = $1 WHERE id = $2', [tempPassword, updatedEmployee.id]);
+      } catch (pwdErr) {
+        console.warn('Could not update assigned_password on employee table:', pwdErr.message);
+      }
       updatedEmployee.assigned_password = tempPassword;
       updatedEmployee.tempPassword = tempPassword;
 
@@ -518,7 +525,11 @@ exports.bulkImportEmployees = async (req, res) => {
             [finalRoleId, finalClientId, parsedBaseCompId, email]
           );
         }
-        await client.query('UPDATE employee SET assigned_password = $1 WHERE id = $2', [tempPassword, newEmp.id]);
+        try {
+          await client.query('UPDATE employee SET assigned_password = $1 WHERE id = $2', [tempPassword, newEmp.id]);
+        } catch (pwdErr) {
+          console.warn('Could not update assigned_password on employee table:', pwdErr.message);
+        }
       }
 
       count++;
@@ -548,7 +559,6 @@ exports.getEmployeesByCompany = async (req, res) => {
     let queryText = `
       SELECT e.*, 
              e.full_name AS employee_name,
-             e.assigned_password,
              (SELECT string_agg(role, ', ') FROM role WHERE e.roleid IS NOT NULL AND e.roleid::text != '' AND id::text = ANY(array_remove(string_to_array(e.roleid::text, ','), ''))) as role_name, 
              d.department_name,
              bc.company_name as base_company_name
@@ -619,7 +629,6 @@ exports.getEmployeesByBaseCompany = async (req, res) => {
     let queryText = `
       SELECT e.*, 
              e.full_name AS employee_name,
-             e.assigned_password,
              (SELECT string_agg(role, ', ') FROM role WHERE e.roleid IS NOT NULL AND e.roleid::text != '' AND id::text = ANY(array_remove(string_to_array(e.roleid::text, ','), ''))) as role_name, 
              d.department_name,
              bc.company_name as base_company_name
