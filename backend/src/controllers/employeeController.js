@@ -18,6 +18,15 @@ const ensureColumnsExist = async () => {
         AND e.clientid IS NULL
         AND c.clientid IS NOT NULL;
     `);
+    await db.query(`
+      UPDATE employee e
+      SET clientid = c.clientid
+      FROM employee_company ec
+      JOIN company c ON ec.company_id = c.id
+      WHERE ec.employee_id = e.id
+        AND e.clientid IS NULL
+        AND c.clientid IS NOT NULL;
+    `);
     isColumnChecked = true;
   } catch (e) {
     console.warn('Auto column migration notice:', e.message);
@@ -39,7 +48,7 @@ exports.getAllEmployees = async (req, res) => {
       LEFT JOIN department d ON e.department_id = d.id
       LEFT JOIN company bc ON e.basecompany_id = bc.id
       LEFT JOIN users u ON LOWER(TRIM(e.email)) = LOWER(TRIM(u.email))
-      WHERE e.is_deleted = false
+      WHERE (e.is_deleted = false OR e.is_deleted IS NULL)
     `;
     const params = [];
 
@@ -117,7 +126,8 @@ exports.createEmployee = async (req, res) => {
       if (compRes.rows.length > 0 && compRes.rows[0].clientid) {
         finalClientId = compRes.rows[0].clientid;
       }
-    } else if (!finalClientId && Array.isArray(companies) && companies.length > 0) {
+    }
+    if (!finalClientId && Array.isArray(companies) && companies.length > 0) {
       const compRes = await client.query('SELECT clientid FROM company WHERE id = $1', [parseInt(companies[0])]);
       if (compRes.rows.length > 0 && compRes.rows[0].clientid) {
         finalClientId = compRes.rows[0].clientid;
@@ -267,7 +277,7 @@ exports.updateEmployee = async (req, res) => {
       const updateEmployeeQuery = `
         UPDATE employee
         SET ${setClauses.join(', ')}
-        WHERE id = $${paramIndex} AND is_deleted = false
+        WHERE id = $${paramIndex} AND (is_deleted = false OR is_deleted IS NULL)
         RETURNING *
       `;
       const empResult = await client.query(updateEmployeeQuery, params);
@@ -277,7 +287,7 @@ exports.updateEmployee = async (req, res) => {
       }
       updatedEmployee = empResult.rows[0];
     } else {
-      const getEmpResult = await client.query('SELECT * FROM employee WHERE id = $1 AND is_deleted = false', [id]);
+      const getEmpResult = await client.query('SELECT * FROM employee WHERE id = $1 AND (is_deleted = false OR is_deleted IS NULL)', [id]);
       if (getEmpResult.rows.length === 0) {
         await client.query('ROLLBACK');
         return res.status(404).json({ message: 'Employee not found.' });
@@ -441,10 +451,16 @@ exports.bulkImportEmployees = async (req, res) => {
           finalClientId = compRes.rows[0].clientid;
         }
       }
+      if (!finalClientId && Array.isArray(companies) && companies.length > 0) {
+        const compRes = await client.query('SELECT clientid FROM company WHERE id = $1', [parseInt(companies[0])]);
+        if (compRes.rows.length > 0 && compRes.rows[0].clientid) {
+          finalClientId = compRes.rows[0].clientid;
+        }
+      }
       const finalRoleId = roleid ? (Array.isArray(roleid) ? roleid.join(',') : String(roleid)) : null;
 
       // Check if employee already exists by email
-      const empCheck = await client.query('SELECT id FROM employee WHERE email = $1 AND is_deleted = false', [email]);
+      const empCheck = await client.query('SELECT id FROM employee WHERE email = $1 AND (is_deleted = false OR is_deleted IS NULL)', [email]);
       let newEmp;
 
       const parsedBaseCompId = basecompany_id ? parseInt(basecompany_id) : null;
@@ -475,8 +491,9 @@ exports.bulkImportEmployees = async (req, res) => {
               roleid = COALESCE($3, roleid),
               status = COALESCE($4, status),
               department_id = COALESCE($5, department_id),
-              basecompany_id = COALESCE($6, basecompany_id)
-          WHERE id = $7
+              basecompany_id = COALESCE($6, basecompany_id),
+              clientid = COALESCE($7, clientid)
+          WHERE id = $8
         `, [
           full_name,
           phone || null,
@@ -484,6 +501,7 @@ exports.bulkImportEmployees = async (req, res) => {
           status !== undefined ? parseInt(status) : null,
           department_id ? parseInt(department_id) : null,
           parsedBaseCompId,
+          finalClientId,
           newEmp.id
         ]);
       }
@@ -566,7 +584,7 @@ exports.getEmployeesByCompany = async (req, res) => {
       LEFT JOIN department d ON e.department_id = d.id
       LEFT JOIN company bc ON e.basecompany_id = bc.id
       LEFT JOIN users u ON LOWER(TRIM(e.email)) = LOWER(TRIM(u.email))
-      WHERE e.is_deleted = false
+      WHERE (e.is_deleted = false OR e.is_deleted IS NULL)
         AND e.basecompany_id::text = $1
     `;
     const params = [String(companyId).trim()];
@@ -636,7 +654,7 @@ exports.getEmployeesByBaseCompany = async (req, res) => {
       INNER JOIN company bc ON e.basecompany_id = bc.id
       LEFT JOIN department d ON e.department_id = d.id
       LEFT JOIN users u ON LOWER(TRIM(e.email)) = LOWER(TRIM(u.email))
-      WHERE e.is_deleted = false
+      WHERE (e.is_deleted = false OR e.is_deleted IS NULL)
     `;
 
     const params = [];
