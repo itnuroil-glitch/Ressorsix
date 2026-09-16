@@ -159,6 +159,15 @@ module.exports = async function authMiddleware(req, res, next) {
       return res.status(401).json({ message: 'Session expired. Authentik authentication required.' });
     }
 
+    // Slide expiration forward for active users so they are not unexpectedly logged out
+    const sessionTtlMs = process.env.SESSION_EXPIRY_MS ? parseInt(process.env.SESSION_EXPIRY_MS, 10) : 24 * 60 * 60 * 1000;
+    if (expiresAt.getTime() - now.getTime() < sessionTtlMs / 2) {
+      const newExpiresAt = new Date(Date.now() + sessionTtlMs);
+      db.query('UPDATE tbl_sessions SET expires_at = $1 WHERE id = $2', [newExpiresAt, session.session_id]).catch(err => {
+        console.warn('Could not slide session expiration:', err.message);
+      });
+    }
+
     // 5. Fetch associated companies for role & permissions
     let associatedCompanyIds = [];
     let effectiveRoleId = session.roleid;

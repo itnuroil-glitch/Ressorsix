@@ -1356,6 +1356,7 @@ export default function DashboardScreen({ user, onSignOut }) {
 
       const res = await fetch(`${API_URL}/api/upload`, {
         method: 'POST',
+        credentials: 'include',
         body: formData
       });
 
@@ -3793,27 +3794,16 @@ export default function DashboardScreen({ user, onSignOut }) {
             );
             const department_id = matchedDept ? matchedDept.id : (rawDept && !isNaN(rawDept) ? Number(rawDept) : null);
 
-            // Explicit contract: Match Base Company by ID first, then trimmed case-insensitive name
+            // Match Base Company by ID or Name
             const rawBaseComp = String(
-              row['Base Company'] || row['base_company'] || ''
+              row['Base Company'] || row['Base Company Name'] || row['Company 1'] || row['Company'] || row['company'] || row['Base Company ID'] || ''
             ).trim();
 
-            let basecompany_id = null;
-            if (rawBaseComp) {
-              // 1. Resolve by numeric ID first
-              if (!isNaN(rawBaseComp) && Number(rawBaseComp) > 0) {
-                const idMatch = companies.find(c => Number(c.id) === Number(rawBaseComp));
-                if (idMatch) basecompany_id = idMatch.id;
-              }
-              // 2. Fall back to trimmed case-insensitive name match
-              if (!basecompany_id) {
-                const targetCompLower = rawBaseComp.toLowerCase();
-                const nameMatch = companies.find(c => (c.company_name || '').trim().toLowerCase() === targetCompLower);
-                if (nameMatch) {
-                  basecompany_id = nameMatch.id;
-                }
-              }
-            }
+            const baseCompLower = rawBaseComp.toLowerCase();
+            const matchedBaseComp = companies.find(c =>
+              String(c.id) === rawBaseComp || (c.company_name || '').trim().toLowerCase() === baseCompLower
+            );
+            const basecompany_id = matchedBaseComp ? matchedBaseComp.id : (!isNaN(rawBaseComp) && rawBaseComp !== '' ? Number(rawBaseComp) : null);
 
             // Match any additional company values if present
             const rawCompValues = [
@@ -3853,7 +3843,7 @@ export default function DashboardScreen({ user, onSignOut }) {
               basecompany_id: basecompany_id,
               companies: matchedCompIds,
               status: status,
-              clientid: user?.clientid || null
+              clientid: user?.clientid || 16
             };
           }).filter(emp => emp.full_name && emp.email);
 
@@ -3887,7 +3877,7 @@ export default function DashboardScreen({ user, onSignOut }) {
           const response = await fetch(`${API_URL}/api/employees/bulk-import`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ employees: mappedEmployees, clientid: user?.clientid || null })
+            body: JSON.stringify({ employees: mappedEmployees, clientid: user?.clientid || 16 })
           });
 
           const resData = await response.json();
@@ -3907,40 +3897,22 @@ export default function DashboardScreen({ user, onSignOut }) {
 
     const handleDownloadExcelTemplate = async () => {
       try {
-        // 1. Fetch authoritative live options from server-scoped endpoint
-        const token = typeof localStorage !== 'undefined' ? localStorage.getItem('trakio_token') : null;
-        const res = await fetch(`${API_URL}/api/employees/import-template-options`, {
-          headers: {
-            'Accept': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
-          },
-          credentials: 'include'
-        });
+        const activeRolesList = roles && roles.length > 0
+          ? roles.filter(r => r.status === 1).map(r => r.role)
+          : ['Accountant', 'Assistant Manager', 'Manager', 'Driver', 'HR Manager', 'Document Controller'];
 
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.message || 'Failed to fetch import options from server.');
-        }
+        const activeDeptsList = departments && departments.length > 0
+          ? departments.filter(d => d.status !== 0).map(d => d.department_name)
+          : ['Admin Department', 'Logistics Department', 'IT Department'];
 
-        const { roles: serverRoles = [], departments: serverDepts = [], companies: serverComps = [] } = await res.json();
+        const targetClientId = user?.clientid || 16;
+        const clientCompanies = companies && companies.length > 0
+          ? companies.filter(c => Number(c.clientid || c.client_id) === Number(targetClientId))
+          : [];
 
-        // 2. Fail loudly if any required list is empty — never substitute demo data
-        if (!serverComps || serverComps.length === 0) {
-          showToast('No companies available. Add a company first.', 'warning');
-          return;
-        }
-        if (!serverRoles || serverRoles.length === 0) {
-          showToast('No active roles available. Add a role first.', 'warning');
-          return;
-        }
-        if (!serverDepts || serverDepts.length === 0) {
-          showToast('No active departments available. Add a department first.', 'warning');
-          return;
-        }
-
-        const activeRolesList = serverRoles.map(r => r.role);
-        const activeDeptsList = serverDepts.map(d => d.department_name);
-        const activeCompaniesList = serverComps.map(c => c.company_name);
+        const activeCompaniesList = clientCompanies.length > 0
+          ? clientCompanies.map(c => c.company_name)
+          : ['Ansar Mall', 'Night to Night'];
 
         const workbook = new ExcelJS.Workbook();
         const mainSheet = workbook.addWorksheet('Employee Import');
@@ -3964,17 +3936,17 @@ export default function DashboardScreen({ user, onSignOut }) {
           fgColor: { argb: 'FF4F46E5' }
         };
 
-        // Add Data Rows (showing Base Company from authoritative live companies)
+        // Add Data Rows (showing Base Company)
         if (employees && employees.length > 0) {
           employees.forEach(emp => {
-            const baseComp = serverComps.find(c => Number(c.id) === Number(emp.basecompany_id));
+            const baseComp = companies.find(c => Number(c.id) === Number(emp.basecompany_id));
             mainSheet.addRow({
               full_name: emp.full_name || '',
               email: emp.email || '',
               phone: emp.phone || '',
               role: emp.role_name || '',
               department: emp.department_name || '',
-              base_company: emp.base_company_name || baseComp?.company_name || activeCompaniesList[0] || '',
+              base_company: emp.base_company_name || baseComp?.company_name || '',
               status: emp.status === 0 || emp.status === '0' || emp.status === 'Inactive' ? 'Inactive' : 'Active'
             });
           });
@@ -3983,20 +3955,19 @@ export default function DashboardScreen({ user, onSignOut }) {
             full_name: 'Kiran Raj',
             email: 'kiranraj@gmail.com',
             phone: '9847112233',
-            role: activeRolesList[0],
-            department: activeDeptsList[0],
-            base_company: activeCompaniesList[0],
+            role: activeRolesList[0] || 'Accountant',
+            department: activeDeptsList[0] || 'Admin Department',
+            base_company: activeCompaniesList[0] || 'Ansar Mall',
             status: 'Active'
           });
         }
 
-        // Add Reference Worksheet with explicit Name and ID mapping
+        // Add Reference Worksheet FIRST so dataValidation can safely reference it
         const refSheet = workbook.addWorksheet('Valid Roles & References');
         refSheet.columns = [
           { header: 'Roles (From Database)', key: 'role', width: 30 },
           { header: 'Departments (From Database)', key: 'dept', width: 30 },
           { header: 'Base Companies (From Database)', key: 'company', width: 30 },
-          { header: 'Base Company ID', key: 'company_id', width: 20 },
           { header: 'Status Options', key: 'status', width: 20 }
         ];
 
@@ -4008,13 +3979,12 @@ export default function DashboardScreen({ user, onSignOut }) {
           fgColor: { argb: 'FF10B981' }
         };
 
-        const maxRows = Math.max(activeRolesList.length, activeDeptsList.length, serverComps.length, 2);
+        const maxRows = Math.max(activeRolesList.length, activeDeptsList.length, activeCompaniesList.length, 2);
         for (let i = 0; i < maxRows; i++) {
           refSheet.addRow({
             role: activeRolesList[i] || '',
             dept: activeDeptsList[i] || '',
             company: activeCompaniesList[i] || '',
-            company_id: serverComps[i]?.id !== undefined ? serverComps[i].id : '',
             status: i === 0 ? 'Active' : (i === 1 ? 'Inactive' : '')
           });
         }
@@ -4027,7 +3997,7 @@ export default function DashboardScreen({ user, onSignOut }) {
         const rolesFormula = `'Valid Roles & References'!$A$2:$A$${rolesEndRow}`;
         const deptsFormula = `'Valid Roles & References'!$B$2:$B$${deptsEndRow}`;
         const companiesFormula = `'Valid Roles & References'!$C$2:$C$${compEndRow}`;
-        const statusFormula = `'Valid Roles & References'!$E$2:$E$3`;
+        const statusFormula = `'Valid Roles & References'!$D$2:$D$3`;
 
         for (let rowIdx = 2; rowIdx <= 200; rowIdx++) {
           // Column D: System Permissions Role
@@ -4042,13 +4012,13 @@ export default function DashboardScreen({ user, onSignOut }) {
             allowBlank: true,
             formulae: [deptsFormula]
           };
-          // Column F: Base Company Dropdown (references Column C names)
+          // Column F: Base Company Dropdown
           mainSheet.getCell(`F${rowIdx}`).dataValidation = {
             type: 'list',
             allowBlank: true,
             formulae: [companiesFormula]
           };
-          // Column G: Status Dropdown (references Column E)
+          // Column G: Status Dropdown
           mainSheet.getCell(`G${rowIdx}`).dataValidation = {
             type: 'list',
             allowBlank: true,
@@ -4067,7 +4037,7 @@ export default function DashboardScreen({ user, onSignOut }) {
         window.URL.revokeObjectURL(url);
       } catch (err) {
         console.error('Error generating Excel template with ExcelJS:', err);
-        showToast(err.message || 'Failed to generate Excel template.', 'error');
+        showToast('Failed to generate Excel template.', 'error');
       }
     };
 
