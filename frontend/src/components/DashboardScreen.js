@@ -3758,10 +3758,11 @@ export default function DashboardScreen({ user, onSignOut }) {
         const matchesClient = user.clientid && Number(e.clientid) === Number(user.clientid);
         const matchesCompany = user.companyid && Number(e.basecompany_id) === Number(user.companyid);
         const matchesAssociated = Array.isArray(user.associatedCompanyIds) && user.associatedCompanyIds.some(cid => Number(cid) === Number(e.basecompany_id));
+        const matchesClientCompanies = Array.isArray(companies) && companies.some(c => Number(c.id) === Number(e.basecompany_id));
         if (user.clientid) {
-          companyMatch = matchesClient || matchesCompany || matchesAssociated;
+          companyMatch = matchesClient || matchesCompany || matchesAssociated || matchesClientCompanies;
         } else if (user.companyid) {
-          companyMatch = matchesCompany || matchesAssociated;
+          companyMatch = matchesCompany || matchesAssociated || matchesClientCompanies;
         }
       }
 
