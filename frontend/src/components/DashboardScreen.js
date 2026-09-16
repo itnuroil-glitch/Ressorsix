@@ -19,7 +19,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, SHADOWS } from '../theme';
-import { API_URL } from '../config';
+import { API_URL, resolveFileUrl } from '../config';
 const orbisLogo = require('../../assets/orbis_asset_logo.png');
 import CustomFieldsTab, { SearchableDropdown } from './CustomFieldsTab';
 import FieldPermissionsTab from './FieldPermissionsTab';
@@ -4252,7 +4252,7 @@ export default function DashboardScreen({ user, onSignOut }) {
               <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Company Logo Preview</Text>
               {editingCompany?.company_logo_path ? (
                 <Image
-                  source={{ uri: API_URL + '/' + editingCompany.company_logo_path }}
+                  source={{ uri: resolveFileUrl(editingCompany.company_logo_path) }}
                   style={{ width: 90, height: 90, borderRadius: 8, borderWidth: 1, borderColor: '#CBD5E1', resizeMode: 'contain', backgroundColor: '#F8FAFC', marginTop: 2 }}
                 />
               ) : (
