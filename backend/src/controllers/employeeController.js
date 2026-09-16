@@ -9,6 +9,15 @@ const ensureColumnsExist = async () => {
     await db.query(`
       ALTER TABLE public.employee ADD COLUMN IF NOT EXISTS assigned_password TEXT;
     `);
+    // Self-heal: automatically link existing employees to their company's clientid if missing
+    await db.query(`
+      UPDATE employee e
+      SET clientid = c.clientid
+      FROM company c
+      WHERE e.basecompany_id = c.id
+        AND e.clientid IS NULL
+        AND c.clientid IS NOT NULL;
+    `);
     isColumnChecked = true;
   } catch (e) {
     console.warn('Auto column migration notice:', e.message);
@@ -102,6 +111,20 @@ exports.createEmployee = async (req, res) => {
       return res.status(400).json({ message: 'Full name and email are required.' });
     }
 
+    // Auto-resolve clientid from basecompany_id or companies if not directly provided
+    let finalClientId = clientid ? parseInt(clientid) : null;
+    if (!finalClientId && basecompany_id) {
+      const compRes = await client.query('SELECT clientid FROM company WHERE id = $1', [parseInt(basecompany_id)]);
+      if (compRes.rows.length > 0 && compRes.rows[0].clientid) {
+        finalClientId = compRes.rows[0].clientid;
+      }
+    } else if (!finalClientId && Array.isArray(companies) && companies.length > 0) {
+      const compRes = await client.query('SELECT clientid FROM company WHERE id = $1', [parseInt(companies[0])]);
+      if (compRes.rows.length > 0 && compRes.rows[0].clientid) {
+        finalClientId = compRes.rows[0].clientid;
+      }
+    }
+
     const finalRoleId = roleid ? (Array.isArray(roleid) ? roleid.join(',') : String(roleid)) : null;
 
     await client.query('BEGIN');
@@ -118,7 +141,7 @@ exports.createEmployee = async (req, res) => {
       phone,
       finalRoleId,
       status !== undefined ? parseInt(status) : 1,
-      clientid ? parseInt(clientid) : null,
+      finalClientId,
       department_id ? parseInt(department_id) : null,
       basecompany_id ? parseInt(basecompany_id) : null
     ]);
@@ -149,12 +172,12 @@ exports.createEmployee = async (req, res) => {
       if (userCheck.rows.length === 0) {
         await client.query(
           'INSERT INTO users (email, password, roleid, clientid, companyid) VALUES ($1, $2, $3, $4, $5)',
-          [email, hashedPassword, finalRoleId, clientid ? parseInt(clientid) : null, parsedBaseCompId]
+          [email, hashedPassword, finalRoleId, finalClientId, parsedBaseCompId]
         );
       } else {
         await client.query(
           'UPDATE users SET password = $1, roleid = $2, clientid = $3, companyid = $4 WHERE email = $5',
-          [hashedPassword, finalRoleId, clientid ? parseInt(clientid) : null, parsedBaseCompId, email]
+          [hashedPassword, finalRoleId, finalClientId, parsedBaseCompId, email]
         );
       }
       await client.query('UPDATE employee SET assigned_password = $1 WHERE id = $2', [tempPassword, newEmployee.id]);
@@ -162,7 +185,7 @@ exports.createEmployee = async (req, res) => {
       newEmployee.tempPassword = tempPassword;
 
       // Send email with the generated password if clientid is present
-      if (clientid) {
+      if (finalClientId) {
         try {
           const { sendEmail } = require('../config/mailer');
           await sendEmail({
@@ -404,7 +427,13 @@ exports.bulkImportEmployees = async (req, res) => {
 
       if (!full_name || !email) continue;
 
-      const finalClientId = emp.clientid ? parseInt(emp.clientid) : (clientid ? parseInt(clientid) : null);
+      let finalClientId = emp.clientid ? parseInt(emp.clientid) : (clientid ? parseInt(clientid) : null);
+      if (!finalClientId && basecompany_id) {
+        const compRes = await client.query('SELECT clientid FROM company WHERE id = $1', [parseInt(basecompany_id)]);
+        if (compRes.rows.length > 0 && compRes.rows[0].clientid) {
+          finalClientId = compRes.rows[0].clientid;
+        }
+      }
       const finalRoleId = roleid ? (Array.isArray(roleid) ? roleid.join(',') : String(roleid)) : null;
 
       // Check if employee already exists by email

@@ -1073,13 +1073,22 @@ export default function DashboardScreen({ user, onSignOut }) {
     // Use exactly what was selected in the form — no overrides
     const finalCompanies = empAssociatedCompanies;
 
+    // Resolve clientid: use user.clientid if logged in as client; otherwise auto-derive from selected company
+    const selectedBaseComp = companies.find(c => String(c.id) === String(empBaseCompanyId));
+    const selectedAssocComp = (!selectedBaseComp && finalCompanies && finalCompanies.length > 0)
+      ? companies.find(c => String(c.id) === String(finalCompanies[0]))
+      : null;
+    const resolvedClientId = (user && user.clientid)
+      ? user.clientid
+      : (selectedBaseComp?.clientid || selectedAssocComp?.clientid || null);
+
     const payload = {
       full_name: empFullName.trim(),
       email: empEmail.trim(),
       phone: empPhone.trim(),
       roleid: empRoleIds.join(','),
       status: empStatus,
-      clientid: user && user.clientid ? user.clientid : null,
+      clientid: resolvedClientId,
       department_id: empDepartmentId,
       basecompany_id: empBaseCompanyId ? parseInt(empBaseCompanyId) : null,
       companies: finalCompanies,
