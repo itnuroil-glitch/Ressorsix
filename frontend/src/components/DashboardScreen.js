@@ -4240,7 +4240,6 @@ export default function DashboardScreen({ user, onSignOut }) {
           </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 16, columnGap: 16 }}>
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Company Name</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyNameInput || '-'}</Text></View>
-            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Client / Organization</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{editingCompany?.client_name || (clients && clients.find(c => String(c.id) === String(companyClientId || editingCompany?.clientid))?.client_name) || '-'}</Text></View>
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Short Code</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyShortCode || '-'}</Text></View>
 
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Industry</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyIndustry || '-'}</Text></View>
@@ -9039,21 +9038,6 @@ export default function DashboardScreen({ user, onSignOut }) {
 
                       {companyWizardStep === 1 && (
                         <>
-                          {(!user?.clientid && !user?.clientId) && (
-                            <View style={styles.modalInputGroup}>
-                              <Text style={styles.modalLabel}>Client / Organization *</Text>
-                              <SearchableDropdown
-                                data={clients}
-                                value={companyClientId}
-                                onChange={(val) => setCompanyClientId(val ? String(val) : '')}
-                                placeholder="Select Client"
-                                searchPlaceholder="Search Client..."
-                                displayKey="client_name"
-                                valueKey="id"
-                              />
-                            </View>
-                          )}
-
                           <View style={styles.modalInputGroup}>
                             <Text style={styles.modalLabel}>Company Name *</Text>
                             <TextInput style={styles.modalInput} placeholder="Company Name *" placeholderTextColor={COLORS.textMuted} value={companyNameInput} onChangeText={setCompanyNameInput} />
