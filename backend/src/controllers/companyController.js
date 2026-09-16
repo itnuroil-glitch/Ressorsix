@@ -210,11 +210,13 @@ exports.createCompany = async (req, res) => {
         await pool.query(insertUserQuery, [contact_email.trim().toLowerCase(), hashedPassword, finalClientId, newCompany.id]);
 
         const { sendEmail } = require('../config/mailer');
-        await sendEmail({
+        sendEmail({
           to: contact_email,
           subject: 'Your Company Account Credentials',
           text: `Hello ${contact_person || 'there'},\n\nYour company profile for "${company_name}" has been created successfully.\n\nYour temporary login credentials are:\nEmail: ${contact_email}\nPassword: ${generatedPassword}\n\nPlease log in and update your password.\n\nBest regards,\nSystem Administrator`,
           clientid: finalClientId
+        }).catch(mailErr => {
+          console.error('[Mailer Background Error] Failed to send company credentials email:', mailErr.message);
         });
       } catch (err) {
         console.error('Error in user creation / emailing during company setup:', err);
