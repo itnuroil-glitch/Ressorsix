@@ -311,6 +311,9 @@ export default function DashboardScreen({ user, onSignOut }) {
   useEffect(() => {
     if (isCompanyModalOpen) {
       fetchCompanyLegalFormOptions();
+      if (!clients || clients.length === 0) {
+        fetchClients();
+      }
     }
   }, [isCompanyModalOpen]);
   const [companyBusinessActivity, setCompanyBusinessActivity] = useState('');
@@ -1278,7 +1281,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     setCompanyNameInput(item.company_name || '');
     setCompanyShortCode(item.short_code || '');
 
-    setCompanyClientId(item.clientid ? String(item.clientid) : '');
+    setCompanyClientId(item.clientid ? String(item.clientid) : ((user?.clientid || user?.clientId) ? String(user?.clientid || user?.clientId) : (clients && clients.length === 1 ? String(clients[0].id) : '')));
     setCompanyIndustry(item.industry || '');
     setCompanyStatus(item.company_status || 'Active');
 
@@ -1409,11 +1412,16 @@ export default function DashboardScreen({ user, onSignOut }) {
       company_name: companyNameInput,
       short_code: companyShortCode,
 
-      // If logged-in user is a client, always use their own clientid (never let companyClientId override).
-      // Super admins (no user.clientid) may select a client via the dropdown (companyClientId).
-      clientid: user?.clientid
-        ? parseInt(user.clientid)
-        : (companyClientId ? parseInt(companyClientId) : null),
+      // Resolve client ID:
+      // 1. If logged-in user is a client, use their own clientid.
+      // 2. If Super Admin selected a client via dropdown, use companyClientId.
+      // 3. Fallback to editing company's clientid, single active client in system, or existing company clientid.
+      clientid: (user?.clientid || user?.clientId || user?.client_id)
+        ? parseInt(user?.clientid || user?.clientId || user?.client_id, 10)
+        : (companyClientId ? parseInt(companyClientId, 10) : null)
+          || (editingCompany?.clientid ? parseInt(editingCompany.clientid, 10) : null)
+          || (clients && clients.length === 1 ? parseInt(clients[0].id, 10) : null)
+          || (companies && companies.length > 0 && (companies[0].clientid || companies[0].client_id) ? parseInt(companies[0].clientid || companies[0].client_id, 10) : null),
       industry: companyIndustry,
       company_status: companyStatus,
 
@@ -4232,6 +4240,7 @@ export default function DashboardScreen({ user, onSignOut }) {
           </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 16, columnGap: 16 }}>
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Company Name</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyNameInput || '-'}</Text></View>
+            <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Client / Organization</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{editingCompany?.client_name || (clients && clients.find(c => String(c.id) === String(companyClientId || editingCompany?.clientid))?.client_name) || '-'}</Text></View>
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Short Code</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyShortCode || '-'}</Text></View>
 
             <View style={{ width: '47%' }}><Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', marginBottom: 4 }}>Industry</Text><Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>{companyIndustry || '-'}</Text></View>
@@ -4401,7 +4410,10 @@ export default function DashboardScreen({ user, onSignOut }) {
               setCompanyNameInput('');
               setCompanyShortCode('');
 
-              setCompanyClientId('');
+              const defaultClientId = (user?.clientid || user?.clientId || user?.client_id)
+                ? String(user?.clientid || user?.clientId || user?.client_id)
+                : (clients && clients.length === 1 ? String(clients[0].id) : (clients && clients.length > 0 ? String(clients[0].id) : ''));
+              setCompanyClientId(defaultClientId);
               setCompanyIndustry('');
               setCompanyStatus('Active');
 
@@ -9027,6 +9039,21 @@ export default function DashboardScreen({ user, onSignOut }) {
 
                       {companyWizardStep === 1 && (
                         <>
+                          {(!user?.clientid && !user?.clientId) && (
+                            <View style={styles.modalInputGroup}>
+                              <Text style={styles.modalLabel}>Client / Organization *</Text>
+                              <SearchableDropdown
+                                data={clients}
+                                value={companyClientId}
+                                onChange={(val) => setCompanyClientId(val ? String(val) : '')}
+                                placeholder="Select Client"
+                                searchPlaceholder="Search Client..."
+                                displayKey="client_name"
+                                valueKey="id"
+                              />
+                            </View>
+                          )}
+
                           <View style={styles.modalInputGroup}>
                             <Text style={styles.modalLabel}>Company Name *</Text>
                             <TextInput style={styles.modalInput} placeholder="Company Name *" placeholderTextColor={COLORS.textMuted} value={companyNameInput} onChangeText={setCompanyNameInput} />
