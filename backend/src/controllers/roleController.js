@@ -11,7 +11,8 @@ exports.getAllRoles = async (req, res) => {
       SELECT r.*, 
              r.companyids AS clientids,
              (SELECT string_agg(cl.client_name, ', ') FROM company c LEFT JOIN client cl ON c.clientid = cl.id WHERE c.id = ANY(r.companyids)) as client_name,
-             (SELECT string_agg(c.company_name, ', ') FROM company c WHERE c.id = ANY(r.companyids)) as companyname
+             (SELECT string_agg(c.company_name, ', ') FROM company c WHERE c.id = ANY(r.companyids)) as companyname,
+             (SELECT COALESCE(json_agg(json_build_object('id', c.id, 'company_name', c.company_name)), '[]'::json) FROM company c WHERE c.id = ANY(r.companyids)) as assigned_companies
       FROM role r
       WHERE r.is_deleted = false 
     `;

@@ -7715,7 +7715,8 @@ export default function DashboardScreen({ user, onSignOut }) {
                           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, flex: 1 }}>
                             {newRoleClientIds.length > 0 ? (
                               newRoleClientIds.map(id => {
-                                const sel = companies.find(c => String(c.id) === String(id));
+                                const sel = companies.find(c => String(c.id) === String(id)) ||
+                                  (Array.isArray(editingRole?.assigned_companies) && editingRole.assigned_companies.find(c => String(c.id) === String(id)));
                                 return (
                                   <View
                                     key={id}
@@ -7956,7 +7957,8 @@ export default function DashboardScreen({ user, onSignOut }) {
                           >
                             <option value="all">All Assigned Companies</option>
                             {newRoleClientIds.map(id => {
-                              const comp = companies.find(c => String(c.id) === String(id));
+                              const comp = companies.find(c => String(c.id) === String(id)) ||
+                                (Array.isArray(editingRole?.assigned_companies) && editingRole.assigned_companies.find(c => String(c.id) === String(id)));
                               return (
                                 <option key={id} value={id}>
                                   {comp ? comp.company_name : `Company #${id}`}
