@@ -96,11 +96,22 @@ exports.createCompany = async (req, res) => {
       return res.status(400).json({ message: 'Company name is required.' });
     }
 
-    // Use the provided clientid directly. The frontend always sends the correct
-    // clientid (the logged-in client's own id, or the admin-selected client id).
-    // We intentionally do NOT fall back to "first client in DB" here because that
-    // silently assigned new companies to the wrong client.
-    const finalClientId = clientid || null;
+    // Resolve client ID: Use the provided clientid (from logged-in client or admin selection).
+    // If not provided, check if there is exactly 1 active client in the system and auto-assign
+    // so that new companies are never created with NULL clientid.
+    let finalClientId = clientid ? parseInt(clientid, 10) : null;
+    if (!finalClientId) {
+      try {
+        const clientRes = await pool.query(
+          'SELECT id FROM client WHERE isdelete = false OR isdelete IS NULL ORDER BY id ASC'
+        );
+        if (clientRes.rows.length === 1) {
+          finalClientId = clientRes.rows[0].id;
+        }
+      } catch (clientErr) {
+        console.warn('Could not auto-resolve single client ID:', clientErr.message);
+      }
+    }
 
     let initialLogoPath = company_logo || null;
     if (company_logo_attachment_base64) {
@@ -285,8 +296,13 @@ exports.updateCompany = async (req, res) => {
       WHERE id = $41 RETURNING *;
     `;
 
+    // Preserve existing clientid if not explicitly provided during update
+    const finalClientId = (clientid !== undefined && clientid !== null && clientid !== '')
+      ? parseInt(clientid, 10)
+      : (existingCompany.clientid || null);
+
     const values = [
-      clientid || null, company_name, short_code, legal_form, industry, business_activity,
+      finalClientId, company_name, short_code, legal_form, industry, business_activity,
       jurisdiction, licensing_authority, trade_license_number, trade_license_issue_date,
       trade_license_expiry_date, company_status, country, emirate, registered_address,
       po_box, contact_person, contact_email, contact_phone, website, vat_registered, trn,
