@@ -3921,14 +3921,20 @@ export default function DashboardScreen({ user, onSignOut }) {
           ? departments.filter(d => d.status !== 0).map(d => d.department_name)
           : ['Admin Department', 'Logistics Department', 'IT Department'];
 
-        const targetClientId = user?.clientid || 16;
-        const clientCompanies = companies && companies.length > 0
-          ? companies.filter(c => Number(c.clientid || c.client_id) === Number(targetClientId))
-          : [];
+        let clientCompanies = [];
+        if (user?.clientid) {
+          // Logged-in client: only show their own companies
+          clientCompanies = (companies || []).filter(c =>
+            Number(c.clientid || c.client_id) === Number(user.clientid)
+          );
+        } else {
+          // Super Admin: show all active companies in the system
+          clientCompanies = companies || [];
+        }
 
-        const activeCompaniesList = clientCompanies.length > 0
-          ? clientCompanies.map(c => c.company_name)
-          : ['Ansar Mall', 'Night to Night'];
+        const activeCompaniesList = clientCompanies
+          .map(c => c.company_name)
+          .filter(Boolean);
 
         const workbook = new ExcelJS.Workbook();
         const mainSheet = workbook.addWorksheet('Employee Import');
@@ -3973,7 +3979,7 @@ export default function DashboardScreen({ user, onSignOut }) {
             phone: '9847112233',
             role: activeRolesList[0] || 'Accountant',
             department: activeDeptsList[0] || 'Admin Department',
-            base_company: activeCompaniesList[0] || 'Ansar Mall',
+            base_company: activeCompaniesList[0] || 'Default Company',
             status: 'Active'
           });
         }
