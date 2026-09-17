@@ -7743,7 +7743,9 @@ export default function DashboardScreen({ user, onSignOut }) {
                             {newRoleClientIds.length > 0 ? (
                               newRoleClientIds.map(id => {
                                 const sel = companies.find(c => String(c.id) === String(id)) ||
-                                  (Array.isArray(editingRole?.assigned_companies) && editingRole.assigned_companies.find(c => String(c.id) === String(id)));
+                                  (Array.isArray(editingRole?.assigned_companies) && editingRole.assigned_companies.find(c => String(c.id) === String(id))) ||
+                                  clients.find(cl => String(cl.id) === String(id));
+                                const displayName = sel?.company_name || sel?.client_name || `Company #${id}`;
                                 return (
                                   <View
                                     key={id}
@@ -7761,7 +7763,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                                     }}
                                   >
                                     <Text style={{ fontSize: 12, fontWeight: '600', color: '#334155' }}>
-                                      {sel ? sel.company_name : `Company #${id}`}
+                                      {displayName}
                                     </Text>
                                     <TouchableOpacity
                                       onPress={(e) => {
@@ -7985,10 +7987,12 @@ export default function DashboardScreen({ user, onSignOut }) {
                             <option value="all">All Assigned Companies</option>
                             {newRoleClientIds.map(id => {
                               const comp = companies.find(c => String(c.id) === String(id)) ||
-                                (Array.isArray(editingRole?.assigned_companies) && editingRole.assigned_companies.find(c => String(c.id) === String(id)));
+                                (Array.isArray(editingRole?.assigned_companies) && editingRole.assigned_companies.find(c => String(c.id) === String(id))) ||
+                                clients.find(cl => String(cl.id) === String(id));
+                              const displayName = comp?.company_name || comp?.client_name || `Company #${id}`;
                               return (
                                 <option key={id} value={id}>
-                                  {comp ? comp.company_name : `Company #${id}`}
+                                  {displayName}
                                 </option>
                               );
                             })}

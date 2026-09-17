@@ -10,9 +10,23 @@ exports.getAllRoles = async (req, res) => {
     let queryText = `
       SELECT r.*, 
              r.companyids AS clientids,
-             (SELECT string_agg(cl.client_name, ', ') FROM company c LEFT JOIN client cl ON c.clientid = cl.id WHERE c.id = ANY(r.companyids)) as client_name,
-             (SELECT string_agg(c.company_name, ', ') FROM company c WHERE c.id = ANY(r.companyids)) as companyname,
-             (SELECT COALESCE(json_agg(json_build_object('id', c.id, 'company_name', c.company_name)), '[]'::json) FROM company c WHERE c.id = ANY(r.companyids)) as assigned_companies
+             COALESCE(
+               (SELECT string_agg(DISTINCT cl.client_name, ', ') FROM company c LEFT JOIN client cl ON c.clientid = cl.id WHERE c.id = ANY(r.companyids)),
+               (SELECT string_agg(DISTINCT cl.client_name, ', ') FROM client cl WHERE cl.id = ANY(r.companyids))
+             ) as client_name,
+             COALESCE(
+               (SELECT string_agg(DISTINCT c.company_name, ', ') FROM company c WHERE c.id = ANY(r.companyids)),
+               (SELECT string_agg(DISTINCT cl.client_name, ', ') FROM client cl WHERE cl.id = ANY(r.companyids))
+             ) as companyname,
+             (
+               SELECT COALESCE(json_agg(item), '[]'::json)
+               FROM (
+                 SELECT c.id, c.company_name FROM company c WHERE c.id = ANY(r.companyids)
+                 UNION
+                 SELECT cl.id, cl.client_name AS company_name FROM client cl WHERE cl.id = ANY(r.companyids) 
+                   AND NOT EXISTS (SELECT 1 FROM company c2 WHERE c2.id = cl.id AND c2.id = ANY(r.companyids))
+               ) item
+             ) as assigned_companies
       FROM role r
       WHERE r.is_deleted = false 
     `;
