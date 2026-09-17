@@ -3913,13 +3913,13 @@ export default function DashboardScreen({ user, onSignOut }) {
 
     const handleDownloadExcelTemplate = async () => {
       try {
-        const activeRolesList = roles && roles.length > 0
-          ? roles.filter(r => r.status === 1).map(r => r.role)
-          : ['Accountant', 'Assistant Manager', 'Manager', 'Driver', 'HR Manager', 'Document Controller'];
+        const activeRolesList = (roles && roles.length > 0)
+          ? roles.filter(r => r.status === 1 && r.role).map(r => r.role.trim())
+          : [];
 
-        const activeDeptsList = departments && departments.length > 0
-          ? departments.filter(d => d.status !== 0).map(d => d.department_name)
-          : ['Admin Department', 'Logistics Department', 'IT Department'];
+        const activeDeptsList = (departments && departments.length > 0)
+          ? departments.filter(d => d.status !== 0 && d.department_name).map(d => d.department_name.trim())
+          : [];
 
         let clientCompanies = [];
         if (user?.clientid) {
@@ -3972,16 +3972,6 @@ export default function DashboardScreen({ user, onSignOut }) {
               status: emp.status === 0 || emp.status === '0' || emp.status === 'Inactive' ? 'Inactive' : 'Active'
             });
           });
-        } else {
-          mainSheet.addRow({
-            full_name: 'Kiran Raj',
-            email: 'kiranraj@gmail.com',
-            phone: '9847112233',
-            role: activeRolesList[0] || 'Accountant',
-            department: activeDeptsList[0] || 'Admin Department',
-            base_company: activeCompaniesList[0] || 'Default Company',
-            status: 'Active'
-          });
         }
 
         // Add Reference Worksheet FIRST so dataValidation can safely reference it
@@ -4023,23 +4013,29 @@ export default function DashboardScreen({ user, onSignOut }) {
 
         for (let rowIdx = 2; rowIdx <= 200; rowIdx++) {
           // Column D: System Permissions Role
-          mainSheet.getCell(`D${rowIdx}`).dataValidation = {
-            type: 'list',
-            allowBlank: true,
-            formulae: [rolesFormula]
-          };
+          if (activeRolesList.length > 0) {
+            mainSheet.getCell(`D${rowIdx}`).dataValidation = {
+              type: 'list',
+              allowBlank: true,
+              formulae: [rolesFormula]
+            };
+          }
           // Column E: Department
-          mainSheet.getCell(`E${rowIdx}`).dataValidation = {
-            type: 'list',
-            allowBlank: true,
-            formulae: [deptsFormula]
-          };
+          if (activeDeptsList.length > 0) {
+            mainSheet.getCell(`E${rowIdx}`).dataValidation = {
+              type: 'list',
+              allowBlank: true,
+              formulae: [deptsFormula]
+            };
+          }
           // Column F: Base Company Dropdown
-          mainSheet.getCell(`F${rowIdx}`).dataValidation = {
-            type: 'list',
-            allowBlank: true,
-            formulae: [companiesFormula]
-          };
+          if (activeCompaniesList.length > 0) {
+            mainSheet.getCell(`F${rowIdx}`).dataValidation = {
+              type: 'list',
+              allowBlank: true,
+              formulae: [companiesFormula]
+            };
+          }
           // Column G: Status Dropdown
           mainSheet.getCell(`G${rowIdx}`).dataValidation = {
             type: 'list',
