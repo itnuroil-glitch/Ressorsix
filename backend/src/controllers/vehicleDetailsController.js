@@ -528,8 +528,33 @@ exports.getVehiclesByClient = async (req, res) => {
     const params = [clientId];
 
     if (companyId && companyId.trim() !== '' && !companyId.startsWith(':')) {
-      query += ` AND (v.company_id::text = $2 OR LOWER(c.company_name) = LOWER($2) OR LOWER(v.field_data->>'Company') = LOWER($2) OR v.field_data->>'company_id' = $2)`;
-      params.push(companyId);
+      const cleanCompId = companyId.trim();
+      let compName = '';
+      try {
+        const cRes = await db.query('SELECT company_name FROM company WHERE id::text = $1', [cleanCompId]);
+        if (cRes.rows.length > 0) compName = cRes.rows[0].company_name;
+      } catch (e) {}
+
+      let compFieldFilter = '';
+      try {
+        const compFieldsRes = await db.query("SELECT field_id FROM tbl_customfield_details WHERE LOWER(field_name) LIKE '%company%'");
+        if (compFieldsRes.rows.length > 0) {
+          const compFids = compFieldsRes.rows.map(f => f.field_id);
+          compFieldFilter = compFids.map(fid => `v.field_data->>'${fid}' = $2`).join(' OR ');
+        }
+      } catch (e) {}
+
+      query += ` AND (
+        v.company_id::text = $2 
+        OR $2 = ANY(string_to_array(v.company_id::text, ','))
+        OR LOWER(c.company_name) = LOWER($2) 
+        OR LOWER(v.field_data->>'Company') = LOWER($2) 
+        OR v.field_data->>'company_id' = $2
+        OR v.field_data->>'companyid' = $2
+        ${compName ? ` OR LOWER(c.company_name) = LOWER('${compName.replace(/'/g, "''")}') OR LOWER(v.field_data->>'Company') = LOWER('${compName.replace(/'/g, "''")}')` : ''}
+        ${compFieldFilter ? ` OR ${compFieldFilter}` : ''}
+      )`;
+      params.push(cleanCompId);
     }
     query += ` ORDER BY v.id DESC`;
 
@@ -713,8 +738,33 @@ exports.getVehiclePlatesByClient = async (req, res) => {
     const params = [clientId];
 
     if (companyId && companyId.trim() !== '' && !companyId.startsWith(':')) {
-      query += ` AND (v.company_id::text = $2 OR LOWER(c.company_name) = LOWER($2) OR LOWER(v.field_data->>'Company') = LOWER($2) OR v.field_data->>'company_id' = $2)`;
-      params.push(companyId);
+      const cleanCompId = companyId.trim();
+      let compName = '';
+      try {
+        const cRes = await db.query('SELECT company_name FROM company WHERE id::text = $1', [cleanCompId]);
+        if (cRes.rows.length > 0) compName = cRes.rows[0].company_name;
+      } catch (e) {}
+
+      let compFieldFilter = '';
+      try {
+        const compFieldsRes = await db.query("SELECT field_id FROM tbl_customfield_details WHERE LOWER(field_name) LIKE '%company%'");
+        if (compFieldsRes.rows.length > 0) {
+          const compFids = compFieldsRes.rows.map(f => f.field_id);
+          compFieldFilter = compFids.map(fid => `v.field_data->>'${fid}' = $2`).join(' OR ');
+        }
+      } catch (e) {}
+
+      query += ` AND (
+        v.company_id::text = $2 
+        OR $2 = ANY(string_to_array(v.company_id::text, ','))
+        OR LOWER(c.company_name) = LOWER($2) 
+        OR LOWER(v.field_data->>'Company') = LOWER($2) 
+        OR v.field_data->>'company_id' = $2
+        OR v.field_data->>'companyid' = $2
+        ${compName ? ` OR LOWER(c.company_name) = LOWER('${compName.replace(/'/g, "''")}') OR LOWER(v.field_data->>'Company') = LOWER('${compName.replace(/'/g, "''")}')` : ''}
+        ${compFieldFilter ? ` OR ${compFieldFilter}` : ''}
+      )`;
+      params.push(cleanCompId);
     }
     query += ` ORDER BY v.id DESC`;
 
