@@ -87,11 +87,19 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
 
       // Try to set defaults if available
       const clientVal = user?.client_id || user?.clientid;
+      let fetchedComps = [];
       if (clientVal) {
         setSelectedClient(String(clientVal));
-        await fetchCompaniesForClient(String(clientVal));
+        fetchedComps = await fetchCompaniesForClient(String(clientVal));
       }
-      if (user?.country_id || user?.countryid) setSelectedCountry(String(user?.country_id || user?.countryid));
+      if (user?.country_id || user?.countryid) {
+        setSelectedCountry(String(user?.country_id || user?.countryid));
+      } else if (fetchedComps && fetchedComps.length > 0) {
+        const defaultComp = fetchedComps.find(c => String(c.id) === String(user?.company_id || user?.companyid)) || fetchedComps[0];
+        if (defaultComp && defaultComp.country) {
+          setSelectedCountry(String(defaultComp.country));
+        }
+      }
       if (user?.company_id || user?.companyid) setSelectedCompany(String(user?.company_id || user?.companyid));
       const viModule = (modulesData || []).find(m => m.module_name && m.module_name.toLowerCase().includes('vehicle insurance'));
       if (viModule) setSelectedModule(String(viModule.id));
@@ -120,7 +128,12 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
         if (compList.length > 0) {
           setSelectedCompany(prev => {
             const isValid = compList.some(c => String(c.id) === String(prev));
-            return isValid ? prev : String(compList[0].id);
+            const targetId = isValid ? prev : String(compList[0].id);
+            const targetComp = compList.find(c => String(c.id) === String(targetId));
+            if (targetComp && targetComp.country) {
+              setSelectedCountry(String(targetComp.country));
+            }
+            return targetId;
           });
         }
         return compList;
@@ -143,12 +156,12 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
     if (currentCompanies.length > 0) {
       setSelectedCompany(prev => {
         const isValid = currentCompanies.some(c => String(c.id) === String(prev));
-        if (!isValid) {
-          const firstComp = currentCompanies[0];
-          if (firstComp.country) setSelectedCountry(String(firstComp.country));
-          return String(firstComp.id);
+        const activeId = isValid ? prev : String(currentCompanies[0].id);
+        const activeComp = currentCompanies.find(c => String(c.id) === String(activeId));
+        if (activeComp && activeComp.country) {
+          setSelectedCountry(String(activeComp.country));
         }
-        return prev;
+        return activeId;
       });
     }
     setIsFormOpen(true);
@@ -158,20 +171,41 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
     setLoading(true);
     setWizardStep(2);
     try {
+      let resolvedCountryId = countryId;
+      if (!resolvedCountryId && selectedCompany) {
+        const selectedIds = String(selectedCompany).split(',').map(s => s.trim()).filter(Boolean);
+        if (selectedIds.length > 0) {
+          const matched = companies.find(c => String(c.id) === selectedIds[0]);
+          if (matched && matched.country) {
+            resolvedCountryId = String(matched.country);
+            setSelectedCountry(resolvedCountryId);
+          }
+        }
+      }
+
+      let resolvedModuleId = moduleId;
+      if (!resolvedModuleId && modules && modules.length > 0) {
+        const viModule = modules.find(m => m.module_name && m.module_name.toLowerCase().includes('vehicle insurance'));
+        if (viModule) {
+          resolvedModuleId = String(viModule.id);
+          setSelectedModule(resolvedModuleId);
+        }
+      }
+
       // 3. Fetch custom fields for this configuration
       const cfRes = await fetch(`${API_URL}/api/custom-fields`);
       const customFields = await cfRes.json();
 
       let matchingFieldDef = customFields.find(cf =>
         String(cf.client_id || cf.clientid) === String(clientId) &&
-        String(cf.module_id || cf.moduleid) === String(moduleId) &&
-        String(cf.country_id || cf.countryid) === String(countryId)
+        String(cf.module_id || cf.moduleid) === String(resolvedModuleId) &&
+        String(cf.country_id || cf.countryid) === String(resolvedCountryId)
       );
       if (!matchingFieldDef) {
         matchingFieldDef = customFields.find(cf =>
           (!cf.clientid && !cf.client_id) &&
-          String(cf.module_id || cf.moduleid) === String(moduleId) &&
-          String(cf.country_id || cf.countryid) === String(countryId)
+          String(cf.module_id || cf.moduleid) === String(resolvedModuleId) &&
+          String(cf.country_id || cf.countryid) === String(resolvedCountryId)
         );
       }
 
@@ -181,8 +215,8 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
 
       const activePerm = permissionsList.find(p =>
         String(p.clientid) === String(clientId) &&
-        String(p.moduleid) === String(moduleId) &&
-        String(p.countryid || p.country_id) === String(countryId)
+        String(p.moduleid) === String(resolvedModuleId) &&
+        String(p.countryid || p.country_id) === String(resolvedCountryId)
       );
 
       let permittedFields = {};
@@ -199,8 +233,8 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
         setCustomFieldId(matchingFieldDef.id);
         setConfigParams({
           clientid: matchingFieldDef.clientid || matchingFieldDef.client_id || clientId,
-          country_id: matchingFieldDef.countryid || matchingFieldDef.country_id || countryId,
-          moduleid: matchingFieldDef.moduleid || matchingFieldDef.module_id || moduleId
+          country_id: matchingFieldDef.countryid || matchingFieldDef.country_id || resolvedCountryId,
+          moduleid: matchingFieldDef.moduleid || matchingFieldDef.module_id || resolvedModuleId
         });
         let parsedSections = typeof matchingFieldDef.field_data === 'string'
           ? JSON.parse(matchingFieldDef.field_data)
@@ -1814,7 +1848,20 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
                   <TouchableOpacity
                     style={[{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 48, paddingHorizontal: 38, borderRadius: 12, backgroundImage: 'linear-gradient(90deg, #72002A 0%, #D86A1A 100%)', boxShadow: '0px 4px 14px rgba(216, 106, 26, 0.35)' }, (!selectedClient || !selectedCompany) && { opacity: 0.5 }]}
                     disabled={!selectedClient || !selectedCompany}
-                    onPress={() => fetchFormConfiguration(selectedClient, selectedCountry, selectedModule)}
+                    onPress={() => {
+                      let targetCountry = selectedCountry;
+                      if (!targetCountry && selectedCompany) {
+                        const selectedIds = String(selectedCompany).split(',').map(s => s.trim()).filter(Boolean);
+                        if (selectedIds.length > 0) {
+                          const found = companies.find(c => String(c.id) === selectedIds[0]);
+                          if (found && found.country) {
+                            targetCountry = String(found.country);
+                            setSelectedCountry(targetCountry);
+                          }
+                        }
+                      }
+                      fetchFormConfiguration(selectedClient, targetCountry, selectedModule);
+                    }}
                     activeOpacity={0.85}
                   >
                     <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '700' }}>Next</Text>
