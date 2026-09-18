@@ -449,14 +449,26 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
 
       // Try to set defaults if available
       const clientVal = user?.client_id || user?.clientid;
+      let fetchedComps = [];
       if (clientVal) {
         setSelectedClient(String(clientVal));
-        await fetchCompaniesForClient(String(clientVal));
+        fetchedComps = await fetchCompaniesForClient(String(clientVal));
       }
-      if (user?.country_id || user?.countryid) setSelectedCountry(String(user?.country_id || user?.countryid));
+      if (user?.country_id || user?.countryid) {
+        setSelectedCountry(String(user?.country_id || user?.countryid));
+      } else if (fetchedComps && fetchedComps.length > 0) {
+        const defaultComp = fetchedComps.find(c => String(c.id) === String(user?.company_id || user?.companyid)) || fetchedComps[0];
+        if (defaultComp && defaultComp.country) {
+          setSelectedCountry(String(defaultComp.country));
+        }
+      }
       if (user?.company_id || user?.companyid) setSelectedCompany(String(user?.company_id || user?.companyid));
       const viModule = (modulesData || []).find(m => m.module_name && m.module_name.toLowerCase().includes('purchase') && m.module_name.toLowerCase().includes('detail'));
-      if (viModule) setSelectedModule(String(viModule.id));
+      if (viModule) {
+        setSelectedModule(String(viModule.id));
+      } else {
+        setSelectedModule('42');
+      }
     } catch (err) {
       console.error(err);
     }
@@ -500,28 +512,69 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
     }
     if (currentCompanies.length === 1 && user && String(user.roleId) !== '1') {
       const singleComp = currentCompanies[0];
-      setSelectedCompany(String(singleComp.id));
-      const targetCountry = singleComp.country ? String(singleComp.country) : selectedCountry;
-      if (singleComp.country) setSelectedCountry(String(singleComp.country));
+      const compId = String(singleComp.id);
+      setSelectedCompany(compId);
+      const targetCountry = singleComp.country ? String(singleComp.country) : (selectedCountry || '1');
+      if (targetCountry) setSelectedCountry(String(targetCountry));
       await fetchFormConfiguration(
         selectedClient,
         targetCountry,
-        selectedModule
+        selectedModule || '42',
+        compId
       );
     } else {
+      if (selectedCompany && (!selectedCountry || selectedCountry === '')) {
+        const selectedIds = String(selectedCompany).split(',').map(s => s.trim()).filter(Boolean);
+        const matchedComp = currentCompanies.find(c => selectedIds.includes(String(c.id)) && c.country);
+        if (matchedComp && matchedComp.country) {
+          setSelectedCountry(String(matchedComp.country));
+        } else if (currentCompanies.length > 0 && currentCompanies[0].country) {
+          setSelectedCountry(String(currentCompanies[0].country));
+        }
+      }
       setWizardStep(1);
     }
     setIsFormOpen(true);
   };
 
   const fetchFormConfiguration = async (clientId, countryId, moduleId, companyId) => {
+    const activeCompanyId = companyId !== undefined ? companyId : selectedCompany;
     setLoading(true);
     setWizardStep(2);
     try {
       // Load assets scoped to this client ID
       await fetchAssetsList(clientId);
       // Load suppliers scoped to this client and company
-      await fetchSuppliersList(clientId, companyId !== undefined ? companyId : selectedCompany);
+      await fetchSuppliersList(clientId, activeCompanyId);
+
+      let resolvedCountryId = countryId;
+      if (!resolvedCountryId && activeCompanyId) {
+        const selectedIds = String(activeCompanyId).split(',').map(s => s.trim()).filter(Boolean);
+        const matchedComp = companies.find(c => selectedIds.includes(String(c.id)) && c.country);
+        if (matchedComp) {
+          resolvedCountryId = String(matchedComp.country);
+          setSelectedCountry(resolvedCountryId);
+        }
+      }
+      if (!resolvedCountryId && companies.length > 0) {
+        const firstWithCountry = companies.find(c => c.country);
+        if (firstWithCountry) {
+          resolvedCountryId = String(firstWithCountry.country);
+          setSelectedCountry(resolvedCountryId);
+        }
+      }
+      if (!resolvedCountryId) {
+        resolvedCountryId = '1';
+      }
+
+      let resolvedModuleId = moduleId;
+      if (!resolvedModuleId && modules.length > 0) {
+        const found = modules.find(m => m.module_name && m.module_name.toLowerCase().includes('purchase') && m.module_name.toLowerCase().includes('detail'));
+        if (found) resolvedModuleId = String(found.id);
+      }
+      if (!resolvedModuleId) {
+        resolvedModuleId = '42';
+      }
 
       // 3. Fetch custom fields for this configuration
       const cfRes = await fetch(`${API_URL}/api/custom-fields`);
@@ -529,14 +582,14 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
 
       let matchingFieldDef = customFields.find(cf =>
         String(cf.client_id || cf.clientid) === String(clientId) &&
-        String(cf.module_id || cf.moduleid) === String(moduleId) &&
-        String(cf.country_id || cf.countryid) === String(countryId)
+        String(cf.module_id || cf.moduleid) === String(resolvedModuleId) &&
+        String(cf.country_id || cf.countryid) === String(resolvedCountryId)
       );
       if (!matchingFieldDef) {
         matchingFieldDef = customFields.find(cf =>
           (!cf.clientid && !cf.client_id) &&
-          String(cf.module_id || cf.moduleid) === String(moduleId) &&
-          String(cf.country_id || cf.countryid) === String(countryId)
+          String(cf.module_id || cf.moduleid) === String(resolvedModuleId) &&
+          String(cf.country_id || cf.countryid) === String(resolvedCountryId)
         );
       }
 
@@ -546,8 +599,8 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
 
       const activePerm = permissionsList.find(p =>
         String(p.clientid) === String(clientId) &&
-        String(p.moduleid) === String(moduleId) &&
-        String(p.countryid || p.country_id) === String(countryId)
+        String(p.moduleid) === String(resolvedModuleId) &&
+        String(p.countryid || p.country_id) === String(resolvedCountryId)
       );
 
       let permittedFields = {};
@@ -564,8 +617,8 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
         setCustomFieldId(matchingFieldDef.id);
         setConfigParams({
           clientid: matchingFieldDef.clientid || matchingFieldDef.client_id || clientId,
-          country_id: matchingFieldDef.countryid || matchingFieldDef.country_id || countryId,
-          moduleid: matchingFieldDef.moduleid || matchingFieldDef.module_id || moduleId
+          country_id: matchingFieldDef.countryid || matchingFieldDef.country_id || resolvedCountryId,
+          moduleid: matchingFieldDef.moduleid || matchingFieldDef.module_id || resolvedModuleId
         });
         let parsedSections = typeof matchingFieldDef.field_data === 'string'
           ? JSON.parse(matchingFieldDef.field_data)
@@ -1873,7 +1926,19 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
                   <TouchableOpacity
                     style={[styles.submitBtn, { opacity: selectedClient ? 1 : 0.5, marginTop: 16 }]}
                     disabled={!selectedClient}
-                    onPress={() => fetchFormConfiguration(selectedClient, selectedCountry, selectedModule, selectedCompany)}
+                    onPress={() => {
+                      let targetCountry = selectedCountry;
+                      if (!targetCountry && selectedCompany) {
+                        const selectedIds = String(selectedCompany).split(',').map(s => s.trim()).filter(Boolean);
+                        const matched = companies.find(c => selectedIds.includes(String(c.id)) && c.country);
+                        if (matched) targetCountry = String(matched.country);
+                      }
+                      if (!targetCountry && companies.length > 0) {
+                        const firstC = companies.find(c => c.country);
+                        if (firstC) targetCountry = String(firstC.country);
+                      }
+                      fetchFormConfiguration(selectedClient, targetCountry || '1', selectedModule || '42', selectedCompany);
+                    }}
                   >
                     <Text style={styles.submitBtnText}>Next</Text>
                   </TouchableOpacity>
