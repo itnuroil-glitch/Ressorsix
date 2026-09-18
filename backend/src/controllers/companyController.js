@@ -157,7 +157,23 @@ exports.createCompany = async (req, res) => {
       initialLogoPath
     ];
 
-    const { rows } = await pool.query(query, values);
+    let rows;
+    try {
+      const result = await pool.query(query, values);
+      rows = result.rows;
+    } catch (insertErr) {
+      // Auto-heal if the PostgreSQL sequence is lagging behind existing IDs
+      if (insertErr.code === '23505' && insertErr.constraint === 'company_pkey') {
+        console.warn('[Company Sequence Resync] company_id_seq was behind MAX(id). Resyncing sequence...');
+        await pool.query(
+          "SELECT setval(pg_get_serial_sequence('company', 'id'), COALESCE((SELECT MAX(id) FROM company), 1))"
+        );
+        const retryResult = await pool.query(query, values);
+        rows = retryResult.rows;
+      } else {
+        throw insertErr;
+      }
+    }
     const newCompany = rows[0];
 
     // Save Trade License Attachment if provided (as file path or base64)
