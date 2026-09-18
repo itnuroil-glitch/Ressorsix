@@ -148,39 +148,67 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
     setIsViewOnly(false);
     setEditingRecord(null);
     setFormData({});
-    setWizardStep(1);
     let currentCompanies = [];
     if (selectedClient) {
       currentCompanies = await fetchCompaniesForClient(selectedClient, 'create');
     }
-    if (currentCompanies.length > 0) {
-      setSelectedCompany(prev => {
-        const isValid = currentCompanies.some(c => String(c.id) === String(prev));
-        const activeId = isValid ? prev : String(currentCompanies[0].id);
-        const activeComp = currentCompanies.find(c => String(c.id) === String(activeId));
-        if (activeComp && activeComp.country) {
-          setSelectedCountry(String(activeComp.country));
-        }
-        return activeId;
-      });
+    if (currentCompanies.length === 1 && user && String(user.roleId) !== '1') {
+      const singleComp = currentCompanies[0];
+      const compId = String(singleComp.id);
+      setSelectedCompany(compId);
+      const targetCountry = singleComp.country ? String(singleComp.country) : (selectedCountry || '1');
+      if (targetCountry) setSelectedCountry(String(targetCountry));
+      await fetchFormConfiguration(
+        selectedClient,
+        targetCountry,
+        selectedModule,
+        compId
+      );
+    } else {
+      if (currentCompanies.length > 0) {
+        setSelectedCompany(prev => {
+          const isValid = currentCompanies.some(c => String(c.id) === String(prev));
+          const activeId = isValid ? prev : String(currentCompanies[0].id);
+          const activeComp = currentCompanies.find(c => String(c.id) === String(activeId));
+          if (activeComp && activeComp.country) {
+            setSelectedCountry(String(activeComp.country));
+          }
+          return activeId;
+        });
+      }
+      setWizardStep(1);
     }
     setIsFormOpen(true);
   };
 
-  const fetchFormConfiguration = async (clientId, countryId, moduleId) => {
+  const fetchFormConfiguration = async (clientId, countryId, moduleId, companyId) => {
     setLoading(true);
     setWizardStep(2);
     try {
+      const activeCompanyId = (companyId !== undefined && companyId !== null && companyId !== '')
+        ? String(companyId).split(',')[0].trim()
+        : (selectedCompany ? String(selectedCompany).split(',')[0].trim() : (user?.company_id || user?.companyid ? String(user.company_id || user.companyid).split(',')[0].trim() : ''));
+
       let resolvedCountryId = countryId;
-      if (!resolvedCountryId && selectedCompany) {
-        const selectedIds = String(selectedCompany).split(',').map(s => s.trim()).filter(Boolean);
+      if (!resolvedCountryId && activeCompanyId) {
+        const selectedIds = String(activeCompanyId).split(',').map(s => s.trim()).filter(Boolean);
         if (selectedIds.length > 0) {
-          const matched = companies.find(c => String(c.id) === selectedIds[0]);
+          const matched = companies.find(c => selectedIds.includes(String(c.id)) && c.country);
           if (matched && matched.country) {
             resolvedCountryId = String(matched.country);
             setSelectedCountry(resolvedCountryId);
           }
         }
+      }
+      if (!resolvedCountryId && companies.length > 0) {
+        const firstWithCountry = companies.find(c => c.country);
+        if (firstWithCountry) {
+          resolvedCountryId = String(firstWithCountry.country);
+          setSelectedCountry(resolvedCountryId);
+        }
+      }
+      if (!resolvedCountryId) {
+        resolvedCountryId = '1';
       }
 
       let resolvedModuleId = moduleId;
@@ -256,23 +284,25 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
           try {
             let processedPath = (path || '').trim();
 
-            const activeCompanyId = selectedCompany
-              ? String(selectedCompany).split(',')[0].trim()
-              : '';
+            const effectiveClientId = clientId || user?.clientid || user?.client_id || '';
 
-            // Replace :clientId placeholder if present, or append clientId
+            // Replace :clientId or :clientid placeholder if present, or append clientId
             if (processedPath.includes(':clientId')) {
-              processedPath = processedPath.replace(':clientId', clientId || '');
-            } else if (processedPath.includes('client') && clientId) {
+              processedPath = processedPath.replace(':clientId', effectiveClientId);
+            } else if (processedPath.includes(':clientid')) {
+              processedPath = processedPath.replace(':clientid', effectiveClientId);
+            } else if (processedPath.includes('client') && effectiveClientId) {
               if (processedPath.endsWith('/client') || processedPath.endsWith('/client/')) {
                 const separator = processedPath.endsWith('/') ? '' : '/';
-                processedPath = `${processedPath}${separator}${clientId}`;
+                processedPath = `${processedPath}${separator}${effectiveClientId}`;
               }
             }
 
-            // Replace :companyId placeholder if present, or append companyId
+            // Replace :companyId or :companyid placeholder if present, or append companyId
             if (processedPath.includes(':companyId')) {
               processedPath = processedPath.replace(':companyId', activeCompanyId || '');
+            } else if (processedPath.includes(':companyid')) {
+              processedPath = processedPath.replace(':companyid', activeCompanyId || '');
             } else if (processedPath.includes('/company') && activeCompanyId) {
               if (processedPath.endsWith('/company') || processedPath.endsWith('/company/')) {
                 const separator = processedPath.endsWith('/') ? '' : '/';
@@ -531,12 +561,14 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
     setSelectedCountry(String(record.country_id || ''));
     setSelectedModule(String(record.moduleid || ''));
     await fetchCompaniesForClient(String(record.clientid || ''), 'edit');
-    setSelectedCompany(record.company_id ? String(record.company_id) : '');
+    const compId = record.company_id ? String(record.company_id) : '';
+    setSelectedCompany(compId);
     // Load the form configuration then open the modal
     await fetchFormConfiguration(
       String(record.clientid || ''),
       String(record.country_id || ''),
-      String(record.moduleid || '')
+      String(record.moduleid || ''),
+      compId
     );
     setIsFormOpen(true);
   };
@@ -557,12 +589,14 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
     setSelectedCountry(String(record.country_id || ''));
     setSelectedModule(String(record.moduleid || ''));
     await fetchCompaniesForClient(String(record.clientid || ''), 'view');
-    setSelectedCompany(record.company_id ? String(record.company_id) : '');
+    const compId = record.company_id ? String(record.company_id) : '';
+    setSelectedCompany(compId);
     // Load the form configuration then open the modal
     await fetchFormConfiguration(
       String(record.clientid || ''),
       String(record.country_id || ''),
-      String(record.moduleid || '')
+      String(record.moduleid || ''),
+      compId
     );
     setIsFormOpen(true);
   };
@@ -708,9 +742,11 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
 
     // 2. If not found in state, fetch fresh from server
     const cId = selectedClient || user?.clientid || user?.client_id;
+    const compId = selectedCompany || user?.company_id || user?.companyid || '';
     if (!matched && cId) {
       try {
-        const res = await fetch(`${API_URL}/api/vehicle-details/client/${cId}`);
+        const queryParams = compId ? `?companyId=${encodeURIComponent(compId)}` : '';
+        const res = await fetch(`${API_URL}/api/vehicle-details/client/${cId}${queryParams}`);
         if (res.ok) {
           const vList = await res.json();
           if (Array.isArray(vList)) {
@@ -1860,7 +1896,7 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
                           }
                         }
                       }
-                      fetchFormConfiguration(selectedClient, targetCountry, selectedModule);
+                      fetchFormConfiguration(selectedClient, targetCountry, selectedModule, selectedCompany);
                     }}
                     activeOpacity={0.85}
                   >

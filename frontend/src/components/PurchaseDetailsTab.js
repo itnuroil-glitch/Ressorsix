@@ -582,14 +582,20 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
 
       let matchingFieldDef = customFields.find(cf =>
         String(cf.client_id || cf.clientid) === String(clientId) &&
-        String(cf.module_id || cf.moduleid) === String(resolvedModuleId) &&
+        [String(resolvedModuleId), '41', '42'].includes(String(cf.module_id || cf.moduleid)) &&
         String(cf.country_id || cf.countryid) === String(resolvedCountryId)
       );
       if (!matchingFieldDef) {
         matchingFieldDef = customFields.find(cf =>
           (!cf.clientid && !cf.client_id) &&
-          String(cf.module_id || cf.moduleid) === String(resolvedModuleId) &&
+          [String(resolvedModuleId), '41', '42'].includes(String(cf.module_id || cf.moduleid)) &&
           String(cf.country_id || cf.countryid) === String(resolvedCountryId)
+        );
+      }
+      if (!matchingFieldDef) {
+        matchingFieldDef = customFields.find(cf =>
+          (!cf.clientid && !cf.client_id) &&
+          [String(resolvedModuleId), '41', '42'].includes(String(cf.module_id || cf.moduleid))
         );
       }
 
@@ -599,19 +605,23 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
 
       const activePerm = permissionsList.find(p =>
         String(p.clientid) === String(clientId) &&
-        String(p.moduleid) === String(resolvedModuleId) &&
+        [String(resolvedModuleId), '41', '42'].includes(String(p.moduleid)) &&
         String(p.countryid || p.country_id) === String(resolvedCountryId)
       );
 
       let permittedFields = {};
+      let hasExplicitPermissions = false;
       if (activePerm && activePerm.permitted_fields) {
+        hasExplicitPermissions = true;
         permittedFields = typeof activePerm.permitted_fields === 'string'
           ? JSON.parse(activePerm.permitted_fields)
           : activePerm.permitted_fields;
-      } else {
-        // If no explicit permission is configured, hide the form layout
-        matchingFieldDef = null;
       }
+
+      const isFieldPermitted = (fieldId) => {
+        if (!hasExplicitPermissions) return true;
+        return permittedFields[fieldId] !== false && !!permittedFields[fieldId];
+      };
 
       if (matchingFieldDef) {
         setCustomFieldId(matchingFieldDef.id);
@@ -726,7 +736,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
               f.subsections.map(async (sub) => {
                 const subFields = await Promise.all(
                   (sub.fields || [])
-                    .filter(sf => permittedFields[sf.id])
+                    .filter(sf => isFieldPermitted(sf.id))
                     .map(sf => processField(sf))
                 );
                 const sortedSubFields = [...subFields].sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0));
@@ -742,7 +752,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
         const filteredSections = (await Promise.all(parsedSections.map(async (section) => {
           const sectionFields = await Promise.all(
             (section.fields || [])
-              .filter(f => permittedFields[f.id])
+              .filter(f => isFieldPermitted(f.id))
               .map(f => processField(f))
           );
           const sortedSectionFields = [...sectionFields].sort((a, b) => Number(a.sort || 0) - Number(b.sort || 0));
