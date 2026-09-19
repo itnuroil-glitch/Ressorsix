@@ -110,10 +110,46 @@ const TelecomBillTab = ({
   const [deleting, setDeleting] = useState(false);
 
   const isSuperAdmin = !user || String(user?.roleId) === '1' || String(user?.roleid) === '1';
+  const isClientLogged = Boolean(user && !isSuperAdmin);
   const canView = user?.roleId === 1 || user?.roleId === '1' || permissions?.can_view || permissions?.full_control;
   const canCreate = user?.roleId === 1 || user?.roleId === '1' || permissions?.can_create || permissions?.full_control;
   const canEdit = user?.roleId === 1 || user?.roleId === '1' || permissions?.can_edit || permissions?.full_control;
   const canDelete = user?.roleId === 1 || user?.roleId === '1' || permissions?.can_delete || permissions?.full_control;
+
+  const getAllowedCompanyIds = () => {
+    if (!user) return [];
+    let ids = [];
+    if (Array.isArray(user?.associatedCompanyIds) && user.associatedCompanyIds.length > 0) {
+      ids = user.associatedCompanyIds.map(String);
+    } else if (user?.associatedCompanyIds && typeof user.associatedCompanyIds === 'string') {
+      ids = user.associatedCompanyIds.split(',').map(s => s.trim()).filter(Boolean);
+    } else if (user?.companyid || user?.company_id) {
+      ids = [String(user.companyid || user.company_id)];
+    }
+    return [...new Set(ids)];
+  };
+
+  const filterCompaniesForUser = (rawList) => {
+    if (!Array.isArray(rawList)) return [];
+    if (isSuperAdmin) {
+      if (selectedClient) {
+        return rawList.filter(c => !c.clientid || String(c.clientid) === String(selectedClient));
+      }
+      return rawList;
+    }
+
+    const allowedIds = getAllowedCompanyIds();
+    if (allowedIds.length > 0) {
+      return rawList.filter(c => allowedIds.includes(String(c.id)));
+    }
+
+    const cId = user?.clientid || user?.client_id || selectedClient;
+    if (cId) {
+      return rawList.filter(c => !c.clientid || String(c.clientid) === String(cId));
+    }
+
+    return rawList;
+  };
 
   const getRowCompanyId = (record) => {
     if (!record) return null;
@@ -135,9 +171,19 @@ const TelecomBillTab = ({
   useEffect(() => {
     fetchCountries();
     fetchClients();
-    fetchCompaniesAll();
+    if (isClientLogged) {
+      const cId = String(user?.clientid || user?.client_id || '');
+      if (cId) {
+        setSelectedClient(cId);
+        fetchCompaniesForClient(cId);
+      } else {
+        fetchCompaniesAll();
+      }
+    } else {
+      fetchCompaniesAll();
+    }
     fetchDynamicDropdowns();
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     fetchRecords();
@@ -661,14 +707,47 @@ const TelecomBillTab = ({
     setIsViewOnly(false);
     setEditingRecord(null);
     setWizardStep(1);
-    setSelectedClient('');
-    setSelectedCompany('');
-    fetchCompaniesAll();
+    let resolvedClientId = '';
+    if (isClientLogged) {
+      resolvedClientId = String(user?.clientid || user?.client_id || '');
+      if (resolvedClientId) {
+        setSelectedClient(resolvedClientId);
+        fetchCompaniesForClient(resolvedClientId);
+      } else {
+        fetchCompaniesAll();
+      }
+    } else {
+      setSelectedClient('');
+      fetchCompaniesAll();
+    }
+
+    const availableComps = filterCompaniesForUser(companiesList);
+    if (isClientLogged && availableComps.length === 1) {
+      setSelectedCompany(availableComps[0].company_name);
+      if (!resolvedClientId && availableComps[0].clientid) {
+        setSelectedClient(String(availableComps[0].clientid));
+      }
+    } else {
+      setSelectedCompany('');
+    }
+
     setFormData({ status: 'Active', 'Payment Status': 'Active', f_status: 'Active' });
     setPdfParsedData(null);
     setViewMode('table');
     setIsModalOpen(true);
   };
+
+  useEffect(() => {
+    if (isModalOpen && wizardStep === 1 && isClientLogged && !selectedCompany) {
+      const availableComps = filterCompaniesForUser(companiesList);
+      if (availableComps.length === 1) {
+        setSelectedCompany(availableComps[0].company_name);
+        if (!selectedClient && availableComps[0].clientid) {
+          setSelectedClient(String(availableComps[0].clientid));
+        }
+      }
+    }
+  }, [isModalOpen, wizardStep, companiesList, isClientLogged]);
 
   const openEditModal = (record) => {
     const rowCompId = getRowCompanyId(record);
@@ -803,8 +882,29 @@ const TelecomBillTab = ({
   };
 
   const handleNextStep = async () => {
-    if (!selectedClient) {
+    let activeClientId = selectedClient;
+    if (!activeClientId && isClientLogged) {
+      activeClientId = String(user?.clientid || user?.client_id || '');
+      if (!activeClientId) {
+        const matchedComp = companiesList.find(c => c.company_name === selectedCompany || String(c.id) === String(selectedCompany));
+        if (matchedComp?.clientid) {
+          activeClientId = String(matchedComp.clientid);
+        } else if (companiesList[0]?.clientid) {
+          activeClientId = String(companiesList[0].clientid);
+        } else if (clientsList[0]?.id) {
+          activeClientId = String(clientsList[0].id);
+        } else {
+          activeClientId = '1';
+        }
+      }
+      setSelectedClient(activeClientId);
+    }
+    if (!activeClientId) {
       showToast('Please select a Client.', 'warning');
+      return;
+    }
+    if (!selectedCompany) {
+      showToast('Please select a Company.', 'warning');
       return;
     }
     setFormData(prev => ({
@@ -812,7 +912,7 @@ const TelecomBillTab = ({
       Company: selectedCompany,
       company_id: selectedCompany
     }));
-    await fetchCustomFields();
+    await fetchCustomFields(activeClientId);
     setWizardStep(2);
   };
 
@@ -1130,6 +1230,13 @@ const TelecomBillTab = ({
   const filteredRecords = records.filter(r => {
     if (user && String(user.roleId) !== '1' && user.clientid && String(r.clientid) !== String(user.clientid)) {
       return false;
+    }
+    const allowedIds = getAllowedCompanyIds();
+    if (allowedIds.length > 0) {
+      const rCompId = getRowCompanyId(r);
+      if (rCompId && !allowedIds.includes(String(rCompId))) {
+        return false;
+      }
     }
     if (!search.trim()) return true;
     const q = search.toLowerCase();
@@ -1479,37 +1586,44 @@ const TelecomBillTab = ({
             {wizardStep === 1 && !isViewOnly ? (
               <>
                 <ScrollView style={{ flex: 1, backgroundColor: '#FFFFFF' }} contentContainerStyle={{ padding: 24 }}>
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#0F172A', marginBottom: 16 }}>Select Client & Company Scope</Text>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: '#0F172A', marginBottom: 16 }}>
+                    {isClientLogged ? "Select Company Scope" : "Select Client & Company Scope"}
+                  </Text>
                   
-                  {/* CLIENT * */}
-                  <View style={[styles.configFieldGroup, { zIndex: 30 }]}>
-                    <Text style={styles.configLabel}>CLIENT *</Text>
-                    <SearchableDropdown
-                      data={clientsList}
-                      value={selectedClient}
-                      onChange={handleClientChange}
-                      placeholder="-- Select Client --"
-                      searchPlaceholder="Search Client..."
-                      displayKey="client_name"
-                      valueKey="id"
-                    />
-                  </View>
+                  {/* CLIENT * (Hidden when a client user is logged in) */}
+                  {!isClientLogged && (
+                    <View style={[styles.configFieldGroup, { zIndex: 30 }]}>
+                      <Text style={styles.configLabel}>CLIENT *</Text>
+                      <SearchableDropdown
+                        data={clientsList}
+                        value={selectedClient}
+                        onChange={handleClientChange}
+                        placeholder="-- Select Client --"
+                        searchPlaceholder="Search Client..."
+                        displayKey="client_name"
+                        valueKey="id"
+                      />
+                    </View>
+                  )}
 
                   {/* COMPANY * */}
                   <View style={[styles.configFieldGroup, { zIndex: 20 }]}>
                     <Text style={styles.configLabel}>COMPANY *</Text>
                     <SearchableDropdown
-                      data={selectedClient
-                        ? companiesList.filter(c => !c.clientid || String(c.clientid) === String(selectedClient))
-                        : companiesList
-                      }
+                      data={filterCompaniesForUser(companiesList)}
                       value={selectedCompany}
-                      onChange={(val) => setSelectedCompany(val)}
-                      placeholder={selectedClient ? "-- Select Company --" : "-- Select Client First --"}
+                      onChange={(val) => {
+                        setSelectedCompany(val);
+                        if (!selectedClient) {
+                          const matched = companiesList.find(c => c.company_name === val || String(c.id) === String(val));
+                          if (matched?.clientid) setSelectedClient(String(matched.clientid));
+                        }
+                      }}
+                      placeholder="-- Select Company --"
                       searchPlaceholder="Search Company..."
                       displayKey="company_name"
                       valueKey="company_name"
-                      disabled={!selectedClient}
+                      disabled={!isClientLogged && !selectedClient}
                     />
                   </View>
                 </ScrollView>
@@ -1522,10 +1636,10 @@ const TelecomBillTab = ({
                   <TouchableOpacity
                     style={[
                       styles.saveBtn,
-                      { backgroundColor: (selectedClient && selectedCompany) ? '#004D34' : '#94A3B8' },
+                      { backgroundColor: (isClientLogged ? selectedCompany : (selectedClient && selectedCompany)) ? '#004D34' : '#94A3B8' },
                       { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 6 }
                     ]}
-                    disabled={!selectedClient || !selectedCompany}
+                    disabled={isClientLogged ? !selectedCompany : (!selectedClient || !selectedCompany)}
                     onPress={handleNextStep}
                     activeOpacity={0.8}
                   >
