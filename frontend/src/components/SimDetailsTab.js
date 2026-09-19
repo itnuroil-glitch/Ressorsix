@@ -1418,14 +1418,10 @@ export default function SimDetailsTab({
 
       const successMsg = isAddOnMode
         ? (editingId ? 'Add-On record updated successfully!' : 'Add-On saved to database successfully!')
-        : (isTelecomDataView ? 'Telecom data saved to database successfully!' : (editingId ? 'SIM details updated successfully' : 'SIM details created successfully'));
+        : (editingId ? 'Telecom details updated successfully' : 'Telecom details created successfully');
 
       showToast(successMsg, 'success');
       setIsModalOpen(false);
-      if (!isAddOnMode) {
-        setSuccessDetails(payload);
-        setShowSuccessDialog(true);
-      }
       fetchInitialData();
       fetchAddOnRecords();
     } catch (err) {
@@ -1646,11 +1642,8 @@ export default function SimDetailsTab({
         });
 
         if (saveRes.ok) {
-          const resData = await saveRes.json().catch(() => ({}));
-          showToast('PDF data extracted and saved to database successfully!', 'success');
+          showToast('Telecom details saved successfully!', 'success');
           setIsModalOpen(false);
-          setSuccessDetails(resData && resData.id ? resData : dbPayload);
-          setShowSuccessDialog(true);
           fetchInitialData();
         } else {
           showToast('PDF extracted, but failed to save to database', 'warning');
