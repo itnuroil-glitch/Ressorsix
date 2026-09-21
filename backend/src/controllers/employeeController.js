@@ -9,6 +9,9 @@ const ensureColumnsExist = async () => {
     await db.query(`
       ALTER TABLE public.employee ADD COLUMN IF NOT EXISTS assigned_password TEXT;
     `);
+    await db.query(`
+      ALTER TABLE public.employee ALTER COLUMN email DROP NOT NULL;
+    `);
     // Self-heal: automatically link existing employees to their company's clientid if missing
     await db.query(`
       UPDATE employee e
@@ -100,6 +103,7 @@ exports.getAllEmployees = async (req, res) => {
 };
 
 exports.createEmployee = async (req, res) => {
+  await ensureColumnsExist();
   const client = await db.pool.connect();
   try {
     const {
@@ -636,7 +640,7 @@ exports.getEmployeesByCompany = async (req, res) => {
   }
 };
 
-exports.getEmployeesByBaseCompany = async (req, res) => {
+exports.getEmployeesByCompanyAll = async (req, res) => {
   try {
     await ensureColumnsExist();
     const companyParam = req.params.companyId || req.query.company_id || req.query.companyId;
@@ -649,26 +653,76 @@ exports.getEmployeesByBaseCompany = async (req, res) => {
     const trimmedParam = String(companyParam).trim();
     const isNumeric = /^\d+$/.test(trimmedParam);
 
+    let targetCompanyId = null;
+    let targetCompanyName = null;
+    let parentClientId = null;
+
+    if (isNumeric) {
+      targetCompanyId = parseInt(trimmedParam, 10);
+      const cRes = await db.query('SELECT id, company_name, clientid FROM company WHERE id = $1', [targetCompanyId]);
+      if (cRes.rows.length > 0) {
+        targetCompanyName = cRes.rows[0].company_name;
+        parentClientId = cRes.rows[0].clientid;
+      }
+    } else {
+      targetCompanyName = trimmedParam;
+      const cRes = await db.query(
+        'SELECT id, company_name, clientid FROM company WHERE LOWER(TRIM(company_name)) = LOWER(TRIM($1)) OR LOWER(TRIM(name)) = LOWER(TRIM($1)) LIMIT 1',
+        [trimmedParam]
+      );
+      if (cRes.rows.length > 0) {
+        targetCompanyId = cRes.rows[0].id;
+        parentClientId = cRes.rows[0].clientid;
+      }
+    }
+
     let queryText = `
-      SELECT e.*, 
+      SELECT DISTINCT 
+             e.id,
+             e.full_name,
              e.full_name AS employee_name,
+             e.email,
+             e.phone,
+             e.roleid,
+             e.clientid,
+             e.department_id,
+             e.basecompany_id,
              (SELECT string_agg(role, ', ') FROM role WHERE e.roleid IS NOT NULL AND e.roleid::text != '' AND id::text = ANY(array_remove(string_to_array(e.roleid::text, ','), ''))) as role_name, 
              d.department_name,
              bc.company_name as base_company_name
       FROM employee e
-      INNER JOIN company bc ON e.basecompany_id = bc.id
+      LEFT JOIN company bc ON e.basecompany_id = bc.id
+      LEFT JOIN employee_company ec ON e.id = ec.employee_id
       LEFT JOIN department d ON e.department_id = d.id
       LEFT JOIN users u ON LOWER(TRIM(e.email)) = LOWER(TRIM(u.email))
       WHERE (e.is_deleted = false OR e.is_deleted IS NULL)
     `;
 
     const params = [];
-    if (isNumeric) {
-      params.push(trimmedParam);
-      queryText += ` AND (e.basecompany_id::text = $${params.length} OR LOWER(TRIM(bc.company_name)) = LOWER(TRIM($${params.length})))`;
-    } else {
-      params.push(trimmedParam);
-      queryText += ` AND LOWER(TRIM(bc.company_name)) = LOWER(TRIM($${params.length}))`;
+    const conditions = [];
+
+    if (targetCompanyId) {
+      params.push(targetCompanyId);
+      const cIdx = params.length;
+      conditions.push(`e.basecompany_id = $${cIdx}`);
+      conditions.push(`ec.company_id = $${cIdx}`);
+    }
+
+    if (targetCompanyName) {
+      params.push(targetCompanyName);
+      const nIdx = params.length;
+      conditions.push(`LOWER(TRIM(bc.company_name)) = LOWER(TRIM($${nIdx}))`);
+      conditions.push(`ec.company_id IN (SELECT id FROM company WHERE LOWER(TRIM(company_name)) = LOWER(TRIM($${nIdx})))`);
+    }
+
+    if (parentClientId) {
+      params.push(parentClientId);
+      const pIdx = params.length;
+      conditions.push(`(e.clientid IS NOT NULL AND e.clientid = $${pIdx})`);
+    }
+
+    if (conditions.length > 0) {
+      queryText += ` AND (${conditions.join(' OR ')})`;
     }
 
     if (clientid) {
@@ -679,10 +733,41 @@ exports.getEmployeesByBaseCompany = async (req, res) => {
     queryText += ` ORDER BY e.full_name ASC`;
 
     const result = await db.query(queryText, params);
+
+    // Attach associated companies list for each employee
+    if (result.rows.length > 0) {
+      const empIds = result.rows.map(row => row.id);
+      const companiesQuery = `
+        SELECT ec.employee_id, c.id, c.company_name, c.short_code
+        FROM employee_company ec
+        JOIN company c ON ec.company_id = c.id
+        WHERE ec.employee_id = ANY($1)
+      `;
+      const companiesResult = await db.query(companiesQuery, [empIds]).catch(() => ({ rows: [] }));
+
+      const compMap = {};
+      (companiesResult.rows || []).forEach(row => {
+        if (!compMap[row.employee_id]) compMap[row.employee_id] = [];
+        compMap[row.employee_id].push({
+          id: row.id,
+          company_name: row.company_name,
+          short_code: row.short_code
+        });
+      });
+
+      result.rows.forEach(row => {
+        row.companies = compMap[row.id] || [];
+      });
+    }
+
     res.status(200).json(result.rows);
   } catch (error) {
-    console.error('Error fetching employees by base company:', error);
+    console.error('Error fetching employees by company all:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
+};
+
+exports.getEmployeesByBaseCompany = async (req, res) => {
+  return exports.getEmployeesByCompanyAll(req, res);
 };
 
