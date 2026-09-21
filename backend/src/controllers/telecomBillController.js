@@ -202,17 +202,16 @@ const resolveDatesFromPdfFile = async (rawPdfFilename, billNumber) => {
         accountNumberResolved = duAccNoMatch[1].trim();
       }
 
-      // 8. Match Mobile Numbers under Plans included in this bill
-      const duMobileRegex = /\b(05[024568](?:[\s.-]?\d){7})\b/g;
-      const plansSection = rawText.match(/plans\s*included\s*in\s*this\s*bill[\s\S]{1,600}?(?=bill\s*information|your\s*bill\s*cycle|your\s*account)/i);
+      // 8. Match Mobile Numbers under Plans included in this bill (du only)
+      const isDu = isDuBill || rawText.toLowerCase().includes('du telecom') || rawText.toLowerCase().includes('emirates integrated telecommunications') || /plans\s*included\s*in\s*this\s*bill/i.test(rawText);
       mobileNumbersResolved = [];
-      if (plansSection) {
-        const pMatches = plansSection[0].match(duMobileRegex) || [];
-        mobileNumbersResolved = [...new Set(pMatches.map(m => m.replace(/[\s.-]/g, '').trim()))].filter(m => m.length === 10);
-      }
-      if (mobileNumbersResolved.length === 0) {
-        const allMatches = rawText.match(duMobileRegex) || [];
-        mobileNumbersResolved = [...new Set(allMatches.map(m => m.replace(/[\s.-]/g, '').trim()))].filter(m => m.length === 10);
+      if (isDu) {
+        const plansSection = rawText.match(/plans\s*included\s*in\s*this\s*bill[\s\S]{1,600}?(?=bill\s*information|your\s*bill\s*cycle|your\s*account)/i);
+        if (plansSection) {
+          const duMobileRegex = /\b(05[024568](?:[\s.-]?\d){7})\b/g;
+          const pMatches = plansSection[0].match(duMobileRegex) || [];
+          mobileNumbersResolved = [...new Set(pMatches.map(m => m.replace(/[\s.-]/g, '').trim()))].filter(m => m.length === 10);
+        }
       }
     }
 
@@ -530,8 +529,11 @@ exports.getAllTelecomBills = async (req, res) => {
           if (resolved.billNumber && (!billNumber || billNumber === 'MULLAH' || !/\d/.test(billNumber))) {
             billNumber = resolved.billNumber;
           }
-          if (resolved.mobileNumbers && resolved.mobileNumbers.length > 0) {
+          const isDuProv = String(providerVal).toLowerCase() === 'du' || (String(row.pdf_filename || '').toLowerCase().includes('du'));
+          if (isDuProv && resolved.mobileNumbers && resolved.mobileNumbers.length > 1) {
             row.mobile_numbers = resolved.mobileNumbers;
+          } else {
+            row.mobile_numbers = [];
           }
         }
       }
@@ -622,9 +624,9 @@ exports.getAllTelecomBills = async (req, res) => {
         Company: row.company_name,
         'Bill Number': cleanBillResult,
         bill_number: cleanBillResult,
-        'Mobile Number / Account': (row.mobile_numbers && row.mobile_numbers.length > 0) ? row.mobile_numbers.join(', ') : row.mobile_number,
-        mobile_number: (row.mobile_numbers && row.mobile_numbers.length > 0) ? row.mobile_numbers.join(', ') : row.mobile_number,
-        mobile_numbers: row.mobile_numbers || [],
+        'Mobile Number / Account': (String(providerVal).toLowerCase() === 'du' && row.mobile_numbers && row.mobile_numbers.length > 1) ? row.mobile_numbers.join(', ') : row.mobile_number,
+        mobile_number: (String(providerVal).toLowerCase() === 'du' && row.mobile_numbers && row.mobile_numbers.length > 1) ? row.mobile_numbers.join(', ') : row.mobile_number,
+        mobile_numbers: (String(providerVal).toLowerCase() === 'du' && row.mobile_numbers && row.mobile_numbers.length > 1) ? row.mobile_numbers : [],
         'Telecom Provider': providerVal,
         'Total Bill': totalAmt,
         'VAT': vatAmt,
@@ -728,9 +730,12 @@ exports.getTelecomBillById = async (req, res) => {
         if (resolved.billNumber && (!billNumber || billNumber === 'MULLAH' || !/\d/.test(billNumber))) {
           billNumber = resolved.billNumber;
         }
-        if (resolved.mobileNumbers && resolved.mobileNumbers.length > 0) {
+        const isDuById = String(row.telecom_provider || row.provider).toLowerCase() === 'du' || (String(row.pdf_filename || '').toLowerCase().includes('du'));
+        if (isDuById && resolved.mobileNumbers && resolved.mobileNumbers.length > 1) {
           row.mobile_numbers = resolved.mobileNumbers;
           row.mobile_number = resolved.mobileNumbers.join(', ');
+        } else {
+          row.mobile_numbers = [];
         }
       }
     }
