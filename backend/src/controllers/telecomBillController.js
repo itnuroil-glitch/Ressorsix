@@ -189,8 +189,8 @@ const resolveDatesFromPdfFile = async (rawPdfFilename, billNumber) => {
       }
 
       // 6. Match Bill Number
-      const duBillNoMatch = rawText.match(/(?:your\s*bill\s*number|bill\s*number)\s*[:.-]?\s*[\r\n\s]*(\d{7,12}|0191\d{6}|I400\d+|1400\d+)/i) ||
-                            rawText.match(/\b(0191\d{6}|I400\d{6,12}|1400\d{6,12})\b/);
+      const duBillNoMatch = rawText.match(/(?:your\s*bill\s*number|bill\s*number|tax\s*invoice\s*(?:no|number)|invoice\s*(?:no|number)|tax\s*invoice)[^\w\d]*[\r\n\s]*([0-9]{7,12}|0191\d{6}|0185\d{6}|018\d{7}|I400\d+|1400\d+)/i) ||
+                            rawText.match(/\b(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12})\b/i);
       if (duBillNoMatch) {
         billNumberResolved = duBillNoMatch[1].trim();
       }
@@ -251,7 +251,7 @@ const resolveDatesFromPdfFile = async (rawPdfFilename, billNumber) => {
 
     // Fallback: Check filename for bill number if not resolved
     if (!billNumberResolved) {
-      const fnBillMatch = path.basename(targetPath).match(/(0191\d{6}|I400\d{6,12}|1400\d{6,12})/);
+      const fnBillMatch = path.basename(targetPath).match(/(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12})/i);
       if (fnBillMatch) {
         billNumberResolved = fnBillMatch[1];
       }
@@ -593,6 +593,9 @@ exports.getAllTelecomBills = async (req, res) => {
 
       const billStatus = (!row.status || String(row.status).toLowerCase() === 'pending') ? 'Active' : row.status;
 
+      const validCleanBill = (b) => (b && b !== 'MULLAH' && /\d/.test(b)) ? b : null;
+      const cleanBillResult = validCleanBill(billNumber) || validCleanBill(row.bill_number) || (String(providerVal).toLowerCase() === 'du' ? `DU-#${bId}` : (billNumber || row.bill_number));
+
       return {
         ...row,
         status: billStatus,
@@ -600,8 +603,8 @@ exports.getAllTelecomBills = async (req, res) => {
         tele_bill_id: row[pkCol] || row.bill_id || row.tele_bill_id || row.id,
         bill_id: row[pkCol] || row.bill_id || row.tele_bill_id || row.id,
         Company: row.company_name,
-        'Bill Number': billNumber || row.bill_number,
-        bill_number: billNumber || row.bill_number,
+        'Bill Number': cleanBillResult,
+        bill_number: cleanBillResult,
         'Mobile Number / Account': row.mobile_number,
         'Telecom Provider': providerVal,
         'Total Bill': totalAmt,
@@ -623,8 +626,8 @@ exports.getAllTelecomBills = async (req, res) => {
         field_data: {
           ...rawFd,
           Company: row.company_name,
-          'Bill Number': billNumber || row.bill_number,
-          bill_number: billNumber || row.bill_number,
+          'Bill Number': cleanBillResult,
+          bill_number: cleanBillResult,
           'Mobile Number / Account': row.mobile_number,
           'Telecom Provider': providerVal,
           'Total Bill': totalAmt,
@@ -782,9 +785,12 @@ exports.getTelecomBillById = async (req, res) => {
 
     const billStatus = (!row.status || String(row.status).toLowerCase() === 'pending') ? 'Active' : row.status;
 
+    const validCleanBill = (b) => (b && b !== 'MULLAH' && /\d/.test(b)) ? b : null;
+    const cleanBillResult = validCleanBill(billNumber) || validCleanBill(row.bill_number) || (String(row.telecom_provider || row.provider).toLowerCase() === 'du' ? `DU-#${id}` : (billNumber || row.bill_number));
+
     res.status(200).json({
       ...row,
-      bill_number: billNumber || row.bill_number,
+      bill_number: cleanBillResult,
       status: billStatus,
       id: row[pkCol] || row.bill_id || row.tele_bill_id || row.id,
       tele_bill_id: row[pkCol] || row.bill_id || row.tele_bill_id || row.id,
@@ -802,8 +808,8 @@ exports.getTelecomBillById = async (req, res) => {
       field_data: {
         ...rawFd,
         Company: row.company_name,
-        'Bill Number': billNumber || row.bill_number,
-        bill_number: billNumber || row.bill_number,
+        'Bill Number': cleanBillResult,
+        bill_number: cleanBillResult,
         'Mobile Number / Account': row.mobile_number,
         'Telecom Provider': row.telecom_provider || row.provider,
         'Total Bill': row.total_bill || row.total_amount,
