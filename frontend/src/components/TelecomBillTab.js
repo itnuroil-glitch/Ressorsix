@@ -530,13 +530,18 @@ const TelecomBillTab = ({
           detectedBillNo = isDuProvider ? 'DU-BILL' : 'INV2045264801';
         }
 
+        let detectedMobile = ext.mobile_account || '';
+        if (Array.isArray(ext.mobile_numbers) && ext.mobile_numbers.length > 0) {
+          detectedMobile = ext.mobile_numbers.join(', ');
+        }
+
         const newFormData = {
           Company: selectedCompany || compName || '',
           f_company: selectedCompany || compName || '',
           'Telecom Provider': ext.telecom_provider || '',
           f_provider: ext.telecom_provider || '',
-          'Mobile Number / Account': ext.mobile_account || '',
-          f_account: ext.mobile_account || '',
+          'Mobile Number / Account': detectedMobile,
+          f_account: detectedMobile,
           'Bill Number': detectedBillNo,
           f_billno: detectedBillNo,
           'Bill Month': ext.period_from || ext.bill_month || ext.issue_date || '',
@@ -591,7 +596,7 @@ const TelecomBillTab = ({
         }));
 
         const bNo = detectedBillNo;
-        const mNo = ext.mobile_account || '0522486345';
+        const mNo = detectedMobile || '0522486345';
         const tBill = ext.total_amount || '283.05';
         const pRental = ext.service_rental || '200.00';
         const uCharge = ext.usage_charges || '72.20';
@@ -1645,7 +1650,37 @@ const TelecomBillTab = ({
 
                   <Text style={[styles.tdCell, { flex: 1.4, color: '#0F172A', fontWeight: '500' }]}>{company}</Text>
                   <Text style={[styles.tdCell, { flex: 1.4, color: '#475569', fontWeight: '500' }]}>{provider}</Text>
-                  <Text style={[styles.tdCell, { flex: 1.3, color: '#475569', fontWeight: '500' }]}>{account}</Text>
+                  <View style={[styles.tdCell, { flex: 1.3, justifyContent: 'center' }]}>
+                    {(() => {
+                      let nums = [];
+                      if (Array.isArray(r.mobile_numbers) && r.mobile_numbers.length > 0) {
+                        nums = r.mobile_numbers;
+                      } else if (account && account !== '—') {
+                        const parts = String(account).split(/[,|\n]+/).map(s => s.trim()).filter(Boolean);
+                        nums = parts;
+                      }
+
+                      if (nums.length > 0) {
+                        return (
+                          <View style={{ gap: 2 }}>
+                            {nums.map((n, idx) => {
+                              const cleanDigits = String(n).replace(/\D/g, '');
+                              const formatted = (cleanDigits.length === 10 && cleanDigits.startsWith('05'))
+                                ? `${cleanDigits.slice(0, 3)} ${cleanDigits.slice(3, 6)} ${cleanDigits.slice(6, 8)} ${cleanDigits.slice(8, 10)}`
+                                : n;
+                              return (
+                                <Text key={idx} style={{ color: '#0F172A', fontWeight: '600', fontSize: 12.5, lineHeight: 16 }}>
+                                  {formatted}
+                                </Text>
+                              );
+                            })}
+                          </View>
+                        );
+                      }
+
+                      return <Text style={{ color: '#475569', fontWeight: '500' }}>{account}</Text>;
+                    })()}
+                  </View>
                   <Text style={[styles.tdCell, { flex: 1.1, fontWeight: '700', color: COLORS.primary }]}>{totalBill}</Text>
 
                   {/* BILL PERIOD FROM */}
@@ -2449,7 +2484,24 @@ const TelecomBillTab = ({
                               return fnMatch ? fnMatch[1] : 'DU-BILL';
                             })()}
                           </Text>
-                          <Text style={{ width: 150, fontSize: 13, color: '#475569' }}>{row.mobile_number}</Text>
+                          <View style={{ width: 150, justifyContent: 'center', gap: 2 }}>
+                            {(() => {
+                              const rawVal = row.mobile_number || pdfParsedData?.mobileNumber || '';
+                              const parts = String(rawVal).split(/[,|\n]+/).map(s => s.trim()).filter(Boolean);
+                              if (parts.length === 0) return <Text style={{ fontSize: 13, color: '#475569' }}>—</Text>;
+                              return parts.map((n, i) => {
+                                const cleanDigits = String(n).replace(/\D/g, '');
+                                const formatted = (cleanDigits.length === 10 && cleanDigits.startsWith('05'))
+                                  ? `${cleanDigits.slice(0, 3)} ${cleanDigits.slice(3, 6)} ${cleanDigits.slice(6, 8)} ${cleanDigits.slice(8, 10)}`
+                                  : n;
+                                return (
+                                  <Text key={i} style={{ fontSize: 12.5, fontWeight: '600', color: '#0F172A', lineHeight: 16 }}>
+                                    {formatted}
+                                  </Text>
+                                );
+                              });
+                            })()}
+                          </View>
                           <Text style={{ width: 200, fontSize: 13, fontWeight: '600', color: '#1E293B' }}>{row.category}</Text>
                           <Text style={{ width: 130, fontSize: 13, fontWeight: '700', color: parseFloat(row.amount) < 0 ? '#DC2626' : '#0F172A', textAlign: 'right' }}>
                             {row.amount}
