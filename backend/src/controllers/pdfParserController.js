@@ -182,6 +182,8 @@ exports.parsePdfDocument = async (req, res) => {
 
     // C. Match Document / Bill Number Regex
     const docNoPatterns = [
+      /(?:your\s*bill\s*number|bill\s*number|tax\s*invoice\s*(?:no|number)|invoice\s*(?:no|number)|tax\s*invoice)[^\w\d]*[\r\n\s]*([0-9]{7,12}|0191\d{6}|0185\d{6}|018\d{7}|I400\d+|1400\d+)/i,
+      /\b(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12})\b/i,
       /(?:your\s*bill\s*number|bill\s*number)\s*[:.-]?\s*[\r\n\s]*(\d{7,12}|0191\d{6}|I400\d+|1400\d+)/i,
       /\b(INV[-/A-Z0-9]{4,25}|BILL[-/A-Z0-9]{4,25}|I400\d{6,12}|1400\d{6,12}|100\d{7,12}|0191\d{6})\b/i,
       /(?:your\s*bill\s*number|bill\s*number|invoice\s*number|tax\s*invoice\s*no|inv\s*no)\s*[:.-]?\s*([A-Z0-9/-]{5,35})/i,
@@ -192,8 +194,8 @@ exports.parsePdfDocument = async (req, res) => {
       if (m && m[1] && m[1].trim().length > 3) {
         const cand = m[1].trim();
         // A valid bill/doc number must contain digits (avoids matching address words like MULLAH or WAREHOUSE)
-        if (!/\d/.test(cand)) continue;
-        if (!/^(your|bill|account|number|date|invoice|summary|total|period|issue)$/i.test(cand)) {
+        if (!/\d/.test(cand) || cand.toUpperCase() === 'MULLAH') continue;
+        if (!/^(your|bill|account|number|date|invoice|summary|total|period|issue|mullah)$/i.test(cand)) {
           matchedDocNumber = cand;
           break;
         }
@@ -201,7 +203,7 @@ exports.parsePdfDocument = async (req, res) => {
     }
     // Also check filename for standard bill numbers if still missing
     if (!matchedDocNumber && file_name) {
-      const fnBillMatch = String(file_name).match(/(0191\d{6}|I400\d{6,12}|1400\d{6,12}|INV\d{6,12})/i);
+      const fnBillMatch = String(file_name).match(/(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12}|INV\d{6,12})/i);
       if (fnBillMatch) matchedDocNumber = fnBillMatch[1];
     }
 
@@ -528,19 +530,33 @@ exports.parsePdfDocument = async (req, res) => {
     }
 
     // Universal Fallback for Document / Bill Number
-    if (!matchedDocNumber || /^(your|bill|account|number|date|invoice)$/i.test(matchedDocNumber)) {
+    if (!matchedDocNumber || /^(your|bill|account|number|date|invoice|mullah)$/i.test(matchedDocNumber) || !/\d/.test(matchedDocNumber)) {
+      matchedDocNumber = '';
       const allTokens = rawText.match(/\b([A-Z0-9/-]{6,25})\b/g) || [];
-      for (const tok of allTokens) {
-        const cleanedTok = tok.trim();
-        if (/^(?!\d+$)[A-Z0-9/-]{6,25}$/i.test(cleanedTok) && !/^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|AED|USD|TEL|FAX|HTTP|WWW|YOUR|BILL|ACCOUNT|SUMMARY|TOTAL|PAGE|POWER|TAX|FEE)/i.test(cleanedTok)) {
-          matchedDocNumber = cleanedTok;
-          break;
+      // du Priority: Match 0191xxxxxx, 0185xxxxxx, 018xxxxxxx, I400xxxxxx, 1400xxxxxx
+      const duTok = allTokens.find(t => /^(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12})$/i.test(t.trim()));
+      if (duTok) {
+        matchedDocNumber = duTok.trim();
+      } else {
+        for (const tok of allTokens) {
+          const cleanedTok = tok.trim();
+          // Must contain digits and cannot be address words
+          if (/\d/.test(cleanedTok) && /^(?!\d+$)[A-Z0-9/-]{6,25}$/i.test(cleanedTok) && !/^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|AED|USD|TEL|FAX|HTTP|WWW|YOUR|BILL|ACCOUNT|SUMMARY|TOTAL|PAGE|POWER|TAX|FEE|MULLAH|WAREHOUSE)/i.test(cleanedTok)) {
+            matchedDocNumber = cleanedTok;
+            break;
+          }
+        }
+        if (!matchedDocNumber && allTokens.length > 0) {
+          const numTok = allTokens.find(t => /^\d{8,15}$/.test(t) || /^0191\d{6}$/.test(t));
+          if (numTok) matchedDocNumber = numTok;
         }
       }
-      if (!matchedDocNumber && allTokens.length > 0) {
-        const numTok = allTokens.find(t => /^\d{8,15}$/.test(t));
-        if (numTok) matchedDocNumber = numTok;
-      }
+    }
+
+    // Check filename if still no valid bill number with digits
+    if ((!matchedDocNumber || !/\d/.test(matchedDocNumber) || matchedDocNumber.toUpperCase() === 'MULLAH') && file_name) {
+      const fnBillMatch = String(file_name).match(/(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12}|INV\d{6,12})/i);
+      if (fnBillMatch) matchedDocNumber = fnBillMatch[1];
     }
 
     // Universal Fallback for Mobile / Account Number
