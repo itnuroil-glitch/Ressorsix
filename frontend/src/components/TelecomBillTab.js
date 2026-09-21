@@ -1653,14 +1653,18 @@ const TelecomBillTab = ({
                   <View style={[styles.tdCell, { flex: 1.3, justifyContent: 'center' }]}>
                     {(() => {
                       let nums = [];
-                      if (Array.isArray(r.mobile_numbers) && r.mobile_numbers.length > 0) {
-                        nums = r.mobile_numbers;
-                      } else if (account && account !== '—') {
-                        const parts = String(account).split(/[,|\n]+/).map(s => s.trim()).filter(Boolean);
-                        nums = parts;
+                      if (isDuBill) {
+                        if (Array.isArray(r.mobile_numbers) && r.mobile_numbers.length > 1) {
+                          nums = r.mobile_numbers;
+                        } else if (account && account !== '—' && (account.includes(',') || account.includes('\n'))) {
+                          const parts = String(account).split(/[,|\n]+/).map(s => s.trim()).filter(Boolean);
+                          if (parts.length > 1) {
+                            nums = parts;
+                          }
+                        }
                       }
 
-                      if (nums.length > 0) {
+                      if (isDuBill && nums.length > 1) {
                         return (
                           <View style={{ gap: 2 }}>
                             {nums.map((n, idx) => {
@@ -2489,6 +2493,14 @@ const TelecomBillTab = ({
                               const rawVal = row.mobile_number || pdfParsedData?.mobileNumber || '';
                               const parts = String(rawVal).split(/[,|\n]+/).map(s => s.trim()).filter(Boolean);
                               if (parts.length === 0) return <Text style={{ fontSize: 13, color: '#475569' }}>—</Text>;
+                              const isDuModal = String(row.telecom_provider || pdfParsedData?.telecomProvider || '').toLowerCase() === 'du';
+                              if (!isDuModal || parts.length <= 1) {
+                                const cleanDigits = String(parts[0]).replace(/\D/g, '');
+                                const formatted = (cleanDigits.length === 10 && cleanDigits.startsWith('05'))
+                                  ? `${cleanDigits.slice(0, 3)} ${cleanDigits.slice(3, 6)} ${cleanDigits.slice(6, 8)} ${cleanDigits.slice(8, 10)}`
+                                  : parts[0];
+                                return <Text style={{ fontSize: 12.5, fontWeight: '600', color: '#0F172A' }}>{formatted}</Text>;
+                              }
                               return parts.map((n, i) => {
                                 const cleanDigits = String(n).replace(/\D/g, '');
                                 const formatted = (cleanDigits.length === 10 && cleanDigits.startsWith('05'))

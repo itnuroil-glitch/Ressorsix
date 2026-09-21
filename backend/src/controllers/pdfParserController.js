@@ -235,21 +235,16 @@ exports.parsePdfDocument = async (req, res) => {
       }
     }
 
-    // D2. Extract all individual mobile numbers (specifically under "Plans included in this bill" or du patterns)
-    const duMobileRegex = /\b(05[024568](?:[\s.-]?\d){7})\b/g;
+    // D2. Extract multiple mobile numbers ONLY for du bills under "Plans included in this bill"
     let matchedMobileNumbers = [];
     const plansSection = rawText.match(/plans\s*included\s*in\s*this\s*bill[\s\S]{1,600}?(?=bill\s*information|your\s*bill\s*cycle|your\s*account)/i);
     if (plansSection) {
+      const duMobileRegex = /\b(05[024568](?:[\s.-]?\d){7})\b/g;
       const pMatches = plansSection[0].match(duMobileRegex) || [];
       matchedMobileNumbers = [...new Set(pMatches.map(m => m.replace(/[\s.-]/g, '').trim()))].filter(m => m.length === 10);
-    }
-    if (matchedMobileNumbers.length === 0) {
-      const allMatches = rawText.match(duMobileRegex) || [];
-      matchedMobileNumbers = [...new Set(allMatches.map(m => m.replace(/[\s.-]/g, '').trim()))].filter(m => m.length === 10);
-    }
-
-    if (matchedMobileNumbers.length > 0) {
-      matchedMobileAccount = matchedMobileNumbers.join(', ');
+      if (matchedMobileNumbers.length > 0) {
+        matchedMobileAccount = matchedMobileNumbers.join(', ');
+      }
     }
 
     // E. Match Bill Issue Date
