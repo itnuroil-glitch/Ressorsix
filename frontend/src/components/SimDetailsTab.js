@@ -361,7 +361,7 @@ export default function SimDetailsTab({
   const fetchEmployeesForCompany = async (companyId) => {
     if (!companyId) return;
     try {
-      const res = await fetch(`${API_URL}/api/employees/base-company/${companyId}`);
+      const res = await fetch(`${API_URL}/api/employees/base-company/${encodeURIComponent(String(companyId).trim())}`);
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) {
@@ -602,15 +602,16 @@ export default function SimDetailsTab({
           try {
             let processedPath = (path || '').trim();
 
-            // Replace :companyId with activeCompanyId
+            // Replace :companyId with activeCompanyId safely encoded
+            const safeCompId = encodeURIComponent(String(activeCompanyId).trim());
             if (processedPath.includes(':companyId') || processedPath.includes(':companyid')) {
               if (activeCompanyId) {
-                processedPath = processedPath.replace(':companyId', activeCompanyId).replace(':companyid', activeCompanyId);
+                processedPath = processedPath.replace(':companyId', safeCompId).replace(':companyid', safeCompId);
               } else {
                 return [];
               }
             } else if (activeCompanyId && processedPath.includes('/api/employees')) {
-              processedPath = `/api/employees/base-company/${activeCompanyId}`;
+              processedPath = `/api/employees/base-company/${safeCompId}`;
             }
 
             if (processedPath.includes('client') && clientId) {
@@ -1067,7 +1068,11 @@ export default function SimDetailsTab({
             const targetCId = selectedCompany || formData.company_id || formData.company;
             const filteredEmps = targetCId ? employees.filter(e => 
               String(e.basecompany_id) === String(targetCId) || 
-              (e.base_company_name && String(e.base_company_name).toLowerCase() === String(targetCId).toLowerCase())
+              (e.base_company_name && String(e.base_company_name).toLowerCase() === String(targetCId).toLowerCase()) ||
+              (Array.isArray(e.companies) && e.companies.some(c => 
+                String(c.id) === String(targetCId) || 
+                (c.company_name && String(c.company_name).toLowerCase() === String(targetCId).toLowerCase())
+              ))
             ) : employees;
             options = filteredEmps.map(e => e.full_name || e.employee_name || e.first_name || e.name).filter(Boolean);
           } else if (fName.includes('connection') || fName.includes('type')) {
@@ -3493,7 +3498,11 @@ export default function SimDetailsTab({
                             const targetCId = selectedCompany || formData.company_id || formData.company;
                             const filteredEmps = targetCId ? employees.filter(e => 
                               String(e.basecompany_id) === String(targetCId) || 
-                              (Array.isArray(e.companies) && e.companies.some(c => String(c.id) === String(targetCId)))
+                              (e.base_company_name && String(e.base_company_name).toLowerCase() === String(targetCId).toLowerCase()) ||
+                              (Array.isArray(e.companies) && e.companies.some(c => 
+                                String(c.id) === String(targetCId) || 
+                                (c.company_name && String(c.company_name).toLowerCase() === String(targetCId).toLowerCase())
+                              ))
                             ) : employees;
                             return filteredEmps.length > 0 ? (
                               <SearchableDropdown
