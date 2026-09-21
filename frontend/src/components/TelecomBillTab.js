@@ -858,8 +858,24 @@ const TelecomBillTab = ({
       }
     }
 
+    let recBillNo = (record.bill_number && record.bill_number !== 'MULLAH' && /\d/.test(record.bill_number)) ? record.bill_number : null;
+    if (!recBillNo && parsed['Bill Number'] && parsed['Bill Number'] !== 'MULLAH' && /\d/.test(parsed['Bill Number'])) {
+      recBillNo = parsed['Bill Number'];
+    }
+    if (!recBillNo) {
+      const fnBillMatch = String(record.pdf_filename || '').match(/(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12})/i);
+      if (fnBillMatch) {
+        recBillNo = fnBillMatch[1];
+      }
+    }
+    if (!recBillNo && isDu) {
+      recBillNo = `DU-#${record.tele_bill_id || record.id || ''}`;
+    }
+
     setFormData({
       ...parsed,
+      'Bill Number': recBillNo || parsed['Bill Number'] || '',
+      bill_number: recBillNo || record.bill_number || '',
       Company: recCompany,
       'Telecom Provider': recProv,
       f_provider: recProv,
@@ -931,16 +947,29 @@ const TelecomBillTab = ({
       }
     }
 
-    let finalBillNo = record.bill_number;
-    if (!finalBillNo || finalBillNo === 'MULLAH' || !/\d/.test(finalBillNo)) {
-      const fnBillMatch = String(record.pdf_filename || '').match(/(0191\d{6}|I400\d{6,12}|1400\d{6,12})/);
+    const isDuRecord = String(record?.telecom_provider || parsed?.['Telecom Provider'] || '').toLowerCase() === 'du' ||
+      String(record?.pdf_filename || '').toLowerCase().includes('du') ||
+      String(record?.mobile_number || parsed?.['Mobile Number / Account'] || '').startsWith('6.') ||
+      String(record?.bill_number || '').startsWith('0191') ||
+      String(record?.bill_number || '').startsWith('I400');
+
+    let finalBillNo = (record.bill_number && record.bill_number !== 'MULLAH' && /\d/.test(record.bill_number)) ? record.bill_number : null;
+    if (!finalBillNo && parsed['Bill Number'] && parsed['Bill Number'] !== 'MULLAH' && /\d/.test(parsed['Bill Number'])) {
+      finalBillNo = parsed['Bill Number'];
+    }
+    if (!finalBillNo) {
+      const fnBillMatch = String(record.pdf_filename || '').match(/(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12})/i);
       if (fnBillMatch) {
         finalBillNo = fnBillMatch[1];
       }
     }
+    if (!finalBillNo && isDuRecord) {
+      finalBillNo = `DU-#${record?.tele_bill_id || record?.id || ''}`;
+    }
 
     setEditingRecord({
       ...record,
+      'Bill Number': finalBillNo || record.bill_number,
       bill_number: finalBillNo || record.bill_number,
       period_from: recPeriodFrom || record.period_from,
       period_to: recPeriodTo || record.period_to
@@ -1966,10 +1995,19 @@ const TelecomBillTab = ({
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
                               <Ionicons name="barcode-outline" size={18} color="#64748B" />
                               <Text style={styles.viewGridValue}>
-                                {((editingRecord?.bill_number && editingRecord.bill_number !== 'MULLAH' && /\d/.test(editingRecord.bill_number)) ? editingRecord.bill_number : null) ||
-                                 editingRecord?.['Bill Number'] ||
-                                 (String(editingRecord?.pdf_filename || '').match(/(0191\d{6}|I400\d{6,12}|1400\d{6,12})/)?.[1]) ||
-                                 `BILL-#${editingRecord?.tele_bill_id || editingRecord?.id || ''}`}
+                                {(() => {
+                                  const isValidBill = (v) => v && v !== 'MULLAH' && /\d/.test(v);
+                                  const bNo = isValidBill(editingRecord?.bill_number) ? editingRecord.bill_number : (isValidBill(editingRecord?.['Bill Number']) ? editingRecord['Bill Number'] : null);
+                                  if (bNo) return bNo;
+                                  const fnMatch = String(editingRecord?.pdf_filename || '').match(/(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12})/i);
+                                  if (fnMatch) return fnMatch[1];
+                                  const isDu = String(editingRecord?.telecom_provider || editingRecord?.['Telecom Provider'] || '').toLowerCase() === 'du' ||
+                                    String(editingRecord?.pdf_filename || '').toLowerCase().includes('du') ||
+                                    String(editingRecord?.mobile_number || '').startsWith('6.');
+                                  return isDu
+                                    ? `DU-#${editingRecord?.tele_bill_id || editingRecord?.id || ''}`
+                                    : `BILL-#${editingRecord?.tele_bill_id || editingRecord?.id || ''}`;
+                                })()}
                               </Text>
                             </View>
                           </View>
