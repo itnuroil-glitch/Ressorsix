@@ -3,6 +3,269 @@ const db = require('../config/db');
 const fs = require('fs');
 const path = require('path');
 
+const pdfParseReq = require('pdf-parse');
+
+const getPdfParseFn = () => {
+  if (typeof pdfParseReq === 'function') return pdfParseReq;
+  if (pdfParseReq && typeof pdfParseReq.pdfParse === 'function') return pdfParseReq.pdfParse;
+  if (pdfParseReq && typeof pdfParseReq.default === 'function') return pdfParseReq.default;
+  if (pdfParseReq && typeof pdfParseReq.PDFParse === 'function') return pdfParseReq.PDFParse;
+  return null;
+};
+
+// In-memory cache for resolved PDF dates to keep API responses ultra fast (< 1ms)
+const pdfDatesCache = new Map();
+
+const parseOrdinalDate = (dayStr, monthStr, yearStr) => {
+  if (!dayStr || !monthStr || !yearStr) return null;
+  const cleanDay = String(dayStr).replace(/\D/g, '').padStart(2, '0');
+  const monthMap = {
+    jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+    jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
+  };
+  const mKey = String(monthStr).toLowerCase().slice(0, 3);
+  const month = monthMap[mKey] || '01';
+  let year = String(yearStr).trim();
+  if (year.length === 2) year = '20' + year;
+  return `${year}-${month}-${cleanDay}`;
+};
+
+const resolveDatesFromPdfFile = async (rawPdfFilename, billNumber) => {
+  if (!rawPdfFilename && !billNumber) return null;
+  const cacheKey = String(rawPdfFilename || billNumber);
+  if (pdfDatesCache.has(cacheKey)) {
+    return pdfDatesCache.get(cacheKey);
+  }
+
+  const attachmentDir = path.join(__dirname, '../../Attachment');
+  if (!fs.existsSync(attachmentDir)) return null;
+
+  let targetPath = null;
+  if (rawPdfFilename) {
+    const baseName = path.basename(rawPdfFilename);
+    const directPath = path.join(attachmentDir, baseName);
+    if (fs.existsSync(directPath)) {
+      targetPath = directPath;
+    } else {
+      const cleanBase = baseName.replace(/^(\d+-)+/, '');
+      const altPath = path.join(attachmentDir, cleanBase);
+      if (fs.existsSync(altPath)) {
+        targetPath = altPath;
+      }
+    }
+  }
+
+  if (!targetPath) {
+    try {
+      const files = fs.readdirSync(attachmentDir);
+      const billDigits = String(billNumber || '').replace(/\D/g, '');
+      const rawBase = path.basename(String(rawPdfFilename || '')).replace(/^(\d+-)+/, '');
+      const searchKey = String(billNumber || rawPdfFilename || '').replace(/[^a-zA-Z0-9]/g, '');
+
+      const found = files.find(f => {
+        const cleanF = f.replace(/[^a-zA-Z0-9]/g, '');
+        if (rawBase && f.includes(rawBase)) return true;
+        if (billDigits && billDigits.length >= 6 && f.includes(billDigits)) return true;
+        if (searchKey.length >= 4 && cleanF.includes(searchKey)) return true;
+        return false;
+      });
+      if (found) targetPath = path.join(attachmentDir, found);
+    } catch (e) {}
+  }
+
+  if (!targetPath || !fs.existsSync(targetPath)) {
+    return null;
+  }
+
+  try {
+    let rawText = '';
+    const buffer = fs.readFileSync(targetPath);
+
+    if (pdfParseReq && typeof pdfParseReq.PDFParse === 'function') {
+      try {
+        const instance = new pdfParseReq.PDFParse({ data: buffer });
+        const res = await instance.getText();
+        if (res && res.text) rawText = res.text;
+        else if (typeof res === 'string') rawText = res;
+      } catch (e1) {}
+    }
+
+    if (!rawText) {
+      let fn = null;
+      if (typeof pdfParseReq === 'function') fn = pdfParseReq;
+      else if (pdfParseReq && typeof pdfParseReq.pdfParse === 'function') fn = pdfParseReq.pdfParse;
+      else if (pdfParseReq && typeof pdfParseReq.default === 'function') fn = pdfParseReq.default;
+
+      if (fn) {
+        try {
+          const res = await fn(buffer, { max: 2 });
+          rawText = res ? (res.text || res.data || String(res)) : '';
+        } catch (fnErr) {
+          try {
+            const instance = new fn({ data: buffer });
+            const res = await instance.getText();
+            if (res && res.text) rawText = res.text;
+          } catch (e2) {}
+        }
+      }
+    }
+
+    let periodFrom = null;
+    let periodTo = null;
+    let issueDate = null;
+    let dueDate = null;
+    let billNumberResolved = null;
+    let accountNumberResolved = null;
+
+    if (rawText) {
+      // 1. du Specific Pattern: Matches "Your bill cycle: 1st Aug - 31st Aug 2026" or "1st - 31st Jul 2026"
+      const duCycleRegex = /(?:your\s*bill\s*cycle|bill\s*cycle)[^\w\n\r]*[\r\n\s]*(\d{1,2}(?:st|nd|rd|th)?)(?:\s+([A-Za-z]{3,9}))?\s*[\u2010-\u2015\-–—−~to\s]+\s*(\d{1,2}(?:st|nd|rd|th)?)\s+([A-Za-z]{3,9})\s+(\d{4})/i;
+      const duCycleMatch = rawText.match(duCycleRegex);
+      if (duCycleMatch) {
+        const sDay = duCycleMatch[1];
+        const eMonth = duCycleMatch[4];
+        const sMonth = duCycleMatch[2] || eMonth;
+        const eDay = duCycleMatch[3];
+        const yr = duCycleMatch[5];
+        periodFrom = parseOrdinalDate(sDay, sMonth, yr);
+        periodTo = parseOrdinalDate(eDay, eMonth, yr);
+      }
+
+      // 2. du General Cycle Regex
+      if (!periodFrom || !periodTo) {
+        const generalCycleRegex = /\b(\d{1,2}(?:st|nd|rd|th)?)(?:\s+([A-Za-z]{3,9}))?\s*[\u2010-\u2015\-–—−~to\s]+\s*(\d{1,2}(?:st|nd|rd|th)?)\s+([A-Za-z]{3,9})\s+(\d{4})\b/i;
+        const gMatch = rawText.match(generalCycleRegex);
+        if (gMatch) {
+          const sDay = gMatch[1];
+          const eMonth = gMatch[4];
+          const sMonth = gMatch[2] || eMonth;
+          const eDay = gMatch[3];
+          const yr = gMatch[5];
+          periodFrom = parseOrdinalDate(sDay, sMonth, yr);
+          periodTo = parseOrdinalDate(eDay, eMonth, yr);
+        }
+      }
+
+      // 3. Standard Period Patterns (Etisalat etc.)
+      if (!periodFrom || !periodTo) {
+        const standardPeriodRegex = /(?:bill\s*period|billing\s*period|statement\s*period|period)[^\w\n\r]*[\r\n\s]*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})\s*[\u2010-\u2015\-–—−~to\s]+\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})/i;
+        const spMatch = rawText.match(standardPeriodRegex);
+        if (spMatch) {
+          const parseD = (s) => {
+            const m = s.match(/(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/);
+            return m ? parseOrdinalDate(m[1], m[2], m[3]) : null;
+          };
+          periodFrom = parseD(spMatch[1]);
+          periodTo = parseD(spMatch[2]);
+        }
+      }
+
+      // 3b. Full Date Range anywhere in text (e.g. 01 Apr 2026 - 30 Apr 2026)
+      if (!periodFrom || !periodTo) {
+        const fullRangeRegex = /\b(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})\s*[\u2010-\u2015\-–—−~to\s]+\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})\b/i;
+        const frMatch = rawText.match(fullRangeRegex);
+        if (frMatch) {
+          const parseD = (s) => {
+            const m = s.match(/(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/);
+            return m ? parseOrdinalDate(m[1], m[2], m[3]) : null;
+          };
+          periodFrom = parseD(frMatch[1]);
+          periodTo = parseD(frMatch[2]);
+        }
+      }
+
+      // 4. Match Issue Date
+      const issueDateRegex = /(?:your\s*bill\s*issue\s*date|bill\s*issue\s*date|issue\s*date|billing\s*date|invoice\s*date)\s*[:.-]?\s*[\r\n]*\s*(\d{1,2}(?:st|nd|rd|th)?)\s+([A-Za-z]{3,9})\s+(\d{2,4})/i;
+      const issueMatch = rawText.match(issueDateRegex);
+      if (issueMatch) {
+        issueDate = parseOrdinalDate(issueMatch[1], issueMatch[2], issueMatch[3]);
+      }
+
+      // 5. Match Due Date
+      const dueDateRegex = /(?:your\s*due\s*date|due\s*date|payment\s*due)\s*[:.-]?\s*[\r\n]*\s*(\d{1,2}(?:st|nd|rd|th)?)\s+([A-Za-z]{3,9})\s+(\d{2,4})/i;
+      const dueMatch = rawText.match(dueDateRegex);
+      if (dueMatch) {
+        dueDate = parseOrdinalDate(dueMatch[1], dueMatch[2], dueMatch[3]);
+      }
+
+      // 6. Match Bill Number
+      const duBillNoMatch = rawText.match(/(?:your\s*bill\s*number|bill\s*number)\s*[:.-]?\s*[\r\n\s]*(\d{7,12}|0191\d{6}|I400\d+|1400\d+)/i) ||
+                            rawText.match(/\b(0191\d{6}|I400\d{6,12}|1400\d{6,12})\b/);
+      if (duBillNoMatch) {
+        billNumberResolved = duBillNoMatch[1].trim();
+      }
+
+      // 7. Match Account Number
+      const duAccNoMatch = rawText.match(/(?:your\s*account\s*number|account\s*number)\s*[:.-]?\s*[\r\n\s]*([\d.]{6,20})/i);
+      if (duAccNoMatch) {
+        accountNumberResolved = duAccNoMatch[1].trim();
+      }
+    }
+
+    // Fallback: Check filename for date pattern (e.g. 0501070455_2027529957_2026-04-01.pdf)
+    if (!periodFrom || !periodTo) {
+      const fnDateMatch = String(targetPath || rawPdfFilename || '').match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
+      if (fnDateMatch) {
+        const y = parseInt(fnDateMatch[1], 10);
+        const m = parseInt(fnDateMatch[2], 10);
+        const lastDay = new Date(y, m, 0).getDate();
+        if (!periodFrom) periodFrom = `${y}-${String(m).padStart(2, '0')}-01`;
+        if (!periodTo) periodTo = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      }
+    }
+
+    // Fallback: If dates not found in text, deduce from month name in filename (e.g. Du_warehouse_August_0191049864.pdf)
+    if (!periodFrom || !periodTo) {
+      const monthNames = {
+        january: '01', feb: '02', february: '02', mar: '03', march: '03',
+        apr: '04', april: '04', may: '05', jun: '06', june: '06',
+        jul: '07', july: '07', aug: '08', august: '08', sep: '09', september: '09',
+        oct: '10', october: '10', nov: '11', november: '11', dec: '12', december: '12'
+      };
+      const baseFn = path.basename(targetPath);
+      const mMatch = baseFn.match(/(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)/i);
+      if (mMatch) {
+        const mNum = monthNames[mMatch[1].toLowerCase()];
+        if (mNum) {
+          const yrMatch = baseFn.match(/(20\d{2})/);
+          const y = yrMatch ? yrMatch[1] : '2026';
+          const lastDay = new Date(parseInt(y, 10), parseInt(mNum, 10), 0).getDate();
+          if (!periodFrom) periodFrom = `${y}-${mNum}-01`;
+          if (!periodTo) periodTo = `${y}-${mNum}-${String(lastDay).padStart(2, '0')}`;
+        }
+      }
+    }
+
+    // Correct inverted dates if from > to
+    if (periodFrom && periodTo) {
+      const d1 = new Date(periodFrom);
+      const d2 = new Date(periodTo);
+      if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d1 > d2) {
+        const y = d2.getFullYear();
+        const m = String(d2.getMonth() + 1).padStart(2, '0');
+        const lastDay = new Date(y, d2.getMonth() + 1, 0).getDate();
+        periodFrom = `${y}-${m}-01`;
+        periodTo = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+      }
+    }
+
+    // Fallback: Check filename for bill number if not resolved
+    if (!billNumberResolved) {
+      const fnBillMatch = path.basename(targetPath).match(/(0191\d{6}|I400\d{6,12}|1400\d{6,12})/);
+      if (fnBillMatch) {
+        billNumberResolved = fnBillMatch[1];
+      }
+    }
+
+    const resObj = { periodFrom, periodTo, issueDate, dueDate, billNumber: billNumberResolved, accountNumber: accountNumberResolved };
+    pdfDatesCache.set(cacheKey, resObj);
+    return resObj;
+  } catch (err) {
+    console.error('Error in resolveDatesFromPdfFile:', err.message);
+    return null;
+  }
+};
+
 const saveAttachmentLocally = (base64String, fileName) => {
   if (!base64String) return null;
   const matches = base64String.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
@@ -169,27 +432,16 @@ exports.getAllTelecomBills = async (req, res) => {
     await db.query(`
       UPDATE tbl_telecome_bill 
       SET telecom_provider = 'du' 
-      WHERE (bill_number ILIKE 'I400%' OR bill_number ILIKE '1400%' OR mobile_number LIKE '28%' OR pdf_filename ILIKE '%du%')
+      WHERE (bill_number ILIKE 'I400%' OR bill_number ILIKE '1400%' OR bill_number ILIKE '0191%' OR mobile_number LIKE '28%' OR mobile_number LIKE '6.%' OR pdf_filename ILIKE '%du%')
         AND (telecom_provider IS NULL OR LOWER(telecom_provider) = 'etisalat' OR telecom_provider = '')
     `).catch(() => {});
     await db.query(`
       UPDATE tbl_telecome_bill 
       SET provider = 'du' 
-      WHERE (bill_number ILIKE 'I400%' OR bill_number ILIKE '1400%' OR mobile_number LIKE '28%' OR pdf_filename ILIKE '%du%')
+      WHERE (bill_number ILIKE 'I400%' OR bill_number ILIKE '1400%' OR bill_number ILIKE '0191%' OR mobile_number LIKE '28%' OR mobile_number LIKE '6.%' OR pdf_filename ILIKE '%du%')
         AND (provider IS NULL OR LOWER(provider) = 'etisalat' OR provider = '')
     `).catch(() => {});
-    await db.query(`
-      UPDATE tbl_telecome_bill 
-      SET period_from = '2026-07-01', period_to = '2026-07-31' 
-      WHERE (bill_number ILIKE 'I400%' OR mobile_number LIKE '28%' OR pdf_filename ILIKE '%du%')
-        AND (period_from IS NULL OR period_from = '')
-    `).catch(() => {});
-    await db.query(`
-      UPDATE tbl_telecome_bill 
-      SET period_from = '2026-07-01', period_to = '2026-07-31' 
-      WHERE (bill_number ILIKE 'INV204%' OR pdf_filename ILIKE '%2026-07-01%' OR mobile_number LIKE '%5351011%' OR mobile_number LIKE '%2486345%' OR mobile_number LIKE '%5351779%')
-        AND (period_from IS NULL OR period_from = '' OR period_from = '—')
-    `).catch(() => {});
+
 
     let query = `
       SELECT 
@@ -236,7 +488,7 @@ exports.getAllTelecomBills = async (req, res) => {
       logsMap.get(bId).push(log);
     });
 
-    const formattedRows = result.rows.map(row => {
+    const formattedRows = await Promise.all(result.rows.map(async (row) => {
       const bId = String(row[pkCol] || row.bill_id || row.tele_bill_id || row.id);
       const childItems = itemsMap.get(bId) || [];
       const callLogs = logsMap.get(bId) || [];
@@ -251,28 +503,83 @@ exports.getAllTelecomBills = async (req, res) => {
       let periodTo = row.period_to || row.bill_period_to || rawFd['Bill Period To'] || rawFd.period_to || rawFd.f_to || null;
       let issueDate = row.issue_date || row.bill_date || row.bill_issue_date || rawFd['Bill Issue Date'] || rawFd.issue_date || rawFd.f_issue || null;
       let dueDate = row.due_date || rawFd['Due Date'] || rawFd.due_date || rawFd.f_due || null;
+      let billNumber = row.bill_number;
 
-      // Fallback for Etisalat July 2026 bills (e.g., account 06-5351779, 06-5351011, 0522486345, or INV204...)
-      if (!periodFrom && (
-        String(row.bill_number || '').startsWith('INV204') ||
-        String(row.pdf_filename || '').includes('2026-07-01') ||
-        String(row.mobile_number || '').includes('5351779') ||
-        String(row.mobile_number || '').includes('5351011') ||
-        String(row.mobile_number || '').includes('2486345') ||
-        String(row.telecom_provider || row.provider || '').toLowerCase().includes('etisalat')
-      )) {
-        periodFrom = '01 Jul 2026';
-        periodTo = '31 Jul 2026';
-        issueDate = issueDate || '01 Aug 2026';
-        dueDate = dueDate || '15 Aug 2026';
+      // Dynamic period and bill details deduction
+      if (row.pdf_filename || row.bill_number) {
+        const resolved = await resolveDatesFromPdfFile(row.pdf_filename, row.bill_number);
+        if (resolved) {
+          if (!periodFrom && resolved.periodFrom) periodFrom = resolved.periodFrom;
+          if (!periodTo && resolved.periodTo) periodTo = resolved.periodTo;
+          if (!issueDate && resolved.issueDate) issueDate = resolved.issueDate;
+          if (!dueDate && resolved.dueDate) dueDate = resolved.dueDate;
+          if (resolved.billNumber && (!billNumber || billNumber === 'MULLAH' || !/\d/.test(billNumber))) {
+            billNumber = resolved.billNumber;
+          }
+        }
+      }
+
+      if (!periodFrom) {
+        // 2. Check pdf_filename for date pattern
+        if (!periodFrom && row.pdf_filename) {
+          const fnMatch = String(row.pdf_filename).match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
+          if (fnMatch) {
+            const y = parseInt(fnMatch[1], 10);
+            const m = parseInt(fnMatch[2], 10);
+            const lastDay = new Date(y, m, 0).getDate();
+            periodFrom = `${y}-${String(m).padStart(2, '0')}-01`;
+            periodTo = periodTo || `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+          }
+        }
+
+        // 3. Fallback to issueDate previous month
+        if (!periodFrom && issueDate) {
+          try {
+            const idDate = new Date(issueDate);
+            if (!isNaN(idDate.getTime())) {
+              const prevMonthLast = new Date(idDate.getFullYear(), idDate.getMonth(), 0);
+              const y = prevMonthLast.getFullYear();
+              const m = String(prevMonthLast.getMonth() + 1).padStart(2, '0');
+              const d = String(prevMonthLast.getDate()).padStart(2, '0');
+              periodFrom = `${y}-${m}-01`;
+              periodTo = periodTo || `${y}-${m}-${d}`;
+            }
+          } catch (e) {}
+        }
       }
 
       // Fallback: If call logs exist and no period date is specified, deduce period from call logs
       if (!periodFrom && callLogs.length > 0) {
-        const validDates = callLogs.map(l => l.call_date).filter(Boolean);
+        const validDates = callLogs
+          .map(l => l.call_date)
+          .filter(Boolean)
+          .map(d => {
+            const dt = new Date(d);
+            return !isNaN(dt.getTime()) ? dt : null;
+          })
+          .filter(Boolean)
+          .sort((a, b) => a - b);
+
         if (validDates.length > 0) {
-          periodFrom = validDates[0];
-          periodTo = validDates[validDates.length - 1];
+          const earliest = validDates[0];
+          const y = earliest.getFullYear();
+          const m = String(earliest.getMonth() + 1).padStart(2, '0');
+          const lastDay = new Date(y, earliest.getMonth() + 1, 0).getDate();
+          periodFrom = `${y}-${m}-01`;
+          periodTo = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+        }
+      }
+
+      // Inverted check: If start date is after end date (e.g. 18 Apr to 01 Apr)
+      if (periodFrom && periodTo) {
+        const d1 = new Date(periodFrom);
+        const d2 = new Date(periodTo);
+        if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d1 > d2) {
+          const y = d2.getFullYear();
+          const m = String(d2.getMonth() + 1).padStart(2, '0');
+          const lastDay = new Date(y, d2.getMonth() + 1, 0).getDate();
+          periodFrom = `${y}-${m}-01`;
+          periodTo = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
         }
       }
 
@@ -293,7 +600,8 @@ exports.getAllTelecomBills = async (req, res) => {
         tele_bill_id: row[pkCol] || row.bill_id || row.tele_bill_id || row.id,
         bill_id: row[pkCol] || row.bill_id || row.tele_bill_id || row.id,
         Company: row.company_name,
-        'Bill Number': row.bill_number,
+        'Bill Number': billNumber || row.bill_number,
+        bill_number: billNumber || row.bill_number,
         'Mobile Number / Account': row.mobile_number,
         'Telecom Provider': providerVal,
         'Total Bill': totalAmt,
@@ -315,7 +623,8 @@ exports.getAllTelecomBills = async (req, res) => {
         field_data: {
           ...rawFd,
           Company: row.company_name,
-          'Bill Number': row.bill_number,
+          'Bill Number': billNumber || row.bill_number,
+          bill_number: billNumber || row.bill_number,
           'Mobile Number / Account': row.mobile_number,
           'Telecom Provider': providerVal,
           'Total Bill': totalAmt,
@@ -336,7 +645,7 @@ exports.getAllTelecomBills = async (req, res) => {
           call_logs: callLogs
         }
       };
-    });
+    }));
 
     res.status(200).json(formattedRows);
   } catch (err) {
@@ -384,27 +693,82 @@ exports.getTelecomBillById = async (req, res) => {
     let periodTo = row.period_to || row.bill_period_to || rawFd['Bill Period To'] || rawFd.period_to || rawFd.f_to || null;
     let issueDate = row.issue_date || row.bill_date || row.bill_issue_date || rawFd['Bill Issue Date'] || rawFd.issue_date || rawFd.f_issue || null;
     let dueDate = row.due_date || rawFd['Due Date'] || rawFd.due_date || rawFd.f_due || null;
+    let billNumber = row.bill_number;
 
-    // Fallback for Etisalat July 2026 bills (e.g., account 06-5351779, 06-5351011, 0522486345, or INV204...)
-    if (!periodFrom && (
-      String(row.bill_number || '').startsWith('INV204') ||
-      String(row.pdf_filename || '').includes('2026-07-01') ||
-      String(row.mobile_number || '').includes('5351779') ||
-      String(row.mobile_number || '').includes('5351011') ||
-      String(row.mobile_number || '').includes('2486345') ||
-      String(row.telecom_provider || row.provider || '').toLowerCase().includes('etisalat')
-    )) {
-      periodFrom = '01 Jul 2026';
-      periodTo = '31 Jul 2026';
-      issueDate = issueDate || '01 Aug 2026';
-      dueDate = dueDate || '15 Aug 2026';
+    // Dynamic period deduction
+    if (row.pdf_filename || row.bill_number) {
+      const resolved = await resolveDatesFromPdfFile(row.pdf_filename, row.bill_number);
+      if (resolved) {
+        if (!periodFrom && resolved.periodFrom) periodFrom = resolved.periodFrom;
+        if (!periodTo && resolved.periodTo) periodTo = resolved.periodTo;
+        if (!issueDate && resolved.issueDate) issueDate = resolved.issueDate;
+        if (!dueDate && resolved.dueDate) dueDate = resolved.dueDate;
+        if (resolved.billNumber && (!billNumber || billNumber === 'MULLAH' || !/\d/.test(billNumber))) {
+          billNumber = resolved.billNumber;
+        }
+      }
+    }
+
+    if (!periodFrom) {
+      // 2. Check pdf_filename for date pattern
+      if (!periodFrom && row.pdf_filename) {
+        const fnMatch = String(row.pdf_filename).match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
+        if (fnMatch) {
+          const y = parseInt(fnMatch[1], 10);
+          const m = parseInt(fnMatch[2], 10);
+          const lastDay = new Date(y, m, 0).getDate();
+          periodFrom = `${y}-${String(m).padStart(2, '0')}-01`;
+          periodTo = periodTo || `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+        }
+      }
+
+      // 3. Fallback to issueDate previous month
+      if (!periodFrom && issueDate) {
+        try {
+          const idDate = new Date(issueDate);
+          if (!isNaN(idDate.getTime())) {
+            const prevMonthLast = new Date(idDate.getFullYear(), idDate.getMonth(), 0);
+            const y = prevMonthLast.getFullYear();
+            const m = String(prevMonthLast.getMonth() + 1).padStart(2, '0');
+            const d = String(prevMonthLast.getDate()).padStart(2, '0');
+            periodFrom = `${y}-${m}-01`;
+            periodTo = periodTo || `${y}-${m}-${d}`;
+          }
+        } catch (e) {}
+      }
     }
 
     if (!periodFrom && logsRes.rows.length > 0) {
-      const validDates = logsRes.rows.map(l => l.call_date).filter(Boolean);
+      const validDates = logsRes.rows
+        .map(l => l.call_date)
+        .filter(Boolean)
+        .map(d => {
+          const dt = new Date(d);
+          return !isNaN(dt.getTime()) ? dt : null;
+        })
+        .filter(Boolean)
+        .sort((a, b) => a - b);
+
       if (validDates.length > 0) {
-        periodFrom = validDates[0];
-        periodTo = validDates[validDates.length - 1];
+        const earliest = validDates[0];
+        const y = earliest.getFullYear();
+        const m = String(earliest.getMonth() + 1).padStart(2, '0');
+        const lastDay = new Date(y, earliest.getMonth() + 1, 0).getDate();
+        periodFrom = `${y}-${m}-01`;
+        periodTo = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+      }
+    }
+
+    // Inverted check: If start date is after end date (e.g. 18 Apr to 01 Apr)
+    if (periodFrom && periodTo) {
+      const d1 = new Date(periodFrom);
+      const d2 = new Date(periodTo);
+      if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d1 > d2) {
+        const y = d2.getFullYear();
+        const m = String(d2.getMonth() + 1).padStart(2, '0');
+        const lastDay = new Date(y, d2.getMonth() + 1, 0).getDate();
+        periodFrom = `${y}-${m}-01`;
+        periodTo = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
       }
     }
 
@@ -420,6 +784,7 @@ exports.getTelecomBillById = async (req, res) => {
 
     res.status(200).json({
       ...row,
+      bill_number: billNumber || row.bill_number,
       status: billStatus,
       id: row[pkCol] || row.bill_id || row.tele_bill_id || row.id,
       tele_bill_id: row[pkCol] || row.bill_id || row.tele_bill_id || row.id,
@@ -437,7 +802,8 @@ exports.getTelecomBillById = async (req, res) => {
       field_data: {
         ...rawFd,
         Company: row.company_name,
-        'Bill Number': row.bill_number,
+        'Bill Number': billNumber || row.bill_number,
+        bill_number: billNumber || row.bill_number,
         'Mobile Number / Account': row.mobile_number,
         'Telecom Provider': row.telecom_provider || row.provider,
         'Total Bill': row.total_bill || row.total_amount,
