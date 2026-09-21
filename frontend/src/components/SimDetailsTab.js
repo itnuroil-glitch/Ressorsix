@@ -1165,30 +1165,174 @@ export default function SimDetailsTab({
       case 'File Upload':
       case 'Image Upload':
       case 'File': {
-        const val = getFieldValue(field);
+        const isMultiple = field.allowMultiple === true || field.allowMultiple === 'true' || field.allowMultiple === 1 || field.allowMultiple === '1' || field.allow_multiple === true || field.allow_multiple === 'true' || field.multiple === true || field.multiple === 'true';
+        const rawVal = formData[field.id] !== undefined
+          ? formData[field.id]
+          : (field.name && formData[field.name] !== undefined
+              ? formData[field.name]
+              : (field.name && formData[field.name.trim()] !== undefined ? formData[field.name.trim()] : ''));
+
+        let fileSource = rawVal;
+        if (!fileSource) {
+          const fallbackVal = getFieldValue(field);
+          if (fallbackVal) fileSource = fallbackVal;
+        }
+
+        let filesArray = [];
+        if (Array.isArray(fileSource)) {
+          filesArray = fileSource;
+        } else if (fileSource && typeof fileSource === 'object') {
+          filesArray = [fileSource];
+        } else if (fileSource && typeof fileSource === 'string') {
+          const trimmed = fileSource.trim();
+          if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+            try {
+              const parsed = JSON.parse(trimmed);
+              if (Array.isArray(parsed)) filesArray = parsed;
+              else if (parsed) filesArray = [parsed];
+            } catch (e) {
+              filesArray = [{ name: trimmed }];
+            }
+          } else if (trimmed.includes(',')) {
+            filesArray = trimmed.split(',').map(s => s.trim()).filter(Boolean).map(n => ({ name: n }));
+          } else if (trimmed) {
+            filesArray = [{ name: trimmed }];
+          }
+        }
+
         const handleFileSelect = () => {
           if (typeof document !== 'undefined') {
             const input = document.createElement('input');
             input.type = 'file';
             input.accept = field.type === 'Image Upload' ? 'image/*' : '*/*';
-            input.onchange = (e) => {
+            if (isMultiple) {
+              input.multiple = true;
+            }
+            input.onchange = async (e) => {
               const files = Array.from(e.target.files);
-              if (files.length > 0) {
-                handleCustomFieldChange(field, files[0].name);
+              if (files.length === 0) return;
+
+              const processedFiles = await Promise.all(
+                files.map(file => compressImageFile(file))
+              );
+
+              if (isMultiple) {
+                const updated = [...filesArray, ...processedFiles];
+                handleCustomFieldChange(field, updated);
+              } else {
+                handleCustomFieldChange(field, processedFiles[0]);
               }
             };
             input.click();
           }
         };
 
+        const handleRemoveFile = (indexToRemove) => {
+          if (isMultiple) {
+            const updated = filesArray.filter((_, idx) => idx !== indexToRemove);
+            handleCustomFieldChange(field, updated.length > 0 ? updated : '');
+          } else {
+            handleCustomFieldChange(field, '');
+          }
+        };
+
+        const renderFileItem = (file, idx) => {
+          if (!file) return null;
+          let fileName = 'Uploaded File';
+          let fileData = '';
+          if (typeof file === 'object' && file !== null) {
+            fileName = file.name || file.fileName || file.title || 'Uploaded File';
+            fileData = file.data || file.url || file.file_path || file.path || '';
+          } else if (typeof file === 'string') {
+            const trimmedStr = file.trim();
+            if (trimmedStr.startsWith('data:')) {
+              fileName = 'Attached File';
+              fileData = trimmedStr;
+            } else if (trimmedStr.startsWith('http') || trimmedStr.startsWith('/')) {
+              fileName = trimmedStr.split('/').pop().split('\\').pop() || 'Attached File';
+              fileData = trimmedStr;
+            } else {
+              fileName = trimmedStr;
+              fileData = '';
+            }
+          }
+          const isClickable = typeof fileData === 'string' && (fileData.startsWith('http') || fileData.startsWith('/') || fileData.startsWith('data:'));
+
+          return (
+            <View
+              key={idx}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: '#F1F5F9',
+                paddingHorizontal: 12,
+                height: 42,
+                borderRadius: 8,
+                borderWidth: 1,
+                borderColor: '#CBD5E1',
+                justifyContent: 'space-between',
+                marginTop: 6,
+                gap: 8
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                <Ionicons
+                  name={field.type === 'Image Upload' ? 'image-outline' : 'document-text-outline'}
+                  size={18}
+                  color="#166534"
+                />
+                {isClickable ? (
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (typeof window !== 'undefined' && fileData) {
+                        if (fileData.startsWith('data:')) {
+                          const win = window.open();
+                          if (win) {
+                            if (fileData.startsWith('data:image/')) {
+                              win.document.write(`<img src="${fileData}" style="max-width:100%;height:auto;" />`);
+                            } else {
+                              win.document.write(`<iframe src="${fileData}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+                            }
+                          }
+                        } else {
+                          const url = fileData.startsWith('/') ? `${API_URL}${fileData}` : fileData;
+                          window.open(url, '_blank');
+                        }
+                      }
+                    }}
+                    style={{ flex: 1 }}
+                  >
+                    <Text
+                      style={{ color: COLORS.primary, fontSize: 13, fontWeight: '600', textDecorationLine: 'underline' }}
+                      numberOfLines={1}
+                    >
+                      {fileName}
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={{ color: '#0F172A', fontSize: 13, fontWeight: '600', flex: 1 }} numberOfLines={1}>
+                    {fileName}
+                  </Text>
+                )}
+              </View>
+
+              {!isViewOnly && (
+                <TouchableOpacity onPress={() => handleRemoveFile(idx)} style={{ padding: 4 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="close-circle" size={18} color="#EF4444" />
+                </TouchableOpacity>
+              )}
+            </View>
+          );
+        };
+
         return (
           <View style={{ width: '100%' }}>
-            {!val ? (
+            {!isViewOnly && (isMultiple || filesArray.length === 0) && (
               <TouchableOpacity
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
-                  backgroundColor: isViewOnly ? '#F1F5F9' : '#FAFAFA',
+                  backgroundColor: '#FAFAFA',
                   paddingHorizontal: 14,
                   height: 44,
                   borderRadius: 8,
@@ -1198,28 +1342,27 @@ export default function SimDetailsTab({
                   gap: 8,
                 }}
                 onPress={handleFileSelect}
-                disabled={isViewOnly}
                 activeOpacity={0.7}
               >
                 <Ionicons name="cloud-upload-outline" size={20} color="#64748B" />
-                <Text style={{ flex: 1, color: '#94A3B8', fontSize: 13 }}>
-                  Click to upload file...
+                <Text style={{ flex: 1, color: '#64748B', fontSize: 13 }}>
+                  {isMultiple && filesArray.length > 0
+                    ? '+ Add more files...'
+                    : (isMultiple ? 'Click to upload file(s)...' : 'Click to upload file...')}
                 </Text>
               </TouchableOpacity>
-            ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F1F5F9', paddingHorizontal: 12, height: 44, borderRadius: 8, borderWidth: 1, borderColor: '#CBD5E1', justifyContent: 'space-between' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                  <Ionicons name="document-text-outline" size={18} color="#166534" />
-                  <Text style={{ color: '#0F172A', fontSize: 13, fontWeight: '600' }} numberOfLines={1}>
-                    {typeof val === 'object' ? val.name : String(val)}
-                  </Text>
-                </View>
-                {!isViewOnly && (
-                  <TouchableOpacity onPress={() => handleCustomFieldChange(field, '')} style={{ padding: 4 }}>
-                    <Ionicons name="close-circle" size={18} color="#EF4444" />
-                  </TouchableOpacity>
-                )}
+            )}
+
+            {filesArray.length > 0 ? (
+              <View style={{ marginTop: (!isViewOnly && (isMultiple || filesArray.length === 0)) ? 4 : 0 }}>
+                {filesArray.map((file, idx) => renderFileItem(file, idx))}
               </View>
+            ) : (
+              isViewOnly && (
+                <Text style={{ color: '#94A3B8', fontStyle: 'italic', fontSize: 13, paddingVertical: 6 }}>
+                  No files attached
+                </Text>
+              )
             )}
           </View>
         );
