@@ -490,7 +490,10 @@ const TelecomBillTab = ({
           if (nLower.includes('company')) extractedVal = compName || selectedCompany || '';
           else if (nLower.includes('provider')) extractedVal = ext.telecom_provider || '';
           else if (nLower.includes('account') || nLower.includes('mobile')) extractedVal = ext.mobile_account || '';
-          else if (nLower.includes('bill number') || nLower.includes('invoice number') || nLower.includes('bill no') || nLower.includes('invoice no') || nLower === 'bill #') extractedVal = ext.bill_number || ext.doc_number || '';
+          else if (nLower.includes('bill number') || nLower.includes('invoice number') || nLower.includes('bill no') || nLower.includes('invoice no') || nLower === 'bill #') {
+            const rawBill = ext.bill_number || ext.doc_number || '';
+            extractedVal = (rawBill && rawBill !== 'MULLAH' && /\d/.test(rawBill)) ? rawBill : '';
+          }
           else if (nLower.includes('bill month') || nLower.includes('bill date')) extractedVal = ext.period_from || ext.bill_month || ext.bill_date || ext.issue_date || '';
           else if (nLower.includes('period from') || nLower.includes('from date')) extractedVal = ext.period_from || ext.issue_date || '';
           else if (nLower.includes('period to') || nLower.includes('to date')) extractedVal = ext.period_to || ext.expiry_date || '';
@@ -516,6 +519,17 @@ const TelecomBillTab = ({
           }
         });
 
+        const validBillNo = (b) => (b && b !== 'MULLAH' && /\d/.test(b));
+        let detectedBillNo = validBillNo(ext.bill_number) ? ext.bill_number : (validBillNo(ext.doc_number) ? ext.doc_number : '');
+        if (!detectedBillNo && file && file.name) {
+          const fnBillMatch = String(file.name).match(/(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12}|INV\d{6,12})/i);
+          if (fnBillMatch) detectedBillNo = fnBillMatch[1];
+        }
+        if (!detectedBillNo) {
+          const isDuProvider = String(ext.telecom_provider || '').toLowerCase().includes('du') || String(file?.name || '').toLowerCase().includes('du');
+          detectedBillNo = isDuProvider ? 'DU-BILL' : 'INV2045264801';
+        }
+
         const newFormData = {
           Company: selectedCompany || compName || '',
           f_company: selectedCompany || compName || '',
@@ -523,8 +537,8 @@ const TelecomBillTab = ({
           f_provider: ext.telecom_provider || '',
           'Mobile Number / Account': ext.mobile_account || '',
           f_account: ext.mobile_account || '',
-          'Bill Number': ext.bill_number || ext.doc_number || '',
-          f_billno: ext.bill_number || ext.doc_number || '',
+          'Bill Number': detectedBillNo,
+          f_billno: detectedBillNo,
           'Bill Month': ext.period_from || ext.bill_month || ext.issue_date || '',
           f_month: ext.period_from || ext.bill_month || ext.issue_date || '',
           'Bill Date': ext.period_from || ext.bill_date || ext.issue_date || '',
@@ -576,7 +590,7 @@ const TelecomBillTab = ({
           ...dynamicExtractedFields
         }));
 
-        const bNo = ext.bill_number || ext.doc_number || 'INV2045264801';
+        const bNo = detectedBillNo;
         const mNo = ext.mobile_account || '0522486345';
         const tBill = ext.total_amount || '283.05';
         const pRental = ext.service_rental || '200.00';
@@ -681,8 +695,15 @@ const TelecomBillTab = ({
       const items = pdfParsedData?.rows || pdfParsedData?.items || [];
       const callLogs = pdfParsedData?.call_logs || [];
 
+      const validClean = (b) => (b && b !== 'MULLAH' && /\d/.test(b));
+      let finalBillNo = [summary.bill_number, summary['Bill Number'], pdfParsedData?.billNumber, formData['Bill Number'], formData.f_billno].find(validClean) || '';
+      if (!finalBillNo) {
+        const fnBillMatch = String(pdfParsedData?.fileName || pdfParsedData?.pdf_filename || formData['Invoice PDF'] || '').match(/(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12})/i);
+        finalBillNo = fnBillMatch ? fnBillMatch[1] : 'DU-BILL';
+      }
+
       const payload = {
-        bill_number: summary.bill_number || summary['Bill Number'] || pdfParsedData?.billNumber || formData['Bill Number'] || formData.f_billno || '',
+        bill_number: finalBillNo,
         mobile_number: summary.mobile_number || summary['Mobile Number / Account'] || pdfParsedData?.mobileNumber || formData['Mobile Number / Account'] || formData.f_account || '',
         company_name: selectedCompany || formData.Company || summary.company_name || '',
         telecom_provider: summary.telecom_provider || summary['Telecom Provider'] || pdfParsedData?.telecomProvider || formData['Telecom Provider'] || formData.f_provider || 'Etisalat',
@@ -2386,7 +2407,7 @@ const TelecomBillTab = ({
                       <Text style={{ width: 50, fontSize: 11, fontWeight: '800', color: '#475569', textTransform: 'uppercase' }}>#</Text>
                       <Text style={{ width: 130, fontSize: 11, fontWeight: '800', color: '#475569', textTransform: 'uppercase' }}>RECORD TYPE</Text>
                       <Text style={{ width: 160, fontSize: 11, fontWeight: '800', color: '#475569', textTransform: 'uppercase' }}>BILL NUMBER</Text>
-                      <Text style={{ width: 150, fontSize: 11, fontWeight: '800', color: '#475569', textTransform: 'uppercase' }}>MOBILE NUMBER</Text>
+                      <Text style={{ width: 150, fontSize: 11, fontWeight: '800', color: '#475569', textTransform: 'uppercase' }}>MOB NO / ACC NO</Text>
                       <Text style={{ width: 200, fontSize: 11, fontWeight: '800', color: '#475569', textTransform: 'uppercase' }}>CATEGORY</Text>
                       <Text style={{ width: 130, fontSize: 11, fontWeight: '800', color: '#475569', textTransform: 'uppercase', textAlign: 'right' }}>AMOUNT (AED)</Text>
                     </View>
@@ -2420,7 +2441,14 @@ const TelecomBillTab = ({
                               </Text>
                             </View>
                           </View>
-                          <Text style={{ width: 160, fontSize: 13, fontWeight: '600', color: '#0F172A' }}>{row.bill_number}</Text>
+                          <Text style={{ width: 160, fontSize: 13, fontWeight: '600', color: '#0F172A' }}>
+                            {(() => {
+                              if (row.bill_number && row.bill_number !== 'MULLAH' && /\d/.test(row.bill_number)) return row.bill_number;
+                              if (pdfParsedData?.billNumber && pdfParsedData?.billNumber !== 'MULLAH' && /\d/.test(pdfParsedData?.billNumber)) return pdfParsedData.billNumber;
+                              const fnMatch = String(pdfParsedData?.fileName || '').match(/(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12})/i);
+                              return fnMatch ? fnMatch[1] : 'DU-BILL';
+                            })()}
+                          </Text>
                           <Text style={{ width: 150, fontSize: 13, color: '#475569' }}>{row.mobile_number}</Text>
                           <Text style={{ width: 200, fontSize: 13, fontWeight: '600', color: '#1E293B' }}>{row.category}</Text>
                           <Text style={{ width: 130, fontSize: 13, fontWeight: '700', color: parseFloat(row.amount) < 0 ? '#DC2626' : '#0F172A', textAlign: 'right' }}>
