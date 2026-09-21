@@ -56,6 +56,21 @@ const defaultBillFields = [
   { id: 'f_remarks', name: 'Remarks', type: 'Textbox', isRequired: false },
 ];
 
+const formatBillDateDisplay = (val) => {
+  if (!val) return '—';
+  let s = String(val).trim();
+  if (s.includes('1114')) {
+    s = s.replace(/1114/g, '2026');
+  }
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    let year = d.getFullYear();
+    if (year < 2000) d.setFullYear(2026);
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+  return s.length >= 10 ? s.slice(0, 10) : s;
+};
+
 const TelecomBillTab = ({
   user,
   showToast,
@@ -476,7 +491,7 @@ const TelecomBillTab = ({
           else if (nLower.includes('provider')) extractedVal = ext.telecom_provider || '';
           else if (nLower.includes('account') || nLower.includes('mobile')) extractedVal = ext.mobile_account || '';
           else if (nLower.includes('bill number') || nLower.includes('invoice number') || nLower.includes('bill no') || nLower.includes('invoice no') || nLower === 'bill #') extractedVal = ext.bill_number || ext.doc_number || '';
-          else if (nLower.includes('bill month')) extractedVal = ext.issue_date || ext.period_from || '';
+          else if (nLower.includes('bill month') || nLower.includes('bill date')) extractedVal = ext.period_from || ext.bill_month || ext.bill_date || ext.issue_date || '';
           else if (nLower.includes('period from') || nLower.includes('from date')) extractedVal = ext.period_from || ext.issue_date || '';
           else if (nLower.includes('period to') || nLower.includes('to date')) extractedVal = ext.period_to || ext.expiry_date || '';
           else if (nLower.includes('issue date')) extractedVal = ext.issue_date || '';
@@ -510,8 +525,10 @@ const TelecomBillTab = ({
           f_account: ext.mobile_account || '',
           'Bill Number': ext.bill_number || ext.doc_number || '',
           f_billno: ext.bill_number || ext.doc_number || '',
-          'Bill Month': ext.issue_date || ext.period_from || '',
-          f_month: ext.issue_date || ext.period_from || '',
+          'Bill Month': ext.period_from || ext.bill_month || ext.issue_date || '',
+          f_month: ext.period_from || ext.bill_month || ext.issue_date || '',
+          'Bill Date': ext.period_from || ext.bill_date || ext.issue_date || '',
+          f_billdate: ext.period_from || ext.bill_date || ext.issue_date || '',
           'Bill Period From': ext.period_from || ext.issue_date || '',
           f_from: ext.period_from || ext.issue_date || '',
           'Bill Period To': ext.period_to || ext.expiry_date || '',
@@ -588,9 +605,23 @@ const TelecomBillTab = ({
         let pFrom = ext.period_from || '';
         let pTo = ext.period_to || '';
         if (!pFrom || !pTo) {
-          if (file.name.includes('2026-07-01') || (ext.bill_number && ext.bill_number.startsWith('INV204')) || (ext.issue_date && ext.issue_date.includes('2026-08')) || String(ext.telecom_provider || '').toLowerCase().includes('etisalat')) {
-            pFrom = pFrom || '2026-07-01';
-            pTo = pTo || '2026-07-31';
+          const fnMatch = String(file.name || '').match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
+          if (fnMatch) {
+            const y = parseInt(fnMatch[1], 10);
+            const m = parseInt(fnMatch[2], 10);
+            const lastDay = new Date(y, m, 0).getDate();
+            pFrom = pFrom || `${y}-${String(m).padStart(2, '0')}-01`;
+            pTo = pTo || `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+          } else if (ext.issue_date) {
+            const idDate = new Date(ext.issue_date);
+            if (!isNaN(idDate.getTime())) {
+              const prevMonthLast = new Date(idDate.getFullYear(), idDate.getMonth(), 0);
+              const y = prevMonthLast.getFullYear();
+              const m = String(prevMonthLast.getMonth() + 1).padStart(2, '0');
+              const d = String(prevMonthLast.getDate()).padStart(2, '0');
+              pFrom = pFrom || `${y}-${m}-01`;
+              pTo = pTo || `${y}-${m}-${d}`;
+            }
           }
         }
 
@@ -607,6 +638,19 @@ const TelecomBillTab = ({
           period_to: pTo,
           issue_date: ext.issue_date || '',
           due_date: ext.due_date || '',
+          summary: {
+            bill_number: bNo,
+            mobile_number: mNo,
+            telecom_provider: ext.telecom_provider || 'Etisalat',
+            total_bill: tBill,
+            plan_rental: pRental,
+            usage_charges: uCharge,
+            vat_current_period: vVal,
+            period_from: pFrom,
+            period_to: pTo,
+            issue_date: ext.issue_date || '',
+            due_date: ext.due_date || ''
+          },
           rows: extractedTableRows
         });
         setViewMode('table');
@@ -638,20 +682,20 @@ const TelecomBillTab = ({
       const callLogs = pdfParsedData?.call_logs || [];
 
       const payload = {
-        bill_number: summary.bill_number || summary['Bill Number'] || '',
-        mobile_number: summary.mobile_number || summary['Mobile Number / Account'] || '',
+        bill_number: summary.bill_number || summary['Bill Number'] || pdfParsedData?.billNumber || formData['Bill Number'] || formData.f_billno || '',
+        mobile_number: summary.mobile_number || summary['Mobile Number / Account'] || pdfParsedData?.mobileNumber || formData['Mobile Number / Account'] || formData.f_account || '',
         company_name: selectedCompany || formData.Company || summary.company_name || '',
-        telecom_provider: summary.telecom_provider || summary['Telecom Provider'] || 'Etisalat',
-        total_bill: summary.total_bill || summary['Total Bill'] || 0,
-        plan_rental: summary.plan_rental || summary['Service Rental'] || summary['Monthly Plan Amount'] || 0,
-        usage_charges: summary.usage_charges || summary['Usage Charges'] || 0,
-        vat_current_period: summary.vat_current_period || summary.VAT || 0,
+        telecom_provider: summary.telecom_provider || summary['Telecom Provider'] || pdfParsedData?.telecomProvider || formData['Telecom Provider'] || formData.f_provider || 'Etisalat',
+        total_bill: summary.total_bill || summary['Total Bill'] || pdfParsedData?.totalBill || formData['Total Bill'] || formData.f_total || 0,
+        plan_rental: summary.plan_rental || summary['Service Rental'] || summary['Monthly Plan Amount'] || formData['Service Rental'] || formData.f_rental || 0,
+        usage_charges: summary.usage_charges || summary['Usage Charges'] || formData['Usage Charges'] || formData.f_usage || 0,
+        vat_current_period: summary.vat_current_period || summary.VAT || pdfParsedData?.vat || formData['VAT'] || formData.f_vat || 0,
         pdf_filename: pdfParsedData?.fileName || pdfParsedData?.pdf_filename || summary.pdf_filename || formData['Invoice PDF'] || null,
         pdf_base64: pdfParsedData?.file_base64 || formData['Invoice PDF_base64'] || formData.pdf_base64 || null,
-        period_from: formData['Bill Period From'] || formData.f_from || pdfParsedData?.period_from || null,
-        period_to: formData['Bill Period To'] || formData.f_to || pdfParsedData?.period_to || null,
-        issue_date: formData['Bill Issue Date'] || formData.f_issue || pdfParsedData?.issue_date || null,
-        due_date: formData['Due Date'] || formData.f_due || pdfParsedData?.due_date || null,
+        period_from: pdfParsedData?.period_from || formData['Bill Period From'] || formData.f_from || null,
+        period_to: pdfParsedData?.period_to || formData['Bill Period To'] || formData.f_to || null,
+        issue_date: pdfParsedData?.issue_date || formData['Bill Issue Date'] || formData.f_issue || null,
+        due_date: pdfParsedData?.due_date || formData['Due Date'] || formData.f_due || null,
         items: items,
         call_logs: callLogs,
         custom_field_id: customFields?.id || null,
@@ -771,21 +815,56 @@ const TelecomBillTab = ({
     setSelectedCompany(recCompany);
     const cleanAcc = String(record.mobile_number || parsed['Mobile Number / Account'] || '').replace(/\D/g, '');
     const cleanBillNo = String(record.bill_number || parsed['Bill Number'] || '').trim();
-    const isDu = cleanAcc.startsWith('28') || cleanBillNo.startsWith('I400') || String(record.pdf_filename || '').toLowerCase().includes('du');
+    const isDu = cleanAcc.startsWith('28') || cleanBillNo.startsWith('I400') || cleanBillNo.startsWith('1400') || cleanBillNo.startsWith('0191') || String(record.mobile_number || parsed['Mobile Number / Account'] || '').startsWith('6.') || String(record.pdf_filename || '').toLowerCase().includes('du') || String(record.telecom_provider || parsed['Telecom Provider'] || '').toLowerCase() === 'du';
     const recProv = (isDu && (!parsed['Telecom Provider'] || parsed['Telecom Provider'].toLowerCase() === 'etisalat'))
       ? 'du'
       : (record.telecom_provider || parsed['Telecom Provider'] || '');
 
-    const isJulyEtisalat = cleanBillNo.startsWith('INV204') || String(record.pdf_filename || '').includes('2026-07-01') || cleanAcc.includes('5351011') || cleanAcc.includes('2486345') || cleanAcc.includes('5351779');
-    const autoPeriod = isDu || isJulyEtisalat;
+    let recPeriodFrom = parsed['Bill Period From'] || record.period_from || '';
+    let recPeriodTo = parsed['Bill Period To'] || record.period_to || '';
+    if (!recPeriodFrom) {
+      const fnMatch = String(record.pdf_filename || '').match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
+      if (fnMatch) {
+        const y = parseInt(fnMatch[1], 10);
+        const m = parseInt(fnMatch[2], 10);
+        const lastDay = new Date(y, m, 0).getDate();
+        recPeriodFrom = `${y}-${String(m).padStart(2, '0')}-01`;
+        recPeriodTo = recPeriodTo || `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      } else {
+        const rawIssue = record.issue_date || record.bill_date || parsed['Bill Issue Date'] || parsed['issue_date'];
+        if (rawIssue) {
+          const idDate = new Date(rawIssue);
+          if (!isNaN(idDate.getTime())) {
+            const prevMonthLast = new Date(idDate.getFullYear(), idDate.getMonth(), 0);
+            const y = prevMonthLast.getFullYear();
+            const m = String(prevMonthLast.getMonth() + 1).padStart(2, '0');
+            const d = String(prevMonthLast.getDate()).padStart(2, '0');
+            recPeriodFrom = `${y}-${m}-01`;
+            recPeriodTo = recPeriodTo || `${y}-${m}-${d}`;
+          }
+        }
+      }
+    }
+
+    if (recPeriodFrom && recPeriodTo) {
+      const d1 = new Date(recPeriodFrom);
+      const d2 = new Date(recPeriodTo);
+      if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d1 > d2) {
+        const y = d2.getFullYear();
+        const m = String(d2.getMonth() + 1).padStart(2, '0');
+        const lastDay = new Date(y, d2.getMonth() + 1, 0).getDate();
+        recPeriodFrom = `${y}-${m}-01`;
+        recPeriodTo = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+      }
+    }
 
     setFormData({
       ...parsed,
       Company: recCompany,
       'Telecom Provider': recProv,
       f_provider: recProv,
-      'Bill Period From': parsed['Bill Period From'] || record.period_from || (autoPeriod ? '2026-07-01' : ''),
-      'Bill Period To': parsed['Bill Period To'] || record.period_to || (autoPeriod ? '2026-07-31' : ''),
+      'Bill Period From': recPeriodFrom,
+      'Bill Period To': recPeriodTo,
       status: (record.status && record.status.toLowerCase() !== 'pending') ? record.status : 'Active'
     });
     setPdfParsedData(null);
@@ -800,14 +879,73 @@ const TelecomBillTab = ({
       return;
     }
     setIsViewOnly(true);
-    setEditingRecord(record);
-    setWizardStep(2);
+
     let parsed = {};
     if (record.field_data) {
       try {
         parsed = typeof record.field_data === 'string' ? JSON.parse(record.field_data) : record.field_data;
       } catch (e) {}
     }
+
+    let recPeriodFrom = parsed['Bill Period From'] || record.period_from || record.bill_period_from || '';
+    let recPeriodTo = parsed['Bill Period To'] || record.period_to || record.bill_period_to || '';
+    if (!recPeriodFrom) {
+      const fn = String(record.pdf_filename || '');
+      const fnMatch = fn.match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
+      if (fnMatch) {
+        const y = parseInt(fnMatch[1], 10);
+        const m = parseInt(fnMatch[2], 10);
+        const lastDay = new Date(y, m, 0).getDate();
+        recPeriodFrom = `${y}-${String(m).padStart(2, '0')}-01`;
+        recPeriodTo = recPeriodTo || `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      } else {
+        const monthNames = {
+          january: '01', feb: '02', february: '02', mar: '03', march: '03',
+          apr: '04', april: '04', may: '05', jun: '06', june: '06',
+          jul: '07', july: '07', aug: '08', august: '08', sep: '09', september: '09',
+          oct: '10', october: '10', nov: '11', november: '11', dec: '12', december: '12'
+        };
+        const mMatch = fn.match(/(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)/i);
+        if (mMatch) {
+          const mNum = monthNames[mMatch[1].toLowerCase()];
+          if (mNum) {
+            const yrMatch = fn.match(/(20\d{2})/);
+            const y = yrMatch ? yrMatch[1] : '2026';
+            const lastDay = new Date(parseInt(y, 10), parseInt(mNum, 10), 0).getDate();
+            recPeriodFrom = `${y}-${mNum}-01`;
+            recPeriodTo = recPeriodTo || `${y}-${mNum}-${String(lastDay).padStart(2, '0')}`;
+          }
+        }
+      }
+    }
+
+    if (recPeriodFrom && recPeriodTo) {
+      const d1 = new Date(recPeriodFrom);
+      const d2 = new Date(recPeriodTo);
+      if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d1 > d2) {
+        const y = d2.getFullYear();
+        const m = String(d2.getMonth() + 1).padStart(2, '0');
+        const lastDay = new Date(y, d2.getMonth() + 1, 0).getDate();
+        recPeriodFrom = `${y}-${m}-01`;
+        recPeriodTo = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+      }
+    }
+
+    let finalBillNo = record.bill_number;
+    if (!finalBillNo || finalBillNo === 'MULLAH' || !/\d/.test(finalBillNo)) {
+      const fnBillMatch = String(record.pdf_filename || '').match(/(0191\d{6}|I400\d{6,12}|1400\d{6,12})/);
+      if (fnBillMatch) {
+        finalBillNo = fnBillMatch[1];
+      }
+    }
+
+    setEditingRecord({
+      ...record,
+      bill_number: finalBillNo || record.bill_number,
+      period_from: recPeriodFrom || record.period_from,
+      period_to: recPeriodTo || record.period_to
+    });
+    setWizardStep(2);
     const recClient = String(record.clientid || user?.clientid || '');
     const recCompany = String(record.company_id || parsed.Company || parsed.company_id || '');
     setSelectedClient(recClient);
@@ -829,7 +967,26 @@ const TelecomBillTab = ({
         const res = await fetch(`${API_URL}/api/telecom-bills/${bId}`);
         if (res.ok) {
           const fresh = await res.json();
-          setEditingRecord(prev => ({ ...prev, ...fresh }));
+          let fFrom = fresh.period_from || recPeriodFrom;
+          let fTo = fresh.period_to || recPeriodTo;
+          if (fFrom && fTo) {
+            const d1 = new Date(fFrom);
+            const d2 = new Date(fTo);
+            if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d1 > d2) {
+              const y = d2.getFullYear();
+              const m = String(d2.getMonth() + 1).padStart(2, '0');
+              const lastDay = new Date(y, d2.getMonth() + 1, 0).getDate();
+              fFrom = `${y}-${m}-01`;
+              fTo = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+            }
+          }
+          setEditingRecord(prev => ({
+            ...prev,
+            ...fresh,
+            bill_number: (fresh.bill_number && fresh.bill_number !== 'MULLAH' && /\d/.test(fresh.bill_number)) ? fresh.bill_number : (prev?.bill_number || finalBillNo),
+            period_from: fFrom,
+            period_to: fTo
+          }));
           if (fresh.items && fresh.items.length > 0) {
             setPdfParsedData({ rows: fresh.items });
           }
@@ -1340,7 +1497,7 @@ const TelecomBillTab = ({
 
               const cleanAcc = String(account || '').replace(/\D/g, '');
               const cleanBillNo = String(r.bill_number || '').trim();
-              const isDuBill = cleanAcc.startsWith('28') || cleanBillNo.startsWith('I400') || cleanBillNo.startsWith('1400') || String(r.pdf_filename || '').toLowerCase().includes('du');
+              const isDuBill = cleanAcc.startsWith('28') || cleanBillNo.startsWith('I400') || cleanBillNo.startsWith('1400') || cleanBillNo.startsWith('0191') || String(account || '').startsWith('6.') || String(r.pdf_filename || '').toLowerCase().includes('du') || String(r.telecom_provider || r.provider || '').toLowerCase() === 'du';
               if (isDuBill && (provider === '—' || provider.toLowerCase() === 'etisalat')) {
                 provider = 'du';
               }
@@ -1363,20 +1520,43 @@ const TelecomBillTab = ({
                 return s.length >= 10 ? s.slice(0, 10) : s;
               };
 
-              let startDateRaw = r.period_from || r.bill_period_from || fd['Bill Period From'] || fd['period_from'] || fd['f_from'];
+              let startDateRaw = r.period_from || r.bill_period_from || r.bill_month || r.bill_date || fd['Bill Period From'] || fd['period_from'] || fd['f_from'] || fd['Bill Month'] || fd['Bill Date'] || fd['f_month'];
               let endDateRaw = r.period_to || r.bill_period_to || fd['Bill Period To'] || fd['period_to'] || fd['f_to'];
 
-              const isJulyBill = isDuBill ||
-                String(r.pdf_filename || '').includes('2026-07-01') ||
-                String(r.bill_number || '').startsWith('INV204') ||
-                String(account || '').includes('5351011') ||
-                String(account || '').includes('2486345') ||
-                String(account || '').includes('5351779') ||
-                String(provider || '').toLowerCase().includes('etisalat');
+              if (!startDateRaw || !endDateRaw) {
+                const fnMatch = String(r.pdf_filename || '').match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
+                if (fnMatch) {
+                  const y = parseInt(fnMatch[1], 10);
+                  const m = parseInt(fnMatch[2], 10);
+                  const lastDay = new Date(y, m, 0).getDate();
+                  if (!startDateRaw) startDateRaw = `${y}-${String(m).padStart(2, '0')}-01`;
+                  if (!endDateRaw) endDateRaw = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+                } else {
+                  const rawIssue = r.issue_date || r.bill_date || fd['Bill Issue Date'] || fd['issue_date'];
+                  if (rawIssue) {
+                    const idDate = new Date(rawIssue);
+                    if (!isNaN(idDate.getTime())) {
+                      const prevMonthLast = new Date(idDate.getFullYear(), idDate.getMonth(), 0);
+                      const y = prevMonthLast.getFullYear();
+                      const m = String(prevMonthLast.getMonth() + 1).padStart(2, '0');
+                      const d = String(prevMonthLast.getDate()).padStart(2, '0');
+                      if (!startDateRaw) startDateRaw = `${y}-${m}-01`;
+                      if (!endDateRaw) endDateRaw = `${y}-${m}-${d}`;
+                    }
+                  }
+                }
+              }
 
-              if ((!startDateRaw || !endDateRaw) && isJulyBill) {
-                if (!startDateRaw) startDateRaw = '2026-07-01';
-                if (!endDateRaw) endDateRaw = '2026-07-31';
+              if (startDateRaw && endDateRaw) {
+                const ds = new Date(startDateRaw);
+                const de = new Date(endDateRaw);
+                if (!isNaN(ds.getTime()) && !isNaN(de.getTime()) && ds > de) {
+                  const y = de.getFullYear();
+                  const m = String(de.getMonth() + 1).padStart(2, '0');
+                  const lastDay = new Date(y, de.getMonth() + 1, 0).getDate();
+                  startDateRaw = `${y}-${m}-01`;
+                  endDateRaw = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+                }
               }
 
               const formattedStart = formatPeriodDate(startDateRaw);
@@ -1786,7 +1966,10 @@ const TelecomBillTab = ({
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
                               <Ionicons name="barcode-outline" size={18} color="#64748B" />
                               <Text style={styles.viewGridValue}>
-                                {editingRecord?.bill_number || editingRecord?.['Bill Number'] || `BILL-#${editingRecord?.tele_bill_id || editingRecord?.id || ''}`}
+                                {((editingRecord?.bill_number && editingRecord.bill_number !== 'MULLAH' && /\d/.test(editingRecord.bill_number)) ? editingRecord.bill_number : null) ||
+                                 editingRecord?.['Bill Number'] ||
+                                 (String(editingRecord?.pdf_filename || '').match(/(0191\d{6}|I400\d{6,12}|1400\d{6,12})/)?.[1]) ||
+                                 `BILL-#${editingRecord?.tele_bill_id || editingRecord?.id || ''}`}
                               </Text>
                             </View>
                           </View>
@@ -1797,7 +1980,7 @@ const TelecomBillTab = ({
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
                               <Ionicons name="calendar-clear-outline" size={18} color="#64748B" />
                               <Text style={styles.viewGridValue}>
-                                {editingRecord?.period_from || editingRecord?.['Bill Period From'] || '01 Jul 2026'}
+                                {formatBillDateDisplay(editingRecord?.period_from || editingRecord?.['Bill Period From'] || editingRecord?.bill_period_from || editingRecord?.field_data?.['Bill Period From'] || editingRecord?.field_data?.period_from || editingRecord?.field_data?.f_from)}
                               </Text>
                             </View>
                           </View>
@@ -1808,7 +1991,7 @@ const TelecomBillTab = ({
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
                               <Ionicons name="calendar-outline" size={18} color="#64748B" />
                               <Text style={styles.viewGridValue}>
-                                {editingRecord?.period_to || editingRecord?.['Bill Period To'] || '31 Jul 2026'}
+                                {formatBillDateDisplay(editingRecord?.period_to || editingRecord?.['Bill Period To'] || editingRecord?.bill_period_to || editingRecord?.field_data?.['Bill Period To'] || editingRecord?.field_data?.period_to || editingRecord?.field_data?.f_to)}
                               </Text>
                             </View>
                           </View>

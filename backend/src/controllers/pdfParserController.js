@@ -130,7 +130,8 @@ exports.parsePdfDocument = async (req, res) => {
     // Helper to format raw date string to YYYY-MM-DD
     const parseToStandardDate = (dateStr) => {
       if (!dateStr) return '';
-      const cleaned = dateStr.trim();
+      // Strip ordinal suffixes like "1st", "2nd", "3rd", "31st"
+      let cleaned = String(dateStr).replace(/(\d{1,2})(st|nd|rd|th)/gi, '$1').trim();
       const monthMap = {
         jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
         jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
@@ -170,7 +171,7 @@ exports.parsePdfDocument = async (req, res) => {
 
     // Helper to find all valid dates in rawText
     const allFoundDates = [];
-    const globalDateRegex = /(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})/gi;
+    const globalDateRegex = /(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})/gi;
     let dateMatch;
     while ((dateMatch = globalDateRegex.exec(rawText)) !== null) {
       const std = parseToStandardDate(dateMatch[1]);
@@ -181,31 +182,39 @@ exports.parsePdfDocument = async (req, res) => {
 
     // C. Match Document / Bill Number Regex
     const docNoPatterns = [
-      /\b(INV[-/A-Z0-9]{4,25}|BILL[-/A-Z0-9]{4,25}|I400\d{6,12}|1400\d{6,12}|100\d{7,12})\b/i,
-      /(?:bill\s*number|invoice\s*number|doc(?:ument)?\s*number|contract\s*no|ref(?:erence)?|agreement|inv\s*no|tax\s*invoice\s*no|invoice\s*#|bill\s*#|tax\s*invoice\s*#)\s*[:.-]?\s*[\r\n]*\s*([A-Z0-9/-]{4,35})/i,
-      /(?:invoice|bill|tax\s*invoice)\s*:\s*([A-Z0-9/-]{4,35})/i
+      /(?:your\s*bill\s*number|bill\s*number)\s*[:.-]?\s*[\r\n\s]*(\d{7,12}|0191\d{6}|I400\d+|1400\d+)/i,
+      /\b(INV[-/A-Z0-9]{4,25}|BILL[-/A-Z0-9]{4,25}|I400\d{6,12}|1400\d{6,12}|100\d{7,12}|0191\d{6})\b/i,
+      /(?:your\s*bill\s*number|bill\s*number|invoice\s*number|tax\s*invoice\s*no|inv\s*no)\s*[:.-]?\s*([A-Z0-9/-]{5,35})/i,
+      /(?:invoice|bill|tax\s*invoice)\s*[:.-]\s*([A-Z0-9/-]{4,35})/i
     ];
     for (const pat of docNoPatterns) {
       const m = rawText.match(pat);
       if (m && m[1] && m[1].trim().length > 3) {
         const cand = m[1].trim();
+        // A valid bill/doc number must contain digits (avoids matching address words like MULLAH or WAREHOUSE)
+        if (!/\d/.test(cand)) continue;
         if (!/^(your|bill|account|number|date|invoice|summary|total|period|issue)$/i.test(cand)) {
           matchedDocNumber = cand;
           break;
         }
       }
     }
+    // Also check filename for standard bill numbers if still missing
+    if (!matchedDocNumber && file_name) {
+      const fnBillMatch = String(file_name).match(/(0191\d{6}|I400\d{6,12}|1400\d{6,12}|INV\d{6,12})/i);
+      if (fnBillMatch) matchedDocNumber = fnBillMatch[1];
+    }
 
     // D. Match Account Number / Mobile Number Regex
     const accNoPatterns = [
-      /(?:for\s*account\s*number|customer\s*account\s*number|account\s*number|acc\s*no|mobile\s*number|phone\s*no|subscriber\s*no|cust\s*acc|service\s*no|account\s*id|service\s*id)\s*[:.-]?\s*[\r\n]*\s*([\d\s-]{7,25})/i,
-      /(?:account|mobile|phone|service)\s*:\s*([\d\s-]{7,25})/i
+      /(?:your\s*account\s*number|for\s*account\s*number|customer\s*account\s*number|account\s*number|acc\s*no|mobile\s*number|phone\s*no|subscriber\s*no|cust\s*acc|service\s*no|account\s*id|service\s*id)\s*[:.-]?\s*[\r\n]*\s*([\d\s.-]{6,25})/i,
+      /(?:account|mobile|phone|service)\s*:\s*([\d\s.-]{6,25})/i
     ];
     for (const pat of accNoPatterns) {
       const m = rawText.match(pat);
       if (m && m[1]) {
         const cand = m[1].replace(/\s+/g, ' ').trim();
-        if (!/^(your|bill|account|number|date|invoice)$/i.test(cand) && cand.length >= 7) {
+        if (!/^(your|bill|account|number|date|invoice)$/i.test(cand) && cand.length >= 6) {
           matchedMobileAccount = cand;
           break;
         }
@@ -230,8 +239,8 @@ exports.parsePdfDocument = async (req, res) => {
 
     // E. Match Bill Issue Date
     const issueDatePatterns = [
-      /(?:bill\s*issue\s*date|issue\s*date|billing\s*date|invoice\s*date|statement\s*date|tax\s*invoice\s*date|date)\s*[:.-]?\s*[\r\n]*\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})/i,
-      /(?:date\s*of\s*issue)\s*[:.-]?\s*[\r\n]*\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})/i
+      /(?:your\s*bill\s*issue\s*date|bill\s*issue\s*date|issue\s*date|billing\s*date|invoice\s*date|statement\s*date|tax\s*invoice\s*date|date)\s*[:.-]?\s*[\r\n]*\s*(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})/i,
+      /(?:date\s*of\s*issue)\s*[:.-]?\s*[\r\n]*\s*(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})/i
     ];
     for (const pat of issueDatePatterns) {
       const m = rawText.match(pat);
@@ -247,7 +256,7 @@ exports.parsePdfDocument = async (req, res) => {
     // F. Match Due Date / Expiry Date / Pay Before
     let matchedDueDate = '';
     const dueDatePatterns = [
-      /(?:pay\s*before|due\s*date|payment\s*due|expir(?:y|ation)\s*date|valid\s*until|payment\s*due\s*date)\s*[:.-]?\s*[\r\n]*\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})/i
+      /(?:your\s*due\s*date|pay\s*before|due\s*date|payment\s*due|expir(?:y|ation)\s*date|valid\s*until|payment\s*due\s*date)\s*[:.-]?\s*[\r\n]*\s*(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})/i
     ];
     for (const pat of dueDatePatterns) {
       const m = rawText.match(pat);
@@ -265,18 +274,65 @@ exports.parsePdfDocument = async (req, res) => {
     // G. Match Bill Period From & To
     let matchedPeriodFrom = '';
     let matchedPeriodTo = '';
+
+    // 1. du Specific Pattern: Matches "Your bill cycle: 1st Aug - 31st Aug 2026" or "1st - 31st Jul 2026" or "19th Jun - 18th Jul 2026"
+    const duCycleRegex = /(?:your\s*bill\s*cycle|bill\s*cycle)[^\w\n\r]*[\r\n\s]*(\d{1,2}(?:st|nd|rd|th)?)(?:\s+([A-Za-z]{3,9}))?\s*[\u2010-\u2015\-–—−~to\s]+\s*(\d{1,2}(?:st|nd|rd|th)?)\s+([A-Za-z]{3,9})\s+(\d{4})/i;
+    const duCycleMatch = rawText.match(duCycleRegex);
+    if (duCycleMatch) {
+      const sDay = duCycleMatch[1];
+      const eMonth = duCycleMatch[4];
+      const sMonth = duCycleMatch[2] || eMonth;
+      const eDay = duCycleMatch[3];
+      const yr = duCycleMatch[5];
+      matchedPeriodFrom = parseToStandardDate(`${sDay} ${sMonth} ${yr}`);
+      matchedPeriodTo = parseToStandardDate(`${eDay} ${eMonth} ${yr}`);
+    }
+
+    // 2. Fallback du Pattern: Matches "1st Aug - 31st Aug 2026" or "1st - 31st Jul 2026" anywhere in text
+    if (!matchedPeriodFrom || !matchedPeriodTo) {
+      const generalCycleRegex = /\b(\d{1,2}(?:st|nd|rd|th)?)(?:\s+([A-Za-z]{3,9}))?\s*[\u2010-\u2015\-–—−~to\s]+\s*(\d{1,2}(?:st|nd|rd|th)?)\s+([A-Za-z]{3,9})\s+(\d{4})\b/i;
+      const gMatch = rawText.match(generalCycleRegex);
+      if (gMatch) {
+        const sDay = gMatch[1];
+        const eMonth = gMatch[4];
+        const sMonth = gMatch[2] || eMonth;
+        const eDay = gMatch[3];
+        const yr = gMatch[5];
+        matchedPeriodFrom = parseToStandardDate(`${sDay} ${sMonth} ${yr}`);
+        matchedPeriodTo = parseToStandardDate(`${eDay} ${eMonth} ${yr}`);
+      }
+    }
+
+    // 3. Standard Period Patterns
     const periodPatterns = [
+      /(?:bill\s*period|billing\s*period)\s*[:.-]?\s*[\r\n\s]*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})\s*[\u2010-\u2015\-–—−~to\s]+\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})/i,
+      /\b(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})\s*[\u2010-\u2015\-–—−~to\s]+\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})\b/i,
       /(?:bill\s*period|billing\s*period|billing\s*cycle|bill\s*cycle|usage\s*period|statement\s*period|period|duration)[^\w\n\r]*[\r\n\s]*(\d{1,2}[\s\/\.-]+[A-Za-z0-9]{3,9}[\s\/\.-]+\d{2,4})[\s\u00A0]*[\u2010-\u2015\-–—−~to\s]+[\s\u00A0]*(\d{1,2}[\s\/\.-]+[A-Za-z0-9]{3,9}[\s\/\.-]+\d{2,4})/i,
       /(?:for\s*the\s*period|period\s*covered|from)[^\w\n\r]*[\r\n\s]*(\d{1,2}[\s\/\.-]+[A-Za-z0-9]{3,9}[\s\/\.-]+\d{2,4})[\s\u00A0]*[\u2010-\u2015\-–—−~to\s]+[\s\u00A0]*(\d{1,2}[\s\/\.-]+[A-Za-z0-9]{3,9}[\s\/\.-]+\d{2,4})/i,
       /(\d{1,2}[\s\/\.-]+[A-Za-z]{3,9}[\s\/\.-]+\d{2,4})[\s\u00A0]*[\u2010-\u2015\-–—−~to\s]+[\s\u00A0]*(\d{1,2}[\s\/\.-]+[A-Za-z]{3,9}[\s\/\.-]+\d{2,4})/i,
       /(\d{2}[\/\.-]\d{2}[\/\.-]\d{4})[\s\u00A0]*[\u2010-\u2015\-–—−~to\s]+[\s\u00A0]*(\d{2}[\/\.-]\d{2}[\/\.-]\d{4})/i
     ];
-    for (const pat of periodPatterns) {
-      const m = rawText.match(pat);
-      if (m) {
-        matchedPeriodFrom = parseToStandardDate(m[1].trim());
-        matchedPeriodTo = parseToStandardDate(m[2].trim());
-        break;
+    if (!matchedPeriodFrom || !matchedPeriodTo) {
+      for (const pat of periodPatterns) {
+        const m = rawText.match(pat);
+        if (m) {
+          matchedPeriodFrom = parseToStandardDate(m[1].trim());
+          matchedPeriodTo = parseToStandardDate(m[2].trim());
+          if (matchedPeriodFrom && matchedPeriodTo) break;
+        }
+      }
+    }
+
+    // Match Tax Point Date (e.g. Tax Point Date: 31 May 2026) for Etisalat bills
+    if (!matchedPeriodFrom || !matchedPeriodTo) {
+      const taxPointMatch = rawText.match(/(?:tax\s*point\s*date|tax\s*date)\s*[:.-]?\s*[\r\n]*\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{2,4}|\d{1,4}[\/\.-]\d{1,2}[\/\.-]\d{1,4})/i);
+      if (taxPointMatch && taxPointMatch[1]) {
+        const stdTaxDate = parseToStandardDate(taxPointMatch[1].trim());
+        if (stdTaxDate && stdTaxDate.length === 10) {
+          const [y, m] = stdTaxDate.split('-');
+          if (!matchedPeriodFrom) matchedPeriodFrom = `${y}-${m}-01`;
+          if (!matchedPeriodTo) matchedPeriodTo = stdTaxDate;
+        }
       }
     }
 
@@ -292,7 +348,28 @@ exports.parsePdfDocument = async (req, res) => {
       }
     }
 
-    // Deduce preceding month from bill issue date (e.g. Issue: 01 Aug 2026 -> Period: 01 Jul - 31 Jul 2026)
+    // Deduce from month name in filename (e.g. Du_warehouse_August_0191049864.pdf)
+    if (!matchedPeriodFrom || !matchedPeriodTo) {
+      const monthNames = {
+        january: '01', feb: '02', february: '02', mar: '03', march: '03',
+        apr: '04', april: '04', may: '05', jun: '06', june: '06',
+        jul: '07', july: '07', aug: '08', august: '08', sep: '09', september: '09',
+        oct: '10', october: '10', nov: '11', november: '11', dec: '12', december: '12'
+      };
+      const mMatch = String(file_name || '').match(/(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)/i);
+      if (mMatch) {
+        const mNum = monthNames[mMatch[1].toLowerCase()];
+        if (mNum) {
+          const yrMatch = String(file_name || '').match(/(20\d{2})/);
+          const y = yrMatch ? yrMatch[1] : '2026';
+          const lastDay = new Date(parseInt(y, 10), parseInt(mNum, 10), 0).getDate();
+          if (!matchedPeriodFrom) matchedPeriodFrom = `${y}-${mNum}-01`;
+          if (!matchedPeriodTo) matchedPeriodTo = `${y}-${mNum}-${String(lastDay).padStart(2, '0')}`;
+        }
+      }
+    }
+
+    // Deduce preceding month from bill issue date (e.g. Issue: 01 Jun 2026 -> Period: 01 May - 31 May 2026)
     if ((!matchedPeriodFrom || !matchedPeriodTo) && matchedIssueDate) {
       try {
         const parts = String(matchedIssueDate).split('-');
@@ -309,10 +386,17 @@ exports.parsePdfDocument = async (req, res) => {
       } catch (e) {}
     }
 
-    // Fallback for Etisalat July 2026 invoices
-    if (!matchedPeriodFrom && (/INV204/i.test(matchedDocNumber) || String(matchedMobileAccount).includes('2486345') || String(matchedMobileAccount).includes('5351011') || String(file_name).toLowerCase().includes('etisalat'))) {
-      matchedPeriodFrom = '2026-07-01';
-      matchedPeriodTo = '2026-07-31';
+    // Inverted check: If start date is after end date (e.g. 18 Apr to 01 Apr)
+    if (matchedPeriodFrom && matchedPeriodTo) {
+      const d1 = new Date(matchedPeriodFrom);
+      const d2 = new Date(matchedPeriodTo);
+      if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d1 > d2) {
+        const y = d2.getFullYear();
+        const m = String(d2.getMonth() + 1).padStart(2, '0');
+        const lastDay = new Date(y, d2.getMonth() + 1, 0).getDate();
+        matchedPeriodFrom = `${y}-${m}-01`;
+        matchedPeriodTo = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+      }
     }
 
     // H. Match Service Rentals
@@ -361,10 +445,10 @@ exports.parsePdfDocument = async (req, res) => {
 
     // 1. du detection signals
     const isDuFileName = cleanFileName.includes('-du') || cleanFileName.includes('du-') || cleanFileName.includes('_du') || cleanFileName.includes('du.') || cleanFileName.includes('du_');
-    const isDuAccount = cleanAccount.startsWith('28') && cleanAccount.length >= 8 && cleanAccount.length <= 12;
-    const isDuBillNo = /^I400/i.test(cleanDocNo) || /^1400/i.test(cleanDocNo) || /^I5/i.test(cleanDocNo) || /^INV-DU/i.test(cleanDocNo);
-    const isDuKeywords = /\b(du\.ae|eitc|eitc\.ae|emirates integrated telecommunications|power\s*\d+\s*data\s*flexi|a closer look at your mobile plans|payment slip\s*-\s*du|po\s*box\s*502666|business mobile plan)\b/i.test(rawText) ||
-      (/\bdu\b/i.test(rawText) && (rawText.toLowerCase().includes('telecom') || rawText.toLowerCase().includes('invoice') || rawText.toLowerCase().includes('bill')));
+    const isDuAccount = (cleanAccount.startsWith('28') && cleanAccount.length >= 8 && cleanAccount.length <= 12) || /^6\.\d{5,7}$/.test(String(matchedMobileAccount || '').trim());
+    const isDuBillNo = /^I400/i.test(cleanDocNo) || /^1400/i.test(cleanDocNo) || /^I5/i.test(cleanDocNo) || /^INV-DU/i.test(cleanDocNo) || /^0191\d{6}/.test(cleanDocNo);
+    const isDuKeywords = /\b(du\.ae|eitc|eitc\.ae|emirates integrated telecommunications|power\s*\d+\s*data\s*flexi|a closer look at your mobile plans|payment slip\s*-\s*du|po\s*box\s*502666|business mobile plan|du\s*business|your\s*bill\s*cycle)\b/i.test(rawText) ||
+      (/\bdu\b/i.test(rawText) && (rawText.toLowerCase().includes('telecom') || rawText.toLowerCase().includes('invoice') || rawText.toLowerCase().includes('bill') || rawText.toLowerCase().includes('business')));
 
     // 2. Etisalat detection signals
     const isEtisalatFileName = cleanFileName.includes('etisalat') || cleanFileName.includes('e&');
@@ -502,6 +586,18 @@ exports.parsePdfDocument = async (req, res) => {
           if (!dynamicFieldMap[snakeK]) dynamicFieldMap[snakeK] = v;
         }
       }
+    }
+
+    const billCycleDate = matchedPeriodFrom || matchedIssueDate;
+    if (billCycleDate) {
+      dynamicFieldMap['bill_month'] = billCycleDate;
+      dynamicFieldMap['bill month'] = billCycleDate;
+      dynamicFieldMap['bill_date'] = billCycleDate;
+      dynamicFieldMap['bill date'] = billCycleDate;
+      dynamicFieldMap['billing_month'] = billCycleDate;
+      dynamicFieldMap['billing month'] = billCycleDate;
+      dynamicFieldMap['billing_date'] = billCycleDate;
+      dynamicFieldMap['billing date'] = billCycleDate;
     }
 
     // Helper for Layer 2: Prefix Fallback Categorization
@@ -768,6 +864,8 @@ exports.parsePdfDocument = async (req, res) => {
         mobile_account: matchedMobileAccount,
         doc_number: matchedDocNumber,
         bill_number: matchedDocNumber,
+        bill_month: matchedPeriodFrom || matchedIssueDate,
+        bill_date: matchedPeriodFrom || matchedIssueDate,
         issue_date: matchedIssueDate,
         expiry_date: matchedExpiryDate,
         due_date: matchedDueDate || matchedExpiryDate,
