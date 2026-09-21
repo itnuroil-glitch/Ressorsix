@@ -116,6 +116,7 @@ const resolveDatesFromPdfFile = async (rawPdfFilename, billNumber) => {
     let dueDate = null;
     let billNumberResolved = null;
     let accountNumberResolved = null;
+    let mobileNumbersResolved = [];
 
     if (rawText) {
       // 1. du Specific Pattern: Matches "Your bill cycle: 1st Aug - 31st Aug 2026" or "1st - 31st Jul 2026"
@@ -200,6 +201,19 @@ const resolveDatesFromPdfFile = async (rawPdfFilename, billNumber) => {
       if (duAccNoMatch) {
         accountNumberResolved = duAccNoMatch[1].trim();
       }
+
+      // 8. Match Mobile Numbers under Plans included in this bill
+      const duMobileRegex = /\b(05[024568](?:[\s.-]?\d){7})\b/g;
+      const plansSection = rawText.match(/plans\s*included\s*in\s*this\s*bill[\s\S]{1,600}?(?=bill\s*information|your\s*bill\s*cycle|your\s*account)/i);
+      mobileNumbersResolved = [];
+      if (plansSection) {
+        const pMatches = plansSection[0].match(duMobileRegex) || [];
+        mobileNumbersResolved = [...new Set(pMatches.map(m => m.replace(/[\s.-]/g, '').trim()))].filter(m => m.length === 10);
+      }
+      if (mobileNumbersResolved.length === 0) {
+        const allMatches = rawText.match(duMobileRegex) || [];
+        mobileNumbersResolved = [...new Set(allMatches.map(m => m.replace(/[\s.-]/g, '').trim()))].filter(m => m.length === 10);
+      }
     }
 
     // Fallback: Check filename for date pattern (e.g. 0501070455_2027529957_2026-04-01.pdf)
@@ -257,7 +271,7 @@ const resolveDatesFromPdfFile = async (rawPdfFilename, billNumber) => {
       }
     }
 
-    const resObj = { periodFrom, periodTo, issueDate, dueDate, billNumber: billNumberResolved, accountNumber: accountNumberResolved };
+    const resObj = { periodFrom, periodTo, issueDate, dueDate, billNumber: billNumberResolved, accountNumber: accountNumberResolved, mobileNumbers: mobileNumbersResolved || [] };
     pdfDatesCache.set(cacheKey, resObj);
     return resObj;
   } catch (err) {
@@ -516,6 +530,9 @@ exports.getAllTelecomBills = async (req, res) => {
           if (resolved.billNumber && (!billNumber || billNumber === 'MULLAH' || !/\d/.test(billNumber))) {
             billNumber = resolved.billNumber;
           }
+          if (resolved.mobileNumbers && resolved.mobileNumbers.length > 0) {
+            row.mobile_numbers = resolved.mobileNumbers;
+          }
         }
       }
 
@@ -605,7 +622,9 @@ exports.getAllTelecomBills = async (req, res) => {
         Company: row.company_name,
         'Bill Number': cleanBillResult,
         bill_number: cleanBillResult,
-        'Mobile Number / Account': row.mobile_number,
+        'Mobile Number / Account': (row.mobile_numbers && row.mobile_numbers.length > 0) ? row.mobile_numbers.join(', ') : row.mobile_number,
+        mobile_number: (row.mobile_numbers && row.mobile_numbers.length > 0) ? row.mobile_numbers.join(', ') : row.mobile_number,
+        mobile_numbers: row.mobile_numbers || [],
         'Telecom Provider': providerVal,
         'Total Bill': totalAmt,
         'VAT': vatAmt,
@@ -708,6 +727,10 @@ exports.getTelecomBillById = async (req, res) => {
         if (!dueDate && resolved.dueDate) dueDate = resolved.dueDate;
         if (resolved.billNumber && (!billNumber || billNumber === 'MULLAH' || !/\d/.test(billNumber))) {
           billNumber = resolved.billNumber;
+        }
+        if (resolved.mobileNumbers && resolved.mobileNumbers.length > 0) {
+          row.mobile_numbers = resolved.mobileNumbers;
+          row.mobile_number = resolved.mobileNumbers.join(', ');
         }
       }
     }
