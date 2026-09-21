@@ -729,13 +729,13 @@ exports.getAccountNumbers = async (req, res) => {
         if (!sv || sv === 'null' || sv === 'undefined') continue;
 
         const fn = (idToName[k] || k).trim().toLowerCase();
-        // Explicitly exclude contract numbers from account numbers
-        if (fn.includes('contract') || k.trim() === '1786100950188') continue;
+        // Explicitly exclude contract numbers and ICCID from account numbers
+        if (fn.includes('contract') || k.trim() === '1786100950188' || k.trim() === '1786109466050') continue;
 
         if (!accNo && fn.includes('account')) {
           accNo = sv;
         }
-        if (!accNo && (k === '1786109466050' || k === '1787404908551')) {
+        if (!accNo && k === '1787404908551') {
           accNo = sv;
         }
         if (!planName && (fn.includes('plan') || fn.includes('package')) && !fn.includes('amount')) {
@@ -750,7 +750,10 @@ exports.getAccountNumbers = async (req, res) => {
         if (!employee && (fn.includes('employee') || fn.includes('assigned'))) {
           employee = sv;
         }
-        if (!simNo && fn.includes('sim') && (fn.includes('number') || fn.includes('no') || fn.includes('iccid'))) {
+        if (!simNo && (fn.includes('iccid') || (fn.includes('sim') && (fn.includes('number') || fn.includes('no'))))) {
+          simNo = sv;
+        }
+        if (!simNo && k.trim() === '1786109466050') {
           simNo = sv;
         }
         if (!mobileNo && (k === '1786109549415' || fn.includes('mobile') || fn.includes('phone'))) {

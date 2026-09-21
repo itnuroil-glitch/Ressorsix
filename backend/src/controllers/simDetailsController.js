@@ -79,16 +79,19 @@ exports.getAllSimDetails = async (req, res) => {
           mobileNumber = sv;
         }
 
-        // SIM Number
-        if (!simNumber && fn.includes('sim') && (fn.includes('number') || fn.includes('no') || fn.includes('iccid'))) {
+        // SIM Number / ICCID
+        if (!simNumber && (fn.includes('iccid') || (fn.includes('sim') && (fn.includes('number') || fn.includes('no'))))) {
+          simNumber = sv;
+        }
+        if (!simNumber && k === '1786109466050') {
           simNumber = sv;
         }
 
         // Account Number
-        if (!accountNumber && fn.includes('account') && !fn.includes('contract') && k !== '1786100950188') {
+        if (!accountNumber && fn.includes('account') && !fn.includes('contract') && k !== '1786100950188' && k !== '1786109466050') {
           accountNumber = sv;
         }
-        if (!accountNumber && (k === '1786109466050' || k === '1787404908551')) {
+        if (!accountNumber && k === '1787404908551') {
           accountNumber = sv;
         }
 

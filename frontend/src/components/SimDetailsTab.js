@@ -326,6 +326,7 @@ export default function SimDetailsTab({
         setSelectedClient(String(user.clientid));
         fetchCompaniesForClient(String(user.clientid));
       }
+      fetchFormConfiguration(user?.clientid ? String(user.clientid) : '');
     } catch (err) {
       console.error('Error fetching initial data:', err);
       showToast('Error loading SIM details', 'error');
@@ -836,9 +837,9 @@ export default function SimDetailsTab({
         company: record.company || record.company_id || fd.company || '',
         telecom_provider: record.telecom_provider || fd.telecom_provider || fd['Telecom Provider'] || '',
         mobile_number: record.mobile_number || fd['1786109549415'] || fd.mobile_number || fd['mobile_number'] || fd['Mobile Number'] || fd['Phone Number'] || fd['Phone'] || '',
-        mobile_account: record.mobile_account || fd['1786109466050'] || fd['1787404908551'] || fd.mobile_account || '',
-        sim_number: record.sim_number || fd.sim_number || fd['SIM Number / ICCID'] || fd['Sim No'] || '',
-        account_number: record.account_number || fd['1786109466050'] || fd['1787404908551'] || fd.account_number || fd['Account Number'] || fd['Account No '] || fd['Account No'] || '',
+        mobile_account: record.mobile_account || fd['1787404908551'] || fd.mobile_account || '',
+        sim_number: record.sim_number || fd['1786109466050'] || fd.sim_number || fd['SIM Number / ICCID'] || fd['Sim No'] || fd['ICCID'] || '',
+        account_number: record.account_number || fd['1787404908551'] || fd.account_number || fd['Account Number'] || fd['Account No '] || fd['Account No'] || '',
         contract_number: record.contract_number || fd['1786100950188'] || fd.contract_number || fd['Contract No'] || fd['Contract No '] || '',
         bill_number: record.bill_number || record.doc_number || fd.bill_number || '',
         doc_number: record.doc_number || record.bill_number || fd.doc_number || '',
@@ -959,13 +960,13 @@ export default function SimDetailsTab({
     const trimmedName = rawName.trim();
     const lowerName = trimmedName.toLowerCase();
 
-    if (formData[id] !== undefined && formData[id] !== null && formData[id] !== '') return String(formData[id]);
-    if (formData[rawName] !== undefined && formData[rawName] !== null && formData[rawName] !== '') return String(formData[rawName]);
-    if (formData[trimmedName] !== undefined && formData[trimmedName] !== null && formData[trimmedName] !== '') return String(formData[trimmedName]);
+    if (formData[id] !== undefined && formData[id] !== null) return String(formData[id]);
+    if (formData[rawName] !== undefined && formData[rawName] !== null) return String(formData[rawName]);
+    if (formData[trimmedName] !== undefined && formData[trimmedName] !== null) return String(formData[trimmedName]);
 
     // Check matching key in formData case-insensitively / trimmed
     const matchKey = Object.keys(formData).find(k => k.trim().toLowerCase() === lowerName);
-    if (matchKey && formData[matchKey] !== undefined && formData[matchKey] !== null && formData[matchKey] !== '') {
+    if (matchKey && formData[matchKey] !== undefined && formData[matchKey] !== null) {
       return String(formData[matchKey]);
     }
 
@@ -989,6 +990,61 @@ export default function SimDetailsTab({
     if (lowerName.includes('connection type')) return String(formData.connection_type || formData['Connection Type'] || formData['Connection Type '] || '');
 
     return '';
+  };
+
+  const handleCustomFieldChange = (field, val) => {
+    handleChange(field.id, val);
+    if (field.name) {
+      handleChange(field.name, val);
+      if (field.name.trim()) handleChange(field.name.trim(), val);
+    }
+    const fName = String(field.name || '').toLowerCase();
+    if (fName.includes('account')) {
+      handleChange('account_number', val);
+      handleChange('Account No', val);
+      handleChange('Account Number', val);
+      handleChange('Account No ', val);
+    }
+    if (fName.includes('mobile') || fName.includes('phone')) handleChange('mobile_number', val);
+    if (fName.includes('sim number') || fName.includes('iccid') || fName.includes('sim no')) {
+      handleChange('sim_number', val);
+      handleChange('SIM Number / ICCID', val);
+    }
+    if (fName.includes('contract no')) {
+      handleChange('contract_number', val);
+      handleChange('Contract No', val);
+      handleChange('Contract No ', val);
+    }
+    if (fName.includes('package plan') || fName.includes('plan name')) {
+      handleChange('plan_name', val);
+      handleChange('Plan Name', val);
+    }
+    if (fName.includes('monthly plan') || fName.includes('monthly amount')) {
+      handleChange('monthly_plan_amount', val);
+      handleChange('Monthly Plan Amount', val);
+    }
+    if (fName.includes('contract from') || fName.includes('contract start')) {
+      handleChange('contract_start_date', val);
+      handleChange('Contract Start Date', val);
+      handleChange('Contract From', val);
+    }
+    if (fName.includes('contract to') || fName.includes('contract expiry')) {
+      handleChange('contract_expiry_date', val);
+      handleChange('Contract Expiry Date', val);
+      handleChange('Contract To', val);
+    }
+    if (fName.includes('data allowance')) {
+      handleChange('data_allowance', val);
+      handleChange('Data Allowance', val);
+    }
+    if (fName.includes('local minutes')) {
+      handleChange('local_minutes', val);
+      handleChange('Local Minutes', val);
+    }
+    if (fName.includes('international minutes')) {
+      handleChange('international_minutes', val);
+      handleChange('International Minutes', val);
+    }
   };
 
   const renderCustomField = (field) => {
@@ -1054,9 +1110,7 @@ export default function SimDetailsTab({
             type="date"
             value={val}
             onChange={(e) => {
-              handleChange(field.id, e.target.value);
-              handleChange(field.name, e.target.value);
-              if (field.name && field.name.trim()) handleChange(field.name.trim(), e.target.value);
+              handleCustomFieldChange(field, e.target.value);
             }}
             style={StyleSheet.flatten([styles.htmlDateInput, isViewOnly && styles.readOnlyInput])}
             disabled={isViewOnly}
@@ -1092,11 +1146,7 @@ export default function SimDetailsTab({
             style={[styles.input, isViewOnly && styles.readOnlyInput]}
             placeholder={`Enter ${field.name}`}
             value={getFieldValue(field)}
-            onChangeText={(val) => {
-              handleChange(field.id, val);
-              handleChange(field.name, val);
-              if (field.name && field.name.trim()) handleChange(field.name.trim(), val);
-            }}
+            onChangeText={(val) => handleCustomFieldChange(field, val)}
             keyboardType="numeric"
             editable={!isViewOnly}
           />
@@ -1107,11 +1157,7 @@ export default function SimDetailsTab({
             style={[styles.input, { height: 80 }, isViewOnly && styles.readOnlyInput]}
             placeholder={`Enter ${field.name}`}
             value={getFieldValue(field)}
-            onChangeText={(val) => {
-              handleChange(field.id, val);
-              handleChange(field.name, val);
-              if (field.name && field.name.trim()) handleChange(field.name.trim(), val);
-            }}
+            onChangeText={(val) => handleCustomFieldChange(field, val)}
             multiline
             editable={!isViewOnly}
           />
@@ -1128,9 +1174,7 @@ export default function SimDetailsTab({
             input.onchange = (e) => {
               const files = Array.from(e.target.files);
               if (files.length > 0) {
-                handleChange(field.id, files[0].name);
-                handleChange(field.name, files[0].name);
-                if (field.name && field.name.trim()) handleChange(field.name.trim(), files[0].name);
+                handleCustomFieldChange(field, files[0].name);
               }
             };
             input.click();
@@ -1171,7 +1215,7 @@ export default function SimDetailsTab({
                   </Text>
                 </View>
                 {!isViewOnly && (
-                  <TouchableOpacity onPress={() => { handleChange(field.id, ''); handleChange(field.name, ''); if (field.name && field.name.trim()) handleChange(field.name.trim(), ''); }} style={{ padding: 4 }}>
+                  <TouchableOpacity onPress={() => handleCustomFieldChange(field, '')} style={{ padding: 4 }}>
                     <Ionicons name="close-circle" size={18} color="#EF4444" />
                   </TouchableOpacity>
                 )}
@@ -1185,15 +1229,7 @@ export default function SimDetailsTab({
         return (
           <PhoneInputWithCountryCode
             value={getFieldValue(field)}
-            onChangeText={(val) => {
-              handleChange(field.id, val);
-              handleChange(field.name, val);
-              if (field.name && field.name.trim()) handleChange(field.name.trim(), val);
-              const fName = String(field.name || '').toLowerCase();
-              if (fName.includes('mobile')) handleChange('mobile_number', val);
-              if (fName.includes('account')) handleChange('account_number', val);
-              if (fName.includes('sim number') || fName.includes('iccid')) handleChange('sim_number', val);
-            }}
+            onChangeText={(val) => handleCustomFieldChange(field, val)}
             placeholder="560 1234"
             disabled={isViewOnly}
           />
@@ -1204,14 +1240,7 @@ export default function SimDetailsTab({
             style={[styles.input, isViewOnly && styles.readOnlyInput]}
             placeholder={`Enter ${field.name}`}
             value={getFieldValue(field)}
-            onChangeText={(val) => {
-              handleChange(field.id, val);
-              handleChange(field.name, val);
-              if (field.name && field.name.trim()) handleChange(field.name.trim(), val);
-              const fName = String(field.name || '').toLowerCase();
-              if (fName.includes('mobile')) handleChange('mobile_number', val);
-              if (fName.includes('sim number') || fName.includes('iccid')) handleChange('sim_number', val);
-            }}
+            onChangeText={(val) => handleCustomFieldChange(field, val)}
             editable={!isViewOnly}
           />
         );
@@ -1554,7 +1583,7 @@ export default function SimDetailsTab({
       ed = {};
     }
     const searchLower = search.toLowerCase();
-    const acc = String(item.account_number || fd.account_number || fd['Account Number'] || fd['Account No'] || fd['1786109466050'] || fd['1787404908551'] || fd['1786109549415'] || item.mobile_account || ed.account_number || ed.mobile_account || '');
+    const acc = String(item.account_number || fd.account_number || fd['Account Number'] || fd['Account No'] || fd['1787404908551'] || item.mobile_account || ed.account_number || ed.mobile_account || '');
     const mob = String(item.mobile_number || fd.mobile_number || fd.phone_number || fd['Mobile Number'] || fd['Phone Number'] || '');
     const prov = String(item.telecom_provider || fd.telecom_provider || ed.telecom_provider || fd.provider || '');
     return (
@@ -1969,14 +1998,13 @@ export default function SimDetailsTab({
                           }
 
                           // Known live custom field IDs for Account Number
-                          if (fd['1786109466050'] && String(fd['1786109466050']).trim()) return String(fd['1786109466050']).trim();
                           if (fd['1787404908551'] && String(fd['1787404908551']).trim()) return String(fd['1787404908551']).trim();
 
-                          // Scan fd for any key with 'account' (excluding 'contract' and contract key 1786100950188)
+                          // Scan fd for any key with 'account' (excluding 'contract', contract key 1786100950188, and ICCID key 1786109466050)
                           for (const [k, v] of Object.entries(fd)) {
                             if (v === undefined || v === null || typeof v === 'object') continue;
                             const lk = k.trim().toLowerCase();
-                            if (lk.includes('contract') || k.trim() === '1786100950188') continue;
+                            if (lk.includes('contract') || k.trim() === '1786100950188' || k.trim() === '1786109466050') continue;
                             if (lk.includes('account')) {
                               const sv = String(v).trim();
                               if (sv && sv !== 'null' && sv !== 'undefined') return sv;
@@ -1990,12 +2018,7 @@ export default function SimDetailsTab({
                           if (fd.mobile_account && String(fd.mobile_account).trim()) return String(fd.mobile_account).trim();
                           if (ed.mobile_account && String(ed.mobile_account).trim()) return String(ed.mobile_account).trim();
 
-                          // Fallback to phone number field if account number is not separately provided
-                          if (fd['1786109549415'] && String(fd['1786109549415']).trim()) return String(fd['1786109549415']).trim();
-                          if (item.mobile_number && String(item.mobile_number).trim() && String(item.mobile_number).trim() !== 'null') {
-                            return String(item.mobile_number).trim();
-                          }
-                          return 'N/A';
+                          return '—';
                         })();
 
                         const phoneNumber = (() => {
@@ -2007,7 +2030,7 @@ export default function SimDetailsTab({
                           if (fd.phone_number && String(fd.phone_number).trim()) return String(fd.phone_number).trim();
                           if (fd['Mobile Number'] && String(fd['Mobile Number']).trim()) return String(fd['Mobile Number']).trim();
                           if (fd['Phone Number'] && String(fd['Phone Number']).trim()) return String(fd['Phone Number']).trim();
-                          return accountNumber !== 'N/A' ? accountNumber : '';
+                          return '';
                         })();
 
                         const telecomProviderName = (() => {
