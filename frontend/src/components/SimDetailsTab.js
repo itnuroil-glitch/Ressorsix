@@ -712,7 +712,10 @@ export default function SimDetailsTab({
     setIsViewOnly(viewMode);
     setIsAddOnMode(addOnMode);
     const targetClient = record?.client_id ? String(record.client_id) : (record?.clientid ? String(record.clientid) : (user?.clientid ? String(user.clientid) : selectedClient));
-    const targetCompany = record?.company_id ? String(record.company_id) : selectedCompany;
+    const targetCompany = record?.company_id ? String(record.company_id) : (record?.company ? String(record.company) : selectedCompany);
+    if (targetCompany) {
+      fetchEmployeesForCompany(targetCompany);
+    }
     if (addOnMode) {
       fetchAccountNumbersForCompanyAndClient(targetClient, targetCompany);
     }
@@ -1052,29 +1055,35 @@ export default function SimDetailsTab({
     switch (field.type) {
       case 'Dropdown':
       case 'Searchable Dropdown': {
+        const fName = String(field.name || '').toLowerCase();
+        const isEmpField = fName.includes('employee') || fName.includes('assigned');
+
         let options = (field.allowedOptions && field.allowedOptions.length > 0)
           ? field.allowedOptions
           : (field.options || '').split(',').map(o => o.trim()).filter(Boolean);
         
-        const fName = String(field.name || '').toLowerCase();
-        if (options.length === 0) {
-          if (fName.includes('telecom') || fName.includes('provider')) {
+        if (isEmpField || options.length === 0) {
+          if (isEmpField) {
+            const targetCId = selectedCompany || formData.company_id || formData.company;
+            const foundComp = companies.find(c => c.company_name === targetCId || String(c.id) === String(targetCId) || c.name === targetCId);
+            const cId = foundComp ? String(foundComp.id) : String(targetCId || '');
+            const cName = foundComp ? String(foundComp.company_name).toLowerCase() : String(targetCId || '').toLowerCase();
+
+            const filteredEmps = (cId || cName) ? employees.filter(e => 
+              (cId && String(e.basecompany_id) === cId) || 
+              (cName && e.base_company_name && String(e.base_company_name).toLowerCase() === cName) ||
+              (Array.isArray(e.companies) && e.companies.some(c => 
+                (cId && String(c.id) === cId) || 
+                (cName && c.company_name && String(c.company_name).toLowerCase() === cName)
+              ))
+            ) : employees;
+            options = filteredEmps.map(e => e.full_name || e.employee_name || e.first_name || e.name).filter(Boolean);
+          } else if (fName.includes('telecom') || fName.includes('provider')) {
             options = providers.map(p => p.provider_name || p.name).filter(Boolean);
           } else if (fName.includes('company')) {
             options = companies.map(c => c.company_name || c.name).filter(Boolean);
           } else if (fName.includes('plan')) {
             options = simPlans.map(p => p.plan_name || p.name).filter(Boolean);
-          } else if (fName.includes('employee') || fName.includes('assigned')) {
-            const targetCId = selectedCompany || formData.company_id || formData.company;
-            const filteredEmps = targetCId ? employees.filter(e => 
-              String(e.basecompany_id) === String(targetCId) || 
-              (e.base_company_name && String(e.base_company_name).toLowerCase() === String(targetCId).toLowerCase()) ||
-              (Array.isArray(e.companies) && e.companies.some(c => 
-                String(c.id) === String(targetCId) || 
-                (c.company_name && String(c.company_name).toLowerCase() === String(targetCId).toLowerCase())
-              ))
-            ) : employees;
-            options = filteredEmps.map(e => e.full_name || e.employee_name || e.first_name || e.name).filter(Boolean);
           } else if (fName.includes('connection') || fName.includes('type')) {
             options = connectionTypes.map(c => c.name || c.connection_type || c.type_name).filter(Boolean);
             if (options.length === 0) options = ['Postpaid', 'Prepaid', 'Data SIM', 'Voice & Data', 'M2M / IoT'];
@@ -1094,7 +1103,18 @@ export default function SimDetailsTab({
               handleChange(field.name, val);
               if (field.name && field.name.trim()) handleChange(field.name.trim(), val);
               if (fName.includes('telecom') || fName.includes('provider')) handleChange('telecom_provider', val);
-              if (fName.includes('company')) handleChange('company', val);
+              if (fName.includes('company')) {
+                handleChange('company', val);
+                const foundComp = companies.find(c => c.company_name === val || String(c.id) === String(val) || c.name === val);
+                const compKey = foundComp ? foundComp.id : val;
+                if (foundComp) {
+                  handleChange('company_id', foundComp.id);
+                  setSelectedCompany(String(foundComp.id));
+                }
+                if (compKey) {
+                  fetchEmployeesForCompany(compKey);
+                }
+              }
               if (fName.includes('plan')) handleChange('plan_name', val);
               if (fName.includes('connection') || fName.includes('type')) handleChange('connection_type', val);
               if (fName.includes('employee') || fName.includes('assigned')) handleChange('assigned_employee', val);
@@ -3496,12 +3516,16 @@ export default function SimDetailsTab({
                           <Text style={styles.fieldLabel}>Assigned Employee</Text>
                           {(() => {
                             const targetCId = selectedCompany || formData.company_id || formData.company;
-                            const filteredEmps = targetCId ? employees.filter(e => 
-                              String(e.basecompany_id) === String(targetCId) || 
-                              (e.base_company_name && String(e.base_company_name).toLowerCase() === String(targetCId).toLowerCase()) ||
+                            const foundComp = companies.find(c => c.company_name === targetCId || String(c.id) === String(targetCId) || c.name === targetCId);
+                            const cId = foundComp ? String(foundComp.id) : String(targetCId || '');
+                            const cName = foundComp ? String(foundComp.company_name).toLowerCase() : String(targetCId || '').toLowerCase();
+
+                            const filteredEmps = (cId || cName) ? employees.filter(e => 
+                              (cId && String(e.basecompany_id) === cId) || 
+                              (cName && e.base_company_name && String(e.base_company_name).toLowerCase() === cName) ||
                               (Array.isArray(e.companies) && e.companies.some(c => 
-                                String(c.id) === String(targetCId) || 
-                                (c.company_name && String(c.company_name).toLowerCase() === String(targetCId).toLowerCase())
+                                (cId && String(c.id) === cId) || 
+                                (cName && c.company_name && String(c.company_name).toLowerCase() === cName)
                               ))
                             ) : employees;
                             return filteredEmps.length > 0 ? (
