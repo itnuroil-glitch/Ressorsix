@@ -706,6 +706,18 @@ exports.getEmployeesByCompanyAll = async (req, res) => {
       const cIdx = params.length;
       conditions.push(`e.basecompany_id = $${cIdx}`);
       conditions.push(`ec.company_id = $${cIdx}`);
+      conditions.push(`e.basecompany_id IN (
+        SELECT DISTINCT e2.basecompany_id 
+        FROM employee e2 
+        JOIN employee_company ec2 ON e2.id = ec2.employee_id 
+        WHERE ec2.company_id = $${cIdx} AND e2.basecompany_id IS NOT NULL
+      )`);
+      conditions.push(`ec.company_id IN (
+        SELECT DISTINCT ec2.company_id 
+        FROM employee_company ec2 
+        JOIN employee e2 ON ec2.employee_id = e2.id 
+        WHERE e2.basecompany_id = $${cIdx} AND ec2.company_id IS NOT NULL
+      )`);
     }
 
     if (targetCompanyName) {
@@ -713,12 +725,20 @@ exports.getEmployeesByCompanyAll = async (req, res) => {
       const nIdx = params.length;
       conditions.push(`LOWER(TRIM(bc.company_name)) = LOWER(TRIM($${nIdx}))`);
       conditions.push(`ec.company_id IN (SELECT id FROM company WHERE LOWER(TRIM(company_name)) = LOWER(TRIM($${nIdx})))`);
-    }
-
-    if (parentClientId) {
-      params.push(parentClientId);
-      const pIdx = params.length;
-      conditions.push(`(e.clientid IS NOT NULL AND e.clientid = $${pIdx})`);
+      conditions.push(`e.basecompany_id IN (
+        SELECT DISTINCT e2.basecompany_id 
+        FROM employee e2 
+        JOIN employee_company ec2 ON e2.id = ec2.employee_id 
+        JOIN company c2 ON ec2.company_id = c2.id 
+        WHERE LOWER(TRIM(c2.company_name)) = LOWER(TRIM($${nIdx})) AND e2.basecompany_id IS NOT NULL
+      )`);
+      conditions.push(`ec.company_id IN (
+        SELECT DISTINCT ec2.company_id 
+        FROM employee_company ec2 
+        JOIN employee e2 ON ec2.employee_id = e2.id 
+        JOIN company c3 ON e2.basecompany_id = c3.id 
+        WHERE LOWER(TRIM(c3.company_name)) = LOWER(TRIM($${nIdx})) AND ec2.company_id IS NOT NULL
+      )`);
     }
 
     if (conditions.length > 0) {
