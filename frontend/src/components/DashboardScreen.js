@@ -1060,8 +1060,8 @@ export default function DashboardScreen({ user, onSignOut }) {
     setEmployeeFormError('');
 
     let hasError = false;
-    if (!empFullName.trim() || !empEmail.trim()) {
-      setEmployeeFormError('Full Name and Email are required.');
+    if (!empFullName.trim()) {
+      setEmployeeFormError('Full Name is required.');
       hasError = true;
     }
     if (!empRoleIds || empRoleIds.length === 0) {
@@ -1089,8 +1089,8 @@ export default function DashboardScreen({ user, onSignOut }) {
 
     const payload = {
       full_name: empFullName.trim(),
-      email: empEmail.trim(),
-      phone: empPhone.trim(),
+      email: empEmail ? empEmail.trim() : null,
+      phone: empPhone ? empPhone.trim() : null,
       roleid: empRoleIds.join(','),
       status: empStatus,
       clientid: resolvedClientId,
@@ -9807,10 +9807,10 @@ export default function DashboardScreen({ user, onSignOut }) {
                         </View>
 
                         <View style={{ marginBottom: 16 }}>
-                          <Text style={styles.modalLabel}>Email</Text>
+                          <Text style={styles.modalLabel}>Email (Optional)</Text>
                           <TextInput
                             style={styles.modalInput}
-                            placeholder="Email Address"
+                            placeholder="Email Address (Optional)"
                             value={empEmail}
                             onChangeText={setEmpEmail}
                             keyboardType="email-address"
