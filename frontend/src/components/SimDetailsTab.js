@@ -1942,24 +1942,24 @@ export default function SimDetailsTab({
                 <Text style={styles.loaderText}>Loading Add-On records...</Text>
               </View>
             ) : (() => {
-              // const filteredAddOns = addOnRecords.filter(item => {
-              //   if (!addOnSearch.trim()) return true;
-              //   const q = addOnSearch.toLowerCase();
-              //   return (
-              //     String(item.id).includes(q) ||
-              //     (item.account_number && item.account_number.toLowerCase().includes(q)) ||
-              //     (item.sim_number && item.sim_number.toLowerCase().includes(q)) ||
-              //     (item.company_name && item.company_name.toLowerCase().includes(q)) ||
-              //     (item.client_name && item.client_name.toLowerCase().includes(q)) ||
-              //     (item.user_name && item.user_name.toLowerCase().includes(q)) ||
-              //     (item.telecom_provider && item.telecom_provider.toLowerCase().includes(q)) ||
-              //     (item.plan_name && item.plan_name.toLowerCase().includes(q)) ||
-              //     (item.addon_type && item.addon_type.toLowerCase().includes(q)) ||
-              //     (item.subscription_type && item.subscription_type.toLowerCase().includes(q)) ||
-              //     (item.subscription && item.subscription.toLowerCase().includes(q)) ||
-              //     (item.addon_details && item.addon_details.toLowerCase().includes(q))
-              //   );
-              // });
+              const filteredAddOns = addOnRecords.filter(item => {
+                if (!addOnSearch.trim()) return true;
+                const q = addOnSearch.toLowerCase();
+                return (
+                  String(item.id).includes(q) ||
+                  (item.account_number && item.account_number.toLowerCase().includes(q)) ||
+                  (item.sim_number && item.sim_number.toLowerCase().includes(q)) ||
+                  (item.company_name && item.company_name.toLowerCase().includes(q)) ||
+                  (item.client_name && item.client_name.toLowerCase().includes(q)) ||
+                  (item.user_name && item.user_name.toLowerCase().includes(q)) ||
+                  (item.telecom_provider && item.telecom_provider.toLowerCase().includes(q)) ||
+                  (item.plan_name && item.plan_name.toLowerCase().includes(q)) ||
+                  (item.addon_type && item.addon_type.toLowerCase().includes(q)) ||
+                  (item.subscription_type && item.subscription_type.toLowerCase().includes(q)) ||
+                  (item.subscription && item.subscription.toLowerCase().includes(q)) ||
+                  (item.addon_details && item.addon_details.toLowerCase().includes(q))
+                );
+              });
 
               const totalAddOnPages = Math.max(1, Math.ceil(filteredAddOns.length / itemsPerPage));
               const currentAddOnPage = Math.min(addOnPage, totalAddOnPages);
