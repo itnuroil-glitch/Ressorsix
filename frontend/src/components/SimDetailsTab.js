@@ -296,7 +296,7 @@ export default function SimDetailsTab({
     try {
       const clientQuery = user?.clientid ? `?clientid=${user.clientid}` : '';
       const endpoint = isTelecomDataView ? 'telecom-data' : 'sim-details';
-      
+
       const [simRes, clientsRes, providersRes, plansRes, empRes, connTypesRes] = await Promise.all([
         fetch(`${API_URL}/api/${endpoint}${clientQuery}`),
         fetch(`${API_URL}/api/clients`),
@@ -596,7 +596,7 @@ export default function SimDetailsTab({
           if (fvRes.ok) {
             fieldValuesMap = await fvRes.json();
           }
-        } catch (e) {}
+        } catch (e) { }
 
         const fetchDynamicOptions = async (path) => {
           try {
@@ -739,7 +739,7 @@ export default function SimDetailsTab({
       try {
         fd = typeof record.field_data === 'string' ? JSON.parse(record.field_data) : (record.field_data || {});
         if (fd && typeof fd.field_data === 'string') {
-          try { fd = { ...fd, ...JSON.parse(fd.field_data) }; } catch (e) {}
+          try { fd = { ...fd, ...JSON.parse(fd.field_data) }; } catch (e) { }
         } else if (fd && typeof fd.field_data === 'object' && fd.field_data !== null) {
           fd = { ...fd, ...fd.field_data };
         }
@@ -781,7 +781,7 @@ export default function SimDetailsTab({
         if (dmy) {
           actDate = `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
         } else {
-          try { actDate = str.split('T')[0]; } catch (e) {}
+          try { actDate = str.split('T')[0]; } catch (e) { }
         }
       }
 
@@ -1061,7 +1061,7 @@ export default function SimDetailsTab({
         let options = (field.allowedOptions && field.allowedOptions.length > 0)
           ? field.allowedOptions
           : (field.options || '').split(',').map(o => o.trim()).filter(Boolean);
-        
+
         if (isEmpField || options.length === 0) {
           if (isEmpField) {
             const targetCId = selectedCompany || formData.company_id || formData.company;
@@ -1069,11 +1069,11 @@ export default function SimDetailsTab({
             const cId = foundComp ? String(foundComp.id) : String(targetCId || '');
             const cName = foundComp ? String(foundComp.company_name).toLowerCase() : String(targetCId || '').toLowerCase();
 
-            const filteredEmps = (cId || cName) ? employees.filter(e => 
-              (cId && String(e.basecompany_id) === cId) || 
+            const filteredEmps = (cId || cName) ? employees.filter(e =>
+              (cId && String(e.basecompany_id) === cId) ||
               (cName && e.base_company_name && String(e.base_company_name).toLowerCase() === cName) ||
-              (Array.isArray(e.companies) && e.companies.some(c => 
-                (cId && String(c.id) === cId) || 
+              (Array.isArray(e.companies) && e.companies.some(c =>
+                (cId && String(c.id) === cId) ||
                 (cName && c.company_name && String(c.company_name).toLowerCase() === cName)
               ))
             ) : employees;
@@ -1194,8 +1194,8 @@ export default function SimDetailsTab({
         const rawVal = formData[field.id] !== undefined
           ? formData[field.id]
           : (field.name && formData[field.name] !== undefined
-              ? formData[field.name]
-              : (field.name && formData[field.name.trim()] !== undefined ? formData[field.name.trim()] : ''));
+            ? formData[field.name]
+            : (field.name && formData[field.name.trim()] !== undefined ? formData[field.name.trim()] : ''));
 
         let fileSource = rawVal;
         if (!fileSource) {
@@ -1488,7 +1488,7 @@ export default function SimDetailsTab({
           window.alert(
             `Cannot save!\n\nThe attached files total ${sizeMB} MB, which exceeds the server limit of 1 MB.\n\nPlease remove one of the files or attach smaller documents.`
           );
-        } catch (e) {}
+        } catch (e) { }
         showToast(`Total files (${sizeMB} MB) exceed the 1 MB server limit.`, 'error');
         return;
       }
@@ -1497,13 +1497,13 @@ export default function SimDetailsTab({
     setSaving(true);
     try {
       const endpoint = isAddOnMode ? 'add-ons' : (isTelecomDataView ? 'telecom-data' : 'sim-details');
-      
+
       const matchedTele = records?.find(r => {
         let fd = {};
-        try { fd = typeof r.field_data === 'string' ? JSON.parse(r.field_data) : (r.field_data || {}); } catch (e) {}
+        try { fd = typeof r.field_data === 'string' ? JSON.parse(r.field_data) : (r.field_data || {}); } catch (e) { }
         const acc = r.account_number || fd.account_number || fd['Account No'] || fd['Account Number'] || r.sim_number || fd.sim_number || fd['SIM Number / ICCID'] || r.mobile_number;
         return (formData.account_number && String(acc) === String(formData.account_number)) ||
-               (formData.sim_number && (String(r.sim_number) === String(formData.sim_number) || String(fd.sim_number) === String(formData.sim_number)));
+          (formData.sim_number && (String(r.sim_number) === String(formData.sim_number) || String(fd.sim_number) === String(formData.sim_number)));
       });
 
       const cleanFormData = { ...formData };
@@ -1638,12 +1638,12 @@ export default function SimDetailsTab({
       try {
         fd = typeof item.field_data === 'string' ? JSON.parse(item.field_data) : (item.field_data || {});
         if (fd && typeof fd.field_data === 'string') {
-          try { fd = { ...fd, ...JSON.parse(fd.field_data) }; } catch (e) {}
+          try { fd = { ...fd, ...JSON.parse(fd.field_data) }; } catch (e) { }
         } else if (fd && typeof fd.field_data === 'object' && fd.field_data !== null) {
           fd = { ...fd, ...fd.field_data };
         }
         ed = typeof item.extracted_data === 'string' ? JSON.parse(item.extracted_data) : (item.extracted_data || {});
-      } catch (e) {}
+      } catch (e) { }
 
       const cleanPhone = (str) => {
         if (!str) return '';
@@ -1660,15 +1660,15 @@ export default function SimDetailsTab({
         return empP && mobP && (empP === mobP || empP.endsWith(mobP) || mobP.endsWith(empP));
       });
 
-      const empName = item.assigned_employee || 
-        fd.assigned_employee || 
-        fd['Assigned Employee'] || 
-        fd['Employee Name'] || 
-        fd.employee_name || 
-        item.employee_name || 
-        ed.assigned_employee || 
-        ed.employee_name || 
-        item.user_name || 
+      const empName = item.assigned_employee ||
+        fd.assigned_employee ||
+        fd['Assigned Employee'] ||
+        fd['Employee Name'] ||
+        fd.employee_name ||
+        item.employee_name ||
+        ed.assigned_employee ||
+        ed.employee_name ||
+        item.user_name ||
         fd.user_name ||
         (matchedEmp ? (matchedEmp.full_name || matchedEmp.employee_name || matchedEmp.name) : '');
 
@@ -1676,12 +1676,12 @@ export default function SimDetailsTab({
         name = String(empName).trim();
         targetType = 'employee';
       } else {
-        name = item.mobile_number || 
-          item.account_number || 
-          fd.account_number || 
-          fd.mobile_number || 
-          item.sim_number || 
-          fd.sim_number || 
+        name = item.mobile_number ||
+          item.account_number ||
+          fd.account_number ||
+          fd.mobile_number ||
+          item.sim_number ||
+          fd.sim_number ||
           `Record #${id}`;
         targetType = 'record';
       }
@@ -1704,7 +1704,7 @@ export default function SimDetailsTab({
 
     try {
       if (isAddOn) {
-        const res = await fetch(`${API_URL}/api/add-ons/${id}`, { 
+        const res = await fetch(`${API_URL}/api/add-ons/${id}`, {
           method: 'DELETE',
           credentials: 'include'
         });
@@ -1741,7 +1741,7 @@ export default function SimDetailsTab({
     try {
       fd = typeof item.field_data === 'string' ? JSON.parse(item.field_data) : (item.field_data || {});
       if (fd && typeof fd.field_data === 'string') {
-        try { fd = { ...fd, ...JSON.parse(fd.field_data) }; } catch (e) {}
+        try { fd = { ...fd, ...JSON.parse(fd.field_data) }; } catch (e) { }
       } else if (fd && typeof fd.field_data === 'object' && fd.field_data !== null) {
         fd = { ...fd, ...fd.field_data };
       }
@@ -2124,7 +2124,7 @@ export default function SimDetailsTab({
                         try {
                           fd = typeof item.field_data === 'string' ? JSON.parse(item.field_data) : (item.field_data || {});
                           if (fd && typeof fd.field_data === 'string') {
-                            try { fd = { ...fd, ...JSON.parse(fd.field_data) }; } catch (e) {}
+                            try { fd = { ...fd, ...JSON.parse(fd.field_data) }; } catch (e) { }
                           } else if (fd && typeof fd.field_data === 'object' && fd.field_data !== null) {
                             fd = { ...fd, ...fd.field_data };
                           }
@@ -2242,16 +2242,16 @@ export default function SimDetailsTab({
                         })();
 
                         const mobileService = telecomProviderName || 'Etisalat';
-                        
-                        const registeredEmpName = 
-                          item.assigned_employee || 
-                          fd.assigned_employee || 
-                          fd['Assigned Employee'] || 
-                          fd['Employee Name'] || 
-                          fd.employee_name || 
-                          item.employee_name || 
-                          ed.assigned_employee || 
-                          ed.employee_name || 
+
+                        const registeredEmpName =
+                          item.assigned_employee ||
+                          fd.assigned_employee ||
+                          fd['Assigned Employee'] ||
+                          fd['Employee Name'] ||
+                          fd.employee_name ||
+                          item.employee_name ||
+                          ed.assigned_employee ||
+                          ed.employee_name ||
                           '';
 
                         const cleanPhone = (str) => {
@@ -2281,7 +2281,7 @@ export default function SimDetailsTab({
                         return (
                           <View key={item.id} style={[styles.tableRow, index === paginatedRecords.length - 1 && styles.lastTableRow]}>
                             <Text style={[styles.tdCell, { flex: 0.8, fontWeight: '700' }]}>#{item.id}</Text>
-                            
+
                             {isTelecomDataView ? (
                               <>
                                 {/* COMPANY */}
@@ -2364,7 +2364,7 @@ export default function SimDetailsTab({
                                   <Text style={{ fontWeight: '600', color: COLORS.textPrimary }}>{employeeName}</Text>
                                 </View>
 
-                                 {/* PLAN NAME */}
+                                {/* PLAN NAME */}
                                 <Text style={[styles.tdCell, { flex: 1.8, color: COLORS.textPrimary, fontWeight: '600' }]}>
                                   {(() => {
                                     const directItem = item.plan_name;
@@ -2467,7 +2467,7 @@ export default function SimDetailsTab({
       <Modal visible={isModalOpen} transparent animationType="fade">
         <View style={[styles.modalOverlay, isLargeScreen && { marginLeft: isSidebarCollapsed ? 78 : 260 }]}>
           <View style={styles.modalContent}>
-            
+
             {/* Header with Green Document Icon matching Purchase Details */}
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -2585,7 +2585,7 @@ export default function SimDetailsTab({
               /* STEP 2: FORM DATA */
               <>
                 <ScrollView style={{ flex: 1, backgroundColor: '#F8FAFC', padding: 24 }}>
-                  
+
                   {/* STATIC ADD-ON CONFIGURATION FIELDS */}
                   {isAddOnMode && (
                     <View style={styles.sectionCard}>
@@ -2610,7 +2610,7 @@ export default function SimDetailsTab({
                               }
                               if (activeCompanyId) {
                                 let fd = {};
-                                try { fd = typeof item.field_data === 'string' ? JSON.parse(item.field_data) : (item.field_data || {}); } catch (e) {}
+                                try { fd = typeof item.field_data === 'string' ? JSON.parse(item.field_data) : (item.field_data || {}); } catch (e) { }
                                 const itemComp = String(item.company_id || item.company || fd.company_id || fd.company || '');
                                 const compIds = itemComp.split(',').map(s => s.trim());
                                 if (itemComp && !compIds.includes(String(activeCompanyId))) return false;
@@ -2618,7 +2618,7 @@ export default function SimDetailsTab({
                               return true;
                             }).map(item => {
                               let fd = {};
-                              try { fd = typeof item.field_data === 'string' ? JSON.parse(item.field_data) : (item.field_data || {}); } catch (e) {}
+                              try { fd = typeof item.field_data === 'string' ? JSON.parse(item.field_data) : (item.field_data || {}); } catch (e) { }
                               const accNo = item.account_number || fd.account_number || fd['Account No'] || fd['Account Number'] || item.sim_number || fd.sim_number || fd['SIM Number / ICCID'] || item.mobile_number || `Account #${item.tele_id || item.id}`;
                               return {
                                 label: String(accNo),
@@ -2871,7 +2871,7 @@ export default function SimDetailsTab({
                                           `The selected file(s) total ${totalMB} MB, which exceeds the 1 MB server limit.\n\n` +
                                           `Files larger than 1 MB are not accepted. Please remove large files or attach a smaller document.`
                                         );
-                                      } catch (err) {}
+                                      } catch (err) { }
 
                                       e.target.value = '';
                                       return;
@@ -3188,418 +3188,418 @@ export default function SimDetailsTab({
                   {/* FORM FIELDS SECTION (Hidden in Add On Mode) */}
                   {!isAddOnMode && (
                     fieldsLayout && fieldsLayout.length > 0 ? (
-                    fieldsLayout.map((section, index) => (
-                      <View key={section.id || index} style={[styles.sectionCard, { marginTop: index > 0 ? SPACING.md : 0 }]}>
+                      fieldsLayout.map((section, index) => (
+                        <View key={section.id || index} style={[styles.sectionCard, { marginTop: index > 0 ? SPACING.md : 0 }]}>
+                          <View style={styles.sectionHeader}>
+                            <Text style={styles.sectionTitle}>{(section.name || 'TELECOM DETAILS').replace(/telecome/gi, 'Telecom').toUpperCase()}</Text>
+                          </View>
+                          <View style={styles.sectionBody}>
+                            {section.fields && section.fields.map((field) => (
+                              <View key={field.id} style={styles.fieldContainer}>
+                                <Text style={styles.fieldLabel}>
+                                  {field.name} {field.isRequired && <Text style={{ color: COLORS.error }}>*</Text>}
+                                </Text>
+                                {renderCustomField(field)}
+                              </View>
+                            ))}
+                          </View>
+                        </View>
+                      ))
+                    ) : (
+                      /* FALLBACK STATIC SECTION CARD IF NO CUSTOM FIELDS LAYOUT CONFIGURED */
+                      <View style={styles.sectionCard}>
                         <View style={styles.sectionHeader}>
-                          <Text style={styles.sectionTitle}>{(section.name || 'TELECOM DETAILS').replace(/telecome/gi, 'Telecom').toUpperCase()}</Text>
+                          <Text style={styles.sectionTitle}>SIM DETAILS</Text>
                         </View>
+
                         <View style={styles.sectionBody}>
-                          {section.fields && section.fields.map((field) => (
-                            <View key={field.id} style={styles.fieldContainer}>
-                              <Text style={styles.fieldLabel}>
-                                {field.name} {field.isRequired && <Text style={{ color: COLORS.error }}>*</Text>}
-                              </Text>
-                              {renderCustomField(field)}
-                            </View>
-                          ))}
-                        </View>
-                      </View>
-                    ))
-                  ) : (
-                    /* FALLBACK STATIC SECTION CARD IF NO CUSTOM FIELDS LAYOUT CONFIGURED */
-                    <View style={styles.sectionCard}>
-                      <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>SIM DETAILS</Text>
-                      </View>
-
-                      <View style={styles.sectionBody}>
-                        {/* Telecom Provider */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>
-                            Telecom Provider <Text style={{ color: COLORS.error }}>*</Text>
-                          </Text>
-                          {providers.length > 0 ? (
-                            <SearchableDropdown
-                              data={providers}
-                              value={formData.telecom_provider}
-                              onChange={(val) => handleChange('telecom_provider', val)}
-                              placeholder="-- Select Provider --"
-                              searchPlaceholder="Search Telecom Provider..."
-                              displayKey="provider_name"
-                              valueKey="provider_name"
-                              disabled={isViewOnly}
-                            />
-                          ) : (
-                            <TextInput
-                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
-                              placeholder="e.g. Etisalat, du"
-                              value={formData.telecom_provider}
-                              onChangeText={val => handleChange('telecom_provider', val)}
-                              editable={!isViewOnly}
-                            />
-                          )}
-                        </View>
-
-                        {/* Mobile Number */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>
-                            Mobile Number <Text style={{ color: COLORS.error }}>*</Text>
-                          </Text>
-                          <PhoneInputWithCountryCode
-                            value={formData.mobile_number}
-                            onChangeText={val => handleChange('mobile_number', val)}
-                            disabled={isViewOnly}
-                          />
-                        </View>
-
-                        {/* SIM Number / ICCID */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>
-                            SIM Number / ICCID <Text style={{ color: COLORS.error }}>*</Text>
-                          </Text>
-                          <TextInput
-                            style={[styles.input, isViewOnly && styles.readOnlyInput]}
-                            placeholder="e.g. 8997101000..."
-                            value={formData.sim_number}
-                            onChangeText={val => handleChange('sim_number', val)}
-                            editable={!isViewOnly}
-                          />
-                        </View>
-
-                        {/* Account / Mobile Account */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>Account Number / Mobile Account</Text>
-                          <TextInput
-                            style={[styles.input, isViewOnly && styles.readOnlyInput]}
-                            placeholder="e.g. 0522486345"
-                            value={formData.account_number || formData.mobile_account}
-                            onChangeText={val => {
-                              handleChange('account_number', val);
-                              handleChange('mobile_account', val);
-                            }}
-                            editable={!isViewOnly}
-                          />
-                        </View>
-
-                        {/* Bill Number */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>Bill / Invoice Number</Text>
-                          <TextInput
-                            style={[styles.input, isViewOnly && styles.readOnlyInput]}
-                            placeholder="e.g. INV2045264801"
-                            value={formData.bill_number || formData.doc_number}
-                            onChangeText={val => {
-                              handleChange('bill_number', val);
-                              handleChange('doc_number', val);
-                            }}
-                            editable={!isViewOnly}
-                          />
-                        </View>
-
-                        {/* Bill Period From */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>Bill Period From</Text>
-                          <input
-                            type="date"
-                            value={formData.period_from || ''}
-                            onChange={(e) => handleChange('period_from', e.target.value)}
-                            style={StyleSheet.flatten([styles.htmlDateInput, isViewOnly && styles.readOnlyInput])}
-                            disabled={isViewOnly}
-                          />
-                        </View>
-
-                        {/* Bill Period To */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>Bill Period To</Text>
-                          <input
-                            type="date"
-                            value={formData.period_to || ''}
-                            onChange={(e) => handleChange('period_to', e.target.value)}
-                            style={StyleSheet.flatten([styles.htmlDateInput, isViewOnly && styles.readOnlyInput])}
-                            disabled={isViewOnly}
-                          />
-                        </View>
-
-                        {/* Service Rental */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>Service Rental (AED)</Text>
-                          <TextInput
-                            style={[styles.input, isViewOnly && styles.readOnlyInput]}
-                            placeholder="e.g. 200.00"
-                            keyboardType="numeric"
-                            value={formData.service_rental}
-                            onChangeText={val => handleChange('service_rental', val)}
-                            editable={!isViewOnly}
-                          />
-                        </View>
-
-                        {/* Usage Charges */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>Usage Charges (AED)</Text>
-                          <TextInput
-                            style={[styles.input, isViewOnly && styles.readOnlyInput]}
-                            placeholder="e.g. 72.20"
-                            keyboardType="numeric"
-                            value={formData.usage_charges}
-                            onChangeText={val => handleChange('usage_charges', val)}
-                            editable={!isViewOnly}
-                          />
-                        </View>
-
-                        {/* VAT */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>VAT (AED)</Text>
-                          <TextInput
-                            style={[styles.input, isViewOnly && styles.readOnlyInput]}
-                            placeholder="e.g. 10.85"
-                            keyboardType="numeric"
-                            value={formData.vat}
-                            onChangeText={val => handleChange('vat', val)}
-                            editable={!isViewOnly}
-                          />
-                        </View>
-
-                        {/* Total Amount */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>Total Amount (AED)</Text>
-                          <TextInput
-                            style={[styles.input, { fontWeight: '700', color: '#166534' }, isViewOnly && styles.readOnlyInput]}
-                            placeholder="e.g. 283.05"
-                            keyboardType="numeric"
-                            value={formData.total_amount}
-                            onChangeText={val => handleChange('total_amount', val)}
-                            editable={!isViewOnly}
-                          />
-                        </View>
-
-                        {/* Plan Name */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>Plan Name</Text>
-                          {simPlans.length > 0 ? (
-                            <SearchableDropdown
-                              data={simPlans}
-                              value={formData.plan_name}
-                              onChange={(val) => handleChange('plan_name', val)}
-                              placeholder="-- Select SIM Plan --"
-                              searchPlaceholder="Search SIM Plan..."
-                              displayKey="plan_name"
-                              valueKey="plan_name"
-                              disabled={isViewOnly}
-                            />
-                          ) : (
-                            <TextInput
-                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
-                              placeholder="e.g. Business Freedom 150"
-                              value={formData.plan_name}
-                              onChangeText={val => handleChange('plan_name', val)}
-                              editable={!isViewOnly}
-                            />
-                          )}
-                        </View>
-
-                        {/* Monthly Plan Amount */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>Monthly Plan Amount (AED)</Text>
-                          <TextInput
-                            style={[styles.input, isViewOnly && styles.readOnlyInput]}
-                            placeholder="e.g. 150"
-                            keyboardType="numeric"
-                            value={formData.monthly_plan_amount}
-                            onChangeText={val => handleChange('monthly_plan_amount', val)}
-                            editable={!isViewOnly}
-                          />
-                        </View>
-
-                        {/* Data Allowance */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>Data Allowance (GB)</Text>
-                          <TextInput
-                            style={[styles.input, isViewOnly && styles.readOnlyInput]}
-                            placeholder="e.g. 25"
-                            keyboardType="numeric"
-                            value={formData.data_allowance}
-                            onChangeText={val => handleChange('data_allowance', val)}
-                            editable={!isViewOnly}
-                          />
-                        </View>
-
-                        {/* Local Minutes */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>Local Minutes</Text>
-                          <TextInput
-                            style={[styles.input, isViewOnly && styles.readOnlyInput]}
-                            placeholder="e.g. 1000"
-                            keyboardType="numeric"
-                            value={formData.local_minutes}
-                            onChangeText={val => handleChange('local_minutes', val)}
-                            editable={!isViewOnly}
-                          />
-                        </View>
-
-                        {/* International Minutes */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>International Minutes</Text>
-                          <TextInput
-                            style={[styles.input, isViewOnly && styles.readOnlyInput]}
-                            placeholder="e.g. 200"
-                            keyboardType="numeric"
-                            value={formData.international_minutes}
-                            onChangeText={val => handleChange('international_minutes', val)}
-                            editable={!isViewOnly}
-                          />
-                        </View>
-
-                        {/* Local SMS Allowance */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>Local SMS Allowance</Text>
-                          <TextInput
-                            style={[styles.input, isViewOnly && styles.readOnlyInput]}
-                            placeholder="e.g. 500"
-                            keyboardType="numeric"
-                            value={formData.local_sms_allowance}
-                            onChangeText={val => handleChange('local_sms_allowance', val)}
-                            editable={!isViewOnly}
-                          />
-                        </View>
-
-                        {/* International SMS Allowance */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>International SMS Allowance</Text>
-                          <TextInput
-                            style={[styles.input, isViewOnly && styles.readOnlyInput]}
-                            placeholder="e.g. 100"
-                            keyboardType="numeric"
-                            value={formData.international_sms_allowance}
-                            onChangeText={val => handleChange('international_sms_allowance', val)}
-                            editable={!isViewOnly}
-                          />
-                        </View>
-
-                        {/* Activation Date */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>Activation Date</Text>
-                          <input
-                            type="date"
-                            value={formData.activation_date || ''}
-                            onChange={(e) => handleChange('activation_date', e.target.value)}
-                            style={styles.htmlDateInput}
-                            disabled={isViewOnly}
-                          />
-                        </View>
-
-                        {/* Contract Start Date */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>Contract Start Date</Text>
-                          <input
-                            type="date"
-                            value={formData.contract_start_date || ''}
-                            onChange={(e) => handleChange('contract_start_date', e.target.value)}
-                            style={styles.htmlDateInput}
-                            disabled={isViewOnly}
-                          />
-                        </View>
-
-                        {/* Contract Expiry Date */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>Contract Expiry Date</Text>
-                          <input
-                            type="date"
-                            value={formData.contract_expiry_date || ''}
-                            onChange={(e) => handleChange('contract_expiry_date', e.target.value)}
-                            style={styles.htmlDateInput}
-                            disabled={isViewOnly}
-                          />
-                        </View>
-
-                        {/* Assigned Employee */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>Assigned Employee</Text>
-                          {(() => {
-                            const targetCId = selectedCompany || formData.company_id || formData.company;
-                            const foundComp = companies.find(c => c.company_name === targetCId || String(c.id) === String(targetCId) || c.name === targetCId);
-                            const cId = foundComp ? String(foundComp.id) : String(targetCId || '');
-                            const cName = foundComp ? String(foundComp.company_name).toLowerCase() : String(targetCId || '').toLowerCase();
-
-                            const filteredEmps = (cId || cName) ? employees.filter(e => 
-                              (cId && String(e.basecompany_id) === cId) || 
-                              (cName && e.base_company_name && String(e.base_company_name).toLowerCase() === cName) ||
-                              (Array.isArray(e.companies) && e.companies.some(c => 
-                                (cId && String(c.id) === cId) || 
-                                (cName && c.company_name && String(c.company_name).toLowerCase() === cName)
-                              ))
-                            ) : employees;
-                            return filteredEmps.length > 0 ? (
+                          {/* Telecom Provider */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>
+                              Telecom Provider <Text style={{ color: COLORS.error }}>*</Text>
+                            </Text>
+                            {providers.length > 0 ? (
                               <SearchableDropdown
-                                data={filteredEmps}
-                                value={formData.assigned_employee}
-                                onChange={(val) => handleChange('assigned_employee', val)}
-                                placeholder="-- Select Employee --"
-                                searchPlaceholder="Search Employee..."
-                                displayKey="full_name"
-                                valueKey="full_name"
+                                data={providers}
+                                value={formData.telecom_provider}
+                                onChange={(val) => handleChange('telecom_provider', val)}
+                                placeholder="-- Select Provider --"
+                                searchPlaceholder="Search Telecom Provider..."
+                                displayKey="provider_name"
+                                valueKey="provider_name"
                                 disabled={isViewOnly}
                               />
                             ) : (
                               <TextInput
                                 style={[styles.input, isViewOnly && styles.readOnlyInput]}
-                                placeholder="e.g. John Doe"
-                                value={formData.assigned_employee}
-                                onChangeText={val => handleChange('assigned_employee', val)}
+                                placeholder="e.g. Etisalat, du"
+                                value={formData.telecom_provider}
+                                onChangeText={val => handleChange('telecom_provider', val)}
                                 editable={!isViewOnly}
                               />
-                            );
-                          })()}
-                        </View>
+                            )}
+                          </View>
 
-                        {/* Department */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>Department</Text>
-                          <TextInput
-                            style={[styles.input, isViewOnly && styles.readOnlyInput]}
-                            placeholder="e.g. IT Department"
-                            value={formData.department}
-                            onChangeText={val => handleChange('department', val)}
-                            editable={!isViewOnly}
-                          />
-                        </View>
+                          {/* Mobile Number */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>
+                              Mobile Number <Text style={{ color: COLORS.error }}>*</Text>
+                            </Text>
+                            <PhoneInputWithCountryCode
+                              value={formData.mobile_number}
+                              onChangeText={val => handleChange('mobile_number', val)}
+                              disabled={isViewOnly}
+                            />
+                          </View>
 
-                        {/* SIM Status */}
-                        <View style={styles.fieldContainer}>
-                          <Text style={styles.fieldLabel}>SIM Status</Text>
-                          <SearchableDropdown
-                            data={[
-                              { label: 'Active', value: 'Active' },
-                              { label: 'Available', value: 'Available' },
-                              { label: 'Assigned', value: 'Assigned' },
-                              { label: 'Suspended', value: 'Suspended' },
-                              { label: 'Lost', value: 'Lost' },
-                              { label: 'Damaged', value: 'Damaged' },
-                              { label: 'Cancelled', value: 'Cancelled' }
-                            ]}
-                            value={formData.status}
-                            onChange={(val) => handleChange('status', val)}
-                            placeholder="Select Status"
-                            displayKey="label"
-                            valueKey="value"
-                            disabled={isViewOnly}
-                          />
-                        </View>
+                          {/* SIM Number / ICCID */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>
+                              SIM Number / ICCID <Text style={{ color: COLORS.error }}>*</Text>
+                            </Text>
+                            <TextInput
+                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                              placeholder="e.g. 8997101000..."
+                              value={formData.sim_number}
+                              onChangeText={val => handleChange('sim_number', val)}
+                              editable={!isViewOnly}
+                            />
+                          </View>
 
-                        {/* Remarks / Notes */}
-                        <View style={styles.fieldContainerFull}>
-                          <Text style={styles.fieldLabel}>Notes / Remarks</Text>
-                          <TextInput
-                            style={[styles.input, { height: 80 }, isViewOnly && styles.readOnlyInput]}
-                            placeholder="Additional notes..."
-                            multiline={true}
-                            value={formData.remarks}
-                            onChangeText={val => handleChange('remarks', val)}
-                            editable={!isViewOnly}
-                          />
+                          {/* Account / Mobile Account */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>Account Number / Mobile Account</Text>
+                            <TextInput
+                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                              placeholder="e.g. 0522486345"
+                              value={formData.account_number || formData.mobile_account}
+                              onChangeText={val => {
+                                handleChange('account_number', val);
+                                handleChange('mobile_account', val);
+                              }}
+                              editable={!isViewOnly}
+                            />
+                          </View>
+
+                          {/* Bill Number */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>Bill / Invoice Number</Text>
+                            <TextInput
+                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                              placeholder="e.g. INV2045264801"
+                              value={formData.bill_number || formData.doc_number}
+                              onChangeText={val => {
+                                handleChange('bill_number', val);
+                                handleChange('doc_number', val);
+                              }}
+                              editable={!isViewOnly}
+                            />
+                          </View>
+
+                          {/* Bill Period From */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>Bill Period From</Text>
+                            <input
+                              type="date"
+                              value={formData.period_from || ''}
+                              onChange={(e) => handleChange('period_from', e.target.value)}
+                              style={StyleSheet.flatten([styles.htmlDateInput, isViewOnly && styles.readOnlyInput])}
+                              disabled={isViewOnly}
+                            />
+                          </View>
+
+                          {/* Bill Period To */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>Bill Period To</Text>
+                            <input
+                              type="date"
+                              value={formData.period_to || ''}
+                              onChange={(e) => handleChange('period_to', e.target.value)}
+                              style={StyleSheet.flatten([styles.htmlDateInput, isViewOnly && styles.readOnlyInput])}
+                              disabled={isViewOnly}
+                            />
+                          </View>
+
+                          {/* Service Rental */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>Service Rental (AED)</Text>
+                            <TextInput
+                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                              placeholder="e.g. 200.00"
+                              keyboardType="numeric"
+                              value={formData.service_rental}
+                              onChangeText={val => handleChange('service_rental', val)}
+                              editable={!isViewOnly}
+                            />
+                          </View>
+
+                          {/* Usage Charges */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>Usage Charges (AED)</Text>
+                            <TextInput
+                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                              placeholder="e.g. 72.20"
+                              keyboardType="numeric"
+                              value={formData.usage_charges}
+                              onChangeText={val => handleChange('usage_charges', val)}
+                              editable={!isViewOnly}
+                            />
+                          </View>
+
+                          {/* VAT */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>VAT (AED)</Text>
+                            <TextInput
+                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                              placeholder="e.g. 10.85"
+                              keyboardType="numeric"
+                              value={formData.vat}
+                              onChangeText={val => handleChange('vat', val)}
+                              editable={!isViewOnly}
+                            />
+                          </View>
+
+                          {/* Total Amount */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>Total Amount (AED)</Text>
+                            <TextInput
+                              style={[styles.input, { fontWeight: '700', color: '#166534' }, isViewOnly && styles.readOnlyInput]}
+                              placeholder="e.g. 283.05"
+                              keyboardType="numeric"
+                              value={formData.total_amount}
+                              onChangeText={val => handleChange('total_amount', val)}
+                              editable={!isViewOnly}
+                            />
+                          </View>
+
+                          {/* Plan Name */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>Plan Name</Text>
+                            {simPlans.length > 0 ? (
+                              <SearchableDropdown
+                                data={simPlans}
+                                value={formData.plan_name}
+                                onChange={(val) => handleChange('plan_name', val)}
+                                placeholder="-- Select SIM Plan --"
+                                searchPlaceholder="Search SIM Plan..."
+                                displayKey="plan_name"
+                                valueKey="plan_name"
+                                disabled={isViewOnly}
+                              />
+                            ) : (
+                              <TextInput
+                                style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                                placeholder="e.g. Business Freedom 150"
+                                value={formData.plan_name}
+                                onChangeText={val => handleChange('plan_name', val)}
+                                editable={!isViewOnly}
+                              />
+                            )}
+                          </View>
+
+                          {/* Monthly Plan Amount */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>Monthly Plan Amount (AED)</Text>
+                            <TextInput
+                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                              placeholder="e.g. 150"
+                              keyboardType="numeric"
+                              value={formData.monthly_plan_amount}
+                              onChangeText={val => handleChange('monthly_plan_amount', val)}
+                              editable={!isViewOnly}
+                            />
+                          </View>
+
+                          {/* Data Allowance */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>Data Allowance (GB)</Text>
+                            <TextInput
+                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                              placeholder="e.g. 25"
+                              keyboardType="numeric"
+                              value={formData.data_allowance}
+                              onChangeText={val => handleChange('data_allowance', val)}
+                              editable={!isViewOnly}
+                            />
+                          </View>
+
+                          {/* Local Minutes */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>Local Minutes</Text>
+                            <TextInput
+                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                              placeholder="e.g. 1000"
+                              keyboardType="numeric"
+                              value={formData.local_minutes}
+                              onChangeText={val => handleChange('local_minutes', val)}
+                              editable={!isViewOnly}
+                            />
+                          </View>
+
+                          {/* International Minutes */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>International Minutes</Text>
+                            <TextInput
+                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                              placeholder="e.g. 200"
+                              keyboardType="numeric"
+                              value={formData.international_minutes}
+                              onChangeText={val => handleChange('international_minutes', val)}
+                              editable={!isViewOnly}
+                            />
+                          </View>
+
+                          {/* Local SMS Allowance */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>Local SMS Allowance</Text>
+                            <TextInput
+                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                              placeholder="e.g. 500"
+                              keyboardType="numeric"
+                              value={formData.local_sms_allowance}
+                              onChangeText={val => handleChange('local_sms_allowance', val)}
+                              editable={!isViewOnly}
+                            />
+                          </View>
+
+                          {/* International SMS Allowance */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>International SMS Allowance</Text>
+                            <TextInput
+                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                              placeholder="e.g. 100"
+                              keyboardType="numeric"
+                              value={formData.international_sms_allowance}
+                              onChangeText={val => handleChange('international_sms_allowance', val)}
+                              editable={!isViewOnly}
+                            />
+                          </View>
+
+                          {/* Activation Date */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>Activation Date</Text>
+                            <input
+                              type="date"
+                              value={formData.activation_date || ''}
+                              onChange={(e) => handleChange('activation_date', e.target.value)}
+                              style={styles.htmlDateInput}
+                              disabled={isViewOnly}
+                            />
+                          </View>
+
+                          {/* Contract Start Date */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>Contract Start Date</Text>
+                            <input
+                              type="date"
+                              value={formData.contract_start_date || ''}
+                              onChange={(e) => handleChange('contract_start_date', e.target.value)}
+                              style={styles.htmlDateInput}
+                              disabled={isViewOnly}
+                            />
+                          </View>
+
+                          {/* Contract Expiry Date */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>Contract Expiry Date</Text>
+                            <input
+                              type="date"
+                              value={formData.contract_expiry_date || ''}
+                              onChange={(e) => handleChange('contract_expiry_date', e.target.value)}
+                              style={styles.htmlDateInput}
+                              disabled={isViewOnly}
+                            />
+                          </View>
+
+                          {/* Assigned Employee */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>Assigned Employee</Text>
+                            {(() => {
+                              const targetCId = selectedCompany || formData.company_id || formData.company;
+                              const foundComp = companies.find(c => c.company_name === targetCId || String(c.id) === String(targetCId) || c.name === targetCId);
+                              const cId = foundComp ? String(foundComp.id) : String(targetCId || '');
+                              const cName = foundComp ? String(foundComp.company_name).toLowerCase() : String(targetCId || '').toLowerCase();
+
+                              const filteredEmps = (cId || cName) ? employees.filter(e =>
+                                (cId && String(e.basecompany_id) === cId) ||
+                                (cName && e.base_company_name && String(e.base_company_name).toLowerCase() === cName) ||
+                                (Array.isArray(e.companies) && e.companies.some(c =>
+                                  (cId && String(c.id) === cId) ||
+                                  (cName && c.company_name && String(c.company_name).toLowerCase() === cName)
+                                ))
+                              ) : employees;
+                              return filteredEmps.length > 0 ? (
+                                <SearchableDropdown
+                                  data={filteredEmps}
+                                  value={formData.assigned_employee}
+                                  onChange={(val) => handleChange('assigned_employee', val)}
+                                  placeholder="-- Select Employee --"
+                                  searchPlaceholder="Search Employee..."
+                                  displayKey="full_name"
+                                  valueKey="full_name"
+                                  disabled={isViewOnly}
+                                />
+                              ) : (
+                                <TextInput
+                                  style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                                  placeholder="e.g. John Doe"
+                                  value={formData.assigned_employee}
+                                  onChangeText={val => handleChange('assigned_employee', val)}
+                                  editable={!isViewOnly}
+                                />
+                              );
+                            })()}
+                          </View>
+
+                          {/* Department */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>Department</Text>
+                            <TextInput
+                              style={[styles.input, isViewOnly && styles.readOnlyInput]}
+                              placeholder="e.g. IT Department"
+                              value={formData.department}
+                              onChangeText={val => handleChange('department', val)}
+                              editable={!isViewOnly}
+                            />
+                          </View>
+
+                          {/* SIM Status */}
+                          <View style={styles.fieldContainer}>
+                            <Text style={styles.fieldLabel}>SIM Status</Text>
+                            <SearchableDropdown
+                              data={[
+                                { label: 'Active', value: 'Active' },
+                                { label: 'Available', value: 'Available' },
+                                { label: 'Assigned', value: 'Assigned' },
+                                { label: 'Suspended', value: 'Suspended' },
+                                { label: 'Lost', value: 'Lost' },
+                                { label: 'Damaged', value: 'Damaged' },
+                                { label: 'Cancelled', value: 'Cancelled' }
+                              ]}
+                              value={formData.status}
+                              onChange={(val) => handleChange('status', val)}
+                              placeholder="Select Status"
+                              displayKey="label"
+                              valueKey="value"
+                              disabled={isViewOnly}
+                            />
+                          </View>
+
+                          {/* Remarks / Notes */}
+                          <View style={styles.fieldContainerFull}>
+                            <Text style={styles.fieldLabel}>Notes / Remarks</Text>
+                            <TextInput
+                              style={[styles.input, { height: 80 }, isViewOnly && styles.readOnlyInput]}
+                              placeholder="Additional notes..."
+                              multiline={true}
+                              value={formData.remarks}
+                              onChangeText={val => handleChange('remarks', val)}
+                              editable={!isViewOnly}
+                            />
+                          </View>
                         </View>
                       </View>
-                    </View>
-                  ))}
+                    ))}
 
                 </ScrollView>
 
@@ -3647,7 +3647,7 @@ export default function SimDetailsTab({
       >
         <View style={{ flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.65)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
           <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, width: '90%', maxWidth: 480, padding: 24 }}>
-            
+
             {/* Header Icon & Title */}
             <View style={{ alignItems: 'center', marginBottom: 16 }}>
               <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: '#DCFCE7', justifyContent: 'center', alignItems: 'center', marginBottom: 12 }}>
