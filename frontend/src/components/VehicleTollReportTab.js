@@ -668,6 +668,19 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
     return [...tableFilteredData].sort((a, b) => {
       let valA = a[sortColumn];
       let valB = b[sortColumn];
+
+      // In the case of Darb only, sort based without tag number (fallback to plate)
+      // Salik remains strictly unchanged and continues using tag_number
+      if (sortColumn === 'tag_number') {
+        const isDarbA = String(a.toll_name || a.toll_gate || '').toLowerCase().includes('darb') ||
+                        String(a.toll_name || a.toll_gate || '').toLowerCase().includes('abu dhabi');
+        const isDarbB = String(b.toll_name || b.toll_gate || '').toLowerCase().includes('darb') ||
+                        String(b.toll_name || b.toll_gate || '').toLowerCase().includes('abu dhabi');
+
+        valA = isDarbA ? String(a.plate || '') : String(a.tag_number || '');
+        valB = isDarbB ? String(b.plate || '') : String(b.tag_number || '');
+      }
+
       if (sortColumn === 'amount') {
         valA = parseFloat(valA) || 0;
         valB = parseFloat(valB) || 0;
@@ -1332,9 +1345,13 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
                 <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>TRIP DATE & TIME ⇕</Text>
               </TouchableOpacity>
               <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>POST DATE</Text>
-              <Text style={{ flex: 1.1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>PLATE NUMBER</Text>
+              <TouchableOpacity style={{ flex: 1.1 }} onPress={() => handleSort('plate')}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>PLATE NUMBER ⇕</Text>
+              </TouchableOpacity>
               <Text style={{ flex: 1.3, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>VEHICLE NAME</Text>
-              <Text style={{ flex: 1.1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>TAG NUMBER</Text>
+              <TouchableOpacity style={{ flex: 1.1 }} onPress={() => handleSort('tag_number')}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>TAG NUMBER ⇕</Text>
+              </TouchableOpacity>
               <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>TOLL GATE</Text>
               <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>DIRECTION</Text>
               <TouchableOpacity style={{ flex: 1, textAlign: 'right' }} onPress={() => handleSort('amount')}>
