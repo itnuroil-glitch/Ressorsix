@@ -1879,7 +1879,7 @@ export default function SimDetailsTab({
               <Text style={styles.addBtnText}>{buttonLabel}</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.addBtn, { backgroundColor: '#2563EB' }]} onPress={() => openModal(null, false, true)} activeOpacity={0.8}>
+            <TouchableOpacity style={styles.addBtn} onPress={() => openModal(null, false, true)} activeOpacity={0.8}>
               <Ionicons name="add-circle" size={18} color={COLORS.white} />
               <Text style={styles.addBtnText}>+ Add On</Text>
             </TouchableOpacity>
