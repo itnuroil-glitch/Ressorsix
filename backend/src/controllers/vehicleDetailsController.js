@@ -529,32 +529,39 @@ exports.getVehiclesByClient = async (req, res) => {
 
     if (companyId && companyId.trim() !== '' && !companyId.startsWith(':')) {
       const cleanCompId = companyId.trim();
-      let compName = '';
-      try {
-        const cRes = await db.query('SELECT company_name FROM company WHERE id::text = $1', [cleanCompId]);
-        if (cRes.rows.length > 0) compName = cRes.rows[0].company_name;
-      } catch (e) {}
+      const compIds = cleanCompId.split(',').map(s => s.trim()).filter(Boolean);
+
+      let compNames = [];
+      if (compIds.length > 0) {
+        try {
+          const cRes = await db.query('SELECT id, company_name FROM company WHERE id::text = ANY($1::text[])', [compIds]);
+          compNames = cRes.rows.map(r => r.company_name.toLowerCase().trim()).filter(Boolean);
+        } catch (e) {}
+      }
+      if (!compNames.includes(cleanCompId.toLowerCase())) {
+        compNames.push(cleanCompId.toLowerCase());
+      }
 
       let compFieldFilter = '';
       try {
         const compFieldsRes = await db.query("SELECT field_id FROM tbl_customfield_details WHERE LOWER(field_name) LIKE '%company%'");
         if (compFieldsRes.rows.length > 0) {
           const compFids = compFieldsRes.rows.map(f => f.field_id);
-          compFieldFilter = compFids.map(fid => `v.field_data->>'${fid}' = $2`).join(' OR ');
+          compFieldFilter = compFids.map(fid => `(v.field_data->>'${fid}' = ANY($2::text[]) OR LOWER(v.field_data->>'${fid}') = ANY($3::text[]))`).join(' OR ');
         }
       } catch (e) {}
 
       query += ` AND (
-        v.company_id::text = $2 
-        OR $2 = ANY(string_to_array(v.company_id::text, ','))
-        OR LOWER(c.company_name) = LOWER($2) 
-        OR LOWER(v.field_data->>'Company') = LOWER($2) 
-        OR v.field_data->>'company_id' = $2
-        OR v.field_data->>'companyid' = $2
-        ${compName ? ` OR LOWER(c.company_name) = LOWER('${compName.replace(/'/g, "''")}') OR LOWER(v.field_data->>'Company') = LOWER('${compName.replace(/'/g, "''")}')` : ''}
+        v.company_id::text = ANY($2::text[]) 
+        OR string_to_array(regexp_replace(COALESCE(v.company_id::text, ''), '\\s+', '', 'g'), ',') && $2::text[]
+        OR LOWER(c.company_name) = ANY($3::text[]) 
+        OR LOWER(v.field_data->>'Company') = ANY($3::text[]) 
+        OR v.field_data->>'company_id' = ANY($2::text[])
+        OR v.field_data->>'companyid' = ANY($2::text[])
         ${compFieldFilter ? ` OR ${compFieldFilter}` : ''}
       )`;
-      params.push(cleanCompId);
+      params.push(compIds);
+      params.push(compNames);
     }
     query += ` ORDER BY v.id DESC`;
 
@@ -739,32 +746,39 @@ exports.getVehiclePlatesByClient = async (req, res) => {
 
     if (companyId && companyId.trim() !== '' && !companyId.startsWith(':')) {
       const cleanCompId = companyId.trim();
-      let compName = '';
-      try {
-        const cRes = await db.query('SELECT company_name FROM company WHERE id::text = $1', [cleanCompId]);
-        if (cRes.rows.length > 0) compName = cRes.rows[0].company_name;
-      } catch (e) {}
+      const compIds = cleanCompId.split(',').map(s => s.trim()).filter(Boolean);
+
+      let compNames = [];
+      if (compIds.length > 0) {
+        try {
+          const cRes = await db.query('SELECT id, company_name FROM company WHERE id::text = ANY($1::text[])', [compIds]);
+          compNames = cRes.rows.map(r => r.company_name.toLowerCase().trim()).filter(Boolean);
+        } catch (e) {}
+      }
+      if (!compNames.includes(cleanCompId.toLowerCase())) {
+        compNames.push(cleanCompId.toLowerCase());
+      }
 
       let compFieldFilter = '';
       try {
         const compFieldsRes = await db.query("SELECT field_id FROM tbl_customfield_details WHERE LOWER(field_name) LIKE '%company%'");
         if (compFieldsRes.rows.length > 0) {
           const compFids = compFieldsRes.rows.map(f => f.field_id);
-          compFieldFilter = compFids.map(fid => `v.field_data->>'${fid}' = $2`).join(' OR ');
+          compFieldFilter = compFids.map(fid => `(v.field_data->>'${fid}' = ANY($2::text[]) OR LOWER(v.field_data->>'${fid}') = ANY($3::text[]))`).join(' OR ');
         }
       } catch (e) {}
 
       query += ` AND (
-        v.company_id::text = $2 
-        OR $2 = ANY(string_to_array(v.company_id::text, ','))
-        OR LOWER(c.company_name) = LOWER($2) 
-        OR LOWER(v.field_data->>'Company') = LOWER($2) 
-        OR v.field_data->>'company_id' = $2
-        OR v.field_data->>'companyid' = $2
-        ${compName ? ` OR LOWER(c.company_name) = LOWER('${compName.replace(/'/g, "''")}') OR LOWER(v.field_data->>'Company') = LOWER('${compName.replace(/'/g, "''")}')` : ''}
+        v.company_id::text = ANY($2::text[]) 
+        OR string_to_array(regexp_replace(COALESCE(v.company_id::text, ''), '\\s+', '', 'g'), ',') && $2::text[]
+        OR LOWER(c.company_name) = ANY($3::text[]) 
+        OR LOWER(v.field_data->>'Company') = ANY($3::text[]) 
+        OR v.field_data->>'company_id' = ANY($2::text[])
+        OR v.field_data->>'companyid' = ANY($2::text[])
         ${compFieldFilter ? ` OR ${compFieldFilter}` : ''}
       )`;
-      params.push(cleanCompId);
+      params.push(compIds);
+      params.push(compNames);
     }
     query += ` ORDER BY v.id DESC`;
 

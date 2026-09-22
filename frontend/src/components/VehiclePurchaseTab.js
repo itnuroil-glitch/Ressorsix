@@ -178,7 +178,8 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
       await fetchFormConfiguration(
         selectedClient,
         targetCountry,
-        selectedModule
+        selectedModule,
+        String(singleComp.id)
       );
     } else {
       setWizardStep(1);
@@ -186,13 +187,17 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
     setIsFormOpen(true);
   };
 
-  const fetchFormConfiguration = async (clientId, countryId, moduleId) => {
+  const fetchFormConfiguration = async (clientId, countryId, moduleId, companyIdParam) => {
     setLoading(true);
     setWizardStep(2);
     try {
+      const activeCompanyId = (companyIdParam !== undefined && companyIdParam !== null && String(companyIdParam).trim() !== '')
+        ? String(companyIdParam)
+        : (selectedCompany || user?.company_id || user?.companyid || '');
+
       let resolvedCountryId = countryId;
-      if (!resolvedCountryId && selectedCompany) {
-        const selectedIds = String(selectedCompany).split(',').map(s => s.trim()).filter(Boolean);
+      if (!resolvedCountryId && activeCompanyId) {
+        const selectedIds = String(activeCompanyId).split(',').map(s => s.trim()).filter(Boolean);
         if (selectedIds.length > 0) {
           const matched = companies.find(c => String(c.id) === selectedIds[0]);
           if (matched && matched.country) {
@@ -284,6 +289,30 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
                 processedPath = `${processedPath}${separator}${clientId}`;
               }
             }
+
+            // Replace :companyId or :companyid placeholder if present, or append companyId
+            if (processedPath.includes(':companyId')) {
+              if (activeCompanyId) {
+                processedPath = processedPath.replace(':companyId', activeCompanyId);
+              } else {
+                processedPath = processedPath.replace('/company/:companyId', '').replace(':companyId', '');
+              }
+            } else if (processedPath.includes(':companyid')) {
+              if (activeCompanyId) {
+                processedPath = processedPath.replace(':companyid', activeCompanyId);
+              } else {
+                processedPath = processedPath.replace('/company/:companyid', '').replace(':companyid', '');
+              }
+            } else if (processedPath.includes('/company') && activeCompanyId) {
+              if (processedPath.endsWith('/company') || processedPath.endsWith('/company/')) {
+                const separator = processedPath.endsWith('/') ? '' : '/';
+                processedPath = `${processedPath}${separator}${activeCompanyId}`;
+              }
+            } else if (activeCompanyId && !processedPath.includes('companyId=')) {
+              const separator = processedPath.includes('?') ? '&' : '?';
+              processedPath = `${processedPath}${separator}companyId=${encodeURIComponent(activeCompanyId)}`;
+            }
+
             // Automatically append countryId if the path is designed for country lookup
             if (processedPath.includes('country') && countryId) {
               if (processedPath.endsWith('/country') || processedPath.endsWith('/country/')) {
@@ -295,6 +324,12 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
             // Normalize leading slash if it doesn't start with '/' and is not a full URL
             if (processedPath && !processedPath.startsWith('/') && !processedPath.startsWith('http')) {
               processedPath = '/' + processedPath;
+            }
+
+            // Automatically append email if user is logged in
+            if (user?.email) {
+              const separator = processedPath.includes('?') ? '&' : '?';
+              processedPath = `${processedPath}${separator}email=${encodeURIComponent(user.email)}`;
             }
 
             const url = processedPath.startsWith('http') ? processedPath : `${API_URL}${processedPath}`;
@@ -439,7 +474,8 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
     await fetchFormConfiguration(
       String(record.clientid || ''),
       String(record.country_id || ''),
-      String(record.moduleid || '')
+      String(record.moduleid || ''),
+      record.company_id ? String(record.company_id) : ''
     );
     setIsFormOpen(true);
   };
@@ -465,7 +501,8 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
     await fetchFormConfiguration(
       String(record.clientid || ''),
       String(record.country_id || ''),
-      String(record.moduleid || '')
+      String(record.moduleid || ''),
+      record.company_id ? String(record.company_id) : ''
     );
     setIsFormOpen(true);
   };
@@ -626,7 +663,8 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
     // 2. If not found, fetch fresh from server
     if (!matched && selectedClient) {
       try {
-        const res = await fetch(`${API_URL}/api/vehicle-details/client/${selectedClient}`);
+        const compParam = selectedCompany ? `?companyId=${encodeURIComponent(selectedCompany)}` : '';
+        const res = await fetch(`${API_URL}/api/vehicle-details/client/${selectedClient}${compParam}`);
         if (res.ok) {
           const vList = await res.json();
           if (Array.isArray(vList)) {
@@ -1605,7 +1643,7 @@ export default function VehiclePurchaseTab({ user, showToast, isSidebarCollapsed
                           }
                         }
                       }
-                      fetchFormConfiguration(selectedClient, targetCountry, selectedModule);
+                      fetchFormConfiguration(selectedClient, targetCountry, selectedModule, selectedCompany);
                     }}
                   >
                     <Text style={styles.submitBtnText}>Next</Text>
