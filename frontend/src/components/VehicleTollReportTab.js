@@ -472,6 +472,10 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
             const parts = str.split('/');
             return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
           }
+          if (/^\d{1,2}-\d{1,2}-\d{4}/.test(str)) {
+            const parts = str.split('-');
+            return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+          }
           const d = new Date(str);
           return !isNaN(d.getTime()) ? d : null;
         };
@@ -772,6 +776,19 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
         const ws = wb.Sheets[wsName];
         const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
+        // Extract Statement Period Date Range from header metadata (e.g. "Trip(s) From 15-05-2026 To 31-05-2026")
+        let statementFromDate = null;
+        let statementToDate = null;
+        for (let i = 0; i < Math.min(rawRows.length, 15); i++) {
+          const rowStr = (rawRows[i] || []).map(c => String(c || '')).join(' ');
+          const match = rowStr.match(/from\s+([0-9A-Za-z\/\-]+)\s+to\s+([0-9A-Za-z\/\-]+)/i);
+          if (match) {
+            statementFromDate = match[1].trim();
+            statementToDate = match[2].trim();
+            break;
+          }
+        }
+
         // Auto Header Detection
         let headerRowIndex = 0;
         for (let i = 0; i < Math.min(rawRows.length, 15); i++) {
@@ -803,6 +820,9 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
             mappedObj[trimmedK] = val;
           });
 
+          if (statementFromDate) mappedObj['Statement From Date'] = statementFromDate;
+          if (statementToDate) mappedObj['Statement To Date'] = statementToDate;
+
           const txnId = mappedObj['Transaction ID'] || mappedObj['toll_id'] || mappedObj['Toll ID'] || mappedObj['ID'];
           const plate = mappedObj['Plate'] || mappedObj['Plate Number'] || mappedObj['plate'];
           const tag = mappedObj['Tag Number'] || mappedObj['tag_number'];
@@ -819,6 +839,12 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
             continue;
           }
 
+          const rawTripDate = mappedObj['Trip Date'] || mappedObj['trip_date'] || statementFromDate;
+          const rawPostDate = mappedObj['Transaction Post Date'] || mappedObj['transaction_post_date'] || mappedObj['Post Date'] || statementToDate;
+
+          const isDarbGate = /sheikh zayed|maqta|mussafah|sheikh khalifa|darb|abu dhabi/i.test(String(gate));
+          const resolvedTollName = isDarbGate ? 'Darb' : (gate || 'Salik');
+
           const payload = {
             moduleid: 71,
             clientid: importClient,
@@ -826,15 +852,15 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
             toll_overview_id: importAccount || null,
             field_data: mappedObj,
             transaction_id: txnId ? String(txnId).trim() : null,
-            trip_date: formatExcelDate(mappedObj['Trip Date'] || mappedObj['trip_date']) || null,
+            trip_date: formatExcelDate(rawTripDate) || null,
             trip_time: formatExcelTime(mappedObj['Trip Time'] || mappedObj['trip_time']) || null,
-            transaction_post_date: formatExcelDate(mappedObj['Transaction Post Date'] || mappedObj['transaction_post_date'] || mappedObj['Post Date']) || null,
+            transaction_post_date: formatExcelDate(rawPostDate) || null,
             toll_gate: gate ? String(gate).trim() : null,
             direction: mappedObj['Direction'] || mappedObj['direction'] || null,
             tag_number: tag ? String(tag).trim() : null,
             plate: plate ? String(plate).trim() : null,
             amount: mappedObj['Amount(AED)'] || mappedObj['Amount'] || mappedObj['amount'] || 0,
-            toll_name: gate ? String(gate).trim() : 'Salik',
+            toll_name: resolvedTollName,
           };
 
           const postRes = await fetch(`${API_URL}/api/vehicle-toll-transaction`, {
@@ -853,6 +879,19 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
           } else {
             invalid++;
           }
+        }
+
+        if (statementFromDate) {
+          const toIso = (s) => {
+            if (!s) return '';
+            const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+            if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+            return s;
+          };
+          const isoFrom = toIso(statementFromDate);
+          const isoTo = statementToDate ? toIso(statementToDate) : '';
+          setFilterFromDate(isoFrom);
+          if (isoTo) setFilterToDate(isoTo);
         }
 
         setImportSummary({ totalRows, imported, duplicates, invalid });

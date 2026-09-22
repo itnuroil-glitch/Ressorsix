@@ -895,14 +895,21 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
 
       // Scan top 20 rows for header Account No (e.g. "Account No: 34866829")
       let extractedAccountNo = null;
+      let extractedFromDate = null;
+      let extractedToDate = null;
       for (let i = 0; i < Math.min(rawMatrix.length, 20); i++) {
         const rowArr = rawMatrix[i] || [];
         const rowStr = rowArr.map(c => String(c || '')).join(' ');
         const match = rowStr.match(/Account\s*(?:No|Number|#)?\s*[:.-]?\s*([A-Za-z0-9-]+)/i);
         if (match && match[1]) {
           extractedAccountNo = match[1].trim();
-          break;
         }
+        const dateMatch = rowStr.match(/from\s+([0-9A-Za-z\/\-]+)\s+to\s+([0-9A-Za-z\/\-]+)/i);
+        if (dateMatch) {
+          extractedFromDate = dateMatch[1].trim();
+          extractedToDate = dateMatch[2].trim();
+        }
+        if (extractedAccountNo && extractedFromDate) break;
       }
 
       let headerRowIndex = 0;
@@ -931,6 +938,13 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
         const hasAccountKey = Object.keys(rowObj).some(k => k.toLowerCase().includes('account'));
         if (extractedAccountNo && !hasAccountKey) {
           rowObj['Account No'] = extractedAccountNo;
+        }
+        if (extractedFromDate) {
+          if (!rowObj['Trip Date'] && !rowObj['trip_date'] && !rowObj['Date']) {
+            rowObj['Trip Date'] = extractedFromDate;
+          }
+          rowObj['Statement From Date'] = extractedFromDate;
+          if (extractedToDate) rowObj['Statement To Date'] = extractedToDate;
         }
 
         // Apply targeted date & time formatting to date/time columns
