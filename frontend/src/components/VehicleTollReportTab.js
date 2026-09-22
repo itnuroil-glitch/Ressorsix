@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as XLSX from 'xlsx';
 
 import { API_URL } from '../config';
+import { formatExcelDate, formatExcelTime } from './VehicleTollTab';
 
 const COLORS = {
   primary: '#1A4D3E',
@@ -462,6 +463,10 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
           if (!dateVal) return null;
           if (dateVal instanceof Date) return dateVal;
           const str = String(dateVal).trim();
+          const num = Number(str);
+          if (!isNaN(num) && num > 20000 && num < 80000) {
+            return new Date((num - 25569) * 86400 * 1000);
+          }
           if (/^\d{4}-\d{2}-\d{2}/.test(str)) return new Date(str);
           if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(str)) {
             const parts = str.split('/');
@@ -774,7 +779,15 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
         for (const row of dataRows) {
           const mappedObj = {};
           Object.keys(row).forEach(k => {
-            mappedObj[k.trim()] = row[k];
+            const trimmedK = k.trim();
+            const lowerK = trimmedK.toLowerCase();
+            let val = row[k];
+            if (lowerK.includes('date')) {
+              val = formatExcelDate(val);
+            } else if (lowerK.includes('time')) {
+              val = formatExcelTime(val);
+            }
+            mappedObj[trimmedK] = val;
           });
 
           const txnId = mappedObj['Transaction ID'] || mappedObj['toll_id'] || mappedObj['Toll ID'] || mappedObj['ID'];
@@ -800,8 +813,9 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
             toll_overview_id: importAccount || null,
             field_data: mappedObj,
             transaction_id: txnId ? String(txnId).trim() : null,
-            trip_date: mappedObj['Trip Date'] || mappedObj['trip_date'] || null,
-            trip_time: mappedObj['Trip Time'] || mappedObj['trip_time'] || null,
+            trip_date: formatExcelDate(mappedObj['Trip Date'] || mappedObj['trip_date']) || null,
+            trip_time: formatExcelTime(mappedObj['Trip Time'] || mappedObj['trip_time']) || null,
+            transaction_post_date: formatExcelDate(mappedObj['Transaction Post Date'] || mappedObj['transaction_post_date'] || mappedObj['Post Date']) || null,
             toll_gate: gate ? String(gate).trim() : null,
             direction: mappedObj['Direction'] || mappedObj['direction'] || null,
             tag_number: tag ? String(tag).trim() : null,
@@ -1347,10 +1361,10 @@ export default function VehicleTollReportTab({ user, showToast, isSidebarCollaps
                       <Text style={{ flex: 1.4, fontSize: 12, fontWeight: '700', color: '#0F172A' }}>{row.transaction_id || `#${row.id}`}</Text>
                       <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '600', color: '#475569' }}>{getRecordAccountNo(row) || 'N/A'}</Text>
                       <View style={{ flex: 1.2 }}>
-                        <Text style={{ fontSize: 12, color: '#0F172A' }}>{row.trip_date || 'N/A'}</Text>
-                        <Text style={{ fontSize: 10, color: '#94A3B8' }}>{row.trip_time || ''}</Text>
+                        <Text style={{ fontSize: 12, color: '#0F172A' }}>{formatExcelDate(row.trip_date) || 'N/A'}</Text>
+                        <Text style={{ fontSize: 10, color: '#94A3B8' }}>{formatExcelTime(row.trip_time) || ''}</Text>
                       </View>
-                      <Text style={{ flex: 1.2, fontSize: 11, color: '#64748B' }}>{row.transaction_post_date || (row.created_at ? new Date(row.created_at).toLocaleDateString() : 'N/A')}</Text>
+                      <Text style={{ flex: 1.2, fontSize: 11, color: '#64748B' }}>{formatExcelDate(row.transaction_post_date) || (row.created_at ? new Date(row.created_at).toLocaleDateString() : 'N/A')}</Text>
                       <Text style={{ flex: 1.1, fontSize: 12, fontWeight: '700', color: '#0F172A' }}>{row.plate || 'N/A'}</Text>
                       <View style={{ flex: 1.3 }}>
                         {row.vehicle_name ? (

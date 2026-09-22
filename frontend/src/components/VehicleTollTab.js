@@ -19,6 +19,47 @@ const COLORS = {
   white: '#FFFFFF',
 };
 
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+export const formatExcelDate = (val) => {
+  if (val === null || val === undefined || val === '') return '';
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return '';
+    const day = String(val.getDate()).padStart(2, '0');
+    const month = MONTH_NAMES[val.getMonth()];
+    const year = val.getFullYear();
+    return `${day}-${month}-${year}`;
+  }
+  const str = String(val).trim();
+  const num = Number(str);
+  // Excel serial numbers typically fall between 20000 (year 1954) and 80000 (year 2119)
+  if (!isNaN(num) && num > 20000 && num < 80000) {
+    const utcDays = Math.floor(num - 25569);
+    const dateObj = new Date(utcDays * 86400 * 1000);
+    const day = String(dateObj.getUTCDate()).padStart(2, '0');
+    const month = MONTH_NAMES[dateObj.getUTCMonth()];
+    const year = dateObj.getUTCFullYear();
+    return `${day}-${month}-${year}`;
+  }
+  return str;
+};
+
+export const formatExcelTime = (val) => {
+  if (val === null || val === undefined || val === '') return '';
+  const num = Number(val);
+  if (!isNaN(num) && num >= 0 && num < 1 && String(val).trim() !== '') {
+    const totalSeconds = Math.round(num * 86400);
+    const hours24 = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const period = hours24 >= 12 ? 'PM' : 'AM';
+    const hours12 = hours24 % 12 || 12;
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${pad(hours12)}:${pad(minutes)}:${pad(seconds)} ${period}`;
+  }
+  return String(val).trim();
+};
+
 export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, permissions, checkRowPermission, isOverview = false, isTransaction = false }) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width > 768;
@@ -886,14 +927,23 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
         const str = JSON.stringify(r || {}).toLowerCase();
         return !str.includes('totalamount') && !str.includes('totaltrips');
       }).map(r => {
-        const hasAccountKey = Object.keys(r).some(k => k.toLowerCase().includes('account'));
+        const rowObj = { ...r };
+        const hasAccountKey = Object.keys(rowObj).some(k => k.toLowerCase().includes('account'));
         if (extractedAccountNo && !hasAccountKey) {
-          return {
-            'Account No': extractedAccountNo,
-            ...r
-          };
+          rowObj['Account No'] = extractedAccountNo;
         }
-        return r;
+
+        // Apply targeted date & time formatting to date/time columns
+        Object.keys(rowObj).forEach(k => {
+          const lowerK = k.toLowerCase();
+          if (lowerK.includes('date')) {
+            rowObj[k] = formatExcelDate(rowObj[k]);
+          } else if (lowerK.includes('time')) {
+            rowObj[k] = formatExcelTime(rowObj[k]);
+          }
+        });
+
+        return rowObj;
       });
 
       if (!filteredRows || filteredRows.length === 0) {
@@ -1043,8 +1093,9 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
             tag_number: row['Tag Number'] || row['tag_number'] || row['Tag No'] || row['Tag'] || null,
             toll_gate: row['Toll Gate'] || row['toll_gate'] || row['Gate'] || row['Toll Name'] || null,
             direction: row['Direction'] || row['direction'] || null,
-            trip_date: row['Trip Date'] || row['trip_date'] || row['Date'] || null,
-            trip_time: row['Trip Time'] || row['trip_time'] || row['Time'] || null,
+            trip_date: formatExcelDate(row['Trip Date'] || row['trip_date'] || row['Date']) || null,
+            trip_time: formatExcelTime(row['Trip Time'] || row['trip_time'] || row['Time']) || null,
+            transaction_post_date: formatExcelDate(row['Transaction Post Date'] || row['transaction_post_date'] || row['Post Date'] || row['Posting Date']) || null,
             amount: row['Amount(AED)'] || row['Amount'] || row['amount'] || row['Fee'] || null,
             toll_name: row['Toll Name'] || row['toll_name'] || row['Toll Type'] || null,
             field_data: fieldDataObj
@@ -1316,7 +1367,9 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                         const plateNo = record.plate || parsedData['Plate'] || 'N/A';
                         const gate = record.toll_gate || parsedData['Toll Gate'] || parsedData['toll_name'] || 'N/A';
                         const dir = record.direction || parsedData['Direction'] || 'N/A';
-                        const tripDt = (record.trip_date || parsedData['Trip Date'] || '') + ' ' + (record.trip_time || parsedData['Trip Time'] || '');
+                        const formattedDate = formatExcelDate(record.trip_date || parsedData['Trip Date'] || '');
+                        const formattedTime = formatExcelTime(record.trip_time || parsedData['Trip Time'] || '');
+                        const tripDt = `${formattedDate} ${formattedTime}`.trim();
 
                         const rawTotalAmt = record.total_amount !== null && record.total_amount !== undefined
                           ? record.total_amount
@@ -2333,7 +2386,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                       <View style={{ width: '48%', backgroundColor: '#FFFFFF', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
                         <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600' }}>Trip Date & Time</Text>
                         <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '700', marginTop: 2 }}>
-                          {`${selectedViewRecord.trip_date || ''} ${selectedViewRecord.trip_time || ''}`.trim() || 'N/A'}
+                          {`${formatExcelDate(selectedViewRecord.trip_date || '')} ${formatExcelTime(selectedViewRecord.trip_time || '')}`.trim() || 'N/A'}
                         </Text>
                       </View>
                     </>
