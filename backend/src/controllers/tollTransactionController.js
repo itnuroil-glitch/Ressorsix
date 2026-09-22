@@ -23,6 +23,30 @@ const initTable = async () => {
   }
 };
 
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const formatExcelDate = (val) => {
+  if (val === null || val === undefined || val === '') return null;
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return null;
+    const day = String(val.getDate()).padStart(2, '0');
+    const month = MONTH_NAMES[val.getMonth()];
+    const year = val.getFullYear();
+    return `${day}-${month}-${year}`;
+  }
+  const str = String(val).trim();
+  const num = Number(str);
+  if (!isNaN(num) && num > 20000 && num < 80000) {
+    const utcDays = Math.floor(num - 25569);
+    const dateObj = new Date(utcDays * 86400 * 1000);
+    const day = String(dateObj.getUTCDate()).padStart(2, '0');
+    const month = MONTH_NAMES[dateObj.getUTCMonth()];
+    const year = dateObj.getUTCFullYear();
+    return `${day}-${month}-${year}`;
+  }
+  return str;
+};
+
 initTable();
 
 const resolveVehicleId = async (fieldData, clientId, plateVal, tagNumberVal) => {
@@ -155,9 +179,11 @@ exports.saveTollTransaction = async (req, res) => {
 
     const fd = field_data || {};
     const transactionIdVal = req.body.transaction_id || getFdVal(fd, ['Transaction ID', 'transaction_id', 'Toll ID', 'toll_id', 'Trip ID', 'trip_id', 'ID', 'id']) || null;
-    const tripDateVal = req.body.trip_date || getFdVal(fd, ['Trip Date', 'trip_date', 'Date', 'date']) || null;
+    const rawTripDate = req.body.trip_date || getFdVal(fd, ['Trip Date', 'trip_date', 'Date', 'date']) || null;
+    const tripDateVal = formatExcelDate(rawTripDate);
     const tripTimeVal = req.body.trip_time || getFdVal(fd, ['Trip Time', 'trip_time', 'Time', 'time']) || null;
-    const transactionPostDateVal = req.body.transaction_post_date || getFdVal(fd, ['Transaction Post Date', 'transaction_post_date', 'Post Date', 'post_date', 'Posting Date', 'posting_date', 'Trans Post Date']) || null;
+    const rawPostDate = req.body.transaction_post_date || getFdVal(fd, ['Transaction Post Date', 'transaction_post_date', 'Post Date', 'post_date', 'Posting Date', 'posting_date', 'Trans Post Date']) || null;
+    const transactionPostDateVal = formatExcelDate(rawPostDate);
     const tollGateVal = req.body.toll_gate || getFdVal(fd, ['Toll Gate', 'toll_gate', 'Gate', 'gate', 'Toll Name', 'toll_name']) || null;
     const directionVal = req.body.direction || getFdVal(fd, ['Direction', 'direction']) || null;
     const tagNumberVal = req.body.tag_number || getFdVal(fd, ['Tag Number', 'tag_number', 'Tag No', 'tag_no', 'Tag', 'tag']) || null;
@@ -349,6 +375,8 @@ exports.getTollTransactionRecords = async (req, res) => {
 
       return {
         ...row,
+        trip_date: formatExcelDate(row.trip_date),
+        transaction_post_date: formatExcelDate(row.transaction_post_date),
         account_number: accNo || row.account_number || null,
         vehicle_name: vName || null
       };
@@ -385,9 +413,9 @@ exports.updateTollTransaction = async (req, res) => {
 
     const fd = field_data || {};
     const transactionIdVal = fd['Transaction ID'] || fd.transaction_id || fd['Toll ID'] || fd.toll_id || fd['Tag Number'] || fd.trip_id || fd.ID || fd.id || null;
-    const tripDateVal = fd['Trip Date'] || fd.trip_date || null;
+    const tripDateVal = formatExcelDate(fd['Trip Date'] || fd.trip_date);
     const tripTimeVal = fd['Trip Time'] || fd.trip_time || null;
-    const transactionPostDateVal = fd['Transaction Post Date'] || fd.transaction_post_date || fd['Post Date'] || fd.post_date || null;
+    const transactionPostDateVal = formatExcelDate(fd['Transaction Post Date'] || fd.transaction_post_date || fd['Post Date'] || fd.post_date);
     const tollGateVal = fd['Toll Gate'] || fd.toll_gate || null;
     const directionVal = fd['Direction'] || fd.direction || null;
     const tagNumberVal = fd['Tag Number'] || fd.tag_number || null;
