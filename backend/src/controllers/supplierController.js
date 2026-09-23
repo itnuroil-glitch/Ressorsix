@@ -129,26 +129,22 @@ exports.getSuppliersJoinedInfo = async (req, res) => {
   }
 };
 
-exports.getSuppliersByClient = async (req, res) => {
+exports.getSuppliersByClientAndCompany = async (req, res) => {
   try {
-    let clientid = req.params.clientid || req.query.clientid;
-    const company_id = req.query.company_id || req.query.companyid;
+    const clientid = req.query.clientid || req.query.clientId || req.params.clientid;
+    const targetCompId = req.query.company_id || req.query.companyId;
 
-    if (clientid && (clientid.startsWith(':') || clientid === 'undefined' || clientid === 'all')) {
-      clientid = req.query.clientid || null;
-    }
-
-    let query = `
+    let queryText = `
       SELECT 
-        s.id AS supplier_id,
         s.id,
+        s.id::text AS value,
         s.clientid,
-        c.client_name,
         s.company_id,
         comp.company_name,
         COALESCE(
           s.field_data->>'supplier_name',
           s.field_data->>'1781941788052',
+          s.field_data->>'name',
           (
             SELECT x.value 
             FROM jsonb_each_text(COALESCE(s.field_data, '{}'::jsonb)) x
@@ -157,37 +153,71 @@ exports.getSuppliersByClient = async (req, res) => {
               AND (cfd.field_name IS NULL OR LOWER(cfd.field_name) NOT LIKE '%type%')
             LIMIT 1
           ),
-          (SELECT value FROM jsonb_each_text(COALESCE(s.field_data, '{}'::jsonb)) LIMIT 1)
-        ) AS supplier_name,
-        s.status,
-        s.created_at,
-        s.field_data
+          (
+            SELECT x.value 
+            FROM jsonb_each_text(COALESCE(s.field_data, '{}'::jsonb)) x
+            WHERE LENGTH(x.value) > 1 AND x.value NOT LIKE '%{%' AND x.value NOT LIKE '%[%'
+            LIMIT 1
+          )
+        ) AS supplier_name
       FROM tbl_suppliers s
       LEFT JOIN client c ON s.clientid::text = c.id::text
       LEFT JOIN company comp ON s.company_id::text = comp.id::text
       WHERE (s.isdelete = false OR s.isdelete IS NULL)
     `;
-
     const params = [];
+
     if (clientid && clientid !== 'all' && clientid !== 'undefined') {
-      params.push(clientid);
-      query += ` AND s.clientid::text = $${params.length}`;
-    }
-    if (company_id && company_id !== 'all' && company_id !== 'undefined') {
-      params.push(company_id);
-      query += ` AND (
-        s.company_id IS NULL 
-        OR s.company_id = '' 
-        OR s.company_id::text = $${params.length} 
-        OR string_to_array(nullif(s.company_id::text, ''), ',') && string_to_array(nullif($${params.length}::text, ''), ',')
-      )`;
+      params.push(String(clientid).trim());
+      queryText += ` AND s.clientid::text = $${params.length}`;
     }
 
-    query += ' ORDER BY c.client_name ASC NULLS LAST, s.id DESC';
-    const result = await db.query(query, params);
-    res.status(200).json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (targetCompId && targetCompId !== 'All' && targetCompId !== 'undefined') {
+      const compIds = String(targetCompId).split(',').map(s => s.trim()).filter(Boolean);
+      if (compIds.length > 0) {
+        const placeholders = compIds.map(id => {
+          params.push(id);
+          return `$${params.length}`;
+        }).join(', ');
+        queryText += ` AND (
+          s.company_id IS NULL
+          OR s.company_id = ''
+          OR s.company_id::text IN (${placeholders})
+          OR EXISTS (
+            SELECT 1 FROM unnest(string_to_array(s.company_id::text, ',')) AS cid
+            WHERE TRIM(cid) IN (${placeholders})
+          )
+        )`;
+      }
+    }
+
+    queryText += ` ORDER BY s.id DESC`;
+
+    const result = await db.query(queryText, params);
+
+    const formatted = result.rows.map(row => {
+      const name = row.supplier_name || `Supplier #${row.id}`;
+      return {
+        id: row.id,
+        name: name,
+        label: name,
+        value: name,
+        supplier_name: name,
+        clientid: row.clientid,
+        company_id: row.company_id,
+        company_name: row.company_name
+      };
+    });
+
+    res.status(200).json(formatted);
+  } catch (error) {
+    console.error('Error in getSuppliersByClientAndCompany:', error);
+    res.status(500).json({ message: 'Internal Server Error: ' + error.message });
   }
 };
+
+exports.getSuppliersByClient = async (req, res) => {
+  return exports.getSuppliersByClientAndCompany(req, res);
+};
+
 
