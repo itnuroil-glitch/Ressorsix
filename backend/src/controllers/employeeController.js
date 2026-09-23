@@ -65,24 +65,16 @@ exports.getAllEmployees = async (req, res) => {
 
     if (targetCompId && targetCompId !== 'All') {
       const compIds = String(targetCompId).split(',').map(s => s.trim()).filter(Boolean);
-      if (compIds.length === 1) {
-        params.push(compIds[0]);
-        const pIndex = params.length;
+      if (compIds.length > 0) {
+        const placeholders = compIds.map(id => {
+          params.push(id);
+          return `$${params.length}`;
+        }).join(', ');
         queryText += ` AND (
-          e.basecompany_id::text = $${pIndex}
+          e.basecompany_id::text IN (${placeholders})
           OR EXISTS (
             SELECT 1 FROM employee_company ec 
-            WHERE ec.employee_id = e.id AND ec.company_id::text = $${pIndex}
-          )
-        )`;
-      } else if (compIds.length > 1) {
-        params.push(compIds);
-        const pIndex = params.length;
-        queryText += ` AND (
-          e.basecompany_id::text = ANY($${pIndex})
-          OR EXISTS (
-            SELECT 1 FROM employee_company ec 
-            WHERE ec.employee_id = e.id AND ec.company_id::text = ANY($${pIndex})
+            WHERE ec.employee_id = e.id AND ec.company_id::text IN (${placeholders})
           )
         )`;
       }
@@ -612,7 +604,6 @@ exports.getEmployeesByClientAndCompany = async (req, res) => {
              e.id::text AS value,
              e.email,
              e.phone,
-             e.employee_code,
              e.clientid,
              e.basecompany_id,
              (SELECT string_agg(role, ', ') FROM role WHERE e.roleid IS NOT NULL AND e.roleid::text != '' AND id::text = ANY(array_remove(string_to_array(e.roleid::text, ','), ''))) as role_name,
@@ -635,19 +626,14 @@ exports.getEmployeesByClientAndCompany = async (req, res) => {
 
     if (targetCompId && targetCompId !== 'All') {
       const compIds = String(targetCompId).split(',').map(s => s.trim()).filter(Boolean);
-      if (compIds.length === 1) {
-        params.push(compIds[0]);
-        const pIndex = params.length;
+      if (compIds.length > 0) {
+        const placeholders = compIds.map(id => {
+          params.push(id);
+          return `$${params.length}`;
+        }).join(', ');
         queryText += ` AND (
-          e.basecompany_id::text = $${pIndex}
-          OR ec.company_id::text = $${pIndex}
-        )`;
-      } else if (compIds.length > 1) {
-        params.push(compIds);
-        const pIndex = params.length;
-        queryText += ` AND (
-          e.basecompany_id::text = ANY($${pIndex})
-          OR ec.company_id::text = ANY($${pIndex})
+          e.basecompany_id::text IN (${placeholders})
+          OR ec.company_id::text IN (${placeholders})
         )`;
       }
     }
