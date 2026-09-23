@@ -396,9 +396,7 @@ exports.deleteAssetDetails = async (req, res) => {
     const oldFieldData = selectResult.rows[0].field_data;
     const oldPaths = extractFilePaths(oldFieldData);
 
-    const query = 'DELETE FROM tbl_asset WHERE id = $1 RETURNING *';
-    await db.query(query, [id]);
-
+    // 1. Clean up file attachments
     for (const path of oldPaths) {
       try {
         await db.query(
@@ -410,15 +408,45 @@ exports.deleteAssetDetails = async (req, res) => {
       }
     }
 
-    // Cleanup opening stock by soft deleting
-    await db.query('UPDATE "tbl_asset_opening_stock" SET is_deleted = true WHERE asset_id = $1', [id]);
+    // 2. Remove child records first to satisfy Foreign Key constraints
+    try {
+      await db.query('DELETE FROM tbl_inventory WHERE asset_id = $1', [id]);
+    } catch (e) {
+      console.warn('Notice cleaning tbl_inventory:', e.message);
+    }
 
-    await db.query('DELETE FROM tbl_inventory WHERE asset_id = $1', [id]);
+    try {
+      await db.query('DELETE FROM tbl_inventory_movement WHERE asset_id = $1', [id]);
+    } catch (e) {
+      console.warn('Notice cleaning tbl_inventory_movement:', e.message);
+    }
+
+    try {
+      await db.query('DELETE FROM tbl_asset_log WHERE asset_id = $1', [id]);
+    } catch (e) {
+      console.warn('Notice cleaning tbl_asset_log:', e.message);
+    }
+
+    try {
+      await db.query('DELETE FROM tbl_asset_assigned WHERE asset_id = $1', [id]);
+    } catch (e) {
+      console.warn('Notice cleaning tbl_asset_assigned:', e.message);
+    }
+
+    try {
+      await db.query('DELETE FROM "tbl_asset_opening_stock" WHERE asset_id = $1', [id]);
+    } catch (e) {
+      console.warn('Notice cleaning tbl_asset_opening_stock:', e.message);
+    }
+
+    // 3. Finally delete from parent tbl_asset table
+    const query = 'DELETE FROM tbl_asset WHERE id = $1 RETURNING *';
+    await db.query(query, [id]);
 
     res.status(200).json({ message: 'Asset details record deleted successfully' });
   } catch (error) {
     console.error('Error deleting asset details:', error);
-    res.status(500).json({ message: 'Error deleting asset details' });
+    res.status(500).json({ message: 'Error deleting asset details: ' + error.message });
   }
 };
 
