@@ -56,26 +56,27 @@ const checkDeletePermission = (tabId) => {
       }
 
       const moduleIds = matchedModules.map(m => m.id);
-      const companyId = req.headers['companyid'] || req.query.companyid || req.body.companyid || req.headers['company_id'] || req.query.company_id || req.body.company_id || null;
+      const rawCompanyId = req.headers['companyid'] || req.query.companyid || req.body.companyid || req.headers['company_id'] || req.query.company_id || req.body.company_id || null;
+      const parsedCompanyId = rawCompanyId && !isNaN(parseInt(rawCompanyId, 10)) ? parseInt(rawCompanyId, 10) : null;
 
       const roleIds = String(roleId).split(',').map(id => parseInt(id.trim(), 10)).filter(Boolean);
 
       let permRes;
-      if (companyId && companyId !== 'null' && companyId !== '') {
+      if (parsedCompanyId) {
         permRes = await db.query(
-          'SELECT can_delete, full_control FROM role_permission WHERE role_id = ANY($1) AND module_id = ANY($2) AND company_id = $3',
-          [roleIds, moduleIds, companyId]
+          'SELECT can_delete, full_control FROM role_permission WHERE role_id = ANY($1::int[]) AND module_id = ANY($2::int[]) AND company_id = $3',
+          [roleIds, moduleIds, parsedCompanyId]
         );
         // If no company-specific permissions exist, fall back to global
         if (permRes.rows.length === 0) {
           permRes = await db.query(
-            'SELECT can_delete, full_control FROM role_permission WHERE role_id = ANY($1) AND module_id = ANY($2) AND company_id IS NULL',
+            'SELECT can_delete, full_control FROM role_permission WHERE role_id = ANY($1::int[]) AND module_id = ANY($2::int[]) AND company_id IS NULL',
             [roleIds, moduleIds]
           );
         }
       } else {
         permRes = await db.query(
-          'SELECT can_delete, full_control FROM role_permission WHERE role_id = ANY($1) AND module_id = ANY($2) AND company_id IS NULL',
+          'SELECT can_delete, full_control FROM role_permission WHERE role_id = ANY($1::int[]) AND module_id = ANY($2::int[]) AND company_id IS NULL',
           [roleIds, moduleIds]
         );
       }
@@ -88,7 +89,7 @@ const checkDeletePermission = (tabId) => {
       next();
     } catch (error) {
       console.error('Error in checkDeletePermission middleware:', error);
-      res.status(500).json({ message: 'Internal Server Error during permission verification.' });
+      res.status(500).json({ message: 'Internal Server Error during permission verification: ' + error.message });
     }
   };
 };
