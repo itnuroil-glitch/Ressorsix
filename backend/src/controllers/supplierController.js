@@ -34,13 +34,20 @@ exports.getAllSuppliers = async (req, res) => {
       query += ` AND s.clientid::text = $${params.length}`;
     }
     if (company_id && company_id !== 'all' && company_id !== 'undefined') {
-      params.push(company_id);
-      query += ` AND (
-        s.company_id IS NULL 
-        OR s.company_id = '' 
-        OR s.company_id::text = $${params.length} 
-        OR string_to_array(nullif(s.company_id::text, ''), ',') && string_to_array(nullif($${params.length}::text, ''), ',')
-      )`;
+      const compIds = String(company_id).split(',').map(s => s.trim()).filter(Boolean);
+      if (compIds.length > 0) {
+        const placeholders = compIds.map(id => {
+          params.push(id);
+          return `$${params.length}`;
+        }).join(', ');
+        query += ` AND (
+          s.company_id::text IN (${placeholders})
+          OR EXISTS (
+            SELECT 1 FROM unnest(string_to_array(s.company_id::text, ',')) AS cid
+            WHERE TRIM(cid) IN (${placeholders})
+          )
+        )`;
+      }
     }
     query += ' ORDER BY s.id DESC';
     const result = await db.query(query, params);
@@ -180,9 +187,7 @@ exports.getSuppliersByClientAndCompany = async (req, res) => {
           return `$${params.length}`;
         }).join(', ');
         queryText += ` AND (
-          s.company_id IS NULL
-          OR s.company_id = ''
-          OR s.company_id::text IN (${placeholders})
+          s.company_id::text IN (${placeholders})
           OR EXISTS (
             SELECT 1 FROM unnest(string_to_array(s.company_id::text, ',')) AS cid
             WHERE TRIM(cid) IN (${placeholders})
