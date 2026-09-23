@@ -139,7 +139,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
 
   const fetchSuppliersList = async (clientId, companyId) => {
     try {
-      let url = `${API_URL}/api/suppliers/client`;
+      let url = `${API_URL}/api/suppliers/assigned-filter`;
       const queryParts = [];
       if (clientId) queryParts.push(`clientid=${encodeURIComponent(clientId)}`);
       if (companyId && companyId !== 'All') queryParts.push(`company_id=${encodeURIComponent(companyId)}`);
@@ -151,9 +151,9 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
         const data = await res.json();
         const list = Array.isArray(data) ? data : [];
         const formatted = list
-          .filter(s => s && (s.supplier_name || s.name))
+          .filter(s => s && (s.supplier_name || s.name || s.label))
           .map(s => {
-            const name = s.supplier_name || s.name;
+            const name = s.supplier_name || s.name || s.label;
             return {
               id: s.id || s.supplier_id,
               name: name,
@@ -655,6 +655,9 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
               } else if (processedPath.endsWith('/client') || processedPath.endsWith('/client/')) {
                 const separator = processedPath.endsWith('/') ? '' : '/';
                 processedPath = `${processedPath}${separator}${clientId}`;
+              } else if (processedPath.includes('suppliers') && !processedPath.includes('clientid')) {
+                const separator = processedPath.includes('?') ? '&' : '?';
+                processedPath = `${processedPath}${separator}clientid=${encodeURIComponent(clientId)}`;
               }
             }
             // Automatically append company_id if company is selected and not already in path
@@ -990,7 +993,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
 
         let dropdownData = isSupplierField && suppliersList.length > 0
           ? suppliersList
-          : defaultOptions.map(opt => ({ label: opt, value: opt }));
+          : defaultOptions.map(opt => (typeof opt === 'object' ? { label: opt.label || opt.name, value: opt.value || opt.name } : { label: opt, value: opt }));
 
         if (isSupplierField && formData[field.id]) {
           const currentVal = String(formData[field.id]);

@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const supplierController = require('../controllers/supplierController');
 
+router.get('/assigned-filter', supplierController.getSuppliersByClientAndCompany);
+router.get('/dropdown', supplierController.getSuppliersByClientAndCompany);
 router.get('/joined-info', supplierController.getSuppliersJoinedInfo);
 router.get('/client/:clientid?', supplierController.getSuppliersByClient);
 router.get('/client', supplierController.getSuppliersByClient);
