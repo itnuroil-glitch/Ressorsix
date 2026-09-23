@@ -44,6 +44,9 @@ exports.getAllEmployees = async (req, res) => {
 
     let queryText = `
       SELECT e.*, 
+             e.full_name AS name,
+             e.full_name AS label,
+             e.id::text AS value,
              (SELECT string_agg(role, ', ') FROM role WHERE e.roleid IS NOT NULL AND e.roleid::text != '' AND id::text = ANY(array_remove(string_to_array(e.roleid::text, ','), ''))) as role_name, 
              d.department_name,
              bc.company_name as base_company_name
@@ -60,9 +63,29 @@ exports.getAllEmployees = async (req, res) => {
       queryText += ` AND (e.clientid::text = $${params.length} OR bc.clientid::text = $${params.length})`;
     }
 
-    if (targetCompId) {
-      params.push(String(targetCompId).trim());
-      queryText += ` AND e.basecompany_id::text = $${params.length}`;
+    if (targetCompId && targetCompId !== 'All') {
+      const compIds = String(targetCompId).split(',').map(s => s.trim()).filter(Boolean);
+      if (compIds.length === 1) {
+        params.push(compIds[0]);
+        const pIndex = params.length;
+        queryText += ` AND (
+          e.basecompany_id::text = $${pIndex}
+          OR EXISTS (
+            SELECT 1 FROM employee_company ec 
+            WHERE ec.employee_id = e.id AND ec.company_id::text = $${pIndex}
+          )
+        )`;
+      } else if (compIds.length > 1) {
+        params.push(compIds);
+        const pIndex = params.length;
+        queryText += ` AND (
+          e.basecompany_id::text = ANY($${pIndex})
+          OR EXISTS (
+            SELECT 1 FROM employee_company ec 
+            WHERE ec.employee_id = e.id AND ec.company_id::text = ANY($${pIndex})
+          )
+        )`;
+      }
     }
 
     queryText += ` ORDER BY e.id DESC`;
@@ -570,6 +593,72 @@ exports.bulkImportEmployees = async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error: ' + error.message });
   } finally {
     client.release();
+  }
+};
+
+exports.getEmployeesByClientAndCompany = async (req, res) => {
+  try {
+    await ensureColumnsExist();
+    const clientid = req.query.clientid || req.query.clientId;
+    const targetCompId = req.query.company_id || req.query.companyId;
+
+    let queryText = `
+      SELECT DISTINCT 
+             e.id,
+             e.full_name,
+             e.full_name AS name,
+             e.full_name AS employee_name,
+             e.full_name AS label,
+             e.id::text AS value,
+             e.email,
+             e.phone,
+             e.employee_code,
+             e.clientid,
+             e.basecompany_id,
+             (SELECT string_agg(role, ', ') FROM role WHERE e.roleid IS NOT NULL AND e.roleid::text != '' AND id::text = ANY(array_remove(string_to_array(e.roleid::text, ','), ''))) as role_name,
+             d.department_name,
+             bc.company_name as base_company_name,
+             bc.company_name
+      FROM employee e
+      LEFT JOIN company bc ON e.basecompany_id = bc.id
+      LEFT JOIN employee_company ec ON e.id = ec.employee_id
+      LEFT JOIN department d ON e.department_id = d.id
+      LEFT JOIN users u ON LOWER(TRIM(e.email)) = LOWER(TRIM(u.email))
+      WHERE (e.is_deleted = false OR e.is_deleted IS NULL)
+    `;
+    const params = [];
+
+    if (clientid) {
+      params.push(String(clientid).trim());
+      queryText += ` AND (e.clientid::text = $${params.length} OR bc.clientid::text = $${params.length})`;
+    }
+
+    if (targetCompId && targetCompId !== 'All') {
+      const compIds = String(targetCompId).split(',').map(s => s.trim()).filter(Boolean);
+      if (compIds.length === 1) {
+        params.push(compIds[0]);
+        const pIndex = params.length;
+        queryText += ` AND (
+          e.basecompany_id::text = $${pIndex}
+          OR ec.company_id::text = $${pIndex}
+        )`;
+      } else if (compIds.length > 1) {
+        params.push(compIds);
+        const pIndex = params.length;
+        queryText += ` AND (
+          e.basecompany_id::text = ANY($${pIndex})
+          OR ec.company_id::text = ANY($${pIndex})
+        )`;
+      }
+    }
+
+    queryText += ` ORDER BY e.full_name ASC`;
+
+    const result = await db.query(queryText, params);
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error('Error in getEmployeesByClientAndCompany:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
   }
 };
 
