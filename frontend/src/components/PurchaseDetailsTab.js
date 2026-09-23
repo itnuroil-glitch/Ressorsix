@@ -987,7 +987,12 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
     switch (field.type) {
       case 'Dropdown':
       case 'Searchable Dropdown': {
-        const isSupplierField = (field.name || '').toLowerCase().includes('supplier');
+        const fieldNameLower = (field.name || '').toLowerCase();
+        const dynamicPathLower = (field.dynamicPath || '').toLowerCase();
+        const isSupplierField = fieldNameLower.includes('supplier') ||
+          fieldNameLower.includes('suppiler') ||
+          dynamicPathLower.includes('supplier') ||
+          dynamicPathLower.includes('suppiler');
         const defaultOptions = (field.allowedOptions && field.allowedOptions.length > 0)
           ? field.allowedOptions
           : (field.options || '').split(',').map(o => o.trim()).filter(Boolean);
