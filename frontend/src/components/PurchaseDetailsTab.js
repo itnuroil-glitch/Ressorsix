@@ -661,9 +661,10 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
               }
             }
             // Automatically append company_id if company is selected and not already in path
-            if (selectedCompany && selectedCompany !== 'All' && !processedPath.includes('company_id')) {
+            const compIdToUse = activeCompanyId || selectedCompany;
+            if (compIdToUse && compIdToUse !== 'All' && !processedPath.includes('company_id')) {
               const separator = processedPath.includes('?') ? '&' : '?';
-              processedPath = `${processedPath}${separator}company_id=${encodeURIComponent(selectedCompany)}`;
+              processedPath = `${processedPath}${separator}company_id=${encodeURIComponent(compIdToUse)}`;
             }
             // Automatically append countryId if the path is designed for country lookup
             if (processedPath.includes('country') && countryId) {
