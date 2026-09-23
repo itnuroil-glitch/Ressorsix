@@ -992,7 +992,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
           ? field.allowedOptions
           : (field.options || '').split(',').map(o => o.trim()).filter(Boolean);
 
-        let dropdownData = isSupplierField && suppliersList.length > 0
+        let dropdownData = isSupplierField
           ? suppliersList
           : defaultOptions.map(opt => (typeof opt === 'object' ? { label: opt.label || opt.name, value: opt.value || opt.name } : { label: opt, value: opt }));
 
