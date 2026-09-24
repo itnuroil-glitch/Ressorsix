@@ -572,21 +572,21 @@ exports.updateVehiclePurchase = async (req, res) => {
     }
 
     // Auto-fill any missing top-level Date fields (e.g. Purchase Date) for this configuration
-    if (processedFieldData && typeof processedFieldData === 'object' && custom_field_id) {
-      try {
-        const dateFieldsRes = await db.query(
-          "SELECT field_id FROM tbl_customfield_details WHERE custom_fieldsid = $1 AND parent_fieldid IS NULL AND field_type IN ('Date', 'DateTime') AND is_active = true AND isdelete = false",
-          [custom_field_id]
-        );
-        for (const df of dateFieldsRes.rows) {
-          if (!processedFieldData[df.field_id]) {
-            processedFieldData[df.field_id] = new Date().toISOString().split('T')[0];
-          }
-        }
-      } catch (e) {
-        console.error('Error auto-filling date fields on update:', e);
-      }
-    }
+    // if (processedFieldData && typeof processedFieldData === 'object' && custom_field_id) {
+    //   try {
+    //     const dateFieldsRes = await db.query(
+    //       "SELECT field_id FROM tbl_customfield_details WHERE custom_fieldsid = $1 AND parent_fieldid IS NULL AND field_type IN ('Date', 'DateTime') AND is_active = true AND isdelete = false",
+    //       [custom_field_id]
+    //     );
+    //     for (const df of dateFieldsRes.rows) {
+    //       if (!processedFieldData[df.field_id]) {
+    //         processedFieldData[df.field_id] = new Date().toISOString().split('T')[0];
+    //       }
+    //     }
+    //   } catch (e) {
+    //     console.error('Error auto-filling date fields on update:', e);
+    //   }
+    // }
 
     const jsonData = JSON.stringify(processedFieldData);
 
@@ -602,8 +602,8 @@ exports.updateVehiclePurchase = async (req, res) => {
     const result = await db.query(query, values);
 
     res.status(200).json(result.rows[0]);
-//   } catch (error) {
-//     console.error('Error updating vehicle purchase:', error);
-//     res.status(500).json({ message: 'Error updating vehicle purchase' });
-//   }
-// };
+  } catch (error) {
+    console.error('Error updating vehicle purchase:', error);
+    res.status(500).json({ message: 'Error updating vehicle purchase' });
+  }
+};
