@@ -220,7 +220,7 @@ exports.getSuppliersByClientAndCompany = async (req, res) => {
       return {
         id: row.id,
         name: name,
-        label: row.company_name ? `${name} (${row.company_name})` : name,
+        label: name,
         value: name,
         supplier_name: name,
         clientid: row.clientid,

@@ -154,11 +154,10 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
           .filter(s => s && (s.supplier_name || s.name || s.label))
           .map(s => {
             const name = s.supplier_name || s.name || s.label;
-            const companySuffix = s.company_name ? ` (${s.company_name})` : '';
             return {
               id: s.id || s.supplier_id,
               name: name,
-              label: s.label || `${name}${companySuffix}`,
+              label: name,
               value: name,
               client_name: s.client_name,
               company_name: s.company_name
