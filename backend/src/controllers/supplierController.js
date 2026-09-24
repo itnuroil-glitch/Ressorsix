@@ -146,16 +146,8 @@ exports.getSuppliersByClientAndCompany = async (req, res) => {
         s.id,
         s.id::text AS value,
         s.clientid,
-        c.client_name,
         s.company_id,
-        COALESCE(
-          comp.company_name,
-          (
-            SELECT string_agg(comp_sub.company_name, ', ')
-            FROM company comp_sub
-            WHERE comp_sub.id::text = ANY(string_to_array(s.company_id::text, ','))
-          )
-        ) AS company_name,
+        comp.company_name,
         COALESCE(
           s.field_data->>'supplier_name',
           s.field_data->>'1781941788052',
@@ -184,14 +176,7 @@ exports.getSuppliersByClientAndCompany = async (req, res) => {
 
     if (clientid && clientid !== 'all' && clientid !== 'undefined') {
       params.push(String(clientid).trim());
-      queryText += ` AND (
-        s.clientid::text = $${params.length}
-        OR EXISTS (
-          SELECT 1 FROM company c_match
-          WHERE c_match.id::text = ANY(string_to_array(s.company_id::text, ','))
-            AND c_match.clientid::text = $${params.length}
-        )
-      )`;
+      queryText += ` AND s.clientid::text = $${params.length}`;
     }
 
     if (targetCompId && targetCompId !== 'All' && targetCompId !== 'undefined') {
@@ -224,7 +209,6 @@ exports.getSuppliersByClientAndCompany = async (req, res) => {
         value: name,
         supplier_name: name,
         clientid: row.clientid,
-        client_name: row.client_name,
         company_id: row.company_id,
         company_name: row.company_name
       };

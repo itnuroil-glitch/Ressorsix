@@ -782,7 +782,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
   const handleEdit = async (record) => {
     setIsViewOnly(false);
     setEditingRecord(record);
-    
+
     // Fetch assigned quantities
     try {
       const assignedRes = await fetch(`${API_URL}/api/purchases/${record.id}/assigned-quantities`);
@@ -837,7 +837,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
   const handleView = async (record) => {
     setIsViewOnly(true);
     setEditingRecord(record);
-    
+
     // Fetch assigned quantities
     try {
       const assignedRes = await fetch(`${API_URL}/api/purchases/${record.id}/assigned-quantities`);
@@ -923,7 +923,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
       // Validation against already assigned quantities
       if (editingRecord) {
         for (const aq of assignedQuantities) {
-          const matchedItem = lineItems.find(item => 
+          const matchedItem = lineItems.find(item =>
             item.item_name && String(item.item_name).trim().toLowerCase() === String(aq.item_name).trim().toLowerCase()
           );
           if (!matchedItem) {
@@ -1623,7 +1623,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
                             if (fieldName.includes('supplier name') || fieldName === 'supplier_name' || (supplierNameDisplay === 'N/A' && fieldName.includes('supplier') && !fieldName.includes('type'))) {
                               supplierNameDisplay = valStr;
                             }
-                            
+
                             if (fieldName.includes('purchase date') || fieldName.includes('invoice date') || fieldName.includes('order date') || (fieldName.includes('date') && !fieldName.includes('expire') && !fieldName.includes('due'))) {
                               purchaseDateDisplay = valStr;
                             }
@@ -1943,8 +1943,8 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
                   {/* Module is auto-detected in the background */}
 
                   <TouchableOpacity
-                    style={[styles.submitBtn, { opacity: (selectedClient && selectedCompany) ? 1 : 0.5, marginTop: 16 }]}
-                    disabled={!selectedClient || !selectedCompany}
+                    style={[styles.submitBtn, { opacity: selectedClient ? 1 : 0.5, marginTop: 16 }]}
+                    disabled={!selectedClient}
                     onPress={() => {
                       let targetCountry = selectedCountry;
                       if (!targetCountry && selectedCompany) {
@@ -2090,7 +2090,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
 
                     {/* Table Rows */}
                     {lineItems.map((item, index) => {
-                      const match = editingRecord && assignedQuantities.find(aq => 
+                      const match = editingRecord && assignedQuantities.find(aq =>
                         aq.item_name && String(aq.item_name).trim().toLowerCase() === String(item.item_name).trim().toLowerCase()
                       );
                       const isQtyInvalid = match && (parseInt(item.qty, 10) || 0) < match.assigned_qty;
@@ -2129,9 +2129,9 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
                                   value={String(item.qty)}
                                   onChangeText={(val) => updateLineItem(item.id, 'qty', val)}
                                   onBlur={() => {
-                                    const minAllowed = match ? match.assigned_qty : 1; 
+                                    const minAllowed = match ? match.assigned_qty : 1;
                                     const enteredQty = parseInt(item.qty, 10) || 0;
-                                    
+
                                     if (enteredQty < minAllowed) {
                                       updateLineItem(item.id, 'qty', minAllowed);
                                       showToast(`Quantity cannot be less than already assigned quantity. Reset to minimum: ${minAllowed}.`, 'warning');
@@ -2251,15 +2251,15 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
                 </ScrollView>
 
                 <View style={{ flexDirection: 'row', justifyContent: isViewOnly ? 'flex-end' : 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#FFFFFF' }}>
-                   {isViewOnly ? (
+                  {isViewOnly ? (
                     <TouchableOpacity
                       style={{ paddingVertical: 12, paddingHorizontal: 24, backgroundColor: COLORS.primary, borderRadius: 8 }}
-                      onPress={() => { 
-                        setIsFormOpen(false); 
-                        setEditingRecord(null); 
-                        setFormData({}); 
+                      onPress={() => {
+                        setIsFormOpen(false);
+                        setEditingRecord(null);
+                        setFormData({});
                         setLineItems([{ id: Date.now(), barcode: '', barcodes: [], serial_numbers: [], item_name: '', qty: 1, uom: '', unit_price: 0, vat: 0, subtotal: 0 }]);
-                        setIsViewOnly(false); 
+                        setIsViewOnly(false);
                       }}
                     >
                       <Text style={{ color: '#FFFFFF', fontWeight: '600' }}>Close</Text>
