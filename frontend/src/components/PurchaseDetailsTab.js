@@ -154,10 +154,11 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
           .filter(s => s && (s.supplier_name || s.name || s.label))
           .map(s => {
             const name = s.supplier_name || s.name || s.label;
+            const companySuffix = s.company_name ? ` (${s.company_name})` : '';
             return {
               id: s.id || s.supplier_id,
               name: name,
-              label: name,
+              label: s.label || `${name}${companySuffix}`,
               value: name,
               client_name: s.client_name,
               company_name: s.company_name
@@ -1943,8 +1944,8 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
                   {/* Module is auto-detected in the background */}
 
                   <TouchableOpacity
-                    style={[styles.submitBtn, { opacity: selectedClient ? 1 : 0.5, marginTop: 16 }]}
-                    disabled={!selectedClient}
+                    style={[styles.submitBtn, { opacity: (selectedClient && selectedCompany) ? 1 : 0.5, marginTop: 16 }]}
+                    disabled={!selectedClient || !selectedCompany}
                     onPress={() => {
                       let targetCountry = selectedCountry;
                       if (!targetCountry && selectedCompany) {
