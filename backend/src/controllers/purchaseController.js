@@ -203,10 +203,21 @@ exports.getAllPurchases = async (req, res) => {
     let query = `
       SELECT 
         p.*, 
-        (
-          SELECT string_agg(company_name, ', ') 
-          FROM company 
-          WHERE id = ANY(string_to_array(nullif(p.company_id, ''), ',')::integer[])
+        COALESCE(
+          (
+            SELECT string_agg(comp_sub.company_name, ', ') 
+            FROM company comp_sub 
+            WHERE comp_sub.id::text = ANY(string_to_array(p.company_id::text, ','))
+              AND (comp_sub.is_deleted = false OR comp_sub.is_deleted IS NULL)
+          ),
+          (
+            SELECT comp_client.company_name
+            FROM company comp_client
+            WHERE comp_client.clientid::text = p.clientid::text
+              AND (comp_client.is_deleted = false OR comp_client.is_deleted IS NULL)
+            ORDER BY comp_client.id ASC
+            LIMIT 1
+          )
         ) AS company_name,
         (SELECT string_agg(role, ', ') FROM role WHERE p.roleid IS NOT NULL AND id::text = ANY(string_to_array(p.roleid::text, ','))) AS role_name, 
         COALESCE(
