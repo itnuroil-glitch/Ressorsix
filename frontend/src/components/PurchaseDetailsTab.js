@@ -106,7 +106,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
   useEffect(() => {
     fetchInitialData();
     fetchUomList();
-    fetchAssetsList(user?.clientid || user?.client_id);
+    fetchAssetsList(user?.clientid || user?.client_id, user?.company_id || user?.companyid);
     fetchVatList();
   }, []);
 
@@ -122,11 +122,19 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
     }
   };
 
-  const fetchAssetsList = async (clientId) => {
+  const fetchAssetsList = async (clientId, companyId) => {
     try {
-      const url = clientId
-        ? `${API_URL}/api/asset-details/dropdown?clientid=${clientId}`
-        : `${API_URL}/api/asset-details/dropdown`;
+      let url = `${API_URL}/api/asset-details/dropdown`;
+      const params = [];
+      if (clientId && clientId !== 'All' && clientId !== 'all') {
+        params.push(`clientid=${encodeURIComponent(clientId)}`);
+      }
+      if (companyId && companyId !== 'All' && companyId !== 'all') {
+        params.push(`company_id=${encodeURIComponent(companyId)}`);
+      }
+      if (params.length > 0) {
+        url += `?${params.join('&')}`;
+      }
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
@@ -515,6 +523,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
     let currentCompanies = [];
     if (selectedClient) {
       currentCompanies = await fetchCompaniesForClient(selectedClient, 'create');
+      fetchAssetsList(selectedClient, selectedCompany);
     }
     if (currentCompanies.length === 1 && user && String(user.roleId) !== '1') {
       const singleComp = currentCompanies[0];
@@ -548,8 +557,8 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
     setLoading(true);
     setWizardStep(2);
     try {
-      // Load assets scoped to this client ID
-      await fetchAssetsList(clientId);
+      // Load assets scoped to this client ID and company
+      await fetchAssetsList(clientId, activeCompanyId);
       // Load suppliers scoped to this client and company
       await fetchSuppliersList(clientId, activeCompanyId);
 
@@ -1905,6 +1914,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
                           setSelectedClient(val);
                           setSelectedCompany('');
                           fetchCompaniesForClient(val);
+                          fetchAssetsList(val, '');
                         }}
                         placeholder="-- Select Client --"
                         searchPlaceholder="Search Client..."
@@ -1930,6 +1940,7 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
                         } else {
                           setSelectedCountry('');
                         }
+                        fetchAssetsList(selectedClient, val);
                       }}
                       placeholder="-- Select Company --"
                       searchPlaceholder="Search Company..."
