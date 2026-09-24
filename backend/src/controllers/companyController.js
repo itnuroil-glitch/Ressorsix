@@ -404,6 +404,14 @@ exports.deleteCompany = async (req, res) => {
       return res.status(404).json({ message: 'Company not found' });
     }
 
+    // Clean up references in employee_company and users to prevent orphaned references
+    await pool.query('DELETE FROM employee_company WHERE company_id = $1', [id]).catch(err => {
+      console.warn('Could not cleanup employee_company for deleted company:', err.message);
+    });
+    await pool.query('UPDATE users SET companyid = NULL WHERE companyid = $1', [id]).catch(err => {
+      console.warn('Could not cleanup users.companyid for deleted company:', err.message);
+    });
+
     res.status(200).json({ message: 'Company deleted successfully' });
   } catch (error) {
     console.error('Error deleting company:', error);
@@ -461,44 +469,56 @@ exports.getCompaniesByClient = async (req, res) => {
       const isSuperAdmin = roleIds.some(r => r === '1');
       const isClientAdmin = roleIds.some(r => r === '2');
 
-      // Only skip restrictions for Super Admin (Role 1)
-      if (!isSuperAdmin) {
+      if (isClientAdmin) {
+        // Client admin gets all active companies under this client
+        const allClientCompRes = await pool.query(
+          `SELECT DISTINCT c.id FROM company c
+           LEFT JOIN users u ON u.companyid = c.id
+           WHERE (c.clientid::text = $1::text OR u.clientid::text = $1::text)
+             AND (c.is_deleted = false OR c.is_deleted IS NULL)`,
+          [String(clientId).trim()]
+        );
+        assignedCompanyIds = allClientCompRes.rows.map(r => r.id);
+      } else if (!isSuperAdmin) {
         let baseCompanyIds = [];
-        if (isClientAdmin) {
-          // Client admin defaults to all companies under this client (or linked via user)
+        // Fetch assigned companies from employee_company (filtering active companies)
+        let empCompanyIds = [];
+        if (employeeId) {
+          const compRes = await pool.query(
+            `SELECT ec.company_id FROM employee_company ec
+             JOIN company c ON ec.company_id = c.id
+             WHERE ec.employee_id = $1 AND (c.is_deleted = false OR c.is_deleted IS NULL)`,
+            [employeeId]
+          );
+          empCompanyIds = compRes.rows.map(r => r.company_id);
+        }
+
+        // Fetch assigned companies from role's companyids (multi roles supported via ANY)
+        const roleRes = await pool.query(
+          'SELECT companyids FROM role WHERE id = ANY(string_to_array($1, \',\')::int[]) AND is_deleted = false',
+          [String(roleId)]
+        );
+        const roleCompanyIds = [];
+        roleRes.rows.forEach(r => {
+          if (Array.isArray(r.companyids)) {
+            r.companyids.forEach(id => roleCompanyIds.push(id));
+          }
+        });
+
+        // Merge both lists to ensure employee gets access to all configured companies
+        baseCompanyIds = Array.from(new Set([...empCompanyIds, ...roleCompanyIds]));
+
+        // Fallback: If employee has no explicit company assignments or their assigned company was deleted,
+        // fall back to all active companies of the client instead of blocking them
+        if (baseCompanyIds.length === 0) {
           const allClientCompRes = await pool.query(
             `SELECT DISTINCT c.id FROM company c
              LEFT JOIN users u ON u.companyid = c.id
-             WHERE (c.clientid = $1 OR u.clientid = $1)
+             WHERE (c.clientid::text = $1::text OR u.clientid::text = $1::text)
                AND (c.is_deleted = false OR c.is_deleted IS NULL)`,
-            [clientId]
+            [String(clientId).trim()]
           );
           baseCompanyIds = allClientCompRes.rows.map(r => r.id);
-        } else {
-          // Fetch assigned companies from employee_company
-          let empCompanyIds = [];
-          if (employeeId) {
-            const compRes = await pool.query(
-              'SELECT company_id FROM employee_company WHERE employee_id = $1',
-              [employeeId]
-            );
-            empCompanyIds = compRes.rows.map(r => r.company_id);
-          }
-
-          // Fetch assigned companies from role's companyids (multi roles supported via ANY)
-          const roleRes = await pool.query(
-            'SELECT companyids FROM role WHERE id = ANY(string_to_array($1, \',\')::int[]) AND is_deleted = false',
-            [String(roleId)]
-          );
-          const roleCompanyIds = [];
-          roleRes.rows.forEach(r => {
-            if (Array.isArray(r.companyids)) {
-              r.companyids.forEach(id => roleCompanyIds.push(id));
-            }
-          });
-
-          // Merge both lists to ensure employee gets access to all configured companies
-          baseCompanyIds = Array.from(new Set([...empCompanyIds, ...roleCompanyIds]));
         }
         assignedCompanyIds = baseCompanyIds;
 
@@ -560,7 +580,7 @@ exports.getCompaniesByClient = async (req, res) => {
                   'SELECT can_view, can_create, can_edit, can_delete, full_control FROM role_permission WHERE role_id = ANY(string_to_array($1, \',\')::int[]) AND module_id = ANY($2) AND company_id IS NULL',
                   [roleId, moduleDbIds]
                 );
-                const hasGlobalPermission = globalPermRes.rows.some(row => {
+                const hasGlobalPermission = globalPermRes.rows.length === 0 || globalPermRes.rows.some(row => {
                   if (row.full_control) return true;
                   if (actionParam === 'create' && row.can_create) return true;
                   if (actionParam === 'view' && row.can_view) return true;
@@ -597,7 +617,7 @@ exports.getCompaniesByClient = async (req, res) => {
 
                 const hasCompanySpecificPermissions = permRes.rows.length > 0;
 
-                assignedCompanyIds = assignedCompanyIds.filter(cid => {
+                const filtered = (assignedCompanyIds || []).filter(cid => {
                   const cidStr = String(cid);
                   if (companyPermMap[cidStr] !== undefined) {
                     return companyPermMap[cidStr];
@@ -607,11 +627,15 @@ exports.getCompaniesByClient = async (req, res) => {
                   }
                   return hasGlobalPermission;
                 });
+
+                if (hasCompanySpecificPermissions || globalPermRes.rows.length > 0) {
+                  assignedCompanyIds = filtered;
+                }
               }
             }
           }
-        }
       }
+    }
 
     let query = `
       SELECT DISTINCT c.*, cl.client_name as client_name,
@@ -622,10 +646,10 @@ exports.getCompaniesByClient = async (req, res) => {
       LEFT JOIN attachment a ON c.id = a.companyid AND a.type = 'Trade License' AND (a.is_deleted = false OR a.is_deleted IS NULL)
       LEFT JOIN attachment logo_att ON c.id = logo_att.companyid AND logo_att.type = 'Company Logo' AND (logo_att.is_deleted = false OR logo_att.is_deleted IS NULL)
       LEFT JOIN users u ON u.companyid = c.id
-      WHERE (c.clientid = $1 OR u.clientid = $1)
+      WHERE (c.clientid::text = $1::text OR u.clientid::text = $1::text)
         AND (c.is_deleted = false OR c.is_deleted IS NULL)
     `;
-    const params = [clientId];
+    const params = [String(clientId).trim()];
 
     if (assignedCompanyIds !== null) {
       if (assignedCompanyIds.length > 0) {
