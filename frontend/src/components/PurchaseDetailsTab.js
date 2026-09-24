@@ -179,21 +179,21 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
     }
   };
 
-  // const fetchVatList = async () => {
-  //   try {
-  //     const res = await fetch(`${API_URL}/api/vat`);
-  //     if (res.ok) {
-  //       const data = await res.json();
-  //       setVatList(Array.isArray(data) ? data : []);
-  //     }
-  //   } catch (e) {
-  //     console.warn('Could not fetch VAT list', e);
-  //   }
-  // };
-
-  const addLineItem = () => {
-    setLineItems(prev => [...prev, { id: Date.now(), barcode: '', barcodes: [], serial_numbers: [], item_name: '', qty: 1, uom: '', unit_price: 0, vat: 0, subtotal: 0 }]);
+  const fetchVatList = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/vat`);
+      if (res.ok) {
+        const data = await res.json();
+        setVatList(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      console.warn('Could not fetch VAT list', e);
+    }
   };
+
+  // const addLineItem = () => {
+  //   setLineItems(prev => [...prev, { id: Date.now(), barcode: '', barcodes: [], serial_numbers: [], item_name: '', qty: 1, uom: '', unit_price: 0, vat: 0, subtotal: 0 }]);
+  // };
 
   const removeLineItem = (id) => {
     setLineItems(prev => prev.filter(item => item.id !== id));
