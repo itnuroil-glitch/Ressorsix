@@ -2,8 +2,8 @@ const db = require('../config/db');
 
 exports.getAllSuppliers = async (req, res) => {
   try {
-    const { clientid } = req.query;
-    const company_id = req.query.company_id || req.query.companyid;
+    const clientid = req.query.clientid || req.query.clientId || req.params?.clientid;
+    const company_id = req.query.company_id || req.query.companyid || req.query.companyId;
 
     let query = `
       SELECT 
@@ -106,7 +106,10 @@ exports.deleteSupplier = async (req, res) => {
 
 exports.getSuppliersJoinedInfo = async (req, res) => {
   try {
-    const query = `
+    const clientid = req.query.clientid || req.query.clientId || req.params?.clientid;
+    const company_id = req.query.company_id || req.query.companyid || req.query.companyId;
+
+    let query = `
       SELECT 
         s.id AS supplier_id,
         s.id,
@@ -140,10 +143,31 @@ exports.getSuppliersJoinedInfo = async (req, res) => {
       FROM tbl_suppliers s
       LEFT JOIN client c ON s.clientid::text = c.id::text
       LEFT JOIN company comp ON s.company_id::text = comp.id::text
-      WHERE s.isdelete = false OR s.isdelete IS NULL
-      ORDER BY s.id DESC
+      WHERE (s.isdelete = false OR s.isdelete IS NULL)
     `;
-    const result = await db.query(query);
+    let params = [];
+    if (clientid && clientid !== 'all' && clientid !== 'undefined') {
+      params.push(clientid);
+      query += ` AND s.clientid::text = $${params.length}`;
+    }
+    if (company_id && company_id !== 'all' && company_id !== 'undefined') {
+      const compIds = String(company_id).split(',').map(s => s.trim()).filter(Boolean);
+      if (compIds.length > 0) {
+        const placeholders = compIds.map(id => {
+          params.push(id);
+          return `$${params.length}`;
+        }).join(', ');
+        query += ` AND (
+          s.company_id::text IN (${placeholders})
+          OR EXISTS (
+            SELECT 1 FROM unnest(string_to_array(s.company_id::text, ',')) AS cid
+            WHERE TRIM(cid) IN (${placeholders})
+          )
+        )`;
+      }
+    }
+    query += ' ORDER BY s.id DESC';
+    const result = await db.query(query, params);
     res.status(200).json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -153,7 +177,7 @@ exports.getSuppliersJoinedInfo = async (req, res) => {
 exports.getSuppliersByClientAndCompany = async (req, res) => {
   try {
     const clientid = req.query.clientid || req.query.clientId || req.params.clientid;
-    const targetCompId = req.query.company_id || req.query.companyId;
+    const targetCompId = req.query.company_id || req.query.companyId || req.query.companyid;
 
     let queryText = `
       SELECT 
@@ -161,7 +185,14 @@ exports.getSuppliersByClientAndCompany = async (req, res) => {
         s.id::text AS value,
         s.clientid,
         s.company_id,
-        comp.company_name,
+        COALESCE(
+          comp.company_name,
+          (
+            SELECT string_agg(comp_sub.company_name, ', ')
+            FROM company comp_sub
+            WHERE comp_sub.id::text = ANY(string_to_array(s.company_id::text, ','))
+          )
+        ) AS company_name,
         COALESCE(
           s.field_data->>'supplier_name',
           s.field_data->>'1781941788052',
