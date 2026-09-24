@@ -100,7 +100,12 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
           setSelectedCountry(String(defaultComp.country));
         }
       }
-      if (user?.company_id || user?.companyid) setSelectedCompany(String(user?.company_id || user?.companyid));
+      const userCompId = String(user?.company_id || user?.companyid || '');
+      if (userCompId && fetchedComps.some(c => String(c.id) === userCompId)) {
+        setSelectedCompany(userCompId);
+      } else {
+        setSelectedCompany('');
+      }
       const viModule = (modulesData || []).find(m => m.module_name && (m.module_name.toLowerCase().includes('asset details') || m.module_name.toLowerCase().includes('asset details')));
       if (viModule) setSelectedModule(String(viModule.id));
     } catch (err) {
