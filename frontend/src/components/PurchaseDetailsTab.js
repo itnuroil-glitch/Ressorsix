@@ -139,12 +139,13 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
 
   const fetchSuppliersList = async (clientId, companyId) => {
     try {
-      let url = `${API_URL}/api/suppliers/assigned-filter`;
-      const queryParts = [];
-      if (clientId) queryParts.push(`clientid=${encodeURIComponent(clientId)}`);
-      if (companyId && companyId !== 'All') queryParts.push(`company_id=${encodeURIComponent(companyId)}`);
-      if (queryParts.length > 0) {
-        url += `?${queryParts.join('&')}`;
+      if (!companyId || companyId === 'All') {
+        setSuppliersList([]);
+        return;
+      }
+      let url = `${API_URL}/api/suppliers/assigned-filter?company_id=${encodeURIComponent(companyId)}`;
+      if (clientId && clientId !== 'all' && clientId !== 'All') {
+        url += `&clientid=${encodeURIComponent(clientId)}`;
       }
       const res = await fetch(url);
       if (res.ok) {
