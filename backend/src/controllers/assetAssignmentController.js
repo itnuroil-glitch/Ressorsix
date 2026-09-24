@@ -114,9 +114,26 @@ exports.getAssetAssignments = async (req, res) => {
   try {
     const { clientid, email } = req.query;
     let query = `
-      SELECT a.*, c.company_name
+      SELECT a.*, 
+        COALESCE(
+          (
+            SELECT string_agg(comp_sub.company_name, ', ')
+            FROM company comp_sub
+            WHERE comp_sub.id::text = ANY(string_to_array(a.company_id::text, ','))
+              AND (comp_sub.is_deleted = false OR comp_sub.is_deleted IS NULL)
+          ),
+          c.company_name,
+          (
+            SELECT comp_client.company_name
+            FROM company comp_client
+            WHERE comp_client.clientid::text = a.clientid::text
+              AND (comp_client.is_deleted = false OR comp_client.is_deleted IS NULL)
+            ORDER BY comp_client.id ASC
+            LIMIT 1
+          )
+        ) AS company_name
       FROM tbl_asset_assigned a
-      LEFT JOIN company c ON a.company_id::text = c.id::text
+      LEFT JOIN company c ON a.company_id::text = c.id::text AND (c.is_deleted = false OR c.is_deleted IS NULL)
       WHERE a.is_deleted = false
     `;
     const params = [];
