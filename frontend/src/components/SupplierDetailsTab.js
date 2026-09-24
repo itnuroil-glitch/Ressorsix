@@ -1074,8 +1074,9 @@ export default function SupplierDetailsTab({ user, showToast, isSidebarCollapsed
                     }
                     const cObj = clients.find(c => String(c.id) === String(r.clientid));
                     const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
-                    const compObj = companies.find(c => String(c.id) === String(r.company_id || r.companyid));
-                    const compName = r.company_name || (compObj ? (compObj.company_name || compObj.name) : '');
+                    const compIds = String(r.company_id || r.companyid || '').split(',').map(s => s.trim()).filter(Boolean);
+                    const matchedComps = companies.filter(c => compIds.includes(String(c.id)));
+                    const compName = r.company_name || (matchedComps.length > 0 ? matchedComps.map(c => c.company_name || c.name).join(', ') : '');
 
                     let sName = 'N/A';
                     let cpName = 'N/A';
@@ -1174,8 +1175,9 @@ export default function SupplierDetailsTab({ user, showToast, isSidebarCollapsed
                         }
 
                         // Company
-                        const companyObj = companies.find(c => String(c.id) === String(record.company_id || record.companyid));
-                        const companyNameDisplay = record.company_name || (companyObj ? (companyObj.company_name || companyObj.name) : null) || 'N/A';
+                        const companyIds = String(record.company_id || record.companyid || '').split(',').map(s => s.trim()).filter(Boolean);
+                        const matchedCompanies = companies.filter(c => companyIds.includes(String(c.id)));
+                        const companyNameDisplay = record.company_name || (matchedCompanies.length > 0 ? matchedCompanies.map(c => c.company_name || c.name).join(', ') : null) || 'N/A';
 
                         return (
                           <View key={record.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>

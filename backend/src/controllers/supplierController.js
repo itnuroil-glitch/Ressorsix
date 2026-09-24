@@ -8,7 +8,14 @@ exports.getAllSuppliers = async (req, res) => {
     let query = `
       SELECT 
         s.*, 
-        c.company_name,
+        COALESCE(
+          c.company_name,
+          (
+            SELECT string_agg(comp_sub.company_name, ', ')
+            FROM company comp_sub
+            WHERE comp_sub.id::text = ANY(string_to_array(s.company_id::text, ','))
+          )
+        ) AS company_name,
         cl.client_name,
         COALESCE(
           s.field_data->>'supplier_name',
@@ -106,7 +113,14 @@ exports.getSuppliersJoinedInfo = async (req, res) => {
         s.clientid,
         c.client_name,
         s.company_id,
-        comp.company_name,
+        COALESCE(
+          comp.company_name,
+          (
+            SELECT string_agg(comp_sub.company_name, ', ')
+            FROM company comp_sub
+            WHERE comp_sub.id::text = ANY(string_to_array(s.company_id::text, ','))
+          )
+        ) AS company_name,
         COALESCE(
           s.field_data->>'supplier_name',
           s.field_data->>'1781941788052',
