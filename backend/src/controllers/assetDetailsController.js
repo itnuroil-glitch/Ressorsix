@@ -606,8 +606,24 @@ exports.getAssetDropdownList = async (req, res) => {
     }
 
     if (companyId && companyId !== 'undefined' && companyId !== 'null' && companyId !== 'All') {
-      params.push(String(companyId).trim());
-      query += ` AND (company_id::text = $${params.length} OR company_id IS NULL)`;
+      const compIds = String(companyId).split(',').map(s => s.trim()).filter(Boolean);
+      if (compIds.length > 0) {
+        params.push(compIds);
+        query += ` AND (
+          EXISTS (
+            SELECT 1 FROM unnest(string_to_array(company_id::text, ',')) AS cid 
+            WHERE trim(cid) = ANY($${params.length}::text[])
+          )
+          OR company_id::text = ANY($${params.length}::text[])
+          OR company_id IS NULL 
+          OR trim(company_id::text) = ''
+          OR NOT EXISTS (
+            SELECT 1 FROM company c_active 
+            WHERE c_active.id::text = ANY(string_to_array(company_id::text, ',')) 
+              AND (c_active.is_deleted = false OR c_active.is_deleted IS NULL)
+          )
+        )`;
+      }
     }
 
     query += ' ORDER BY id DESC';
