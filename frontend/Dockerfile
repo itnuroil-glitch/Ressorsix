@@ -9,7 +9,7 @@ ENV EXPO_PUBLIC_API_URL_WEB=${EXPO_PUBLIC_API_URL_WEB}
 
 # Copy manifests & install dependencies
 COPY package*.json ./
-RUN npm ci
+RUN npm install --legacy-peer-deps
 
 # Copy application source code
 COPY . .
