@@ -1177,7 +1177,7 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
           <Text style={styles.headerTitle}>Asset Details</Text>
           <Text style={styles.headerSubtitle}>Manage your asset details records.</Text>
         </View>
-        {canCreate && (
+        {(canCreate || isEmployee) && (
           <TouchableOpacity
             style={styles.addButton}
             onPress={handleAddNewRecord}
@@ -1190,66 +1190,7 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
 
       {/* MAIN CONTENT */}
       <View style={styles.mainContent}>
-        {isEmployee ? (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, minHeight: 400 }}>
-            <View style={{
-              width: '100%',
-              maxWidth: 600,
-              backgroundColor: '#FFFFFF',
-              borderRadius: 16,
-              padding: 40,
-              alignItems: 'center',
-              borderWidth: 1,
-              borderColor: '#E2E8F0',
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 10 },
-              shadowOpacity: 0.05,
-              shadowRadius: 15,
-              elevation: 4
-            }}>
-              <View style={{
-                width: 80,
-                height: 80,
-                borderRadius: 40,
-                backgroundColor: '#EBF4F0',
-                justifyContent: 'center',
-                alignItems: 'center',
-                marginBottom: 24
-              }}>
-                <Ionicons name="construct-outline" size={40} color={COLORS.primary} />
-              </View>
-              <Text style={{ fontSize: 24, fontWeight: '800', color: COLORS.textPrimary, marginBottom: 12, textAlign: 'center' }}>
-                Asset Registration Entry
-              </Text>
-              <Text style={{ fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 32, lineHeight: 22, maxWidth: 440 }}>
-                Please register the asset hardware and specification details. All records are processed securely.
-              </Text>
-              <TouchableOpacity
-                style={{
-                  backgroundColor: COLORS.primary,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  paddingVertical: 16,
-                  paddingHorizontal: 32,
-                  borderRadius: 12,
-                  width: '100%',
-                  maxWidth: 320,
-                  shadowColor: COLORS.primary,
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.2,
-                  shadowRadius: 6,
-                  elevation: 2
-                }}
-                onPress={handleAddNewRecord}
-              >
-                <Ionicons name="add-circle" size={22} color="#FFFFFF" style={{ marginRight: 8 }} />
-                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>Add Asset</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          assetDetailsRecords.length === 0 && !searchQuery ? (
+        {assetDetailsRecords.length === 0 && !searchQuery ? (
             <View style={styles.emptyState}>
               <Ionicons name="document-text-outline" size={48} color={COLORS.textMuted} />
               <Text style={styles.emptyStateText}>No asset details records found.</Text>
@@ -1486,7 +1427,7 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
               })()}
             </View>
           )
-        )}
+        }
       </View>
 
       {/* DELETE CONFIRMATION MODAL */}
