@@ -5963,7 +5963,7 @@ export default function DashboardScreen({ user, onSignOut }) {
       case 'asset_inventory':
         return <InventoryTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('asset_inventory')} checkRowPermission={(compId, act) => checkRowPermission('asset_inventory', compId, act)} />;
       case 'asset_assignment':
-        return <AssetAssignmentTab user={user} showToast={showToast} />;
+        return <AssetAssignmentTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('asset_assignment')} checkRowPermission={(compId, act) => checkRowPermission('asset_assignment', compId, act)} />;
       case 'supplier_details':
         return <SupplierDetailsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('supplier_details')} checkRowPermission={(compId, act) => checkRowPermission('supplier_details', compId, act)} />;
       case 'purchase_details':

@@ -113,7 +113,7 @@ const saveAttachmentLocally = (base64String, fileName) => {
 
   const uniqueName = Date.now() + '-' + (fileName ? fileName.replace(/\s+/g, '_') : 'attachment.file');
   const filePath = path.join(attachmentDir, uniqueName);
-  
+
   fs.writeFileSync(filePath, buffer);
   return `/backend/Attachment/${uniqueName}`;
 };
@@ -229,10 +229,10 @@ const processAndSyncFieldDataFiles = async (fieldData, clientid) => {
 exports.saveVehiclePurchase = async (req, res) => {
   try {
     const { vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id } = req.body;
-    
+
     // Save any base64 files locally, insert into public.attachment table, and update the paths
     const processedFieldData = await processAndSyncFieldDataFiles(field_data, clientid);
-    
+
     // Resolve vehicle_id automatically from field_data if not provided
     let resolvedVehicleId = vehicle_id;
     if (!resolvedVehicleId && processedFieldData) {
@@ -255,20 +255,20 @@ exports.saveVehiclePurchase = async (req, res) => {
         console.error('Error auto-filling date fields on save:', e);
       }
     }
-    
+
     // Convert field_data to JSON string
     const jsonData = JSON.stringify(processedFieldData);
-    
+
     const query = `
       INSERT INTO tbl_vehicle_purchase (vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id, created_at, updated_at)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *
     `;
-    
+
     const values = [resolvedVehicleId || null, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null, roleid || null, user_id || null, company_id || null];
-    
+
     const result = await db.query(query, values);
-    
+
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error saving vehicle purchase:', error);
@@ -419,7 +419,7 @@ exports.getVehiclePurchase = async (req, res) => {
       if (!purchaseDate && row.created_at) {
         try {
           purchaseDate = new Date(row.created_at).toISOString().split('T')[0];
-        } catch (e) {}
+        } catch (e) { }
       }
 
       let supplier = '';
@@ -501,7 +501,7 @@ exports.deleteVehiclePurchase = async (req, res) => {
     // Fetch the existing record to find associated files
     const selectQuery = 'SELECT field_data FROM tbl_vehicle_purchase WHERE id = $1';
     const selectResult = await db.query(selectQuery, [id]);
-    
+
     if (selectResult.rowCount === 0) {
       return res.status(404).json({ message: 'Purchase record not found' });
     }
@@ -512,7 +512,7 @@ exports.deleteVehiclePurchase = async (req, res) => {
     // Delete the vehicle purchase record
     const query = 'DELETE FROM tbl_vehicle_purchase WHERE id = $1 RETURNING *';
     const result = await db.query(query, [id]);
-    
+
     // Mark files as deleted in the attachment table
     for (const path of oldPaths) {
       try {
@@ -524,7 +524,7 @@ exports.deleteVehiclePurchase = async (req, res) => {
         console.error('Error updating attachment table on deletion:', e);
       }
     }
-    
+
     res.status(200).json({ message: 'Purchase record deleted successfully' });
   } catch (error) {
     console.error('Error deleting vehicle purchase:', error);
@@ -540,7 +540,7 @@ exports.updateVehiclePurchase = async (req, res) => {
     // Fetch the existing record to find previously associated files
     const selectQuery = 'SELECT field_data FROM tbl_vehicle_purchase WHERE id = $1';
     const selectResult = await db.query(selectQuery, [id]);
-    
+
     if (selectResult.rowCount === 0) {
       return res.status(404).json({ message: 'Purchase record not found' });
     }
