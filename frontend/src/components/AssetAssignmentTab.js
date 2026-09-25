@@ -108,14 +108,14 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
     const available = Math.max(0, totalSessionPool - currentClaimedCount);
 
     return (
-      <View style={{ 
-        flexDirection: 'row', 
-        backgroundColor: isSelected ? '#F8FAFC' : '#FFFFFF', 
-        padding: 12, 
+      <View style={{
+        flexDirection: 'row',
+        backgroundColor: isSelected ? '#F8FAFC' : '#FFFFFF',
+        padding: 12,
         marginVertical: 4,
         marginHorizontal: 6,
         borderRadius: 6,
-        borderWidth: 1, 
+        borderWidth: 1,
         borderColor: isSelected ? '#BAE6FD' : '#E2E8F0',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 1 },
@@ -125,8 +125,8 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
         alignItems: 'center'
       }}>
         <View style={{ width: 40, height: 40, borderRadius: 4, backgroundColor: '#E2E8F0', marginRight: 12, overflow: 'hidden' }}>
-          <Image 
-            source={{ uri: 'https://dummyimage.com/100x100/e2e8f0/0f172a.png&text=IT' }} 
+          <Image
+            source={{ uri: 'https://dummyimage.com/100x100/e2e8f0/0f172a.png&text=IT' }}
             style={{ width: 40, height: 40 }}
             resizeMode="cover"
           />
@@ -557,7 +557,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
       } catch (e) { }
     }
     setFormData(parsed);
-    
+
     if (parsed.assetItems && Array.isArray(parsed.assetItems) && parsed.assetItems.length > 0) {
       const initializedItems = parsed.assetItems.map(item => ({
         ...item,
@@ -786,8 +786,8 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
           return (
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <View style={{ width: 36, height: 36, borderRadius: 4, backgroundColor: '#E2E8F0', marginRight: 10, overflow: 'hidden' }}>
-                <Image 
-                  source={{ uri: 'https://dummyimage.com/100x100/e2e8f0/0f172a.png&text=IT' }} 
+                <Image
+                  source={{ uri: 'https://dummyimage.com/100x100/e2e8f0/0f172a.png&text=IT' }}
                   style={{ width: 36, height: 36 }}
                   resizeMode="cover"
                 />
@@ -1340,7 +1340,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
                     const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
                     const compObj = companies.find(c => String(c.id) === String(r.company_id || r.companyid));
                     const compName = r.company_name || (compObj ? (compObj.company_name || compObj.name) : '');
-                    
+
                     let eName = r.employee_name || '';
                     if (!eName && pData) {
                       for (const [key, value] of Object.entries(pData)) {
@@ -1402,11 +1402,11 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
                         if (empNameDisplay === 'N/A' && parsedData) {
                           for (const [key, value] of Object.entries(parsedData)) {
                             if (key !== 'assetItems' && value && typeof value === 'string' && value.length > 0 && value.length < 50 && !key.toLowerCase().includes('date') && !value.includes('-')) {
-                               const matchedEmployee = employees.find(e => String(e.id) === String(value));
-                               if (matchedEmployee) {
-                                  empNameDisplay = matchedEmployee.full_name || matchedEmployee.name || matchedEmployee.employee_name;
-                                  break;
-                               }
+                              const matchedEmployee = employees.find(e => String(e.id) === String(value));
+                              if (matchedEmployee) {
+                                empNameDisplay = matchedEmployee.full_name || matchedEmployee.name || matchedEmployee.employee_name;
+                                break;
+                              }
                             }
                           }
                         }
@@ -1909,7 +1909,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
                         {index === 0 && (
                           <View style={[styles.fieldContainerFull, { zIndex: 0, marginTop: 16 }]}>
                             <Text style={{ fontSize: 16, fontWeight: '700', color: '#1E293B', marginBottom: 16 }}>Item Table</Text>
-                            
+
                             <View style={{ borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, overflow: 'visible', zIndex: 100 }}>
                               {/* Table Header */}
                               <View style={{ flexDirection: 'row', backgroundColor: '#F8FAFC', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#E2E8F0', borderTopLeftRadius: 8, borderTopRightRadius: 8 }}>
@@ -1924,11 +1924,11 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
                               {assetItems.map((item, idx) => (
                                 <View key={item.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: idx === assetItems.length - 1 ? 0 : 1, borderBottomColor: '#F1F5F9', zIndex: assetItems.length - idx }}>
                                   <Text style={{ width: 60, textAlign: 'center', color: '#0F172A', fontSize: 14, fontWeight: '500' }}>{idx + 1}</Text>
-                                  
+
                                   <View style={{ flex: 1, paddingHorizontal: 8, zIndex: 50 }}>
                                     <SearchableDropdown
                                       data={assetOptions.filter(opt => {
-                                        const isSelectedElsewhere = assetItems.some((otherRow, otherIdx) => 
+                                        const isSelectedElsewhere = assetItems.some((otherRow, otherIdx) =>
                                           otherIdx !== idx && String(otherRow.asset_id) === String(opt.value)
                                         );
                                         return !isSelectedElsewhere;
@@ -1954,7 +1954,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
                                       const selectedAsset = assetOptions.find(opt => String(opt.value) === String(item.asset_id));
                                       const rawBarcodes = selectedAsset?.rawData?.barcodes || [];
                                       let barcodeData = rawBarcodes.map(b => ({ label: b, value: b }));
-                                      
+
                                       const currentBarcodes = item.barcodes || (item.barcode ? [item.barcode] : []);
                                       const originalBarcodes = item.originalBarcodes || [];
                                       const barcodesToInject = new Set([...currentBarcodes, ...originalBarcodes]);
@@ -1964,7 +1964,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
                                           barcodeData.push({ label: b, value: b });
                                         }
                                       });
-                                      
+
                                       const numDropdowns = parseInt(item.qty) || 1;
                                       const filledBarcodes = currentBarcodes.filter(b => b);
                                       const globalSelectedBarcodes = assetItems.flatMap(i => i.barcodes || (i.barcode ? [i.barcode] : []));
@@ -2045,7 +2045,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
                             </View>
 
                             {!isViewOnly && (
-                              <TouchableOpacity 
+                              <TouchableOpacity
                                 style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingVertical: 8, paddingHorizontal: 12, backgroundColor: '#F1F5F9', alignSelf: 'flex-start', borderRadius: 6 }}
                                 onPress={() => setAssetItems([...assetItems, { id: Date.now(), asset_id: '', barcode: '', qty: 1 }])}
                               >
@@ -2382,17 +2382,17 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     color: '#0F172A',
-  },
-  closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F1F5F9',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  formScroll: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-});
+//   },
+//   closeButton: {
+//     width: 36,
+//     height: 36,
+//     borderRadius: 18,
+//     backgroundColor: '#F1F5F9',
+//     justifyContent: 'center',
+//     alignItems: 'center',
+//   },
+//   formScroll: {
+//     flex: 1,
+//     backgroundColor: '#F8FAFC',
+//   },
+// });
