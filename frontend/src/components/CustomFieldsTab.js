@@ -42,7 +42,7 @@ export const SearchableDropdown = ({ value, onChange, data, placeholder, searchP
 
   const displayText = selectedItems.length > 0 
     ? selectedItems.map(item => item[displayKey]).join(', ')
-    : (value !== undefined && value !== null && value !== '' ? String(value) : placeholder);
+    : (value !== undefined && value !== null && value !== '' && isNaN(Number(value)) ? String(value) : placeholder);
 
   const spaceBelow = windowHeight - (coords.y + coords.height);
   const useBottomAlignment = false; // Always open downwards
