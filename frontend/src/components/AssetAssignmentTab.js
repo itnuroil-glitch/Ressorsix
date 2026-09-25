@@ -197,15 +197,28 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
         setSelectedClient(String(clientVal));
         fetchedComps = await fetchCompaniesForClient(String(clientVal));
       }
+
+      const userCompId = String(user?.company_id || user?.companyid || '');
+      let resolvedComp = null;
+      if (userCompId && fetchedComps.some(c => String(c.id) === userCompId)) {
+        resolvedComp = fetchedComps.find(c => String(c.id) === userCompId);
+      } else if (fetchedComps && fetchedComps.length > 0) {
+        resolvedComp = fetchedComps[0];
+      }
+
       if (user?.country_id || user?.countryid) {
         setSelectedCountry(String(user?.country_id || user?.countryid));
-      } else if (fetchedComps && fetchedComps.length > 0) {
-        const defaultComp = fetchedComps.find(c => String(c.id) === String(user?.company_id || user?.companyid)) || fetchedComps[0];
-        if (defaultComp && defaultComp.country) {
-          setSelectedCountry(String(defaultComp.country));
-        }
+      } else if (resolvedComp && resolvedComp.country) {
+        setSelectedCountry(String(resolvedComp.country));
       }
-      if (user?.company_id || user?.companyid) setSelectedCompany(String(user?.company_id || user?.companyid));
+
+      if (resolvedComp) {
+        const resolvedCompId = String(resolvedComp.id);
+        setSelectedCompany(resolvedCompId);
+        fetchAssetsForClient(String(clientVal), resolvedCompId);
+      } else {
+        setSelectedCompany('');
+      }
       const viModule = (modulesData || []).find(m => m.module_name && (m.module_name.toLowerCase().includes('asset assignment') || m.module_name.toLowerCase().includes('asset assignment')));
       if (viModule) setSelectedModule(String(viModule.id));
     } catch (err) {
@@ -289,7 +302,13 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
     let currentCompanies = [];
     if (selectedClient) {
       currentCompanies = await fetchCompaniesForClient(selectedClient, 'create');
-      fetchAssetsForClient(selectedClient, selectedCompany);
+      const compExists = currentCompanies.some(c => String(c.id) === String(selectedCompany));
+      let effectiveComp = selectedCompany;
+      if (!compExists) {
+        effectiveComp = currentCompanies.length > 0 ? String(currentCompanies[0].id) : '';
+        setSelectedCompany(effectiveComp);
+      }
+      fetchAssetsForClient(selectedClient, effectiveComp);
     }
     if (currentCompanies.length === 1 && user && String(user.roleId) !== '1') {
       const singleComp = currentCompanies[0];
