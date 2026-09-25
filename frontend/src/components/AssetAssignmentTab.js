@@ -1658,11 +1658,11 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={{ backgroundColor: deleteConfirmationText === 'YES' ? '#FECACA' : '#F1F5F9', paddingVertical: 10, paddingHorizontal: 24, borderRadius: 6 }}
-                disabled={deleteConfirmationText !== 'YES'}
+                style={{ backgroundColor: deleteConfirmationText.trim().toUpperCase() === 'YES' ? '#EF4444' : '#F1F5F9', paddingVertical: 10, paddingHorizontal: 24, borderRadius: 6 }}
+                disabled={deleteConfirmationText.trim().toUpperCase() !== 'YES'}
                 onPress={handleConfirmDelete}
               >
-                <Text style={{ fontSize: 14, fontWeight: '700', color: '#FFFFFF' }}>YES</Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: deleteConfirmationText.trim().toUpperCase() === 'YES' ? '#FFFFFF' : '#94A3B8' }}>YES</Text>
               </TouchableOpacity>
             </View>
           </View>
