@@ -2383,16 +2383,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0F172A',
   },
-//   closeButton: {
-//     width: 36,
-//     height: 36,
-//     borderRadius: 18,
-//     backgroundColor: '#F1F5F9',
-//     justifyContent: 'center',
-//     alignItems: 'center',
-//   },
-//   formScroll: {
-//     flex: 1,
-//     backgroundColor: '#F8FAFC',
-//   },
-// });
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  formScroll: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+});
