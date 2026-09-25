@@ -2382,7 +2382,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     color: '#0F172A',
-//   },
+  },
 //   closeButton: {
 //     width: 36,
 //     height: 36,
