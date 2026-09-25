@@ -791,7 +791,7 @@ exports.getAccountNumbers = async (req, res) => {
     (teleRes.rows || []).forEach(r => processRecord(r, 'telecom_data'));
 
     const result = Array.from(accountsMap.values());
-//     res.status(200).json(result);
+    res.status(200).json(result);
 //   } catch (error) {
 //     console.error('Error fetching account numbers:', error);
 //     res.status(500).json({ message: 'Internal Server Error', error: error.message });
