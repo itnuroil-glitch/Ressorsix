@@ -383,7 +383,7 @@ exports.createAddOn = async (req, res) => {
         if (tRes.rows.length > 0) {
           finalTeleId = tRes.rows[0].id;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const queryText = `
@@ -550,7 +550,7 @@ exports.updateAddOn = async (req, res) => {
           if (!finalClientId) finalClientId = curRow.rows[0].client_id;
           if (!finalCompanyId) finalCompanyId = curRow.rows[0].company_id;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const filesToSync = Array.from(new Set([...(extracted.normalizedDocs || []), ...(extracted.savedFilePaths || [])]));
@@ -601,7 +601,7 @@ exports.getAccountNumbers = async (req, res) => {
         if (compRes.rows.length > 0) {
           companyName = compRes.rows[0].company_name;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // Helper to extract custom field names
@@ -633,7 +633,7 @@ exports.getAccountNumbers = async (req, res) => {
           });
         }
       });
-    } catch (e) {}
+    } catch (e) { }
 
     // 1. Fetch from tbl_sim_details
     let simDetailsQuery = `
@@ -792,9 +792,9 @@ exports.getAccountNumbers = async (req, res) => {
 
     const result = Array.from(accountsMap.values());
     res.status(200).json(result);
-  } catch (error) {
-    console.error('Error fetching account numbers:', error);
-    res.status(500).json({ message: 'Internal Server Error', error: error.message });
-  }
-};
+//   } catch (error) {
+//     console.error('Error fetching account numbers:', error);
+//     res.status(500).json({ message: 'Internal Server Error', error: error.message });
+//   }
+// };
 
