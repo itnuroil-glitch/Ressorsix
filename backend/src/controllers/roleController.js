@@ -28,7 +28,7 @@ exports.getAllRoles = async (req, res) => {
                ) item
              ) as assigned_companies
       FROM role r
-      WHERE r.is_deleted = false 
+      WHERE (r.is_deleted = false OR r.is_deleted IS NULL)
     `;
     const params = [];
 
