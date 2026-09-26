@@ -295,6 +295,10 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
   };
 
   const handleAddNewRecord = async () => {
+    if (!canCreate) {
+      if (showToast) showToast('You do not have permission to create asset assignments.', 'error');
+      return;
+    }
     setIsViewOnly(false);
     setEditingRecord(null);
     setFormData({});
@@ -1233,7 +1237,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
           <Text style={styles.headerTitle}>Asset Assignment</Text>
           <Text style={styles.headerSubtitle}>Manage your asset assignment records.</Text>
         </View>
-        {!isEmployee && (
+        {!isEmployee && canCreate && (
           <TouchableOpacity
             style={styles.addButton}
             onPress={handleAddNewRecord}
@@ -1246,7 +1250,7 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
 
       {/* MAIN CONTENT */}
       <View style={styles.mainContent}>
-        {isEmployee ? (
+        {isEmployee && canCreate ? (
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, minHeight: 400 }}>
             <View style={{
               width: '100%',
@@ -1309,7 +1313,11 @@ export default function AssetAssignmentTab({ user, showToast, isSidebarCollapsed
             <View style={styles.emptyState}>
               <Ionicons name="document-text-outline" size={48} color={COLORS.textMuted} />
               <Text style={styles.emptyStateText}>No asset assignment records found.</Text>
-              <Text style={styles.emptyStateSubtext}>Click 'Add Asset Assignment' to create a new record.</Text>
+              {canCreate ? (
+                <Text style={styles.emptyStateSubtext}>Click 'Add Asset Assignment' to create a new record.</Text>
+              ) : (
+                <Text style={styles.emptyStateSubtext}>You have view-only access for asset assignments.</Text>
+              )}
             </View>
           ) : (
             <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#F1F5F9', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1, overflow: 'hidden' }}>

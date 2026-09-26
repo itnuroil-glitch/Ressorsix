@@ -35,7 +35,7 @@ exports.getAllModules = async (req, res) => {
 
         const queryText = `
       SELECT * FROM module 
-      WHERE is_deleted = false 
+      WHERE (is_deleted = false OR is_deleted IS NULL)
       ORDER BY parent_id NULLS FIRST, id ASC
     `;
     const result = await db.query(queryText);

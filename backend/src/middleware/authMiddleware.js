@@ -19,7 +19,7 @@ module.exports = async function authMiddleware(req, res, next) {
     if (!rawToken) {
       if (process.env.BYPASS_AUTH === 'true') {
         req.user = {
-          id: 45,
+          id: 157,
           email: 'john.smith@email.com',
           roleId: '1',
           clientid: null,
@@ -117,7 +117,7 @@ module.exports = async function authMiddleware(req, res, next) {
 
       if (process.env.BYPASS_AUTH === 'true') {
         req.user = {
-          id: 45,
+          id: 157,
           email: 'john.smith@email.com',
           roleId: '1',
           clientid: null,
