@@ -547,11 +547,11 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
           if (errData.message) {
             errorMsg = errData.message;
           }
-        } catch (e) {}
-        
+        } catch (e) { }
+
         // Show the specific backend error message as a dialogue box
         alert(errorMsg);
-        return; 
+        return;
       }
 
       showToast(isEditing ? 'Premises details record updated successfully!' : 'Form submitted successfully!', 'success');
@@ -661,79 +661,79 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
         }
 
         if (isMainCategoryField && dropdownData.some(d => d.rawData && d.rawData.parent_id !== undefined)) {
-            // Main Category field shows ONLY parent/root categories (parent_id is 0, null, or undefined)
-            finalDropdownData = dropdownData.filter(d => {
-               const pId = d.rawData?.parent_id;
-               return !pId || pId === 0 || pId === '0';
-            });
+          // Main Category field shows ONLY parent/root categories (parent_id is 0, null, or undefined)
+          finalDropdownData = dropdownData.filter(d => {
+            const pId = d.rawData?.parent_id;
+            return !pId || pId === 0 || pId === '0';
+          });
         } else if (isSubCategoryField) {
-            // Sub Category shows ONLY subcategories (parent_id > 0), filtered by the selected parent Category
-            const subsOnly = dropdownData.filter(d => {
-               const pId = d.rawData?.parent_id;
-               return pId && pId !== 0 && pId !== '0';
+          // Sub Category shows ONLY subcategories (parent_id > 0), filtered by the selected parent Category
+          const subsOnly = dropdownData.filter(d => {
+            const pId = d.rawData?.parent_id;
+            return pId && pId !== 0 && pId !== '0';
+          });
+          if (!selectedCategoryVal) {
+            finalDropdownData = [];
+          } else {
+            finalDropdownData = subsOnly.filter(d => {
+              const pId = String(d.rawData?.parent_id);
+              return pId === String(selectedCategoryVal);
             });
-            if (!selectedCategoryVal) {
-               finalDropdownData = [];
-            } else {
-               finalDropdownData = subsOnly.filter(d => {
-                  const pId = String(d.rawData?.parent_id);
-                  return pId === String(selectedCategoryVal);
-               });
-            }
+          }
         } else if (isCategoryField && dropdownData.some(d => d.rawData && d.rawData.parent_id !== undefined)) {
-            const topLevel = [];
-            const childrenMap = {};
-            dropdownData.forEach(d => {
-               const pId = d.rawData?.parent_id;
-               if (!pId || pId === 0 || pId === '0') {
-                  topLevel.push(d);
-               } else {
-                  if (!childrenMap[pId]) childrenMap[pId] = [];
-                  childrenMap[pId].push(d);
-               }
-            });
-            const sorted = [];
-            topLevel.forEach(p => {
-               sorted.push(p);
-               if (childrenMap[p.rawData.cid]) {
-                  childrenMap[p.rawData.cid].forEach(c => sorted.push(c));
-               }
-            });
-            dropdownData.forEach(d => {
-               if (!sorted.includes(d)) sorted.push(d);
-            });
-            finalDropdownData = sorted;
+          const topLevel = [];
+          const childrenMap = {};
+          dropdownData.forEach(d => {
+            const pId = d.rawData?.parent_id;
+            if (!pId || pId === 0 || pId === '0') {
+              topLevel.push(d);
+            } else {
+              if (!childrenMap[pId]) childrenMap[pId] = [];
+              childrenMap[pId].push(d);
+            }
+          });
+          const sorted = [];
+          topLevel.forEach(p => {
+            sorted.push(p);
+            if (childrenMap[p.rawData.cid]) {
+              childrenMap[p.rawData.cid].forEach(c => sorted.push(c));
+            }
+          });
+          dropdownData.forEach(d => {
+            if (!sorted.includes(d)) sorted.push(d);
+          });
+          finalDropdownData = sorted;
         }
 
         const renderCategoryOption = (item, isSelected) => {
-           const pId = item.rawData?.parent_id;
-           const isChild = Boolean(pId && pId !== 0 && pId !== '0');
-           if (!isChild) {
-             return (
-               <Text style={{ 
-                  fontSize: 14, 
-                  color: isSelected ? COLORS.primary : '#0F172A', 
-                  fontWeight: isSelected ? '600' : '500',
-                  paddingVertical: 2
-               }}>
-                  {item.label}
-               </Text>
-             );
-           }
-           return (
-              <View style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: 24 }}>
-                 <View style={{ width: 20, alignItems: 'center', justifyContent: 'center', marginRight: 4, marginTop: 2 }}>
-                    <Ionicons name="return-down-forward" size={16} color="#CBD5E1" />
-                 </View>
-                 <Text style={{ 
-                    fontSize: 13, 
-                    color: isSelected ? COLORS.primary : '#475569', 
-                    fontWeight: isSelected ? '600' : '500'
-                 }}>
-                    {item.label}
-                 </Text>
+          const pId = item.rawData?.parent_id;
+          const isChild = Boolean(pId && pId !== 0 && pId !== '0');
+          if (!isChild) {
+            return (
+              <Text style={{
+                fontSize: 14,
+                color: isSelected ? COLORS.primary : '#0F172A',
+                fontWeight: isSelected ? '600' : '500',
+                paddingVertical: 2
+              }}>
+                {item.label}
+              </Text>
+            );
+          }
+          return (
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: 24 }}>
+              <View style={{ width: 20, alignItems: 'center', justifyContent: 'center', marginRight: 4, marginTop: 2 }}>
+                <Ionicons name="return-down-forward" size={16} color="#CBD5E1" />
               </View>
-           );
+              <Text style={{
+                fontSize: 13,
+                color: isSelected ? COLORS.primary : '#475569',
+                fontWeight: isSelected ? '600' : '500'
+              }}>
+                {item.label}
+              </Text>
+            </View>
+          );
         };
 
         return (
@@ -1123,7 +1123,7 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
       }
       default: {
         const isAssetName = field.id === '1781609374288' || (field.name && field.name.toLowerCase() === 'asset name');
-        
+
         const handleBlur = async () => {
           if (isAssetName && formData[field.id]) {
             try {
@@ -1146,7 +1146,7 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
           <View style={{ width: '100%' }}>
             <TextInput
               style={[
-                styles.input, 
+                styles.input,
                 isViewOnly && { backgroundColor: '#F1F5F9', color: '#64748B' },
                 isAssetName && duplicateError ? { borderColor: '#EF4444', borderWidth: 1 } : {}
               ]}
@@ -1191,242 +1191,242 @@ export default function AssetDetailsTab({ user, showToast, isSidebarCollapsed, p
       {/* MAIN CONTENT */}
       <View style={styles.mainContent}>
         {assetDetailsRecords.length === 0 && !searchQuery ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="document-text-outline" size={48} color={COLORS.textMuted} />
-              <Text style={styles.emptyStateText}>No asset details records found.</Text>
-              <Text style={styles.emptyStateSubtext}>Click 'Add Asset' to create a new record.</Text>
+          <View style={styles.emptyState}>
+            <Ionicons name="document-text-outline" size={48} color={COLORS.textMuted} />
+            <Text style={styles.emptyStateText}>No asset details records found.</Text>
+            <Text style={styles.emptyStateSubtext}>Click 'Add Asset' to create a new record.</Text>
+          </View>
+        ) : (
+          <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#F1F5F9', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1, overflow: 'hidden' }}>
+            {/* Top Toolbar */}
+            <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: '#E2E8F0', width: 300 }}>
+                <Ionicons name="search" size={16} color="#94A3B8" />
+                <TextInput
+                  style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 8, fontSize: 13, color: '#334155', outlineStyle: 'none', outlineWidth: 0 }}
+                  placeholder="Search by ID or Client..."
+                  placeholderTextColor="#94A3B8"
+                  value={searchQuery}
+                  onChangeText={(text) => { setSearchQuery(text); setCurrentPage(1); }}
+                />
+              </View>
             </View>
-          ) : (
-            <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#F1F5F9', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1, overflow: 'hidden' }}>
-              {/* Top Toolbar */}
-              <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: '#E2E8F0', width: 300 }}>
-                  <Ionicons name="search" size={16} color="#94A3B8" />
-                  <TextInput
-                    style={{ flex: 1, paddingVertical: 8, paddingHorizontal: 8, fontSize: 13, color: '#334155', outlineStyle: 'none', outlineWidth: 0 }}
-                    placeholder="Search by ID or Client..."
-                    placeholderTextColor="#94A3B8"
-                    value={searchQuery}
-                    onChangeText={(text) => { setSearchQuery(text); setCurrentPage(1); }}
-                  />
-                </View>
-              </View>
 
-              {/* Table Header */}
-              <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20 }}>
-                <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>ID</Text>
-                {isSuperAdmin && (
-                  <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
-                )}
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Asset Name</Text>
-                <Text style={{ flex: 1.3, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Manufacturer</Text>
-                <Text style={{ flex: 1.3, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Opening Qty</Text>
-                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Company</Text>
-                <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
-                <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>ACTION</Text>
-              </View>
+            {/* Table Header */}
+            <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20 }}>
+              <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>ID</Text>
+              {isSuperAdmin && (
+                <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
+              )}
+              <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Asset Name</Text>
+              <Text style={{ flex: 1.3, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Manufacturer</Text>
+              <Text style={{ flex: 1.3, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Opening Qty</Text>
+              <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Company</Text>
+              <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
+              <Text style={{ flex: 1.2, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>ACTION</Text>
+            </View>
 
-              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true}>
-                {(() => {
-                  const filtered = assetDetailsRecords.filter(r => {
-                    if (user && String(user.roleId) !== '1' && user.clientid) {
-                      if (String(r.clientid) !== String(user.clientid)) return false;
-                    }
-                    if (!searchQuery) return true;
-                    const q = searchQuery.toLowerCase();
-                    const cObj = clients.find(c => String(c.id) === String(r.clientid));
-                    const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
-                    const aName = (r.asset_name || '').toLowerCase();
-                    const mName = (r.manufacturer || '').toLowerCase();
-                    const comp = (r.company_name || '').toLowerCase();
-                    return String(r.id).includes(q) || (cName && cName.toLowerCase().includes(q)) || aName.includes(q) || mName.includes(q) || comp.includes(q);
-                  });
-                  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
-                  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-
-                  if (filtered.length === 0) {
-                    return (
-                      <View style={{ padding: 40, alignItems: 'center' }}>
-                        <Text style={{ color: '#94A3B8', fontSize: 14 }}>No matches found</Text>
-                      </View>
-                    );
-                  }
-
-                  return (
-                    <View style={{ flex: 1 }}>
-                      {paginated.map((record) => {
-                        let parsedData = {};
-                        if (record.field_data) {
-                          try {
-                            parsedData = typeof record.field_data === 'string' ? JSON.parse(record.field_data) : record.field_data;
-                          } catch (e) { }
-                        }
-                        const clientObj = clients.find(c => String(c.id) === String(record.clientid));
-                        const clientName = clientObj ? (clientObj.client_name || clientObj.name) : `Client ${record.clientid}`;
-                        const countryObj = countries.find(c => String(c.id) === String(record.country_id));
-                        const countryName = countryObj ? countryObj.name : `-`;
-
-                        let assetName = record.asset_name || 'N/A';
-                        let manufacturer = record.manufacturer || 'N/A';
-                        let openingQty = record.opening_qty !== undefined && record.opening_qty !== null ? String(record.opening_qty) : 'N/A';
-
-                        if (assetName === 'N/A' || manufacturer === 'N/A' || openingQty === 'N/A') {
-                          if (parsedData && typeof parsedData === 'object') {
-                            for (const [key, value] of Object.entries(parsedData)) {
-                              if (value === undefined || value === null || value === '') continue;
-                              const strVal = typeof value === 'object' ? (value.name || JSON.stringify(value)) : String(value);
-                              if (assetName === 'N/A' && (key === '1781609374288' || key.toLowerCase().includes('asset'))) {
-                                assetName = strVal;
-                              }
-                              if (manufacturer === 'N/A' && (key.toLowerCase().includes('manufactur') || key.toLowerCase().includes('brand'))) {
-                                manufacturer = strVal;
-                              }
-                              if (openingQty === 'N/A' && (key === '1781612001954' || key.toLowerCase().includes('opening') || key.toLowerCase().includes('quantity') || key.toLowerCase().includes('qty'))) {
-                                openingQty = strVal;
-                              }
-                            }
-                          }
-                        }
-
-                        const companyObj = companies.find(c => String(c.id) === String(record.company_id || record.companyid));
-                        const companyName = record.company_name || (companyObj ? (companyObj.company_name || companyObj.name) : null) || 'N/A';
-
-                        return (
-                          <View key={record.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
-                            <Text style={{ flex: 0.5, fontSize: 12, color: '#334155', fontWeight: '700' }}>#{record.id}</Text>
-
-                            {isSuperAdmin && (
-                              <View style={{ flex: 1.5, paddingRight: 10 }}>
-                                <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{clientName}</Text>
-                                <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Country: {countryName}</Text>
-                              </View>
-                            )}
-
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600' }} numberOfLines={1}>{assetName}</Text>
-                            </View>
-
-                            <View style={{ flex: 1.3, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500' }} numberOfLines={1}>{manufacturer}</Text>
-                            </View>
-
-                            <View style={{ flex: 1.3, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500' }} numberOfLines={1}>{openingQty}</Text>
-                            </View>
-
-                            <View style={{ flex: 1.5, paddingRight: 10 }}>
-                              <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500' }} numberOfLines={1}>{companyName}</Text>
-                            </View>
-
-                            <View style={{ flex: 1, alignItems: 'flex-start' }}>
-                              <View style={{ backgroundColor: '#F0FDF4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
-                                <Text style={{ fontSize: 11, fontWeight: '700', color: '#166534' }}>Active</Text>
-                              </View>
-                            </View>
-
-                            <View style={{ flex: 1.2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-                              <TouchableOpacity style={{ padding: 4 }} onPress={() => handleView(record)}>
-                                <Ionicons name="eye-outline" size={18} color="#0F172A" />
-                              </TouchableOpacity>
-
-                              {(checkRowPermission ? checkRowPermission(record.company_id || record.companyid, 'edit') : canEdit) && (
-                                <TouchableOpacity style={{ padding: 4 }} onPress={() => handleEdit(record)}>
-                                  <Ionicons name="pencil" size={18} color="#166534" />
-                                </TouchableOpacity>
-                              )}
-
-                              {(checkRowPermission ? checkRowPermission(record.company_id || record.companyid, 'delete') : canDelete) && (
-                                <TouchableOpacity style={{ padding: 4 }} onPress={() => handleDelete(record)}>
-                                  <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                                </TouchableOpacity>
-                              )}
-                            </View>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  );
-                })()}
-              </ScrollView>
-
-              {/* Pagination Footer */}
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={true}>
               {(() => {
                 const filtered = assetDetailsRecords.filter(r => {
                   if (user && String(user.roleId) !== '1' && user.clientid) {
                     if (String(r.clientid) !== String(user.clientid)) return false;
                   }
                   if (!searchQuery) return true;
+                  const q = searchQuery.toLowerCase();
                   const cObj = clients.find(c => String(c.id) === String(r.clientid));
                   const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
-                  return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
+                  const aName = (r.asset_name || '').toLowerCase();
+                  const mName = (r.manufacturer || '').toLowerCase();
+                  const comp = (r.company_name || '').toLowerCase();
+                  return String(r.id).includes(q) || (cName && cName.toLowerCase().includes(q)) || aName.includes(q) || mName.includes(q) || comp.includes(q);
                 });
                 const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
-                const startEntry = filtered.length === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1;
-                const endEntry = Math.min(currentPage * itemsPerPage, filtered.length);
+                const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+                if (filtered.length === 0) {
+                  return (
+                    <View style={{ padding: 40, alignItems: 'center' }}>
+                      <Text style={{ color: '#94A3B8', fontSize: 14 }}>No matches found</Text>
+                    </View>
+                  );
+                }
 
                 return (
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC' }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-                      <Text style={{ fontSize: 12, color: '#64748B' }}>
-                        Showing <Text style={{ fontWeight: '600', color: '#334155' }}>{startEntry}</Text> to <Text style={{ fontWeight: '600', color: '#334155' }}>{endEntry}</Text> of <Text style={{ fontWeight: '600', color: '#334155' }}>{filtered.length}</Text> entries
-                      </Text>
+                  <View style={{ flex: 1 }}>
+                    {paginated.map((record) => {
+                      let parsedData = {};
+                      if (record.field_data) {
+                        try {
+                          parsedData = typeof record.field_data === 'string' ? JSON.parse(record.field_data) : record.field_data;
+                        } catch (e) { }
+                      }
+                      const clientObj = clients.find(c => String(c.id) === String(record.clientid));
+                      const clientName = clientObj ? (clientObj.client_name || clientObj.name) : `Client ${record.clientid}`;
+                      const countryObj = countries.find(c => String(c.id) === String(record.country_id));
+                      const countryName = countryObj ? countryObj.name : `-`;
 
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={{ fontSize: 12, color: '#64748B' }}>Rows per page:</Text>
-                        <select
-                          value={itemsPerPage}
-                          onChange={(e) => {
-                            setItemsPerPage(Number(e.target.value));
-                            setCurrentPage(1);
-                          }}
-                          style={{
-                            padding: '4px 8px',
-                            borderRadius: 6,
-                            borderColor: '#CBD5E1',
-                            borderWidth: 1,
-                            borderStyle: 'solid',
-                            fontSize: 12,
-                            color: '#1E293B',
-                            backgroundColor: '#FFFFFF',
-                            outline: 'none',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <option value={10}>10</option>
-                          <option value={20}>20</option>
-                          <option value={25}>25</option>
-                          <option value={50}>50</option>
-                          <option value={100}>100</option>
-                        </select>
-                      </View>
-                    </View>
+                      let assetName = record.asset_name || 'N/A';
+                      let manufacturer = record.manufacturer || 'N/A';
+                      let openingQty = record.opening_qty !== undefined && record.opening_qty !== null ? String(record.opening_qty) : 'N/A';
 
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                      <TouchableOpacity
-                        style={{ paddingHorizontal: 14, paddingVertical: 2, backgroundColor: currentPage > 1 ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
-                        disabled={currentPage === 1}
-                        onPress={() => setCurrentPage(p => p - 1)}
-                      >
-                        <Text style={{ fontSize: 12, color: currentPage > 1 ? '#475569' : '#94A3B8', fontWeight: '500' }}>{'< Prev'}</Text>
-                      </TouchableOpacity>
+                      if (assetName === 'N/A' || manufacturer === 'N/A' || openingQty === 'N/A') {
+                        if (parsedData && typeof parsedData === 'object') {
+                          for (const [key, value] of Object.entries(parsedData)) {
+                            if (value === undefined || value === null || value === '') continue;
+                            const strVal = typeof value === 'object' ? (value.name || JSON.stringify(value)) : String(value);
+                            if (assetName === 'N/A' && (key === '1781609374288' || key.toLowerCase().includes('asset'))) {
+                              assetName = strVal;
+                            }
+                            if (manufacturer === 'N/A' && (key.toLowerCase().includes('manufactur') || key.toLowerCase().includes('brand'))) {
+                              manufacturer = strVal;
+                            }
+                            if (openingQty === 'N/A' && (key === '1781612001954' || key.toLowerCase().includes('opening') || key.toLowerCase().includes('quantity') || key.toLowerCase().includes('qty'))) {
+                              openingQty = strVal;
+                            }
+                          }
+                        }
+                      }
 
-                      <Text style={{ fontSize: 12, color: '#64748B' }}>
-                        Page <Text style={{ fontWeight: '600', color: '#334155' }}>{currentPage}</Text> of {totalPages}
-                      </Text>
+                      const companyObj = companies.find(c => String(c.id) === String(record.company_id || record.companyid));
+                      const companyName = record.company_name || (companyObj ? (companyObj.company_name || companyObj.name) : null) || 'N/A';
 
-                      <TouchableOpacity
-                        style={{ paddingHorizontal: 14, paddingVertical: 2, backgroundColor: currentPage < totalPages ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
-                        disabled={currentPage === totalPages}
-                        onPress={() => setCurrentPage(p => p + 1)}
-                      >
-                        <Text style={{ fontSize: 12, color: currentPage < totalPages ? '#475569' : '#94A3B8', fontWeight: '500' }}>{'Next >'}</Text>
-                      </TouchableOpacity>
-                    </View>
+                      return (
+                        <View key={record.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
+                          <Text style={{ flex: 0.5, fontSize: 12, color: '#334155', fontWeight: '700' }}>#{record.id}</Text>
+
+                          {isSuperAdmin && (
+                            <View style={{ flex: 1.5, paddingRight: 10 }}>
+                              <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600', marginBottom: 4 }} numberOfLines={1}>{clientName}</Text>
+                              <Text style={{ fontSize: 11, color: '#94A3B8' }} numberOfLines={1}>Country: {countryName}</Text>
+                            </View>
+                          )}
+
+                          <View style={{ flex: 1.5, paddingRight: 10 }}>
+                            <Text style={{ fontSize: 13, color: '#0F172A', fontWeight: '600' }} numberOfLines={1}>{assetName}</Text>
+                          </View>
+
+                          <View style={{ flex: 1.3, paddingRight: 10 }}>
+                            <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500' }} numberOfLines={1}>{manufacturer}</Text>
+                          </View>
+
+                          <View style={{ flex: 1.3, paddingRight: 10 }}>
+                            <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500' }} numberOfLines={1}>{openingQty}</Text>
+                          </View>
+
+                          <View style={{ flex: 1.5, paddingRight: 10 }}>
+                            <Text style={{ fontSize: 13, color: '#475569', fontWeight: '500' }} numberOfLines={1}>{companyName}</Text>
+                          </View>
+
+                          <View style={{ flex: 1, alignItems: 'flex-start' }}>
+                            <View style={{ backgroundColor: '#F0FDF4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                              <Text style={{ fontSize: 11, fontWeight: '700', color: '#166534' }}>Active</Text>
+                            </View>
+                          </View>
+
+                          <View style={{ flex: 1.2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+                            <TouchableOpacity style={{ padding: 4 }} onPress={() => handleView(record)}>
+                              <Ionicons name="eye-outline" size={18} color="#0F172A" />
+                            </TouchableOpacity>
+
+                            {(checkRowPermission ? checkRowPermission(record.company_id || record.companyid, 'edit') : canEdit) && (
+                              <TouchableOpacity style={{ padding: 4 }} onPress={() => handleEdit(record)}>
+                                <Ionicons name="pencil" size={18} color="#166534" />
+                              </TouchableOpacity>
+                            )}
+
+                            {(checkRowPermission ? checkRowPermission(record.company_id || record.companyid, 'delete') : canDelete) && (
+                              <TouchableOpacity style={{ padding: 4 }} onPress={() => handleDelete(record)}>
+                                <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        </View>
+                      );
+                    })}
                   </View>
                 );
               })()}
-            </View>
-          )
+            </ScrollView>
+
+            {/* Pagination Footer */}
+            {(() => {
+              const filtered = assetDetailsRecords.filter(r => {
+                if (user && String(user.roleId) !== '1' && user.clientid) {
+                  if (String(r.clientid) !== String(user.clientid)) return false;
+                }
+                if (!searchQuery) return true;
+                const cObj = clients.find(c => String(c.id) === String(r.clientid));
+                const cName = cObj ? (cObj.client_name || cObj.name) : `Client ${r.clientid}`;
+                return String(r.id).includes(searchQuery) || (cName && cName.toLowerCase().includes(searchQuery.toLowerCase()));
+              });
+              const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
+              const startEntry = filtered.length === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1;
+              const endEntry = Math.min(currentPage * itemsPerPage, filtered.length);
+
+              return (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+                    <Text style={{ fontSize: 12, color: '#64748B' }}>
+                      Showing <Text style={{ fontWeight: '600', color: '#334155' }}>{startEntry}</Text> to <Text style={{ fontWeight: '600', color: '#334155' }}>{endEntry}</Text> of <Text style={{ fontWeight: '600', color: '#334155' }}>{filtered.length}</Text> entries
+                    </Text>
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ fontSize: 12, color: '#64748B' }}>Rows per page:</Text>
+                      <select
+                        value={itemsPerPage}
+                        onChange={(e) => {
+                          setItemsPerPage(Number(e.target.value));
+                          setCurrentPage(1);
+                        }}
+                        style={{
+                          padding: '4px 8px',
+                          borderRadius: 6,
+                          borderColor: '#CBD5E1',
+                          borderWidth: 1,
+                          borderStyle: 'solid',
+                          fontSize: 12,
+                          color: '#1E293B',
+                          backgroundColor: '#FFFFFF',
+                          outline: 'none',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value={10}>10</option>
+                        <option value={20}>20</option>
+                        <option value={25}>25</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                      </select>
+                    </View>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <TouchableOpacity
+                      style={{ paddingHorizontal: 14, paddingVertical: 2, backgroundColor: currentPage > 1 ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
+                      disabled={currentPage === 1}
+                      onPress={() => setCurrentPage(p => p - 1)}
+                    >
+                      <Text style={{ fontSize: 12, color: currentPage > 1 ? '#475569' : '#94A3B8', fontWeight: '500' }}>{'< Prev'}</Text>
+                    </TouchableOpacity>
+
+                    <Text style={{ fontSize: 12, color: '#64748B' }}>
+                      Page <Text style={{ fontWeight: '600', color: '#334155' }}>{currentPage}</Text> of {totalPages}
+                    </Text>
+
+                    <TouchableOpacity
+                      style={{ paddingHorizontal: 14, paddingVertical: 2, backgroundColor: currentPage < totalPages ? '#FFFFFF' : '#F1F5F9', borderRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' }}
+                      disabled={currentPage === totalPages}
+                      onPress={() => setCurrentPage(p => p + 1)}
+                    >
+                      <Text style={{ fontSize: 12, color: currentPage < totalPages ? '#475569' : '#94A3B8', fontWeight: '500' }}>{'Next >'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })()}
+          </View>
+        )
         }
       </View>
 
