@@ -134,7 +134,7 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [modulesPage, setModulesPage] = useState(1);
 
   // Items per page
-  const ITEMS_PER_PAGE = 5;
+  const ITEMS_PER_PAGE = 10;
 
   // Helper to render premium search bar toolbar
   const renderTableToolbar = (searchVal, setSearchVal, setPageVal, placeholderText) => {
@@ -7658,22 +7658,33 @@ export default function DashboardScreen({ user, onSignOut }) {
                         type="text"
                         value={newRoleName}
                         onChange={(e) => setNewRoleName(e.target.value)}
-                        placeholder="e.g. Driver"
+                        placeholder="e.g. Superadmin, Manager"
                         style={{
-                          height: 40,
-                          borderColor: '#E2E8F0',
-                          borderWidth: 1.5,
-                          borderRadius: 10,
-                          paddingHorizontal: 12,
+                          height: '42px',
+                          border: '1px solid #CBD5E1',
+                          borderRadius: '8px',
+                          paddingLeft: '14px',
+                          paddingRight: '14px',
+                          paddingTop: '0px',
+                          paddingBottom: '0px',
                           backgroundColor: '#FFFFFF',
-                          color: '#1E293B',
-                          fontSize: 14,
-                          fontFamily: 'Roboto',
-                          outlineStyle: 'none',
-                          outlineWidth: 0,
+                          color: '#0F172A',
+                          fontSize: '14px',
+                          fontWeight: '500',
+                          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif',
+                          outline: 'none',
                           width: '100%',
-                          marginTop: 6,
-                          boxSizing: 'border-box'
+                          marginTop: '4px',
+                          boxSizing: 'border-box',
+                          transition: 'border-color 0.15s ease, box-shadow 0.15s ease'
+                        }}
+                        onFocus={(e) => {
+                          e.target.style.borderColor = '#1A4D3E';
+                          e.target.style.boxShadow = '0 0 0 3px rgba(26, 77, 62, 0.12)';
+                        }}
+                        onBlur={(e) => {
+                          e.target.style.borderColor = '#CBD5E1';
+                          e.target.style.boxShadow = 'none';
                         }}
                       />
                     ) : (
@@ -7681,19 +7692,32 @@ export default function DashboardScreen({ user, onSignOut }) {
                         value={newRoleName}
                         onChange={(e) => setNewRoleName(e.target.value)}
                         style={{
-                          height: 40,
-                          borderColor: '#E2E8F0',
-                          borderWidth: 1.5,
-                          borderRadius: 10,
-                          paddingHorizontal: 12,
+                          height: '42px',
+                          border: '1px solid #CBD5E1',
+                          borderRadius: '8px',
+                          paddingLeft: '14px',
+                          paddingRight: '14px',
+                          paddingTop: '0px',
+                          paddingBottom: '0px',
                           backgroundColor: '#FFFFFF',
-                          color: '#1E293B',
-                          fontSize: 14,
-                          fontFamily: 'Roboto',
-                          outlineStyle: 'none',
-                          outlineWidth: 0,
+                          color: '#0F172A',
+                          fontSize: '14px',
+                          fontWeight: '500',
+                          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif',
+                          outline: 'none',
                           width: '100%',
-                          marginTop: 6,
+                          marginTop: '4px',
+                          boxSizing: 'border-box',
+                          cursor: 'pointer',
+                          transition: 'border-color 0.15s ease, box-shadow 0.15s ease'
+                        }}
+                        onFocus={(e) => {
+                          e.target.style.borderColor = '#1A4D3E';
+                          e.target.style.boxShadow = '0 0 0 3px rgba(26, 77, 62, 0.12)';
+                        }}
+                        onBlur={(e) => {
+                          e.target.style.borderColor = '#CBD5E1';
+                          e.target.style.boxShadow = 'none';
                         }}
                       >
                         <option value="">-- Select Role Title --</option>
@@ -7944,7 +7968,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                         fontSize: 13,
                         fontWeight: '700',
                         color: newRoleStatus === 1 ? '#065F46' : '#64748B',
-                        fontFamily: 'Roboto',
+                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif',
                       }}
                     >
                       {newRoleStatus === 1 ? 'Active' : 'Inactive'}
