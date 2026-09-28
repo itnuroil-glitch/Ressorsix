@@ -173,7 +173,7 @@ export default function CompanyDefCurrencyTab({
       >
         <View style={styles.headerTitleGroup}>
           <View style={styles.iconSquareBadge}>
-            <Ionicons name="cash-outline" size={22} color="#2563EB" />
+            <Ionicons name="cash-outline" size={22} color={COLORS.primary} />
           </View>
           <View style={styles.titleWrapper}>
             <Text style={styles.tabHeadingTitle}>Company Default Currency</Text>
@@ -490,7 +490,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#F0F5F2',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -501,10 +501,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#2563EB',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
     borderRadius: 8,
+    shadowColor: '#1B3E30',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
   },
   addBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 13 },
   tableCard: {
@@ -678,7 +683,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     paddingVertical: 10,
     borderRadius: 8,
-    backgroundColor: '#2563EB',
+    backgroundColor: COLORS.primary,
   },
   saveBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
 });
