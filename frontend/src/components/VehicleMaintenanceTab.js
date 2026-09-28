@@ -876,7 +876,6 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
           ) : (
             <View style={{ width: '100%', overflow: 'auto' }}>
               <View style={styles.tableHeader}>
-                <Text style={[styles.thCell, { flex: 0.5 }]}># ID</Text>
                 {isSuperAdmin && <Text style={[styles.thCell, { flex: 1.5 }]}>CLIENT INFO</Text>}
                 <Text style={[styles.thCell, { flex: 1.5 }]}>VEHICLE NAME</Text>
                 <Text style={[styles.thCell, { flex: 1.2 }]}>PLATE NUMBER</Text>
@@ -909,7 +908,6 @@ export default function VehicleMaintenanceTab({ user, showToast, isSidebarCollap
 
                   return (
                     <View key={item.id || idx} style={[styles.tableRow, idx % 2 === 1 && { backgroundColor: '#F8FAFC' }]}>
-                      <Text style={[styles.tdCell, { flex: 0.5, fontWeight: '700', color: '#0F172A' }]}>#{item.id}</Text>
                       {isSuperAdmin && <Text style={[styles.tdCell, { flex: 1.5 }]}>{item.client_name || 'Krish'}</Text>}
                       <Text style={[styles.tdCell, { flex: 1.5, fontWeight: '600', color: '#1A4D3E' }]}>{vehicleName}</Text>
                       <Text style={[styles.tdCell, { flex: 1.2 }]}>{plateNo}</Text>
