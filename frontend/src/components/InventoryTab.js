@@ -164,8 +164,8 @@ export default function InventoryTab({ user, showToast, isSidebarCollapsed }) {
     }
   };
 
-  const COLS = ['ID', 'ASSET NAME', 'QTY ON HAND', 'QTY RESERVED', 'UOM', 'AVG UNIT COST', 'REORDER LEVEL', 'STATUS', 'VIEW', 'EDIT', 'DELETE'];
-  const FLEX = [0.6, 2.2, 1.1, 1.1, 0.9, 1.4, 1.2, 1.2, 0.5, 0.5, 0.5];
+  const COLS = ['ASSET NAME', 'QTY ON HAND', 'QTY RESERVED', 'UOM', 'AVG UNIT COST', 'REORDER LEVEL', 'STATUS', 'VIEW', 'EDIT', 'DELETE'];
+  const FLEX = [2.6, 1.1, 1.1, 0.9, 1.4, 1.2, 1.2, 0.5, 0.5, 0.5];
 
   return (
     <ScrollView style={s.root} keyboardShouldPersistTaps="handled">
@@ -232,7 +232,7 @@ export default function InventoryTab({ user, showToast, isSidebarCollapsed }) {
                 {/* Header */}
                 <View style={s.thead}>
                   {COLS.map((h, i) => (
-                    <Text key={i} style={[s.th, { flex: FLEX[i] }, i > 1 && { textAlign: 'center' }]}>{h}</Text>
+                    <Text key={i} style={[s.th, { flex: FLEX[i] }, i > 0 && { textAlign: 'center' }]}>{h}</Text>
                   ))}
                 </View>
 
@@ -243,59 +243,53 @@ export default function InventoryTab({ user, showToast, isSidebarCollapsed }) {
                   const qtyColor = qtyN === 0 ? '#EF4444' : qtyN <= (parseInt(item.reorder_level, 10) || 5) ? '#EF4444' : '#0F172A';
                   return (
                     <View key={item.id} style={s.trow}>
-                      {/* ID */}
-                      <Text style={[s.td, { flex: FLEX[0], fontWeight: '700', color: '#334155' }]}>
-                        #{item.id}
-                      </Text>
-
-                      {/* Asset Name & ID */}
-                      <View style={[s.td, { flex: FLEX[1] }]}>
+                      {/* Asset Name */}
+                      <View style={[s.td, { flex: FLEX[0] }]}>
                         <Text style={s.assetName}>{item.asset_name}</Text>
-                        <Text style={s.assetId}>ID #{item.asset_id}</Text>
                       </View>
 
                       {/* Qty on Hand */}
-                      <Text style={[s.td, { flex: FLEX[2], textAlign: 'center', fontWeight: '700', fontSize: 14, color: qtyColor }]}>
+                      <Text style={[s.td, { flex: FLEX[1], textAlign: 'center', fontWeight: '700', fontSize: 14, color: qtyColor }]}>
                         {item.qty_on_hand}
                       </Text>
 
                       {/* Qty Reserved */}
-                      <Text style={[s.td, { flex: FLEX[3], textAlign: 'center', color: '#64748B' }]}>
+                      <Text style={[s.td, { flex: FLEX[2], textAlign: 'center', color: '#64748B' }]}>
                         {item.qty_reserved}
                       </Text>
 
                       {/* UOM */}
-                      <Text style={[s.td, { flex: FLEX[4], textAlign: 'center', color: '#64748B' }]}>
+                      <Text style={[s.td, { flex: FLEX[3], textAlign: 'center', color: '#64748B' }]}>
                         {item.uom_name || '—'}
                       </Text>
 
                       {/* Avg Unit Cost */}
-                      <Text style={[s.td, { flex: FLEX[5], textAlign: 'center', fontWeight: '600', color: 'rgb(112, 122, 143)' }]}>
+                      <Text style={[s.td, { flex: FLEX[4], textAlign: 'center', fontWeight: '600', color: 'rgb(112, 122, 143)' }]}>
                         {fmt(item.average_cost)} AED
                       </Text>
 
                       {/* Reorder Level */}
-                      <Text style={[s.td, { flex: FLEX[6], textAlign: 'center', color: '#64748B' }]}>
+                      <Text style={[s.td, { flex: FLEX[5], textAlign: 'center', color: '#64748B' }]}>
                         {item.reorder_level ?? 5}
                       </Text>
 
                       {/* Status */}
-                      <View style={[s.td, { flex: FLEX[7], alignItems: 'center', justifyContent: 'center' }]}>
+                      <View style={[s.td, { flex: FLEX[6], alignItems: 'center', justifyContent: 'center' }]}>
                         <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: (st.label === 'IN STOCK') ? '#10B981' : '#EF4444' }} />
                       </View>
 
                       {/* View Button */}
-                      <TouchableOpacity style={[s.td, { flex: FLEX[8], alignItems: 'center' }]} onPress={() => openView(item)}>
+                      <TouchableOpacity style={[s.td, { flex: FLEX[7], alignItems: 'center' }]} onPress={() => openView(item)}>
                         <Ionicons name="eye-outline" size={18} color="#64748B" />
                       </TouchableOpacity>
 
                       {/* Edit Button */}
-                      <TouchableOpacity style={[s.td, { flex: FLEX[9], alignItems: 'center' }]} onPress={() => openEdit(item)}>
+                      <TouchableOpacity style={[s.td, { flex: FLEX[8], alignItems: 'center' }]} onPress={() => openEdit(item)}>
                         <Ionicons name="pencil" size={18} color="#166534" />
                       </TouchableOpacity>
 
                       {/* Delete Button */}
-                      <TouchableOpacity style={[s.td, { flex: FLEX[10], alignItems: 'center' }]} onPress={() => openDelete(item)}>
+                      <TouchableOpacity style={[s.td, { flex: FLEX[9], alignItems: 'center' }]} onPress={() => openDelete(item)}>
                         <Ionicons name="trash-outline" size={18} color="#EF4444" />
                       </TouchableOpacity>
                     </View>

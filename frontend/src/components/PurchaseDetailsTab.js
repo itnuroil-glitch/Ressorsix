@@ -1530,7 +1530,6 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
 
               {/* Table Header */}
               <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 20, backgroundColor: '#F8FAFC' }}>
-                <Text style={{ flex: 0.5, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>ID</Text>
                 {(!user || String(user.roleId) === '1') && (
                   <Text style={{ flex: 1.3, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Client Info</Text>
                 )}
@@ -1662,7 +1661,6 @@ export default function PurchaseDetailsTab({ user, showToast, isSidebarCollapsed
 
                         return (
                           <View key={record.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF' }}>
-                            <Text style={{ flex: 0.5, fontSize: 12, color: '#334155', fontWeight: '700' }}>#{record.id}</Text>
 
                             {(!user || String(user.roleId) === '1') && (
                               <View style={{ flex: 1.3, paddingRight: 10 }}>
