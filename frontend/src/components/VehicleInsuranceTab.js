@@ -1283,7 +1283,6 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
             <View style={styles.tableCardContainer}>
               {/* Table Header Columns */}
               <View style={styles.tableHeaderRow}>
-              <Text style={[styles.tableHeaderCell, { flex: 0.6 }]}>ID</Text>
               {isSuperAdmin && (
                 <Text style={[styles.tableHeaderCell, { flex: 1.8 }]}>CLIENT INFO</Text>
               )}
@@ -1381,11 +1380,6 @@ export default function VehicleInsuranceTab({ user, showToast, isSidebarCollapse
 
                       return (
                         <View key={record.id} style={[styles.tableRowContainer, isOddRow && { backgroundColor: '#FFF8F2' }, isLastRow && { borderBottomWidth: 0 }]}>
-
-                          {/* ID Column */}
-                          <Text style={[styles.rowCellText, { flex: 0.6, color: '#72002A', fontWeight: '600', fontSize: 13.5 }]}>
-                            #{record.id}
-                          </Text>
 
                           {/* CLIENT INFO Column */}
                           {isSuperAdmin && (
