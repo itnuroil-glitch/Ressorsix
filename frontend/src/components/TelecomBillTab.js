@@ -1529,7 +1529,6 @@ const TelecomBillTab = ({
           <>
             {/* TABLE HEADER ROW */}
             <View style={styles.tableHeaderRow}>
-              <Text style={[styles.thCell, { flex: 0.6 }]}>ID</Text>
               {isSuperAdmin && <Text style={[styles.thCell, { flex: 1.5 }]}>CLIENT INFO</Text>}
               <Text style={[styles.thCell, { flex: 1.4 }]}>COMPANY</Text>
               <Text style={[styles.thCell, { flex: 1.4 }]}>TELECOM PROVIDER</Text>
@@ -1635,7 +1634,6 @@ const TelecomBillTab = ({
 
               return (
                 <View key={r.tele_bill_id || r.id} style={styles.tableBodyRow}>
-                  <Text style={[styles.tdCell, { flex: 0.6, fontWeight: '700', color: '#334155' }]}>#{r.tele_bill_id || r.id}</Text>
 
                   {isSuperAdmin && (
                     <View style={[styles.tdCell, { flex: 1.5 }]}>

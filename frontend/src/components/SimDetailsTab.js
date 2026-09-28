@@ -1982,7 +1982,6 @@ export default function SimDetailsTab({
                       <View style={{ paddingBottom: 10 }}>
                         {/* Table Header Row matching Image 2 */}
                         <View style={styles.tableHeader}>
-                          <Text style={[styles.thCell, { flex: 0.8 }]}>ID</Text>
                           <Text style={[styles.thCell, { flex: 2.0 }]}>COMPANY NAME</Text>
                           <Text style={[styles.thCell, { flex: 1.8 }]}>TELECOM PROVIDER</Text>
                           <Text style={[styles.thCell, { flex: 2.0 }]}>SUBSCRIPTION DETAILS</Text>
@@ -2001,7 +2000,6 @@ export default function SimDetailsTab({
 
                           return (
                             <View key={item.id || index} style={[styles.tableRow, index === paginatedAddOns.length - 1 && styles.lastTableRow]}>
-                              <Text style={[styles.tdCell, { flex: 0.8, fontWeight: '700' }]}>#{item.id}</Text>
 
                               {/* COMPANY NAME */}
                               <View style={[styles.tdCell, { flex: 2.0 }]}>
@@ -2088,7 +2086,6 @@ export default function SimDetailsTab({
                     <View style={{ paddingBottom: 10 }}>
                       {/* Table Header Row */}
                       <View style={styles.tableHeader}>
-                        <Text style={[styles.thCell, { flex: 0.8 }]}>ID</Text>
                         {isTelecomDataView ? (
                           <>
                             <Text style={[styles.thCell, { flex: 1.8 }]}>COMPANY</Text>
@@ -2280,7 +2277,6 @@ export default function SimDetailsTab({
 
                         return (
                           <View key={item.id} style={[styles.tableRow, index === paginatedRecords.length - 1 && styles.lastTableRow]}>
-                            <Text style={[styles.tdCell, { flex: 0.8, fontWeight: '700' }]}>#{item.id}</Text>
 
                             {isTelecomDataView ? (
                               <>
