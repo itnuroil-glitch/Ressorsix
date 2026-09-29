@@ -204,7 +204,17 @@ exports.parsePdfDocument = async (req, res) => {
     // Also check filename for standard bill numbers if still missing
     if (!matchedDocNumber && file_name) {
       const fnBillMatch = String(file_name).match(/(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12}|INV\d{6,12})/i);
-      if (fnBillMatch) matchedDocNumber = fnBillMatch[1];
+      if (fnBillMatch) {
+        matchedDocNumber = fnBillMatch[1];
+      } else {
+        const parts = String(file_name).split(/[_\-\s.]+/);
+        for (const p of parts) {
+          if (/^\d{7,12}$/.test(p) && !p.startsWith('05') && !p.startsWith('202') && !p.startsWith('203')) {
+            matchedDocNumber = p;
+            break;
+          }
+        }
+      }
     }
 
     // D. Match Account Number / Mobile Number Regex
@@ -233,6 +243,10 @@ exports.parsePdfDocument = async (req, res) => {
           break;
         }
       }
+    }
+    if (!matchedMobileAccount && file_name) {
+      const fnMobileMatch = String(file_name).match(/\b(05\d{8})\b/);
+      if (fnMobileMatch) matchedMobileAccount = fnMobileMatch[1];
     }
 
     // D2. Extract multiple mobile numbers ONLY for du bills under "Plans included in this bill"
@@ -803,8 +817,8 @@ exports.parsePdfDocument = async (req, res) => {
         const match = rawText.match(st.regex);
         if (match && parseFloat(match[1]) > 0) {
           extractedSmsLogs.push({
-            bill_number: matchedDocNumber || 'INV2045264801',
-            source_number: matchedMobileAccount || '0522486345',
+            bill_number: matchedDocNumber || '',
+            source_number: matchedMobileAccount || '',
             call_date: matchedIssueDate || 'N/A',
             call_time: '00:00',
             destination_number: 'Summary',
@@ -816,21 +830,7 @@ exports.parsePdfDocument = async (req, res) => {
       }
     }
 
-    // Always ensure at least default SMS summary rows are inserted if present
-    if (extractedSmsLogs.length === 0) {
-      extractedSmsLogs.push({
-        bill_number: matchedDocNumber || 'INV2045264801',
-        source_number: matchedMobileAccount || '0522486345',
-        call_date: matchedIssueDate || new Date().toISOString().split('T')[0],
-        call_time: '12:00',
-        destination_number: 'Shortcode',
-        duration: null,
-        category: 'Premium SMS',
-        amount: 9.28
-      });
-    }
-
-    // Insert extracted SMS logs into tbl_telecome_sms_logs table
+    // Insert extracted SMS logs into tbl_telecome_sms_logs table (only if real logs were found)
     for (const sms of extractedSmsLogs) {
       try {
         await db.query(
@@ -839,8 +839,8 @@ exports.parsePdfDocument = async (req, res) => {
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, CURRENT_TIMESTAMP)`,
           [
             matchedTelecomProvider || 'Etisalat',
-            sms.bill_number || matchedDocNumber || 'INV2045264801',
-            sms.source_number || matchedMobileAccount || '0522486345',
+            sms.bill_number || matchedDocNumber || '',
+            sms.source_number || matchedMobileAccount || '',
             sms.destination_number || 'N/A',
             sms.call_date || 'N/A',
             sms.call_time || '00:00',
@@ -853,9 +853,11 @@ exports.parsePdfDocument = async (req, res) => {
         console.error('Error inserting into tbl_telecome_sms_logs:', smsDbErr.message);
       }
     }
-    console.log(`Successfully stored ${extractedSmsLogs.length} SMS logs into tbl_telecome_sms_logs table.`);
+    if (extractedSmsLogs.length > 0) {
+      console.log(`Successfully stored ${extractedSmsLogs.length} SMS logs into tbl_telecome_sms_logs table.`);
+    }
 
-    // Insert extracted Call logs into tbl_telecome_call_logs table
+    // Insert extracted Call logs into tbl_telecome_call_logs table (only if real logs were found)
     for (const call of extractedCallLogs) {
       try {
         await db.query(
@@ -863,8 +865,8 @@ exports.parsePdfDocument = async (req, res) => {
             (bill_number, source_number, call_date, call_time, destination_number, duration, category, amount, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)`,
           [
-            call.bill_number || matchedDocNumber || 'INV2045264801',
-            call.source_number || matchedMobileAccount || '0522486345',
+            call.bill_number || matchedDocNumber || '',
+            call.source_number || matchedMobileAccount || '',
             call.call_date || 'N/A',
             call.call_time || '00:00',
             call.destination_number || 'N/A',

@@ -523,16 +523,30 @@ const TelecomBillTab = ({
         let detectedBillNo = validBillNo(ext.bill_number) ? ext.bill_number : (validBillNo(ext.doc_number) ? ext.doc_number : '');
         if (!detectedBillNo && file && file.name) {
           const fnBillMatch = String(file.name).match(/(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12}|INV\d{6,12})/i);
-          if (fnBillMatch) detectedBillNo = fnBillMatch[1];
+          if (fnBillMatch) {
+            detectedBillNo = fnBillMatch[1];
+          } else {
+            const parts = String(file.name).split(/[_\-\s.]+/);
+            for (const p of parts) {
+              if (/^\d{7,12}$/.test(p) && !p.startsWith('05') && !p.startsWith('202') && !p.startsWith('203')) {
+                detectedBillNo = p;
+                break;
+              }
+            }
+          }
         }
         if (!detectedBillNo) {
           const isDuProvider = String(ext.telecom_provider || '').toLowerCase().includes('du') || String(file?.name || '').toLowerCase().includes('du');
-          detectedBillNo = isDuProvider ? 'DU-BILL' : 'INV2045264801';
+          detectedBillNo = isDuProvider ? 'DU-BILL' : '';
         }
 
         let detectedMobile = ext.mobile_account || '';
         if (Array.isArray(ext.mobile_numbers) && ext.mobile_numbers.length > 0) {
           detectedMobile = ext.mobile_numbers.join(', ');
+        }
+        if (!detectedMobile && file && file.name) {
+          const fnMobileMatch = String(file.name).match(/\b(05\d{8})\b/);
+          if (fnMobileMatch) detectedMobile = fnMobileMatch[1];
         }
 
         const newFormData = {
@@ -596,30 +610,34 @@ const TelecomBillTab = ({
         }));
 
         const bNo = detectedBillNo;
-        const mNo = detectedMobile || '0522486345';
-        const tBill = ext.total_amount || '283.05';
-        const pRental = ext.service_rental || '200.00';
-        const uCharge = ext.usage_charges || '72.20';
-        const vVal = ext.vat || '10.85';
+        const mNo = detectedMobile;
+        const tBill = ext.total_amount || '';
+        const pRental = ext.service_rental || '';
+        const uCharge = ext.usage_charges || '';
+        const vVal = ext.vat || '';
 
-        const extractedTableRows = (excelRows && excelRows.length > 0) ? excelRows : [
-          { record_type: 'BILL', bill_number: bNo, mobile_number: mNo, category: 'Total Bill', amount: tBill },
-          { record_type: 'SERVICE', bill_number: bNo, mobile_number: mNo, category: 'Plan Rental', amount: pRental },
-          { record_type: 'CHARGE', bill_number: bNo, mobile_number: mNo, category: 'Usage Charges', amount: uCharge },
-          { record_type: 'CHARGE', bill_number: bNo, mobile_number: mNo, category: 'Special Number', amount: '7.57' },
-          { record_type: 'CHARGE', bill_number: bNo, mobile_number: mNo, category: 'Premium SMS', amount: '9.28' },
-          { record_type: 'PARKING', bill_number: bNo, mobile_number: mNo, category: 'mParking Total', amount: '55.35' },
-          { record_type: 'VAT', bill_number: bNo, mobile_number: mNo, category: 'VAT Current Period', amount: vVal },
-          { record_type: 'PAYMENT', bill_number: bNo, mobile_number: mNo, category: 'Previous Bill', amount: '335.00' },
-          { record_type: 'PAYMENT', bill_number: bNo, mobile_number: mNo, category: 'Payment Received', amount: '-335.00' },
-          { record_type: 'BALANCE', bill_number: bNo, mobile_number: mNo, category: 'Balance Carried Forward', amount: '0.00' },
-          { record_type: 'CALL', bill_number: bNo, mobile_number: mNo, category: 'Local Mobile Call', amount: '0.00' },
-          { record_type: 'CALL', bill_number: bNo, mobile_number: mNo, category: 'Local Telephone Call', amount: '0.00' },
-          { record_type: 'CALL', bill_number: bNo, mobile_number: mNo, category: 'International Call', amount: '0.00' },
-          { record_type: 'CALL', bill_number: bNo, mobile_number: mNo, category: 'Incoming Roaming Call', amount: '0.00' },
-          { record_type: 'DATA', bill_number: bNo, mobile_number: mNo, category: 'Local Data', amount: '0.00' },
-          { record_type: 'DATA', bill_number: bNo, mobile_number: mNo, category: 'Roaming Data', amount: '0.00' }
-        ];
+        const extractedTableRows = (excelRows && excelRows.length > 0) ? excelRows : (() => {
+          const rows = [];
+          if (tBill && parseFloat(tBill) > 0) {
+            rows.push({ record_type: 'BILL', bill_number: bNo, mobile_number: mNo, category: 'Total Bill', amount: String(tBill) });
+          }
+          if (pRental && parseFloat(pRental) > 0) {
+            rows.push({ record_type: 'SERVICE', bill_number: bNo, mobile_number: mNo, category: 'Plan Rental', amount: String(pRental) });
+          }
+          if (uCharge && parseFloat(uCharge) > 0) {
+            rows.push({ record_type: 'CHARGE', bill_number: bNo, mobile_number: mNo, category: 'Usage Charges', amount: String(uCharge) });
+          }
+          if (ext.one_time_charges && parseFloat(ext.one_time_charges) > 0) {
+            rows.push({ record_type: 'CHARGE', bill_number: bNo, mobile_number: mNo, category: 'One-Time Charges', amount: String(ext.one_time_charges) });
+          }
+          if (ext.other_charges && parseFloat(ext.other_charges) > 0) {
+            rows.push({ record_type: 'CHARGE', bill_number: bNo, mobile_number: mNo, category: 'Other Charges', amount: String(ext.other_charges) });
+          }
+          if (vVal && parseFloat(vVal) > 0) {
+            rows.push({ record_type: 'VAT', bill_number: bNo, mobile_number: mNo, category: 'VAT Current Period', amount: String(vVal) });
+          }
+          return rows;
+        })();
 
         let pFrom = ext.period_from || '';
         let pTo = ext.period_to || '';
@@ -704,7 +722,7 @@ const TelecomBillTab = ({
       let finalBillNo = [summary.bill_number, summary['Bill Number'], pdfParsedData?.billNumber, formData['Bill Number'], formData.f_billno].find(validClean) || '';
       if (!finalBillNo) {
         const fnBillMatch = String(pdfParsedData?.fileName || pdfParsedData?.pdf_filename || formData['Invoice PDF'] || '').match(/(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12})/i);
-        finalBillNo = fnBillMatch ? fnBillMatch[1] : 'DU-BILL';
+        finalBillNo = fnBillMatch ? fnBillMatch[1] : (pdfParsedData?.billNumber || '');
       }
 
       const payload = {

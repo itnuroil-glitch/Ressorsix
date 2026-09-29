@@ -1045,15 +1045,26 @@ exports.createTelecomBill = async (req, res) => {
     const parentId = parentRow[pkCol] || parentRow.bill_id || parentRow.tele_bill_id || parentRow.id;
 
     // 2. Insert Child Items into tbl_telecome_bill_items
-    const rawItems = body.items || body.rows || fd.items || fd.rows || [
-      { record_type: 'BILL', bill_number, mobile_number, category: 'Total Bill', amount: total_bill },
-      { record_type: 'SERVICE', bill_number, mobile_number, category: 'Plan Rental', amount: plan_rental },
-      { record_type: 'CHARGE', bill_number, mobile_number, category: 'Usage Charges', amount: usage_charges },
-      { record_type: 'VAT', bill_number, mobile_number, category: 'VAT Current Period', amount: vat_current_period }
-    ];
+    let rawItems = [];
+    if (Array.isArray(body.items) && body.items.length > 0) {
+      rawItems = body.items;
+    } else if (Array.isArray(body.rows) && body.rows.length > 0) {
+      rawItems = body.rows;
+    } else if (Array.isArray(fd.items) && fd.items.length > 0) {
+      rawItems = fd.items;
+    } else if (Array.isArray(fd.rows) && fd.rows.length > 0) {
+      rawItems = fd.rows;
+    } else {
+      if (parseFloat(total_bill || 0) > 0) rawItems.push({ record_type: 'BILL', bill_number, mobile_number, category: 'Total Bill', amount: total_bill });
+      if (parseFloat(plan_rental || 0) > 0) rawItems.push({ record_type: 'SERVICE', bill_number, mobile_number, category: 'Plan Rental', amount: plan_rental });
+      if (parseFloat(usage_charges || 0) > 0) rawItems.push({ record_type: 'CHARGE', bill_number, mobile_number, category: 'Usage Charges', amount: usage_charges });
+      if (parseFloat(vat_current_period || 0) > 0) rawItems.push({ record_type: 'VAT', bill_number, mobile_number, category: 'VAT Current Period', amount: vat_current_period });
+    }
 
     const insertedItems = [];
     for (const item of rawItems) {
+      const amt = parseFloat(item.amount || 0);
+      if (isNaN(amt) || amt <= 0) continue;
       try {
         const itemRes = await db.query(
           `INSERT INTO tbl_telecome_bill_items 
@@ -1066,7 +1077,7 @@ exports.createTelecomBill = async (req, res) => {
             item.mobile_number || mobile_number,
             item.record_type || 'CHARGE',
             item.category || 'Service Line Item',
-            parseFloat(item.amount || 0)
+            amt
           ]
         ).catch(() => null);
         if (itemRes && itemRes.rows[0]) insertedItems.push(itemRes.rows[0]);
