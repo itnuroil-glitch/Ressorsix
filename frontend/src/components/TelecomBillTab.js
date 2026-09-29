@@ -71,6 +71,34 @@ const formatBillDateDisplay = (val) => {
   return s.length >= 10 ? s.slice(0, 10) : s;
 };
 
+// Filter items to show only valid bill charges from Total Bill to VAT Current Period (hiding payment, balance, and 0.00 placeholder rows from front end)
+const filterBillDisplayItems = (rawItems) => {
+  if (!Array.isArray(rawItems) || rawItems.length === 0) return [];
+  const filtered = [];
+  for (const it of rawItems) {
+    if (!it) continue;
+    const rType = String(it.record_type || '').toUpperCase().trim();
+    const cat = String(it.category || it.description || it['Category'] || it['Item Description'] || '').toLowerCase().trim();
+    const amt = parseFloat(it.amount || it.total || it['Amount'] || 0);
+
+    // Hide payment and balance rows
+    if (rType === 'PAYMENT' || rType === 'BALANCE') continue;
+    if (cat.includes('previous bill') || cat.includes('payment received') || cat.includes('balance carried')) continue;
+
+    // Hide 0.00 call/data placeholder rows
+    if ((rType === 'CALL' || rType === 'DATA') && (isNaN(amt) || amt === 0)) continue;
+    if ((cat.includes('call') || cat.includes('data')) && (isNaN(amt) || amt === 0)) continue;
+
+    filtered.push(it);
+
+    // Stop after VAT Current Period (charges section ends at VAT)
+    if (rType === 'VAT' || cat.includes('vat current period') || cat === 'vat') {
+      break;
+    }
+  }
+  return filtered;
+};
+
 const TelecomBillTab = ({
   user,
   showToast,
@@ -2168,89 +2196,99 @@ const TelecomBillTab = ({
                       </View>
 
                       {/* 3. ITEMIZED BREAKDOWN FROM TBL_TELECOME_BILL_ITEMS */}
-                      <View style={styles.viewDetailCard}>
-                        <View style={styles.viewDetailCardHeader}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                            <Ionicons name="list-outline" size={18} color="#004D34" />
-                            <Text style={styles.viewDetailCardTitle}>
-                              ITEMIZED BREAKDOWN (TBL_TELECOME_BILL_ITEMS)
-                            </Text>
-                          </View>
-                          <View style={{ backgroundColor: '#E0F2FE', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
-                            <Text style={{ fontSize: 11, fontWeight: '700', color: '#0369A1' }}>
-                              {((editingRecord?.items && editingRecord.items.length > 0) ? editingRecord.items.length : (pdfParsedData?.rows?.length || 0))} Line Item(s)
-                            </Text>
-                          </View>
-                        </View>
+                      {(() => {
+                        const rawItems = (editingRecord?.items && editingRecord.items.length > 0)
+                          ? editingRecord.items
+                          : (pdfParsedData?.rows || []);
+                        const displayItems = filterBillDisplayItems(rawItems);
 
-                        {((editingRecord?.items && editingRecord.items.length > 0) || (pdfParsedData?.rows && pdfParsedData.rows.length > 0)) ? (
-                          <View style={{ overflow: 'hidden' }}>
-                            {/* Table Header */}
-                            <View style={styles.itemTableHeader}>
-                              <Text style={[styles.itemThCell, { flex: 0.5 }]}>#</Text>
-                              <Text style={[styles.itemThCell, { flex: 1.8 }]}>CATEGORY / DESCRIPTION</Text>
-                              <Text style={[styles.itemThCell, { flex: 1.2 }]}>RECORD TYPE</Text>
-                              <Text style={[styles.itemThCell, { flex: 1.4 }]}>ACCOUNT / MOBILE</Text>
-                              <Text style={[styles.itemThCell, { flex: 1.2, textAlign: 'right' }]}>AMOUNT (AED)</Text>
+                        return (
+                          <View style={styles.viewDetailCard}>
+                            <View style={styles.viewDetailCardHeader}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                <Ionicons name="list-outline" size={18} color="#004D34" />
+                                <Text style={styles.viewDetailCardTitle}>
+                                  ITEMIZED BREAKDOWN (TBL_TELECOME_BILL_ITEMS)
+                                </Text>
+                              </View>
+                              <View style={{ backgroundColor: '#E0F2FE', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                                <Text style={{ fontSize: 11, fontWeight: '700', color: '#0369A1' }}>
+                                  {displayItems.length} Line Item(s)
+                                </Text>
+                              </View>
                             </View>
 
-                            {/* Table Rows */}
-                            {((editingRecord?.items && editingRecord.items.length > 0) ? editingRecord.items : pdfParsedData.rows).slice(0, 50).map((it, idx) => (
-                              <View key={it.item_id || idx} style={[styles.itemTableRow, idx % 2 === 1 && { backgroundColor: '#F8FAFC' }]}>
-                                <Text style={[styles.itemTdCell, { flex: 0.5, color: '#64748B', fontWeight: '600' }]}>{idx + 1}</Text>
-                                <Text style={[styles.itemTdCell, { flex: 1.8, fontWeight: '600', color: '#0F172A' }]}>
-                                  {it.category || it.description || it['Category'] || it['Item Description'] || 'Service Item'}
+                            {displayItems.length > 0 ? (
+                              <View style={{ overflow: 'hidden' }}>
+                                {/* Table Header */}
+                                <View style={styles.itemTableHeader}>
+                                  <Text style={[styles.itemThCell, { flex: 0.5 }]}>#</Text>
+                                  <Text style={[styles.itemThCell, { flex: 1.8 }]}>CATEGORY / DESCRIPTION</Text>
+                                  <Text style={[styles.itemThCell, { flex: 1.2 }]}>RECORD TYPE</Text>
+                                  <Text style={[styles.itemThCell, { flex: 1.4 }]}>ACCOUNT / MOBILE</Text>
+                                  <Text style={[styles.itemThCell, { flex: 1.2, textAlign: 'right' }]}>AMOUNT (AED)</Text>
+                                </View>
+
+                                {/* Table Rows */}
+                                {displayItems.map((it, idx) => (
+                                  <View key={it.item_id || idx} style={[styles.itemTableRow, idx % 2 === 1 && { backgroundColor: '#F8FAFC' }]}>
+                                    <Text style={[styles.itemTdCell, { flex: 0.5, color: '#64748B', fontWeight: '600' }]}>{idx + 1}</Text>
+                                    <Text style={[styles.itemTdCell, { flex: 1.8, fontWeight: '600', color: '#0F172A' }]}>
+                                      {it.category || it.description || it['Category'] || it['Item Description'] || 'Service Item'}
+                                    </Text>
+                                    <View style={[styles.itemTdCell, { flex: 1.2 }]}>
+                                      <View style={styles.recordTypeTag}>
+                                        <Text style={styles.recordTypeTagText}>
+                                          {it.record_type || (it.category?.toLowerCase().includes('plan') ? 'PLAN' : it.category?.toLowerCase().includes('vat') ? 'VAT' : 'CHARGE')}
+                                        </Text>
+                                      </View>
+                                    </View>
+                                    <Text style={[styles.itemTdCell, { flex: 1.4, fontFamily: 'monospace', color: '#475569' }]}>
+                                      {it.mobile_number || editingRecord?.mobile_number || '—'}
+                                    </Text>
+                                    <Text style={[styles.itemTdCell, { flex: 1.2, textAlign: 'right', fontWeight: '700', color: '#004D34' }]}>
+                                      AED {Number(it.amount || it.total || it['Amount'] || 0).toFixed(2)}
+                                    </Text>
+                                  </View>
+                                ))}
+                              </View>
+                            ) : (
+                              /* Statement balance math check if specific items not yet imported */
+                              <View style={styles.viewCalcBanner}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                  <Ionicons name="calculator" size={18} color="#004D34" />
+                                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#0F172A' }}>
+                                    Statement Balance Summary
+                                  </Text>
+                                </View>
+                                <Text style={{ fontSize: 12, color: '#475569', lineHeight: 18 }}>
+                                  The master bill charges in tbl_telecome_bill are verified as follows:
                                 </Text>
-                                <View style={[styles.itemTdCell, { flex: 1.2 }]}>
-                                  <View style={styles.recordTypeTag}>
-                                    <Text style={styles.recordTypeTagText}>
-                                      {it.record_type || (it.category?.toLowerCase().includes('plan') ? 'PLAN' : it.category?.toLowerCase().includes('vat') ? 'VAT' : 'CHARGE')}
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
+                                  <View style={styles.calcTag}>
+                                    <Text style={styles.calcTagText}>Plan Rental: AED {Number(editingRecord?.plan_rental || 0).toFixed(2)}</Text>
+                                  </View>
+                                  <Text style={{ fontWeight: '700', color: '#64748B' }}>+</Text>
+                                  <View style={styles.calcTag}>
+                                    <Text style={styles.calcTagText}>Usage: AED {Number(editingRecord?.usage_charges || 0).toFixed(2)}</Text>
+                                  </View>
+                                  <Text style={{ fontWeight: '700', color: '#64748B' }}>+</Text>
+                                  <View style={styles.calcTag}>
+                                    <Text style={styles.calcTagText}>VAT (5%): AED {Number(editingRecord?.vat_current_period || 0).toFixed(2)}</Text>
+                                  </View>
+                                  <Text style={{ fontWeight: '700', color: '#64748B' }}>=</Text>
+                                  <View style={[styles.calcTag, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
+                                    <Text style={[styles.calcTagText, { color: '#047857', fontWeight: '800' }]}>
+                                      Total Bill: AED {Number(editingRecord?.total_bill || 0).toFixed(2)}
                                     </Text>
                                   </View>
                                 </View>
-                                <Text style={[styles.itemTdCell, { flex: 1.4, fontFamily: 'monospace', color: '#475569' }]}>
-                                  {it.mobile_number || editingRecord?.mobile_number || '—'}
-                                </Text>
-                                <Text style={[styles.itemTdCell, { flex: 1.2, textAlign: 'right', fontWeight: '700', color: '#004D34' }]}>
-                                  AED {Number(it.amount || it.total || it['Amount'] || 0).toFixed(2)}
-                                </Text>
                               </View>
-                            ))}
+                            )}
                           </View>
-                        ) : (
-                          /* Statement balance math check if specific items not yet imported */
-                          <View style={styles.viewCalcBanner}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                              <Ionicons name="calculator" size={18} color="#004D34" />
-                              <Text style={{ fontSize: 13, fontWeight: '700', color: '#0F172A' }}>
-                                Statement Balance Summary
-                              </Text>
-                            </View>
-                            <Text style={{ fontSize: 12, color: '#475569', lineHeight: 18 }}>
-                              The master bill charges in tbl_telecome_bill are verified as follows:
-                            </Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
-                              <View style={styles.calcTag}>
-                                <Text style={styles.calcTagText}>Plan Rental: AED {Number(editingRecord?.plan_rental || 0).toFixed(2)}</Text>
-                              </View>
-                              <Text style={{ fontWeight: '700', color: '#64748B' }}>+</Text>
-                              <View style={styles.calcTag}>
-                                <Text style={styles.calcTagText}>Usage: AED {Number(editingRecord?.usage_charges || 0).toFixed(2)}</Text>
-                              </View>
-                              <Text style={{ fontWeight: '700', color: '#64748B' }}>+</Text>
-                              <View style={styles.calcTag}>
-                                <Text style={styles.calcTagText}>VAT (5%): AED {Number(editingRecord?.vat_current_period || 0).toFixed(2)}</Text>
-                              </View>
-                              <Text style={{ fontWeight: '700', color: '#64748B' }}>=</Text>
-                              <View style={[styles.calcTag, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
-                                <Text style={[styles.calcTagText, { color: '#047857', fontWeight: '800' }]}>
-                                  Total Bill: AED {Number(editingRecord?.total_bill || 0).toFixed(2)}
-                                </Text>
-                              </View>
-                            </View>
-                          </View>
-                        )}
-                      </View>
+                        );
+                      })()}
+
 
                       {/* 4. CALL LOGS IF AVAILABLE (tbl_telecome_call_logs) */}
                       {editingRecord?.call_logs && editingRecord.call_logs.length > 0 && (
@@ -2439,7 +2477,7 @@ const TelecomBillTab = ({
                     Excel / PDF Import Data Preview
                   </Text>
                   <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>
-                    Reviewing {pdfParsedData?.rows?.length || 16} row(s) for <Text style={{ fontWeight: '700', color: '#004D34' }}>{selectedCompany || 'selected company'}</Text>
+                    Reviewing {pdfParsedData?.rows?.length || 0} row(s) for <Text style={{ fontWeight: '700', color: '#004D34' }}>{selectedCompany || 'selected company'}</Text>
                     {pdfParsedData?.period_from && (
                       <Text style={{ color: '#004D34', fontWeight: '600' }}> • Period: {pdfParsedData.period_from} to {pdfParsedData.period_to}</Text>
                     )}
@@ -2563,7 +2601,7 @@ const TelecomBillTab = ({
                   <>
                     <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
                     <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>
-                      Confirm & Import {pdfParsedData?.rows?.length || 16} Rows
+                      Confirm & Import {pdfParsedData?.rows?.length || 0} Rows
                     </Text>
                   </>
                 )}
