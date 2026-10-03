@@ -152,12 +152,41 @@ const TelecomBillTab = ({
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
 
+  // History Modal State
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [historyLogs, setHistoryLogs] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyRecordName, setHistoryRecordName] = useState('');
+
   const isSuperAdmin = !user || String(user?.roleId) === '1' || String(user?.roleid) === '1';
   const isClientLogged = Boolean(user && !isSuperAdmin);
   const canView = user?.roleId === 1 || user?.roleId === '1' || permissions?.can_view || permissions?.full_control;
   const canCreate = user?.roleId === 1 || user?.roleId === '1' || permissions?.can_create || permissions?.full_control;
   const canEdit = user?.roleId === 1 || user?.roleId === '1' || permissions?.can_edit || permissions?.full_control;
   const canDelete = user?.roleId === 1 || user?.roleId === '1' || permissions?.can_delete || permissions?.full_control;
+
+  const openHistoryModal = async (item) => {
+    setHistoryRecordName(item.bill_number || item.tele_bill_id || item.id || `Bill #${item.id}`);
+    setHistoryModalOpen(true);
+    setHistoryLoading(true);
+    try {
+      const billId = item.id || item.tele_bill_id || item.bill_id;
+      const response = await fetch(`${API_URL}/api/telecom-bills/${billId}/logs`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setHistoryLogs(data || []);
+      } else {
+        setHistoryLogs([]);
+      }
+    } catch (e) {
+      console.error('Error fetching telecom bill logs:', e);
+      setHistoryLogs([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
 
   const getAllowedCompanyIds = () => {
     if (!user) return [];
@@ -1768,6 +1797,10 @@ const TelecomBillTab = ({
                       </TouchableOpacity>
                     )}
 
+                    <TouchableOpacity style={{ padding: 4 }} onPress={() => openHistoryModal(r)} activeOpacity={0.7}>
+                      <Ionicons name="time-outline" size={18} color="#0284C7" />
+                    </TouchableOpacity>
+
                     {!rowCanView && !rowCanEdit && !rowCanDelete && (
                       <Text style={{ fontSize: 13, color: '#94A3B8' }}>—</Text>
                     )}
@@ -2608,6 +2641,107 @@ const TelecomBillTab = ({
               </TouchableOpacity>
             </View>
 
+          </View>
+        </View>
+      </Modal>
+
+      {/* HISTORY MODAL (ACTIVITY LOG) */}
+      <Modal visible={historyModalOpen} transparent animationType="fade" onRequestClose={() => setHistoryModalOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxWidth: 700 }]}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Activity Log</Text>
+                <Text style={{ fontSize: 13, color: '#64748B', marginTop: 4 }}>
+                  History for <Text style={{ fontWeight: '700', color: '#0F172A' }}>{historyRecordName}</Text>
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setHistoryModalOpen(false)} style={styles.closeButton}>
+                <Ionicons name="close" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ padding: 24, backgroundColor: '#F8FAFC' }}>
+              {historyLoading ? (
+                <View style={{ padding: 40, alignItems: 'center' }}>
+                  <ActivityIndicator size="large" color="#0284C7" />
+                  <Text style={{ color: '#64748B', marginTop: 12 }}>Loading history...</Text>
+                </View>
+              ) : historyLogs.length === 0 ? (
+                <View style={{ padding: 40, alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                  <Ionicons name="document-text-outline" size={48} color="#CBD5E1" />
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#475569', marginTop: 12 }}>No History Found</Text>
+                  <Text style={{ fontSize: 13, color: '#94A3B8', marginTop: 4, textAlign: 'center' }}>
+                    There are no recorded actions for this telecom bill yet.
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ paddingLeft: 8 }}>
+                  {historyLogs.map((log, index) => {
+                    const isLast = index === historyLogs.length - 1;
+                    let actionColor = '#64748B';
+                    let actionIcon = 'ellipse';
+                    let actionBg = '#F1F5F9';
+
+                    if (log.action === 'CREATED') {
+                      actionColor = '#059669';
+                      actionIcon = 'add-circle';
+                      actionBg = '#D1FAE5';
+                    } else if (log.action === 'UPDATED') {
+                      actionColor = '#0284C7';
+                      actionIcon = 'pencil';
+                      actionBg = '#E0F2FE';
+                    } else if (log.action === 'DELETED') {
+                      actionColor = '#E11D48';
+                      actionIcon = 'trash';
+                      actionBg = '#FFE4E6';
+                    }
+
+                    const formattedDate = new Date(log.created_at).toLocaleString('en-US', {
+                      month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true
+                    });
+
+                    return (
+                      <View key={log.id} style={{ flexDirection: 'row', marginBottom: isLast ? 0 : 24 }}>
+                        {/* Timeline line connecting items */}
+                        {!isLast && (
+                          <View style={{ position: 'absolute', left: 15, top: 32, bottom: -24, width: 2, backgroundColor: '#E2E8F0' }} />
+                        )}
+
+                        <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: actionBg, justifyContent: 'center', alignItems: 'center', zIndex: 1 }}>
+                          <Ionicons name={actionIcon} size={16} color={actionColor} />
+                        </View>
+
+                        <View style={{ flex: 1, marginLeft: 16, backgroundColor: '#FFFFFF', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                            <View>
+                              <Text style={{ fontSize: 14, fontWeight: '700', color: '#0F172A' }}>{log.action}</Text>
+                              <Text style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>By: {log.performed_by}</Text>
+                            </View>
+                            <Text style={{ fontSize: 12, color: '#94A3B8', fontWeight: '500' }}>{formattedDate}</Text>
+                          </View>
+
+                          {log.new_data && (
+                            <View style={{ marginTop: 8, padding: 10, backgroundColor: '#F8FAFC', borderRadius: 8, borderWidth: 1, borderColor: '#F1F5F9' }}>
+                              <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', marginBottom: 6 }}>NEW DATA</Text>
+                              {Object.entries(log.new_data).map(([key, value]) => {
+                                if (!value || typeof value === 'object' || key === 'field_data') return null;
+                                return (
+                                  <View key={key} style={{ flexDirection: 'row', marginBottom: 4 }}>
+                                    <Text style={{ fontSize: 12, color: '#475569', width: 120 }}>{key.replace(/_/g, ' ')}:</Text>
+                                    <Text style={{ fontSize: 12, color: '#0F172A', fontWeight: '500', flex: 1 }}>{String(value)}</Text>
+                                  </View>
+                                );
+                              })}
+                            </View>
+                          )}
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </ScrollView>
           </View>
         </View>
       </Modal>

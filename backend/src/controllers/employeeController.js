@@ -1,6 +1,7 @@
 const db = require('../config/db');
 const bcrypt = require('bcryptjs');
 const nodemailer = require('nodemailer');
+const { logAudit } = require('../utils/auditLogger');
 
 let isColumnChecked = false;
 const ensureColumnsExist = async () => {
@@ -153,6 +154,7 @@ exports.createEmployee = async (req, res) => {
       }
     }
 
+    const parsedBaseCompId = basecompany_id ? parseInt(basecompany_id) : null;
     const finalRoleId = roleid ? (Array.isArray(roleid) ? roleid.join(',') : String(roleid)) : null;
     const cleanEmail = email && typeof email === 'string' && email.trim() ? email.trim() : null;
     const cleanPhone = phone && typeof phone === 'string' && phone.trim() ? phone.trim() : null;
@@ -173,7 +175,7 @@ exports.createEmployee = async (req, res) => {
       status !== undefined ? parseInt(status) : 1,
       finalClientId,
       department_id ? parseInt(department_id) : null,
-      basecompany_id ? parseInt(basecompany_id) : null
+      parsedBaseCompId
     ]);
     const newEmployee = empResult.rows[0];
 
@@ -196,8 +198,6 @@ exports.createEmployee = async (req, res) => {
       const tempPassword = Math.random().toString(36).slice(-8);
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(tempPassword, salt);
-
-      const parsedBaseCompId = basecompany_id ? parseInt(basecompany_id) : null;
 
       if (userCheck.rows.length === 0) {
         await client.query(
@@ -250,6 +250,23 @@ exports.createEmployee = async (req, res) => {
     }
 
     await client.query('COMMIT');
+
+    try {
+      await logAudit({
+        req,
+        clientid: finalClientId,
+        company_id: parsedBaseCompId,
+        module_name: 'EMPLOYEE',
+        record_id: newEmployee.id,
+        record_title: newEmployee.full_name,
+        action_type: 'CREATED',
+        action_summary: `Employee "${newEmployee.full_name}" registered${cleanEmail ? ` (${cleanEmail})` : ''}`,
+        new_data: newEmployee,
+      });
+    } catch (auditErr) {
+      console.warn('[AuditHistory] Failed to log employee creation:', auditErr.message);
+    }
+
     res.status(201).json(newEmployee);
   } catch (error) {
     await client.query('ROLLBACK');
@@ -279,6 +296,9 @@ exports.updateEmployee = async (req, res) => {
     const finalRoleId = roleid !== undefined ? (roleid ? (Array.isArray(roleid) ? roleid.join(',') : String(roleid)) : null) : undefined;
 
     await client.query('BEGIN');
+
+    const oldEmpRes = await client.query('SELECT * FROM employee WHERE id = $1', [id]);
+    const oldEmp = oldEmpRes.rows[0] || {};
 
     const setClauses = [];
     const params = [];
@@ -414,6 +434,24 @@ exports.updateEmployee = async (req, res) => {
     }
 
     await client.query('COMMIT');
+
+    try {
+      await logAudit({
+        req,
+        clientid: updatedEmployee.clientid,
+        company_id: updatedEmployee.basecompany_id,
+        module_name: 'EMPLOYEE',
+        record_id: updatedEmployee.id,
+        record_title: updatedEmployee.full_name,
+        action_type: 'UPDATED',
+        action_summary: `Employee "${updatedEmployee.full_name}" profile updated`,
+        old_data: oldEmp,
+        new_data: updatedEmployee,
+      });
+    } catch (auditErr) {
+      console.warn('[AuditHistory] Failed to log employee update:', auditErr.message);
+    }
+
     res.status(200).json(updatedEmployee);
   } catch (error) {
     await client.query('ROLLBACK');
@@ -433,6 +471,22 @@ exports.deleteEmployee = async (req, res) => {
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Employee not found' });
+    }
+    const emp = result.rows[0];
+    try {
+      await logAudit({
+        req,
+        clientid: emp.clientid,
+        company_id: emp.basecompany_id,
+        module_name: 'EMPLOYEE',
+        record_id: emp.id,
+        record_title: emp.full_name,
+        action_type: 'DELETED',
+        action_summary: `Employee "${emp.full_name}" deleted`,
+        old_data: emp,
+      });
+    } catch (auditErr) {
+      console.warn('[AuditHistory] Failed to log employee deletion:', auditErr.message);
     }
     res.status(200).json({ message: 'Employee soft deleted successfully' });
   } catch (error) {
@@ -575,6 +629,22 @@ exports.bulkImportEmployees = async (req, res) => {
       }
 
       count++;
+
+      try {
+        await logAudit({
+          req,
+          clientid: finalClientId,
+          company_id: parsedBaseCompId,
+          module_name: 'EMPLOYEE',
+          record_id: newEmp.id,
+          record_title: newEmp.full_name,
+          action_type: 'CREATED',
+          action_summary: `Employee "${newEmp.full_name}" imported via Excel file`,
+          new_data: newEmp,
+        });
+      } catch (auditErr) {
+        console.warn('[AuditHistory] Failed to log employee import:', auditErr.message);
+      }
     }
 
     await client.query('COMMIT');

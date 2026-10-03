@@ -1,6 +1,21 @@
 const db = require('../config/db');
 const fs = require('fs');
 const path = require('path');
+const { logAudit } = require('../utils/auditLogger');
+
+function extractPurchaseTitle(fieldData, fallbackId) {
+  if (!fieldData || typeof fieldData !== 'object') return `Purchase #${fallbackId}`;
+  const vals = Object.values(fieldData).filter(v => typeof v === 'string' && v.trim().length > 0);
+  const match = vals.find(v => v.includes(' - '));
+  if (match) return match;
+  for (const v of vals) {
+    if (isNaN(v) && !v.includes('/') && !v.includes('http') && v.length < 50) {
+      return v;
+    }
+  }
+  if (vals.length > 0) return vals[0];
+  return `Purchase #${fallbackId}`;
+}
 
 const resolveVehicleId = async (fieldData, clientId) => {
   if (!fieldData || !clientId) return null;
@@ -268,8 +283,27 @@ exports.saveVehiclePurchase = async (req, res) => {
     const values = [resolvedVehicleId || null, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null, roleid || null, user_id || null, company_id || null];
 
     const result = await db.query(query, values);
+    const savedRecord = result.rows[0];
 
-    res.status(201).json(result.rows[0]);
+    // Log Creation Audit
+    try {
+      const vTitle = extractPurchaseTitle(processedFieldData, savedRecord.id);
+      logAudit({
+        req,
+        clientid: clientid || savedRecord.clientid,
+        company_id: company_id || savedRecord.company_id,
+        module_name: 'VEHICLE_PURCHASE',
+        record_id: savedRecord.id,
+        record_title: vTitle,
+        action_type: 'CREATE',
+        action_summary: `Recorded new vehicle purchase: ${vTitle}`,
+        new_data: processedFieldData
+      }).catch(e => console.error('[AUDIT] Failed to log vehicle purchase creation:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing vehicle purchase create log:', e.message);
+    }
+
+    res.status(201).json(savedRecord);
   } catch (error) {
     console.error('Error saving vehicle purchase:', error);
     res.status(500).json({ message: 'Error saving vehicle purchase' });
@@ -499,19 +533,39 @@ exports.deleteVehiclePurchase = async (req, res) => {
     const { id } = req.params;
 
     // Fetch the existing record to find associated files
-    const selectQuery = 'SELECT field_data FROM tbl_vehicle_purchase WHERE id = $1';
+    const selectQuery = 'SELECT * FROM tbl_vehicle_purchase WHERE id = $1';
     const selectResult = await db.query(selectQuery, [id]);
 
     if (selectResult.rowCount === 0) {
       return res.status(404).json({ message: 'Purchase record not found' });
     }
 
-    const oldFieldData = selectResult.rows[0].field_data;
+    const existingRecord = selectResult.rows[0];
+    const oldFieldData = existingRecord.field_data;
     const oldPaths = extractFilePaths(oldFieldData);
 
     // Delete the vehicle purchase record
     const query = 'DELETE FROM tbl_vehicle_purchase WHERE id = $1 RETURNING *';
     const result = await db.query(query, [id]);
+
+    // Log Deletion Audit
+    try {
+      const oldParsed = typeof oldFieldData === 'string' ? JSON.parse(oldFieldData) : (oldFieldData || {});
+      const vTitle = extractPurchaseTitle(oldParsed, id);
+      logAudit({
+        req,
+        clientid: existingRecord.clientid,
+        company_id: existingRecord.company_id,
+        module_name: 'VEHICLE_PURCHASE',
+        record_id: id,
+        record_title: vTitle,
+        action_type: 'DELETE',
+        action_summary: `Deleted vehicle purchase record: ${vTitle}`,
+        old_data: oldParsed
+      }).catch(e => console.error('[AUDIT] Failed to log vehicle purchase deletion:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing vehicle purchase delete log:', e.message);
+    }
 
     // Mark files as deleted in the attachment table
     for (const path of oldPaths) {
@@ -538,18 +592,19 @@ exports.updateVehiclePurchase = async (req, res) => {
     const { vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id } = req.body;
 
     // Fetch the existing record to find previously associated files
-    const selectQuery = 'SELECT field_data FROM tbl_vehicle_purchase WHERE id = $1';
+    const selectQuery = 'SELECT * FROM tbl_vehicle_purchase WHERE id = $1';
     const selectResult = await db.query(selectQuery, [id]);
 
     if (selectResult.rowCount === 0) {
       return res.status(404).json({ message: 'Purchase record not found' });
     }
 
-    const oldFieldData = selectResult.rows[0].field_data;
+    const existingRecord = selectResult.rows[0];
+    const oldFieldData = existingRecord.field_data;
     const oldPaths = extractFilePaths(oldFieldData);
 
     // Save any new base64 files locally, insert new attachments, and replace their data with local paths
-    const processedFieldData = await processAndSyncFieldDataFiles(field_data, clientid);
+    const processedFieldData = await processAndSyncFieldDataFiles(field_data, clientid || existingRecord.clientid);
     const newPaths = extractFilePaths(processedFieldData);
 
     // Identify files that were removed
@@ -568,7 +623,7 @@ exports.updateVehiclePurchase = async (req, res) => {
     // Resolve vehicle_id automatically from field_data if not provided
     let resolvedVehicleId = vehicle_id;
     if (!resolvedVehicleId && processedFieldData) {
-      resolvedVehicleId = await resolveVehicleId(processedFieldData, clientid);
+      resolvedVehicleId = await resolveVehicleId(processedFieldData, clientid || existingRecord.clientid);
     }
 
     // Auto-fill any missing top-level Date fields (e.g. Purchase Date) for this configuration
@@ -598,10 +653,42 @@ exports.updateVehiclePurchase = async (req, res) => {
       RETURNING *
     `;
 
-    const values = [resolvedVehicleId || null, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null, roleid || null, user_id || null, company_id || null, id];
+    const values = [
+      resolvedVehicleId || null,
+      custom_field_id || null,
+      jsonData,
+      clientid || existingRecord.clientid || null,
+      country_id || existingRecord.country_id || null,
+      moduleid || existingRecord.moduleid || null,
+      roleid || existingRecord.roleid || null,
+      user_id || existingRecord.user_id || null,
+      company_id || existingRecord.company_id || null,
+      id
+    ];
     const result = await db.query(query, values);
+    const updatedRecord = result.rows[0];
 
-    res.status(200).json(result.rows[0]);
+    // Log Update Audit
+    try {
+      const oldParsed = typeof oldFieldData === 'string' ? JSON.parse(oldFieldData) : (oldFieldData || {});
+      const vTitle = extractPurchaseTitle(processedFieldData, id);
+      logAudit({
+        req,
+        clientid: clientid || existingRecord.clientid,
+        company_id: company_id || existingRecord.company_id,
+        module_name: 'VEHICLE_PURCHASE',
+        record_id: id,
+        record_title: vTitle,
+        action_type: 'UPDATE',
+        action_summary: `Updated vehicle purchase record for ${vTitle}`,
+        old_data: oldParsed,
+        new_data: processedFieldData
+      }).catch(e => console.error('[AUDIT] Failed to log vehicle purchase update:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing vehicle purchase update log:', e.message);
+    }
+
+    res.status(200).json(updatedRecord);
   } catch (error) {
     console.error('Error updating vehicle purchase:', error);
     res.status(500).json({ message: 'Error updating vehicle purchase' });

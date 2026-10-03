@@ -2,6 +2,27 @@ const db = require('../config/db');
 const fs = require('fs');
 const path = require('path');
 const { recalculateAssetInventory, logInventoryMovement } = require('../utils/inventorySync');
+const { logAudit } = require('../utils/auditLogger');
+
+function extractPurchaseTitle(fieldData, lineItems, fallbackId) {
+  let invNo = null;
+  let suppName = null;
+  if (fieldData && typeof fieldData === 'object') {
+    for (const [k, v] of Object.entries(fieldData)) {
+      if (typeof v === 'string') {
+        const lowerK = k.toLowerCase();
+        if (lowerK.includes('inv') || lowerK.includes('bill') || lowerK.includes('receipt') || lowerK.includes('number')) invNo = v;
+        if (lowerK.includes('supplier')) suppName = v;
+      }
+    }
+    invNo = invNo || fieldData.invoice_number || fieldData['1781960200000'] || fieldData.invoiceNumber;
+    suppName = suppName || fieldData.supplier_name || fieldData['1781960133708'];
+  }
+  if (invNo && suppName) return `Invoice #${invNo} (${suppName})`;
+  if (invNo) return `Invoice #${invNo}`;
+  if (suppName) return `Purchase from ${suppName}`;
+  return `Purchase #${fallbackId}`;
+}
 
 const resolveSupplierIdByName = async (supplierName) => {
   if (!supplierName || typeof supplierName !== 'string') return null;
@@ -423,6 +444,26 @@ exports.createPurchase = async (req, res) => {
       }
     }
 
+    try {
+      const pTitle = extractPurchaseTitle(processedFieldData, line_items, newPurchase.id);
+      await logAudit({
+        req,
+        clientid: clientid || newPurchase.clientid,
+        company_id: company_id || newPurchase.company_id,
+        module_name: 'PURCHASE_DETAILS',
+        record_id: newPurchase.id,
+        record_title: pTitle,
+        action_type: 'CREATE',
+        action_summary: `Created purchase order: ${pTitle}`,
+        new_data: {
+          ...(processedFieldData || {}),
+          line_items: parsedForSync
+        }
+      });
+    } catch (auditErr) {
+      console.error('[AUDIT] Failed to log purchase create:', auditErr.message);
+    }
+
     res.status(201).json(newPurchase);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -433,6 +474,9 @@ exports.updatePurchase = async (req, res) => {
   try {
     const { id } = req.params;
     const { custom_field_id, field_data, line_items, clientid, country_id, moduleid, roleid, user_id, company_id } = req.body;
+
+    const oldPurchaseRes = await db.query('SELECT * FROM tbl_Purchases WHERE id = $1', [id]);
+    const oldPurchase = oldPurchaseRes.rows[0];
 
     // Backend validation: check if new quantities are less than already assigned
     let incomingItems = line_items;
@@ -560,6 +604,35 @@ exports.updatePurchase = async (req, res) => {
       }
     }
 
+    try {
+      const pTitle = extractPurchaseTitle(processedFieldData, line_items, id);
+      let oldFieldData = oldPurchase?.field_data;
+      try { if (typeof oldFieldData === 'string') oldFieldData = JSON.parse(oldFieldData); } catch (e) {}
+      let oldLineItems = oldPurchase?.line_items;
+      try { if (typeof oldLineItems === 'string') oldLineItems = JSON.parse(oldLineItems); } catch (e) {}
+
+      await logAudit({
+        req,
+        clientid: clientid || updatedPurchase.clientid,
+        company_id: company_id || updatedPurchase.company_id,
+        module_name: 'PURCHASE_DETAILS',
+        record_id: id,
+        record_title: pTitle,
+        action_type: 'UPDATE',
+        action_summary: `Updated purchase details for ${pTitle}`,
+        old_data: {
+          ...(oldFieldData || {}),
+          line_items: oldLineItems
+        },
+        new_data: {
+          ...(processedFieldData || {}),
+          line_items: parsedForSync
+        }
+      });
+    } catch (auditErr) {
+      console.error('[AUDIT] Failed to log purchase update:', auditErr.message);
+    }
+
     res.json(updatedPurchase);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -607,6 +680,31 @@ exports.deletePurchase = async (req, res) => {
       for (const item of parsedForSync) {
         const assetId = await resolveAssetIdByName(item.item_name);
         if (assetId) await recalculateAssetInventory(assetId, clientIdVal, countryIdVal);
+      }
+    }
+
+    if (selectResult.rowCount > 0) {
+      try {
+        const oldRow = selectResult.rows[0];
+        let oldFieldData = oldRow.field_data;
+        try { if (typeof oldFieldData === 'string') oldFieldData = JSON.parse(oldFieldData); } catch (e) {}
+        const pTitle = extractPurchaseTitle(oldFieldData, parsedForSync, id);
+        await logAudit({
+          req,
+          clientid: clientIdVal,
+          country_id: countryIdVal,
+          module_name: 'PURCHASE_DETAILS',
+          record_id: id,
+          record_title: pTitle,
+          action_type: 'DELETE',
+          action_summary: `Deleted purchase record: ${pTitle}`,
+          old_data: {
+            ...(oldFieldData || {}),
+            line_items: parsedForSync
+          }
+        });
+      } catch (auditErr) {
+        console.error('[AUDIT] Failed to log purchase delete:', auditErr.message);
       }
     }
 

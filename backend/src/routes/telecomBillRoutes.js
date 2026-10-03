@@ -9,5 +9,6 @@ router.get('/:id/call-logs', telecomBillController.getCallLogsByBillId);
 router.post('/', telecomBillController.createTelecomBill);
 router.put('/:id', telecomBillController.updateTelecomBill);
 router.delete('/:id', telecomBillController.deleteTelecomBill);
+router.get('/:id/logs', telecomBillController.getTelecomBillLogs);
 
 module.exports = router;

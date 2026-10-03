@@ -1,6 +1,21 @@
 const db = require('../config/db');
 const fs = require('fs');
 const path = require('path');
+const { logAudit } = require('../utils/auditLogger');
+
+function extractVehicleTitle(fieldData, fallbackId) {
+  if (!fieldData || typeof fieldData !== 'object') return `Insurance Policy #${fallbackId}`;
+  const vals = Object.values(fieldData);
+  const match = vals.find(v => typeof v === 'string' && v.includes(' - '));
+  if (match) return match;
+  for (const [k, v] of Object.entries(fieldData)) {
+    if (typeof v === 'string' && v.trim().length > 0 && isNaN(v) && !v.includes('/') && !v.includes('http') && v.length < 50) {
+      return v;
+    }
+  }
+  return `Insurance Policy #${fallbackId}`;
+}
+
 
 const resolveVehicleId = async (fieldData, clientId) => {
   if (!fieldData || !clientId) return null;
@@ -263,8 +278,25 @@ exports.saveVehicleInsurance = async (req, res) => {
     const values = [resolvedVehicleId || null, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null, roleid || null, user_id || null, company_id || null];
     
     const result = await db.query(query, values);
+    const savedRecord = result.rows[0];
+
+    // Log Creation Audit
+    try {
+      const vTitle = extractVehicleTitle(processedFieldData, savedRecord.id);
+      logAudit({
+        req,
+        module_name: 'VEHICLE_INSURANCE',
+        record_id: savedRecord.id,
+        record_title: vTitle,
+        action_type: 'CREATE',
+        action_summary: `Created vehicle insurance record for ${vTitle}`,
+        new_data: processedFieldData
+      }).catch(e => console.error('[AUDIT] Failed to log vehicle insurance creation:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing vehicle insurance create log:', e.message);
+    }
     
-    res.status(201).json(result.rows[0]);
+    res.status(201).json(savedRecord);
   } catch (error) {
     console.error('Error saving vehicle insurance:', error);
     res.status(500).json({ message: 'Error saving vehicle insurance' });
@@ -501,6 +533,23 @@ exports.deleteVehicleInsurance = async (req, res) => {
     // Delete the vehicle insurance record
     const query = 'DELETE FROM tbl_vehicle_insurance WHERE id = $1 RETURNING *';
     const result = await db.query(query, [id]);
+
+    // Log Deletion Audit
+    try {
+      const oldParsed = typeof oldFieldData === 'string' ? JSON.parse(oldFieldData) : (oldFieldData || {});
+      const vTitle = extractVehicleTitle(oldParsed, id);
+      logAudit({
+        req,
+        module_name: 'VEHICLE_INSURANCE',
+        record_id: id,
+        record_title: vTitle,
+        action_type: 'DELETE',
+        action_summary: `Deleted vehicle insurance record for ${vTitle}`,
+        old_data: oldParsed
+      }).catch(e => console.error('[AUDIT] Failed to log vehicle insurance deletion:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing vehicle insurance delete log:', e.message);
+    }
     
     // Mark files as deleted in the attachment table
     for (const path of oldPaths) {
@@ -572,8 +621,27 @@ exports.updateVehicleInsurance = async (req, res) => {
 
     const values = [resolvedVehicleId || null, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null, roleid || null, user_id || null, company_id || null, id];
     const result = await db.query(query, values);
+    const updatedRecord = result.rows[0];
 
-    res.status(200).json(result.rows[0]);
+    // Log Update Audit
+    try {
+      const oldParsed = typeof oldFieldData === 'string' ? JSON.parse(oldFieldData) : (oldFieldData || {});
+      const vTitle = extractVehicleTitle(processedFieldData, id);
+      logAudit({
+        req,
+        module_name: 'VEHICLE_INSURANCE',
+        record_id: id,
+        record_title: vTitle,
+        action_type: 'UPDATE',
+        action_summary: `Updated vehicle insurance policy for ${vTitle}`,
+        old_data: oldParsed,
+        new_data: processedFieldData
+      }).catch(e => console.error('[AUDIT] Failed to log vehicle insurance update:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing vehicle insurance update log:', e.message);
+    }
+
+    res.status(200).json(updatedRecord);
   } catch (error) {
     console.error('Error updating vehicle insurance:', error);
     res.status(500).json({ message: 'Error updating vehicle insurance' });

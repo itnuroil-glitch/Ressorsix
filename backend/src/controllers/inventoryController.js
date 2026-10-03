@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { logAudit } = require('../utils/auditLogger');
 
 exports.getAllInventory = async (req, res) => {
   try {
@@ -46,6 +47,20 @@ exports.updateInventory = async (req, res) => {
     const { id } = req.params;
     const { reorder_level, status } = req.body;
 
+    const prevRes = await db.query(`
+      SELECT 
+        inv.*,
+        COALESCE(ast.field_data->>'1781609374288', 'Asset #' || inv.asset_id) AS asset_name
+      FROM tbl_inventory inv
+      LEFT JOIN tbl_asset ast ON inv.asset_id = ast.id
+      WHERE inv.id = $1
+    `, [id]);
+
+    if (prevRes.rows.length === 0) {
+      return res.status(404).json({ message: 'Inventory record not found' });
+    }
+    const oldRecord = prevRes.rows[0];
+
     let updateFields = [];
     const params = [];
     let paramIndex = 1;
@@ -73,9 +88,6 @@ exports.updateInventory = async (req, res) => {
     `;
 
     const result = await db.query(query, params);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Inventory record not found' });
-    }
 
     // Fetch full record with asset and uom names
     const fullRecordRes = await db.query(`
@@ -100,7 +112,31 @@ exports.updateInventory = async (req, res) => {
       WHERE inv.id = $1
     `, [id]);
 
-    res.json(fullRecordRes.rows[0]);
+    const newRecord = fullRecordRes.rows[0];
+
+    try {
+      await logAudit({
+        req,
+        clientid: newRecord.clientid,
+        module_name: 'INVENTORY',
+        record_id: id,
+        record_title: newRecord.asset_name,
+        action_type: 'UPDATE',
+        action_summary: `Updated inventory settings for ${newRecord.asset_name}`,
+        old_data: {
+          reorder_level: oldRecord.reorder_level,
+          status: oldRecord.status
+        },
+        new_data: {
+          reorder_level: newRecord.reorder_level,
+          status: newRecord.status
+        }
+      });
+    } catch (auditErr) {
+      console.error('[AUDIT] Failed to log inventory update:', auditErr.message);
+    }
+
+    res.json(newRecord);
   } catch (error) {
     console.error('Error updating inventory:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -110,10 +146,46 @@ exports.updateInventory = async (req, res) => {
 exports.deleteInventory = async (req, res) => {
   try {
     const { id } = req.params;
+
+    const prevRes = await db.query(`
+      SELECT 
+        inv.*,
+        COALESCE(ast.field_data->>'1781609374288', 'Asset #' || inv.asset_id) AS asset_name
+      FROM tbl_inventory inv
+      LEFT JOIN tbl_asset ast ON inv.asset_id = ast.id
+      WHERE inv.id = $1
+    `, [id]);
+    const oldRecord = prevRes.rows[0];
+
     const result = await db.query('DELETE FROM tbl_inventory WHERE id = $1 RETURNING *', [id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Inventory record not found' });
     }
+
+    if (oldRecord) {
+      try {
+        await logAudit({
+          req,
+          clientid: oldRecord.clientid,
+          module_name: 'INVENTORY',
+          record_id: id,
+          record_title: oldRecord.asset_name,
+          action_type: 'DELETE',
+          action_summary: `Deleted inventory record for ${oldRecord.asset_name}`,
+          old_data: {
+            asset_name: oldRecord.asset_name,
+            qty_on_hand: oldRecord.qty_on_hand,
+            qty_reserved: oldRecord.qty_reserved,
+            average_cost: oldRecord.average_cost,
+            reorder_level: oldRecord.reorder_level,
+            status: oldRecord.status
+          }
+        });
+      } catch (auditErr) {
+        console.error('[AUDIT] Failed to log inventory deletion:', auditErr.message);
+      }
+    }
+
     res.json({ message: 'Inventory record deleted successfully', deletedRecord: result.rows[0] });
   } catch (error) {
     console.error('Error deleting inventory:', error);

@@ -117,6 +117,35 @@ const logInventoryMovement = async ({
       reference_table, reference_id, employee_id, user_id, notes, 
       clientid, country_id
     ]);
+
+    // Also record into tbl_audit_history for unified audit trail
+    try {
+      const { logAudit } = require('./auditLogger');
+      let assetName = `Asset #${asset_id}`;
+      const astRes = await db.query("SELECT COALESCE(field_data->>'1781609374288', 'Asset #' || id) AS asset_name FROM tbl_asset WHERE id = $1", [asset_id]);
+      if (astRes.rows.length > 0 && astRes.rows[0].asset_name) {
+        assetName = astRes.rows[0].asset_name;
+      }
+
+      await logAudit({
+        clientid,
+        module_name: 'INVENTORY',
+        record_id: inventory_id || asset_id,
+        record_title: assetName,
+        action_type: 'MOVEMENT',
+        action_summary: `${movement_type}: ${qty > 0 ? '+' : ''}${qty} units (${notes || barcode || 'Inventory movement'})`,
+        new_data: {
+          movement_type,
+          qty,
+          barcode,
+          notes,
+          reference_table,
+          reference_id
+        }
+      });
+    } catch (auditErr) {
+      console.warn('[AUDIT] Notice logging movement audit:', auditErr.message);
+    }
   } catch (err) {
     console.error('Error logging inventory movement:', err);
   }

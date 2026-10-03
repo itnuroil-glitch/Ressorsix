@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const bcrypt = require('bcryptjs');
+const { logAudit } = require('../utils/auditLogger');
 
 // Safe BigInt parser to avoid SyntaxError when inputs have spaces, +, or dashes
 const toBigIntSafe = (val) => {
@@ -261,6 +262,22 @@ exports.createClient = async (req, res) => {
     if (formattedClient.contact_no) formattedClient.contact_no = formattedClient.contact_no.toString();
     if (formattedClient.phone_no) formattedClient.phone_no = formattedClient.phone_no.toString();
 
+    try {
+      await logAudit({
+        req,
+        clientid: newClient.id,
+        company_id: newCompanyId,
+        module_name: 'CLIENT',
+        record_id: newClient.id,
+        record_title: newClient.client_name,
+        action_type: 'CREATED',
+        action_summary: `Client enterprise registered: "${newClient.client_name}"${newClient.companyname ? ` (${newClient.companyname})` : ''}`,
+        new_data: formattedClient,
+      });
+    } catch (auditErr) {
+      console.warn('[AuditHistory] Failed to log client creation:', auditErr.message);
+    }
+
     res.status(201).json({
       message: 'Client created successfully.',
       client: formattedClient
@@ -301,12 +318,13 @@ exports.updateClient = async (req, res) => {
     } = req.body;
 
     // Check if client exists
-    const checkQuery = 'SELECT id FROM client WHERE id = $1 AND isdelete = false';
+    const checkQuery = 'SELECT * FROM client WHERE id = $1 AND isdelete = false';
     const checkResult = await db.query(checkQuery, [id]);
 
     if (checkResult.rows.length === 0) {
       return res.status(404).json({ message: 'Client not found or has been deleted.' });
     }
+    const oldClient = checkResult.rows[0];
 
     const queryText = `
       UPDATE client
@@ -445,11 +463,32 @@ exports.updateClient = async (req, res) => {
       );
     }
 
-    // Format BigInt column fields for correct JSON representation
+    // Format BigInt column fields for correct JSON representation and comparison
     const formattedClient = { ...result.rows[0] };
     if (formattedClient.trn_no) formattedClient.trn_no = formattedClient.trn_no.toString();
     if (formattedClient.contact_no) formattedClient.contact_no = formattedClient.contact_no.toString();
     if (formattedClient.phone_no) formattedClient.phone_no = formattedClient.phone_no.toString();
+
+    const formattedOldClient = { ...oldClient };
+    if (formattedOldClient.trn_no) formattedOldClient.trn_no = formattedOldClient.trn_no.toString();
+    if (formattedOldClient.contact_no) formattedOldClient.contact_no = formattedOldClient.contact_no.toString();
+    if (formattedOldClient.phone_no) formattedOldClient.phone_no = formattedOldClient.phone_no.toString();
+
+    try {
+      await logAudit({
+        req,
+        clientid: id,
+        module_name: 'CLIENT',
+        record_id: id,
+        record_title: formattedClient.client_name,
+        action_type: 'UPDATED',
+        action_summary: `Client enterprise "${formattedClient.client_name}" profile updated`,
+        old_data: formattedOldClient,
+        new_data: formattedClient,
+      });
+    } catch (auditErr) {
+      console.warn('[AuditHistory] Failed to log client update:', auditErr.message);
+    }
 
     res.status(200).json({
       message: 'Client updated successfully.',
@@ -469,7 +508,7 @@ exports.softDeleteClient = async (req, res) => {
     const { id } = req.params;
 
     // Check if client exists
-    const checkQuery = 'SELECT id FROM client WHERE id = $1 AND isdelete = false';
+    const checkQuery = 'SELECT * FROM client WHERE id = $1 AND isdelete = false';
     const checkResult = await db.query(checkQuery, [id]);
 
     if (checkResult.rows.length === 0) {
@@ -490,6 +529,21 @@ exports.softDeleteClient = async (req, res) => {
 
     // Soft-delete associated company records
     await db.query('UPDATE company SET is_deleted = true WHERE clientid = $1', [id]);
+
+    try {
+      await logAudit({
+        req,
+        clientid: id,
+        module_name: 'CLIENT',
+        record_id: id,
+        record_title: result.rows[0].client_name,
+        action_type: 'DELETED',
+        action_summary: `Client enterprise "${result.rows[0].client_name}" removed`,
+        old_data: checkResult.rows[0],
+      });
+    } catch (auditErr) {
+      console.warn('[AuditHistory] Failed to log client deletion:', auditErr.message);
+    }
 
     res.status(200).json({
       message: 'Client deleted successfully (soft delete).',
