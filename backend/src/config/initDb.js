@@ -231,6 +231,31 @@ async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_sessions_hash ON tbl_sessions(session_token_hash);
     `);
 
+    // 12. Create tbl_audit_history for Universal Module Audit Logs & History
+    await runSafeQuery('Create Audit History Table', `
+      CREATE TABLE IF NOT EXISTS tbl_audit_history (
+        id SERIAL PRIMARY KEY,
+        clientid INT,
+        company_id INT,
+        module_name VARCHAR(100) NOT NULL,
+        record_id VARCHAR(100) NOT NULL,
+        record_title VARCHAR(255),
+        action_type VARCHAR(50) NOT NULL,
+        action_summary TEXT,
+        changed_fields JSONB DEFAULT '[]'::jsonb,
+        full_snapshot JSONB,
+        user_id INT,
+        user_name VARCHAR(150),
+        user_email VARCHAR(150),
+        user_role VARCHAR(100),
+        ip_address VARCHAR(100),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_audit_module_record ON tbl_audit_history (module_name, record_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_client_company ON tbl_audit_history (clientid, company_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_created_at ON tbl_audit_history (created_at DESC);
+    `);
+
     console.log('====================================================');
     console.log('  Database Initialization Completed Successfully!');
     console.log('====================================================');

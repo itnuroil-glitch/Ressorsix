@@ -2,6 +2,28 @@ const db = require('../config/db');
 const fs = require('fs');
 const path = require('path');
 const { recalculateAssetInventory } = require('../utils/inventorySync');
+const { logAudit } = require('../utils/auditLogger');
+
+function extractAssetDetailTitle(fieldData, fallbackId, assetName = null) {
+  if (assetName && assetName !== 'N/A' && String(assetName).trim()) {
+    return String(assetName).trim();
+  }
+  if (!fieldData || typeof fieldData !== 'object') return `Asset #${fallbackId}`;
+
+  const directName = fieldData['1781609374288'] || fieldData.asset_name || fieldData.name || fieldData['Asset Name'];
+  if (directName && typeof directName === 'string' && directName.trim()) {
+    return directName.trim();
+  }
+
+  const vals = Object.values(fieldData).filter(v => typeof v === 'string' && v.trim().length > 0 && !v.includes('http') && !v.includes('/') && !v.includes('{'));
+  if (vals.length > 0) {
+    const textVals = vals.filter(v => isNaN(Number(v)));
+    if (textVals.length > 0) return textVals[0].trim();
+    return vals[0].trim();
+  }
+
+  return `Asset #${fallbackId}`;
+}
 
 const resolveExpireDate = async (currentFieldId, fieldData) => {
   if (!currentFieldId || !fieldData) return null;
@@ -304,6 +326,24 @@ exports.saveAssetDetails = async (req, res) => {
 
     await recalculateAssetInventory(result.rows[0].id, clientid, country_id);
 
+    // Log Creation Audit
+    try {
+      const aTitle = extractAssetDetailTitle(processedFieldData, result.rows[0].id, newAssetName);
+      logAudit({
+        req,
+        clientid: clientid || result.rows[0].clientid,
+        company_id: finalCompanyId || result.rows[0].company_id,
+        module_name: 'ASSET_DETAILS',
+        record_id: result.rows[0].id,
+        record_title: aTitle,
+        action_type: 'CREATE',
+        action_summary: `Created new asset: ${aTitle}`,
+        new_data: processedFieldData
+      }).catch(e => console.error('[AUDIT] Failed to log asset creation:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing asset create log:', e.message);
+    }
+
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error saving asset details:', error);
@@ -403,7 +443,7 @@ exports.deleteAssetDetails = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const selectQuery = 'SELECT field_data FROM tbl_asset WHERE id = $1';
+    const selectQuery = 'SELECT id, clientid, company_id, field_data FROM tbl_asset WHERE id = $1';
     const selectResult = await db.query(selectQuery, [id]);
 
     if (selectResult.rowCount === 0) {
@@ -460,6 +500,25 @@ exports.deleteAssetDetails = async (req, res) => {
     const query = 'DELETE FROM tbl_asset WHERE id = $1 RETURNING *';
     await db.query(query, [id]);
 
+    // Log Deletion Audit
+    try {
+      const oldParsed = typeof oldFieldData === 'string' ? JSON.parse(oldFieldData) : (oldFieldData || {});
+      const aTitle = extractAssetDetailTitle(oldParsed, id);
+      logAudit({
+        req,
+        clientid: selectResult.rows[0].clientid,
+        company_id: selectResult.rows[0].company_id,
+        module_name: 'ASSET_DETAILS',
+        record_id: id,
+        record_title: aTitle,
+        action_type: 'DELETE',
+        action_summary: `Deleted asset record: ${aTitle}`,
+        old_data: oldParsed
+      }).catch(e => console.error('[AUDIT] Failed to log asset deletion:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing asset delete log:', e.message);
+    }
+
     res.status(200).json({ message: 'Asset details record deleted successfully' });
   } catch (error) {
     console.error('Error deleting asset details:', error);
@@ -491,7 +550,7 @@ exports.updateAssetDetails = async (req, res) => {
     }
     // --- DUPLICATE ASSET NAME CHECK END ---
 
-    const selectQuery = 'SELECT asset_fid_id, field_data FROM tbl_asset WHERE id = $1';
+    const selectQuery = 'SELECT id, clientid, company_id, asset_fid_id, field_data FROM tbl_asset WHERE id = $1';
     const selectResult = await db.query(selectQuery, [id]);
 
     if (selectResult.rowCount === 0) {
@@ -561,6 +620,26 @@ exports.updateAssetDetails = async (req, res) => {
     }
 
     await recalculateAssetInventory(id, clientid, country_id);
+
+    // Log Update Audit
+    try {
+      const oldParsed = typeof oldFieldData === 'string' ? JSON.parse(oldFieldData) : (oldFieldData || {});
+      const aTitle = extractAssetDetailTitle(processedFieldData, id, newAssetName);
+      logAudit({
+        req,
+        clientid: clientid || selectResult.rows[0].clientid,
+        company_id: finalCompanyId || selectResult.rows[0].company_id,
+        module_name: 'ASSET_DETAILS',
+        record_id: id,
+        record_title: aTitle,
+        action_type: 'UPDATE',
+        action_summary: `Updated asset details for ${aTitle}`,
+        old_data: oldParsed,
+        new_data: processedFieldData
+      }).catch(e => console.error('[AUDIT] Failed to log asset update:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing asset update log:', e.message);
+    }
 
     res.status(200).json(result.rows[0]);
   } catch (error) {

@@ -152,6 +152,14 @@ export default function SimDetailsTab({
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [successDetails, setSuccessDetails] = useState(null);
 
+  // History Modal State
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [historyLogs, setHistoryLogs] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyRecordName, setHistoryRecordName] = useState('');
+  const [historyFilter, setHistoryFilter] = useState('All Activities');
+  const [historySearch, setHistorySearch] = useState('');
+
   // Custom Delete Confirmation Dialog State
   const [deleteDialog, setDeleteDialog] = useState({
     isOpen: false,
@@ -194,6 +202,62 @@ export default function SimDetailsTab({
       console.error('Error fetching add-on records:', e);
     } finally {
       setLoadingAddOns(false);
+    }
+  };
+
+  const openHistoryModal = async (item) => {
+    setHistoryRecordName(item.mobile_number || item.mobile_account || item.account_number || item.telecom_provider || `Record #${item.id}`);
+    setHistoryModalOpen(true);
+    setHistoryLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/telecom-data/${item.id || item.tele_id}/logs`);
+      if (res.ok) {
+        const data = await res.json();
+        setHistoryLogs(Array.isArray(data) ? data : []);
+      } else {
+        setHistoryLogs([]);
+      }
+    } catch (e) {
+      console.error('Error fetching logs', e);
+      setHistoryLogs([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const fetchGlobalHistory = async (mode) => {
+    setHistoryRecordName(mode === 'addon' ? 'All Add-On Records' : 'All Telecom Details');
+    setHistoryModalOpen(true);
+    setHistoryLoading(true);
+    try {
+      const isAddOn = mode === 'addon';
+      const moduleFilter = isAddOn ? 'ADD_ON' : 'SIM_DETAILS';
+      const cId = selectedClient || user?.clientid || '';
+      let url = `${API_URL}/api/telecom-data/logs/all?limit=100`;
+      if (cId) url += `&clientid=${cId}`;
+      const compId = selectedCompany ? companies.find(c => c.company_name === selectedCompany)?.id : null;
+      if (compId) url += `&company_id=${compId}`;
+
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const logs = (json.data || []).map(row => ({
+          ...row,
+          action: row.action_type,
+          created_at: row.created_at,
+          performed_by: row.user_name || row.user_email || 'System'
+        }));
+        setHistoryLogs(logs);
+      } else {
+        setHistoryLogs([]);
+      }
+    } catch (e) {
+      console.error('Error fetching global logs', e);
+      setHistoryLogs([]);
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -1933,7 +1997,23 @@ export default function SimDetailsTab({
         {viewMode === 'addon' ? (
           <>
             {renderTableToolbar
-              ? renderTableToolbar(addOnSearch, setAddOnSearch, setAddOnPage, 'Search by ID, company, provider, user, plan...')
+              ? renderTableToolbar(addOnSearch, setAddOnSearch, setAddOnPage, 'Search by ID, company, provider, user, plan...', (
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: '#F59E0B',
+                    paddingHorizontal: 16,
+                    paddingVertical: 10,
+                    borderRadius: 8,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                  onPress={() => fetchGlobalHistory('addon')}
+                >
+                  <Ionicons name="time-outline" size={18} color="#FFFFFF" />
+                  <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>History</Text>
+                </TouchableOpacity>
+              ))
               : null}
 
             {loadingAddOns ? (
@@ -2071,7 +2151,23 @@ export default function SimDetailsTab({
         ) : (
           <>
             {renderTableToolbar
-              ? renderTableToolbar(search, setSearch, setPage, 'Search by ID, account number, provider...')
+              ? renderTableToolbar(search, setSearch, setPage, 'Search by ID, account number, provider...', (
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: '#F59E0B',
+                    paddingHorizontal: 16,
+                    paddingVertical: 10,
+                    borderRadius: 8,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                  onPress={() => fetchGlobalHistory('sim')}
+                >
+                  <Ionicons name="time-outline" size={18} color="#FFFFFF" />
+                  <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>History</Text>
+                </TouchableOpacity>
+              ))
               : null}
 
             {loading ? (
@@ -2436,6 +2532,9 @@ export default function SimDetailsTab({
                               </TouchableOpacity>
                               <TouchableOpacity onPress={() => handleDelete(item.id || item.tele_id, item)}>
                                 <Ionicons name="trash-outline" size={18} color={COLORS.error} />
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={() => openHistoryModal(item)}>
+                                <Ionicons name="time-outline" size={18} color="#0284C7" />
                               </TouchableOpacity>
                             </View>
                           </View>
@@ -3997,6 +4096,217 @@ export default function SimDetailsTab({
               </TouchableOpacity>
             </View>
 
+          </View>
+        </View>
+      </Modal>
+
+      {/* ADVANCED HISTORY MODAL */}
+      <Modal
+        visible={historyModalOpen}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setHistoryModalOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxWidth: 800, minHeight: 600, maxHeight: '90%', display: 'flex', flexDirection: 'column' }]}>
+            {/* Modal Header */}
+            <View style={[styles.modalHeader, { paddingVertical: 16 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center' }}>
+                  <Ionicons name="time" size={22} color="#10B981" />
+                </View>
+                <View>
+                  <Text style={[styles.modalTitle, { color: '#064E3B' }]}>Activity Log</Text>
+                  <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>
+                    Chronological audit trail of creations, updates, and removals
+                  </Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity onPress={() => fetchGlobalHistory(historyRecordName.includes('Add-On') ? 'addon' : 'sim')} style={styles.closeButton}>
+                  <Ionicons name="refresh" size={18} color="#64748B" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setHistoryModalOpen(false)} style={styles.closeButton}>
+                  <Ionicons name="close" size={20} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Filters & Search */}
+            <View style={{ paddingHorizontal: 24, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {['All Activities', 'Created', 'Updated', 'Deleted'].map(tab => (
+                  <TouchableOpacity
+                    key={tab}
+                    onPress={() => setHistoryFilter(tab)}
+                    style={{
+                      paddingHorizontal: 16,
+                      paddingVertical: 8,
+                      borderRadius: 20,
+                      backgroundColor: historyFilter === tab ? '#064E3B' : '#F1F5F9',
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: historyFilter === tab ? '600' : '500', color: historyFilter === tab ? '#FFFFFF' : '#475569' }}>
+                      {tab}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 20, paddingHorizontal: 12, height: 36, width: 220 }}>
+                <Ionicons name="search" size={16} color="#94A3B8" />
+                <TextInput
+                  style={{ flex: 1, marginLeft: 8, fontSize: 13, color: '#334155', outlineStyle: 'none' }}
+                  placeholder="Filter by title or user..."
+                  placeholderTextColor="#94A3B8"
+                  value={historySearch}
+                  onChangeText={setHistorySearch}
+                />
+              </View>
+            </View>
+
+            {/* Timeline Content */}
+            <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+              {historyLoading ? (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                  <ActivityIndicator size="large" color="#10B981" />
+                </View>
+              ) : (
+                <ScrollView style={{ flex: 1, padding: 24 }} contentContainerStyle={{ paddingBottom: 24 }}>
+                  {(() => {
+                    const filteredLogs = historyLogs.filter(log => {
+                      if (historyFilter !== 'All Activities') {
+                        if (historyFilter === 'Created' && log.action !== 'CREATED') return false;
+                        if (historyFilter === 'Updated' && log.action !== 'UPDATED') return false;
+                        if (historyFilter === 'Deleted' && log.action !== 'DELETED') return false;
+                      }
+                      if (historySearch.trim()) {
+                        const s = historySearch.toLowerCase();
+                        if (!log.performed_by?.toLowerCase().includes(s) &&
+                            !log.record_title?.toLowerCase().includes(s) &&
+                            !log.action_summary?.toLowerCase().includes(s)) {
+                          return false;
+                        }
+                      }
+                      return true;
+                    });
+
+                    if (filteredLogs.length === 0) {
+                      return (
+                        <View style={{ alignItems: 'center', marginTop: 60 }}>
+                          <Ionicons name="document-text-outline" size={48} color="#CBD5E1" />
+                          <Text style={{ marginTop: 12, fontSize: 15, color: '#64748B' }}>No matching activity logs found.</Text>
+                        </View>
+                      );
+                    }
+
+                    return filteredLogs.map((log, i) => {
+                      const isCreate = log.action === 'CREATED';
+                      const isUpdate = log.action === 'UPDATED';
+                      const isDelete = log.action === 'DELETED';
+                      
+                      const iconName = isCreate ? 'add' : isUpdate ? 'pencil' : 'trash';
+                      const iconColor = '#FFFFFF';
+                      const circleBg = isCreate ? '#10B981' : isUpdate ? '#3B82F6' : '#EF4444';
+                      const badgeBg = isCreate ? '#D1FAE5' : isUpdate ? '#DBEAFE' : '#FEE2E2';
+                      const badgeText = isCreate ? '#065F46' : isUpdate ? '#1E40AF' : '#991B1B';
+
+                      const initials = log.performed_by ? log.performed_by.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'S';
+
+                      let changedFieldsData = null;
+                      if (log.changed_fields) {
+                        try {
+                          changedFieldsData = typeof log.changed_fields === 'string' ? JSON.parse(log.changed_fields) : log.changed_fields;
+                        } catch(e) {}
+                      }
+
+                      return (
+                        <View key={i} style={{ flexDirection: 'row', marginBottom: 24, position: 'relative' }}>
+                          {/* Timeline Stem */}
+                          {i !== filteredLogs.length - 1 && (
+                            <View style={{ position: 'absolute', left: 15, top: 32, bottom: -32, width: 2, backgroundColor: '#E2E8F0' }} />
+                          )}
+                          
+                          {/* Timeline Node */}
+                          <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: circleBg, justifyContent: 'center', alignItems: 'center', zIndex: 2, marginTop: 4 }}>
+                            <Ionicons name={iconName} size={18} color={iconColor} />
+                          </View>
+
+                          {/* Event Card */}
+                          <View style={{ flex: 1, marginLeft: 20, backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
+                            
+                            {/* Card Header */}
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                <View style={{ backgroundColor: badgeBg, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
+                                  <Text style={{ fontSize: 11, fontWeight: '800', color: badgeText, textTransform: 'uppercase' }}>{log.action}</Text>
+                                </View>
+                                <Text style={{ fontSize: 14, fontWeight: '700', color: '#0F172A' }}>{log.record_title || `Record #${log.record_id}`}</Text>
+                              </View>
+                              <Text style={{ fontSize: 12, color: '#94A3B8' }}>{new Date(log.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute:'2-digit' })}</Text>
+                            </View>
+
+                            {/* User Info */}
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16, backgroundColor: '#F8FAFC', padding: 12, borderRadius: 8 }}>
+                              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#064E3B', justifyContent: 'center', alignItems: 'center' }}>
+                                <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '700' }}>{initials}</Text>
+                              </View>
+                              <View style={{ marginLeft: 12 }}>
+                                <Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>
+                                  {log.performed_by} <Text style={{ color: '#64748B', fontWeight: '400' }}>({log.user_role || 'User'})</Text>
+                                </Text>
+                                {log.user_email && <Text style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>{log.user_email}</Text>}
+                              </View>
+                            </View>
+
+                            {/* Summary Text */}
+                            <Text style={{ fontSize: 14, color: '#334155', lineHeight: 22, marginBottom: changedFieldsData ? 16 : 0 }}>
+                              {log.action_summary || `${log.action} performed on this record.`}
+                            </Text>
+
+                            {/* Diff Table for Updates */}
+                            {isUpdate && changedFieldsData && Object.keys(changedFieldsData).length > 0 && (
+                              <View style={{ borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, overflow: 'hidden' }}>
+                                <View style={{ flexDirection: 'row', backgroundColor: '#F1F5F9', paddingVertical: 8, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' }}>
+                                  <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#64748B' }}>FIELD</Text>
+                                  <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#64748B' }}>BEFORE</Text>
+                                  <Text style={{ width: 24 }}></Text>
+                                  <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#64748B' }}>AFTER</Text>
+                                </View>
+                                {Object.entries(changedFieldsData).map(([field, values], idx) => (
+                                  <View key={field} style={{ flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: idx === Object.keys(changedFieldsData).length - 1 ? 0 : 1, borderBottomColor: '#F1F5F9' }}>
+                                    <Text style={{ flex: 1.5, fontSize: 12, fontWeight: '600', color: '#334155' }}>{field}</Text>
+                                    <View style={{ flex: 2, backgroundColor: '#FEF2F2', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
+                                      <Text style={{ fontSize: 12, color: '#EF4444', textDecorationLine: 'line-through' }}>{String(values?.old || 'N/A')}</Text>
+                                    </View>
+                                    <View style={{ width: 24, justifyContent: 'center', alignItems: 'center' }}>
+                                      <Ionicons name="arrow-forward" size={14} color="#94A3B8" />
+                                    </View>
+                                    <View style={{ flex: 2, backgroundColor: '#ECFDF5', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
+                                      <Text style={{ fontSize: 12, color: '#10B981', fontWeight: '500' }}>{String(values?.new || 'N/A')}</Text>
+                                    </View>
+                                  </View>
+                                ))}
+                              </View>
+                            )}
+
+                          </View>
+                        </View>
+                      );
+                    });
+                  })()}
+                </ScrollView>
+              )}
+            </View>
+
+            {/* Modal Footer */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#FFFFFF' }}>
+              <Text style={{ fontSize: 13, color: '#64748B' }}>
+                Showing {historyLogs.length} audit trail event{historyLogs.length !== 1 ? 's' : ''}
+              </Text>
+              <TouchableOpacity onPress={() => setHistoryModalOpen(false)} style={{ borderWidth: 1, borderColor: '#CBD5E1', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 8 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#475569' }}>Close</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>

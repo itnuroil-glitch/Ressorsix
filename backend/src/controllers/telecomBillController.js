@@ -279,6 +279,29 @@ const resolveDatesFromPdfFile = async (rawPdfFilename, billNumber) => {
   }
 };
 
+const logTelecomBillAction = async (billId, action, performedBy, oldData, newData) => {
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS tbl_telecom_bill_logs (
+        id SERIAL PRIMARY KEY,
+        bill_id INTEGER,
+        action VARCHAR(50),
+        performed_by VARCHAR(255),
+        old_data JSONB,
+        new_data JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    await db.query(`
+      INSERT INTO tbl_telecom_bill_logs (bill_id, action, performed_by, old_data, new_data)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [billId, action, performedBy, oldData ? JSON.stringify(oldData) : null, newData ? JSON.stringify(newData) : null]);
+  } catch (error) {
+    console.error('Failed to log telecom bill action:', error);
+  }
+};
+
 const saveAttachmentLocally = (base64String, fileName) => {
   if (!base64String) return null;
   const matches = base64String.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
@@ -876,6 +899,32 @@ exports.getCallLogsByBillId = async (req, res) => {
   }
 };
 
+exports.getTelecomBillLogs = async (req, res) => {
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS tbl_telecom_bill_logs (
+        id SERIAL PRIMARY KEY,
+        bill_id INTEGER,
+        action VARCHAR(50),
+        performed_by VARCHAR(255),
+        old_data JSONB,
+        new_data JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    const { id } = req.params;
+    const result = await db.query(
+      'SELECT * FROM tbl_telecom_bill_logs WHERE bill_id = $1 ORDER BY created_at DESC',
+      [id]
+    );
+    res.status(200).json(result.rows);
+  } catch (err) {
+    console.error('Error fetching telecom bill logs:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
 exports.createTelecomBill = async (req, res) => {
   try {
     const pkCol = await getBillPkCol();
@@ -1138,6 +1187,9 @@ exports.createTelecomBill = async (req, res) => {
         call_logs: insertedLogs
       }
     });
+
+    const performedBy = req.user ? (req.user.name || req.user.username || req.user.email || 'Admin') : 'System/Admin';
+    await logTelecomBillAction(parentId, 'CREATED', performedBy, null, { bill_number, company_name, telecom_provider, total_bill, status });
   } catch (err) {
     console.error('Error creating Telecom Bill:', err);
     res.status(500).json({ error: err.message || 'Internal Server Error' });
@@ -1258,6 +1310,11 @@ exports.updateTelecomBill = async (req, res) => {
     }
 
     params.push(id);
+    
+    // Fetch old data before update
+    const oldBillRes = await db.query(`SELECT * FROM tbl_telecome_bill WHERE ${pkCol} = $1`, [id]).catch(() => ({ rows: [] }));
+    const oldData = oldBillRes.rows.length > 0 ? oldBillRes.rows[0] : null;
+
     const query = `
       UPDATE tbl_telecome_bill 
       SET ${setClauses.join(', ')}
@@ -1270,6 +1327,9 @@ exports.updateTelecomBill = async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Telecom Bill record not found' });
     }
+
+    const performedBy = req.user ? (req.user.name || req.user.username || req.user.email || 'Admin') : 'System/Admin';
+    await logTelecomBillAction(id, 'UPDATED', performedBy, oldData, result.rows[0]);
 
     res.status(200).json(result.rows[0]);
   } catch (err) {
@@ -1304,6 +1364,11 @@ exports.deleteTelecomBill = async (req, res) => {
       `DELETE FROM tbl_telecome_bill WHERE ${pkCol} = $1 RETURNING *, ${pkCol} AS id, ${pkCol} AS tele_bill_id, ${pkCol} AS bill_id`,
       [id]
     );
+
+    if (result.rows.length > 0) {
+      const performedBy = req.user ? (req.user.name || req.user.username || req.user.email || 'Admin') : 'System/Admin';
+      await logTelecomBillAction(id, 'DELETED', performedBy, billRes.rows[0], null);
+    }
 
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Telecom Bill record not found' });

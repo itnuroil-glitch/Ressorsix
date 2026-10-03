@@ -1,4 +1,19 @@
 const db = require('../config/db');
+const { logAudit } = require('../utils/auditLogger');
+
+function extractTollOverviewTitle(fieldData, fallbackId) {
+  if (!fieldData || typeof fieldData !== 'object') return `Toll Account #${fallbackId}`;
+  const tollName = fieldData['1786788666800'] || fieldData['1786629185586'] || fieldData['Toll Name'] || fieldData['TOLL NAME'] || fieldData['toll_name'] || '';
+  const accNo = fieldData['1786788673616'] || fieldData['1786629206891'] || fieldData['Account No'] || fieldData['ACCOUNT NO'] || fieldData['account_no'] || fieldData['toll_id'] || '';
+
+  if (tollName && accNo) return `${tollName} - Acc #${accNo}`;
+  if (tollName) return String(tollName);
+  if (accNo) return `Acc #${accNo}`;
+
+  const vals = Object.values(fieldData).filter(v => typeof v === 'string' && v.trim().length > 0 && !v.includes('http') && !v.includes('/'));
+  if (vals.length > 0) return vals[0];
+  return `Toll Account #${fallbackId}`;
+}
 
 // Sync existing records from tbl_vehicle_toll into tbl_toll_overview if empty
 const autoSyncInitialData = async () => {
@@ -121,7 +136,27 @@ exports.saveTollOverview = async (req, res) => {
         company_id || null
       ];
       const result = await db.query(insertQuery, insertValues);
-      return res.status(201).json(result.rows[0]);
+      const savedRecord = result.rows[0];
+
+      // Log Creation Audit
+      try {
+        const vTitle = extractTollOverviewTitle(cleanFd, savedRecord.id);
+        logAudit({
+          req,
+          clientid: clientid || savedRecord.clientid,
+          company_id: company_id || savedRecord.company_id,
+          module_name: 'VEHICLE_TOLL_OVERVIEW',
+          record_id: savedRecord.id,
+          record_title: vTitle,
+          action_type: 'CREATE',
+          action_summary: `Created toll overview account: ${vTitle}`,
+          new_data: cleanFd
+        }).catch(e => console.error('[AUDIT] Failed to log toll overview creation:', e.message));
+      } catch (e) {
+        console.error('[AUDIT] Error preparing toll overview create log:', e.message);
+      }
+
+      return res.status(201).json(savedRecord);
     }
   } catch (error) {
     // Catch unique constraint violation (code 23505) as duplicate skipped
@@ -179,11 +214,38 @@ exports.getTollOverviewRecords = async (req, res) => {
 exports.deleteTollOverview = async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Fetch existing record before deletion for audit trail
+    const selectQuery = 'SELECT * FROM tbl_toll_overview WHERE id = $1';
+    const selectResult = await db.query(selectQuery, [id]);
+
+    if (selectResult.rowCount === 0) {
+      return res.status(404).json({ message: 'Toll overview record not found' });
+    }
+
+    const existingRecord = selectResult.rows[0];
+    const oldFieldData = existingRecord.field_data;
+
     const query = 'UPDATE tbl_toll_overview SET is_deleted = true, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *';
     const result = await db.query(query, [id]);
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Toll overview record not found' });
+    // Log Deletion Audit
+    try {
+      const oldParsed = typeof oldFieldData === 'string' ? JSON.parse(oldFieldData) : (oldFieldData || {});
+      const vTitle = extractTollOverviewTitle(oldParsed, id);
+      logAudit({
+        req,
+        clientid: existingRecord.clientid,
+        company_id: existingRecord.company_id,
+        module_name: 'VEHICLE_TOLL_OVERVIEW',
+        record_id: id,
+        record_title: vTitle,
+        action_type: 'DELETE',
+        action_summary: `Deleted toll overview account: ${vTitle}`,
+        old_data: oldParsed
+      }).catch(e => console.error('[AUDIT] Failed to log toll overview deletion:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing toll overview delete log:', e.message);
     }
 
     res.status(200).json({ message: 'Toll overview record deleted successfully' });
@@ -197,6 +259,18 @@ exports.updateTollOverview = async (req, res) => {
   try {
     const { id } = req.params;
     const { custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id } = req.body;
+
+    // Fetch existing record to capture old values for diff audit
+    const selectQuery = 'SELECT * FROM tbl_toll_overview WHERE id = $1';
+    const selectResult = await db.query(selectQuery, [id]);
+
+    if (selectResult.rowCount === 0) {
+      return res.status(404).json({ message: 'Toll overview record not found' });
+    }
+
+    const existingRecord = selectResult.rows[0];
+    const oldFieldData = existingRecord.field_data;
+
     const cleanFd = sanitizeFieldData(field_data);
     const jsonData = JSON.stringify(cleanFd);
 
@@ -211,12 +285,12 @@ exports.updateTollOverview = async (req, res) => {
     const values = [
       custom_field_id || null,
       jsonData,
-      clientid || null,
-      country_id || null,
-      moduleid || 70,
-      roleid || null,
-      user_id || null,
-      company_id || null,
+      clientid || existingRecord.clientid || null,
+      country_id || existingRecord.country_id || null,
+      moduleid || existingRecord.moduleid || 70,
+      roleid || existingRecord.roleid || null,
+      user_id || existingRecord.user_id || null,
+      company_id || existingRecord.company_id || null,
       id
     ];
 
@@ -225,7 +299,29 @@ exports.updateTollOverview = async (req, res) => {
       return res.status(404).json({ message: 'Toll overview record not found' });
     }
 
-    res.status(200).json(result.rows[0]);
+    const updatedRecord = result.rows[0];
+
+    // Log Update Audit
+    try {
+      const oldParsed = typeof oldFieldData === 'string' ? JSON.parse(oldFieldData) : (oldFieldData || {});
+      const vTitle = extractTollOverviewTitle(cleanFd, id);
+      logAudit({
+        req,
+        clientid: clientid || existingRecord.clientid,
+        company_id: company_id || existingRecord.company_id,
+        module_name: 'VEHICLE_TOLL_OVERVIEW',
+        record_id: id,
+        record_title: vTitle,
+        action_type: 'UPDATE',
+        action_summary: `Updated toll overview account: ${vTitle}`,
+        old_data: oldParsed,
+        new_data: cleanFd
+      }).catch(e => console.error('[AUDIT] Failed to log toll overview update:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing toll overview update log:', e.message);
+    }
+
+    res.status(200).json(updatedRecord);
   } catch (error) {
     console.error('Error updating toll overview:', error);
     res.status(500).json({ message: 'Error updating toll overview', error: error.message });

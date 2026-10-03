@@ -64,6 +64,24 @@ exports.getAllSuppliers = async (req, res) => {
   }
 };
 
+const { logAudit } = require('../utils/auditLogger');
+
+function extractSupplierTitle(fieldData, fallbackId) {
+  if (!fieldData || typeof fieldData !== 'object') return `Supplier #${fallbackId}`;
+  if (fieldData.supplier_name && typeof fieldData.supplier_name === 'string' && fieldData.supplier_name.trim()) {
+    return fieldData.supplier_name.trim();
+  }
+  if (fieldData['1781941788052'] && typeof fieldData['1781941788052'] === 'string' && fieldData['1781941788052'].trim()) {
+    return fieldData['1781941788052'].trim();
+  }
+  for (const [k, v] of Object.entries(fieldData)) {
+    if (typeof v === 'string' && v.trim().length > 0 && isNaN(Number(v)) && !v.includes('{') && !v.includes('http') && !v.includes('@')) {
+      return v.trim();
+    }
+  }
+  return `Supplier #${fallbackId}`;
+}
+
 exports.createSupplier = async (req, res) => {
   try {
     const { custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id } = req.body;
@@ -72,7 +90,26 @@ exports.createSupplier = async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
       [custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id]
     );
-    res.status(201).json(result.rows[0]);
+    const newRecord = result.rows[0];
+
+    try {
+      const sTitle = extractSupplierTitle(field_data, newRecord.id);
+      await logAudit({
+        req,
+        clientid: clientid || newRecord.clientid,
+        company_id: company_id || newRecord.company_id,
+        module_name: 'SUPPLIER_DETAILS',
+        record_id: newRecord.id,
+        record_title: sTitle,
+        action_type: 'CREATE',
+        action_summary: `Created supplier record: ${sTitle}`,
+        new_data: field_data
+      });
+    } catch (auditErr) {
+      console.error('[AUDIT] Failed to log supplier create:', auditErr.message);
+    }
+
+    res.status(201).json(newRecord);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -82,13 +119,41 @@ exports.updateSupplier = async (req, res) => {
   try {
     const { id } = req.params;
     const { custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id } = req.body;
+
+    const oldRes = await db.query('SELECT * FROM tbl_suppliers WHERE id = $1', [id]);
+    const oldSupplier = oldRes.rows[0];
+
     const result = await db.query(
       `UPDATE tbl_suppliers 
        SET custom_field_id = $1, field_data = $2, clientid = $3, country_id = $4, moduleid = $5, roleid = $6, user_id = $7, company_id = $8, updated_at = CURRENT_TIMESTAMP
        WHERE id = $9 RETURNING *`,
       [custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id, id]
     );
-    res.json(result.rows[0]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Supplier not found' });
+    }
+    const updatedRecord = result.rows[0];
+
+    try {
+      const sTitle = extractSupplierTitle(field_data, id);
+      await logAudit({
+        req,
+        clientid: clientid || updatedRecord.clientid,
+        company_id: company_id || updatedRecord.company_id,
+        module_name: 'SUPPLIER_DETAILS',
+        record_id: id,
+        record_title: sTitle,
+        action_type: 'UPDATE',
+        action_summary: `Updated supplier details for ${sTitle}`,
+        old_data: oldSupplier?.field_data || oldSupplier,
+        new_data: field_data
+      });
+    } catch (auditErr) {
+      console.error('[AUDIT] Failed to log supplier update:', auditErr.message);
+    }
+
+    res.json(updatedRecord);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -97,7 +162,30 @@ exports.updateSupplier = async (req, res) => {
 exports.deleteSupplier = async (req, res) => {
   try {
     const { id } = req.params;
+    const oldRes = await db.query('SELECT * FROM tbl_suppliers WHERE id = $1', [id]);
+    const oldSupplier = oldRes.rows[0];
+
     await db.query('DELETE FROM tbl_suppliers WHERE id = $1', [id]);
+
+    if (oldSupplier) {
+      try {
+        const sTitle = extractSupplierTitle(oldSupplier.field_data, id);
+        await logAudit({
+          req,
+          clientid: oldSupplier.clientid,
+          company_id: oldSupplier.company_id,
+          module_name: 'SUPPLIER_DETAILS',
+          record_id: id,
+          record_title: sTitle,
+          action_type: 'DELETE',
+          action_summary: `Deleted supplier record: ${sTitle}`,
+          old_data: oldSupplier.field_data || oldSupplier
+        });
+      } catch (auditErr) {
+        console.error('[AUDIT] Failed to log supplier delete:', auditErr.message);
+      }
+    }
+
     res.json({ message: 'Deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
+const { logAudit } = require('../utils/auditLogger');
 
 // Helper: recalculate and update is_multi_country for a given client
 const recalculateMultiCountry = async (clientId) => {
@@ -253,6 +254,23 @@ exports.createCompany = async (req, res) => {
     // Auto-calculate is_multi_country for the linked client
     await recalculateMultiCountry(finalClientId);
 
+    // Audit Logging
+    try {
+      await logAudit({
+        req,
+        clientid: finalClientId,
+        company_id: newCompany.id,
+        module_name: 'COMPANY',
+        record_id: newCompany.id,
+        record_title: newCompany.company_name,
+        action_type: 'CREATED',
+        action_summary: `Created company profile "${newCompany.company_name}"`,
+        new_data: newCompany,
+      });
+    } catch (auditErr) {
+      console.error('[Company Audit] Error logging company creation:', auditErr.message);
+    }
+
     res.status(201).json({ message: 'Company created successfully', company: newCompany });
   } catch (error) {
     console.error('Error creating company:', error);
@@ -386,6 +404,24 @@ exports.updateCompany = async (req, res) => {
     // Auto-calculate is_multi_country for the linked client
     await recalculateMultiCountry(updatedCompany.clientid);
 
+    // Audit Logging
+    try {
+      await logAudit({
+        req,
+        clientid: updatedCompany.clientid,
+        company_id: updatedCompany.id,
+        module_name: 'COMPANY',
+        record_id: updatedCompany.id,
+        record_title: updatedCompany.company_name,
+        action_type: 'UPDATED',
+        action_summary: `Updated company details for "${updatedCompany.company_name}"`,
+        old_data: existingCompany,
+        new_data: updatedCompany,
+      });
+    } catch (auditErr) {
+      console.error('[Company Audit] Error logging company update:', auditErr.message);
+    }
+
     res.status(200).json({ message: 'Company updated successfully', company: updatedCompany });
   } catch (error) {
     console.error('Error updating company:', error);
@@ -411,6 +447,23 @@ exports.deleteCompany = async (req, res) => {
     await pool.query('UPDATE users SET companyid = NULL WHERE companyid = $1', [id]).catch(err => {
       console.warn('Could not cleanup users.companyid for deleted company:', err.message);
     });
+
+    // Audit Logging
+    try {
+      await logAudit({
+        req,
+        clientid: rows[0].clientid,
+        company_id: rows[0].id,
+        module_name: 'COMPANY',
+        record_id: rows[0].id,
+        record_title: rows[0].company_name,
+        action_type: 'DELETED',
+        action_summary: `Deleted company profile "${rows[0].company_name}"`,
+        old_data: rows[0],
+      });
+    } catch (auditErr) {
+      console.error('[Company Audit] Error logging company deletion:', auditErr.message);
+    }
 
     res.status(200).json({ message: 'Company deleted successfully' });
   } catch (error) {

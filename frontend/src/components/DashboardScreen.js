@@ -30,6 +30,7 @@ import VehicleTollTab from './VehicleTollTab';
 import VehicleTollReportTab from './VehicleTollReportTab';
 import VehicleMaintenanceTab from './VehicleMaintenanceTab';
 import PremisesDetailsTab from './PremisesDetailsTab';
+import PremisesInfoTab from './PremisesInfoTab';
 import AssetDetailsTab from './AssetDetailsTab';
 import AssetCategoryTab from './AssetCategoryTab';
 import AssetBrandTab from './AssetBrandTab';
@@ -137,10 +138,10 @@ export default function DashboardScreen({ user, onSignOut }) {
   const ITEMS_PER_PAGE = 10;
 
   // Helper to render premium search bar toolbar
-  const renderTableToolbar = (searchVal, setSearchVal, setPageVal, placeholderText) => {
+  const renderTableToolbar = (searchVal, setSearchVal, setPageVal, placeholderText, rightElement = null) => {
     return (
-      <View style={styles.toolbarContainer}>
-        <View style={styles.searchBarWrapper}>
+      <View style={[styles.toolbarContainer, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+        <View style={[styles.searchBarWrapper, { flex: 1, marginRight: rightElement ? 16 : 0 }]}>
           <Ionicons name="search-outline" size={18} color={COLORS.textSecondary} style={styles.searchBarIcon} />
           <TextInput
             style={styles.searchBarInput}
@@ -158,6 +159,11 @@ export default function DashboardScreen({ user, onSignOut }) {
             </TouchableOpacity>
           ) : null}
         </View>
+        {rightElement && (
+          <View>
+            {rightElement}
+          </View>
+        )}
       </View>
     );
   };
@@ -284,6 +290,29 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [companiesPage, setCompaniesPage] = useState(1);
   const [companyNameInput, setCompanyNameInput] = useState('');
   const [companyShortCode, setCompanyShortCode] = useState('');
+
+  // Company History State
+  const [companyHistoryModalOpen, setCompanyHistoryModalOpen] = useState(false);
+  const [companyHistoryLogs, setCompanyHistoryLogs] = useState([]);
+  const [companyHistoryLoading, setCompanyHistoryLoading] = useState(false);
+  const [companyHistoryFilter, setCompanyHistoryFilter] = useState('All Activities');
+  const [companyHistorySearch, setCompanyHistorySearch] = useState('');
+
+  // Employee History State
+  const [employeeHistoryModalOpen, setEmployeeHistoryModalOpen] = useState(false);
+  const [employeeHistoryLogs, setEmployeeHistoryLogs] = useState([]);
+  const [employeeHistoryLoading, setEmployeeHistoryLoading] = useState(false);
+  const [employeeHistoryFilter, setEmployeeHistoryFilter] = useState('All Activities');
+  const [employeeHistorySearch, setEmployeeHistorySearch] = useState('');
+  const [employeeHistoryTargetRecord, setEmployeeHistoryTargetRecord] = useState(null);
+
+  // Client History State
+  const [clientHistoryModalOpen, setClientHistoryModalOpen] = useState(false);
+  const [clientHistoryLogs, setClientHistoryLogs] = useState([]);
+  const [clientHistoryLoading, setClientHistoryLoading] = useState(false);
+  const [clientHistoryFilter, setClientHistoryFilter] = useState('All Activities');
+  const [clientHistorySearch, setClientHistorySearch] = useState('');
+  const [clientHistoryTargetRecord, setClientHistoryTargetRecord] = useState(null);
 
   const [companyClientId, setCompanyClientId] = useState('');
   const [companyIndustry, setCompanyIndustry] = useState('');
@@ -1097,15 +1126,23 @@ export default function DashboardScreen({ user, onSignOut }) {
       department_id: empDepartmentId,
       basecompany_id: empBaseCompanyId ? parseInt(empBaseCompanyId) : null,
       companies: finalCompanies,
-      auto_generate_password: editingEmployee ? empAutoGeneratePassword : true
+      auto_generate_password: editingEmployee ? empAutoGeneratePassword : true,
+      user_id: user?.id,
+      user_name: user?.full_name || user?.name || user?.email,
+      user_email: user?.email,
+      user_role: user?.role_name || (user?.roleId === 1 ? 'Super Admin' : 'Admin')
     };
 
     const method = editingEmployee ? 'PUT' : 'POST';
     const url = editingEmployee ? `${API_URL}/api/employees/${editingEmployee.id}` : `${API_URL}/api/employees`;
+    const token = user?.token || localStorage.getItem('token');
 
     fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
       body: JSON.stringify(payload)
     })
       .then(async res => {
@@ -1123,6 +1160,9 @@ export default function DashboardScreen({ user, onSignOut }) {
         setIsEmpRoleDropdownOpen(false);
         setIsEmployeeModalOpen(false);
         fetchEmployees();
+        if (employeeHistoryModalOpen) {
+          fetchEmployeeGlobalHistory(employeeHistoryTargetRecord);
+        }
       })
       .catch(err => {
         setEmployeeFormError(err.message || 'Error connecting to server.');
@@ -1252,8 +1292,13 @@ export default function DashboardScreen({ user, onSignOut }) {
 
   // Handle soft deleting a client
   const handleDeleteClient = (id) => {
+    const token = user?.token || localStorage.getItem('token');
     fetch(`${API_URL}/api/clients/${id}`, {
       method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      }
     })
       .then(async (res) => {
         if (!res.ok) {
@@ -1265,6 +1310,9 @@ export default function DashboardScreen({ user, onSignOut }) {
       .then(() => {
         showToast('Client deleted successfully!', 'success');
         fetchClients();
+        if (clientHistoryModalOpen) {
+          fetchClientGlobalHistory(clientHistoryTargetRecord);
+        }
       })
       .catch((err) => {
         console.error('Error deleting client:', err);
@@ -1342,6 +1390,117 @@ export default function DashboardScreen({ user, onSignOut }) {
     setCompanyWizardStep(1);
 
     setIsCompanyModalOpen(true);
+  };
+
+  const fetchCompanyGlobalHistory = async () => {
+    setCompanyHistoryModalOpen(true);
+    setCompanyHistoryLoading(true);
+    try {
+      const cId = user?.clientid || user?.clientId || '';
+      let url = `${API_URL}/api/audit-history?module_name=COMPANY&limit=100`;
+      if (cId) url += `&clientid=${cId}`;
+
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const logs = (json.data || []).map(row => ({
+          ...row,
+          action: row.action_type,
+          created_at: row.created_at,
+          performed_by: row.user_name || row.user_email || 'System',
+          record_title: row.record_title || `Company #${row.record_id}`
+        }));
+        setCompanyHistoryLogs(logs);
+      } else {
+        setCompanyHistoryLogs([]);
+      }
+    } catch (e) {
+      setCompanyHistoryLogs([]);
+      console.error(e);
+    } finally {
+      setCompanyHistoryLoading(false);
+    }
+  };
+
+  const fetchEmployeeGlobalHistory = async (specificRecord = null) => {
+    setEmployeeHistoryTargetRecord(specificRecord);
+    setEmployeeHistoryFilter('All Activities');
+    setEmployeeHistorySearch('');
+    setEmployeeHistoryModalOpen(true);
+    setEmployeeHistoryLoading(true);
+    try {
+      const cId = user?.clientid || user?.clientId || '';
+      let url = `${API_URL}/api/audit-history?module=EMPLOYEE&limit=100`;
+      if (specificRecord && specificRecord.id) {
+        url += `&record_id=${specificRecord.id}`;
+      } else if (cId && String(user?.roleId || user?.roleid) !== '1') {
+        url += `&clientid=${cId}`;
+      }
+
+      const token = user?.token || localStorage.getItem('token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(url, { headers });
+      if (res.ok) {
+        const json = await res.json();
+        const logs = (json.data || []).map(row => ({
+          ...row,
+          action: row.action_type,
+          created_at: row.created_at,
+          performed_by: row.user_name || row.user_email || 'System',
+          record_title: row.record_title || (specificRecord?.full_name ? specificRecord.full_name : `Employee #${row.record_id}`)
+        }));
+        setEmployeeHistoryLogs(logs);
+      } else {
+        setEmployeeHistoryLogs([]);
+      }
+    } catch (e) {
+      setEmployeeHistoryLogs([]);
+      console.error('Error fetching employee activity logs:', e);
+    } finally {
+      setEmployeeHistoryLoading(false);
+    }
+  };
+
+  const fetchClientGlobalHistory = async (specificRecord = null) => {
+    setClientHistoryTargetRecord(specificRecord);
+    setClientHistoryFilter('All Activities');
+    setClientHistorySearch('');
+    setClientHistoryModalOpen(true);
+    setClientHistoryLoading(true);
+    try {
+      let url = `${API_URL}/api/audit-history?module=CLIENT&limit=100`;
+      if (specificRecord && specificRecord.id) {
+        url += `&record_id=${specificRecord.id}`;
+      }
+
+      const token = user?.token || localStorage.getItem('token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(url, { headers });
+      if (res.ok) {
+        const json = await res.json();
+        const logs = (json.data || []).map(row => ({
+          ...row,
+          action: row.action_type,
+          created_at: row.created_at,
+          performed_by: row.user_name || row.user_email || 'System',
+          record_title: row.record_title || (specificRecord?.client_name ? specificRecord.client_name : `Client #${row.record_id}`)
+        }));
+        setClientHistoryLogs(logs);
+      } else {
+        setClientHistoryLogs([]);
+      }
+    } catch (e) {
+      setClientHistoryLogs([]);
+      console.error('Error fetching client activity logs:', e);
+    } finally {
+      setClientHistoryLoading(false);
+    }
   };
 
   const handleSaveCompany = async () => {
@@ -1590,17 +1749,23 @@ export default function DashboardScreen({ user, onSignOut }) {
       plan_id: selectedPlanId ? parseInt(selectedPlanId, 10) : null,
       enabled_module: enabledModule.trim() || null,
       password: clientPassword.trim() || undefined,
+      user_id: user?.id,
+      user_name: user?.full_name || user?.name || user?.email,
+      user_email: user?.email,
+      user_role: user?.role_name || (user?.roleId === 1 ? 'Super Admin' : 'Admin')
     };
 
     const url = editingClient
       ? `${API_URL}/api/clients/${editingClient.id}`
       : `${API_URL}/api/clients`;
     const method = editingClient ? 'PUT' : 'POST';
+    const token = user?.token || localStorage.getItem('token');
 
     fetch(url, {
       method: method,
       headers: {
         'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
       },
       body: JSON.stringify(payload),
     })
@@ -1642,6 +1807,9 @@ export default function DashboardScreen({ user, onSignOut }) {
         setEnabledModule('');
         // Re-fetch clients
         fetchClients();
+        if (clientHistoryModalOpen) {
+          fetchClientGlobalHistory(clientHistoryTargetRecord);
+        }
       })
       .catch((err) => {
         setClientFormSaving(false);
@@ -2431,6 +2599,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (r.includes('transaction') || n.includes('transaction')) return 'toll_transactions';
     if ((r.includes('toll') || n.includes('toll')) && (r.includes('overview') || n.includes('overview'))) return 'vehicle_toll_overview';
     if (r.includes('vehicle') && r.includes('toll') || n.includes('vehicle') && n.includes('toll') || r.includes('vehile') && r.includes('toll') || n.includes('vehile') && n.includes('toll')) return 'vehicle_toll';
+    if (r === '/premises-info' || r.includes('premise-info') || r.includes('premises-info') || (n.includes('premise') && n.includes('info')) || (n.includes('primise') && n.includes('info'))) return 'premises_info';
     if (r.includes('primise') && r.includes('detail') || n.includes('primise') && n.includes('detail') || r.includes('premise') && r.includes('detail') || n.includes('premise') && n.includes('detail')) return 'premises_details';
     if (r.includes('asset') && r.includes('detail') || n.includes('asset') && n.includes('detail')) return 'asset_details';
     if (r.includes('asset') && r.includes('category') || n.includes('asset') && n.includes('category')) return 'asset_category';
@@ -4101,6 +4270,16 @@ export default function DashboardScreen({ user, onSignOut }) {
               <Text style={styles.addModuleBtnText}>Import Excel</Text>
             </TouchableOpacity>
 
+            {/* Activity Log Button */}
+            <TouchableOpacity
+              style={[styles.addModuleBtn, { backgroundColor: '#D97706' }]}
+              onPress={() => fetchEmployeeGlobalHistory(null)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="time-outline" size={18} color={COLORS.white} style={{ marginRight: 6 }} />
+              <Text style={styles.addModuleBtnText}>Activity Log</Text>
+            </TouchableOpacity>
+
             {/* Create User Button */}
             <TouchableOpacity
               style={styles.addModuleBtn}
@@ -4129,7 +4308,19 @@ export default function DashboardScreen({ user, onSignOut }) {
         </View>
 
         <View style={[styles.tableCard, { marginTop: SPACING.md }]}>
-          {renderTableToolbar(employeesSearch, setEmployeesSearch, setEmployeesPage, 'Search employees...')}
+          {renderTableToolbar(employeesSearch, setEmployeesSearch, setEmployeesPage, 'Search employees...', (
+            <TouchableOpacity 
+              style={{
+                flexDirection: 'row', alignItems: 'center', backgroundColor: '#D97706',
+                paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8, gap: 8,
+                shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2
+              }}
+              onPress={() => fetchEmployeeGlobalHistory(null)}
+            >
+              <Ionicons name="time-outline" size={18} color="#FFFFFF" />
+              <Text style={{ color: '#FFFFFF', fontWeight: '600', fontSize: 13 }}>Activity Log</Text>
+            </TouchableOpacity>
+          ))}
 
           {employeesLoading ? (
             <View style={styles.tableLoaderContainer}>
@@ -4138,14 +4329,14 @@ export default function DashboardScreen({ user, onSignOut }) {
           ) : filtered.length > 0 ? (
             <>
               <ScrollView horizontal={true} showsHorizontalScrollIndicator={true} style={{ width: '100%' }} contentContainerStyle={{ minWidth: '100%' }}>
-                <View style={[styles.modulesTableWrapper, { minWidth: 1000 }]}>
+                <View style={[styles.modulesTableWrapper, { minWidth: 1050 }]}>
                   <View style={styles.modulesTableHeader}>
                     <Text style={[styles.thCell, { flex: 2 }]}>NAME</Text>
                     <Text style={[styles.thCell, { flex: 2 }]}>EMAIL</Text>
                     <Text style={[styles.thCell, { flex: 1.5 }]}>ROLE</Text>
                     <Text style={[styles.thCell, { flex: 1.5 }]}>DEPARTMENT</Text>
                     <Text style={[styles.thCell, { flex: 1, textAlign: 'center' }]}>STATUS</Text>
-                    <Text style={[styles.thCell, { flex: 1.8, textAlign: 'center' }]}>ACTIONS</Text>
+                    <Text style={[styles.thCell, { flex: 2.2, textAlign: 'center' }]}>ACTIONS</Text>
                   </View>
 
                   {paginated.map((item) => (
@@ -4173,7 +4364,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                           </Text>
                         </View>
                       </View>
-                      <View style={[styles.tdCell, { flex: 1.8, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 }]}>
+                      <View style={[styles.tdCell, { flex: 2.2, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 }]}>
                         <TouchableOpacity onPress={() => startViewEmployee(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} title="View User">
                           <Ionicons name="eye-outline" size={18} color="#059669" />
                         </TouchableOpacity>
@@ -4206,6 +4397,9 @@ export default function DashboardScreen({ user, onSignOut }) {
                         <TouchableOpacity onPress={() => handleOpenPasswordResetModal(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} title="Reset / Assign Password">
                           <Ionicons name="key-outline" size={18} color="#f59e0b" />
                         </TouchableOpacity>
+                        <TouchableOpacity onPress={() => fetchEmployeeGlobalHistory(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} title="Activity Log">
+                          <Ionicons name="time-outline" size={18} color="#D97706" />
+                        </TouchableOpacity>
                         <TouchableOpacity onPress={() => confirmDelete(item.id, 'employee', item.full_name)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} title="Delete User">
                           <Ionicons name="trash-outline" size={18} color={COLORS.danger} />
                         </TouchableOpacity>
@@ -4223,6 +4417,278 @@ export default function DashboardScreen({ user, onSignOut }) {
             </View>
           )}
         </View>
+
+        {/* EMPLOYEE HISTORY / ACTIVITY LOG MODAL */}
+        <Modal
+          visible={employeeHistoryModalOpen}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setEmployeeHistoryModalOpen(false)}
+        >
+          <View style={{
+            flex: 1,
+            backgroundColor: 'rgba(15, 23, 42, 0.55)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 24,
+          }}>
+            <View style={{
+              width: '100%',
+              maxWidth: 860,
+              minHeight: 580,
+              maxHeight: '90%',
+              backgroundColor: '#FFFFFF',
+              borderRadius: 16,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              elevation: 24,
+            }}>
+              {/* Modal Header */}
+              <View style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                paddingHorizontal: 24,
+                paddingVertical: 18,
+                borderBottomWidth: 1,
+                borderBottomColor: '#E2E8F0',
+                backgroundColor: '#FFFFFF',
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: '#FEF3C7', justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="time" size={22} color="#D97706" />
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 20, fontWeight: '700', color: '#78350F' }}>
+                      {employeeHistoryTargetRecord ? `Activity Log: ${employeeHistoryTargetRecord.full_name || `Employee #${employeeHistoryTargetRecord.id}`}` : 'Employees Management Activity Log'}
+                    </Text>
+                    <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>
+                      {employeeHistoryTargetRecord ? 'Audit trail specifically for this employee' : 'Chronological audit trail of employee creations, profile updates, and removals'}
+                    </Text>
+                  </View>
+                </View>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity onPress={() => fetchEmployeeGlobalHistory(employeeHistoryTargetRecord)} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }} title="Refresh">
+                    <Ionicons name="refresh" size={18} color="#64748B" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setEmployeeHistoryModalOpen(false)} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }} title="Close">
+                    <Ionicons name="close" size={20} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Filters & Search */}
+              <View style={{ paddingHorizontal: 24, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {['All Activities', 'Created', 'Updated', 'Deleted'].map(tab => (
+                    <TouchableOpacity
+                      key={tab}
+                      onPress={() => setEmployeeHistoryFilter(tab)}
+                      style={{
+                        paddingHorizontal: 16,
+                        paddingVertical: 8,
+                        borderRadius: 20,
+                        backgroundColor: employeeHistoryFilter === tab ? '#D97706' : '#F1F5F9',
+                      }}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: employeeHistoryFilter === tab ? '600' : '500', color: employeeHistoryFilter === tab ? '#FFFFFF' : '#475569' }}>
+                        {tab}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 20, paddingHorizontal: 12, height: 36, width: 240 }}>
+                  <Ionicons name="search" size={16} color="#94A3B8" />
+                  <TextInput
+                    style={{ flex: 1, marginLeft: 8, fontSize: 13, color: '#334155', outlineStyle: 'none' }}
+                    placeholder="Filter by name, user, or action..."
+                    placeholderTextColor="#94A3B8"
+                    value={employeeHistorySearch}
+                    onChangeText={setEmployeeHistorySearch}
+                  />
+                  {employeeHistorySearch ? (
+                    <TouchableOpacity onPress={() => setEmployeeHistorySearch('')}>
+                      <Ionicons name="close-circle" size={16} color="#94A3B8" />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </View>
+
+              {/* Timeline Content */}
+              <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+                {employeeHistoryLoading ? (
+                  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <ActivityIndicator size="large" color="#D97706" />
+                  </View>
+                ) : (
+                  <ScrollView style={{ flex: 1, padding: 24 }} contentContainerStyle={{ paddingBottom: 24 }}>
+                    {(() => {
+                      const filteredLogs = employeeHistoryLogs.filter(log => {
+                        const actUpper = String(log.action || log.action_type || '').toUpperCase();
+                        if (employeeHistoryFilter !== 'All Activities') {
+                          if (employeeHistoryFilter === 'Created' && actUpper !== 'CREATED' && actUpper !== 'CREATE') return false;
+                          if (employeeHistoryFilter === 'Updated' && actUpper !== 'UPDATED' && actUpper !== 'UPDATE') return false;
+                          if (employeeHistoryFilter === 'Deleted' && actUpper !== 'DELETED' && actUpper !== 'DELETE') return false;
+                        }
+                        if (employeeHistorySearch.trim()) {
+                          const s = employeeHistorySearch.toLowerCase();
+                          if (!log.performed_by?.toLowerCase().includes(s) &&
+                              !log.record_title?.toLowerCase().includes(s) &&
+                              !log.action_summary?.toLowerCase().includes(s) &&
+                              !log.user_email?.toLowerCase().includes(s)) {
+                            return false;
+                          }
+                        }
+                        return true;
+                      });
+
+                      if (filteredLogs.length === 0) {
+                        return (
+                          <View style={{ alignItems: 'center', marginTop: 60 }}>
+                            <Ionicons name="time-outline" size={48} color="#CBD5E1" />
+                            <Text style={{ marginTop: 12, fontSize: 15, color: '#64748B' }}>No matching activity logs found.</Text>
+                            <Text style={{ marginTop: 4, fontSize: 13, color: '#94A3B8' }}>
+                              {employeeHistorySearch || employeeHistoryFilter !== 'All Activities'
+                                ? 'No records match your filter criteria.'
+                                : 'Any user creation, edit, password reset, or removal will appear here automatically.'}
+                            </Text>
+                          </View>
+                        );
+                      }
+
+                      return filteredLogs.map((log, i) => {
+                        const actUpper = String(log.action || log.action_type || '').toUpperCase();
+                        const isCreate = actUpper === 'CREATED' || actUpper === 'CREATE';
+                        const isUpdate = actUpper === 'UPDATED' || actUpper === 'UPDATE';
+                        const isDelete = actUpper === 'DELETED' || actUpper === 'DELETE';
+                        
+                        const iconName = isCreate ? 'add' : isUpdate ? 'pencil' : 'trash';
+                        const iconColor = '#FFFFFF';
+                        const circleBg = isCreate ? '#10B981' : isUpdate ? '#3B82F6' : '#EF4444';
+                        const badgeBg = isCreate ? '#D1FAE5' : isUpdate ? '#DBEAFE' : '#FEE2E2';
+                        const badgeText = isCreate ? '#065F46' : isUpdate ? '#1E40AF' : '#991B1B';
+
+                        const initials = log.performed_by ? log.performed_by.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'S';
+
+                        let changedFieldsData = null;
+                        if (log.changed_fields) {
+                          try {
+                            changedFieldsData = typeof log.changed_fields === 'string' ? JSON.parse(log.changed_fields) : log.changed_fields;
+                          } catch(e) {}
+                        }
+
+                        let diffList = [];
+                        if (Array.isArray(changedFieldsData)) {
+                          diffList = changedFieldsData.map(item => ({
+                            field: item.field || item.fieldName || item.key || 'Field',
+                            old: item.old !== undefined ? item.old : (item.old_value !== undefined ? item.old_value : null),
+                            new: item.new !== undefined ? item.new : (item.new_value !== undefined ? item.new_value : null),
+                          }));
+                        } else if (changedFieldsData && typeof changedFieldsData === 'object') {
+                          diffList = Object.entries(changedFieldsData).map(([field, values]) => ({
+                            field,
+                            old: values?.old !== undefined ? values.old : (values?.old_value !== undefined ? values.old_value : null),
+                            new: values?.new !== undefined ? values.new : (values?.new_value !== undefined ? values.new_value : null),
+                          }));
+                        }
+
+                        return (
+                          <View key={i} style={{ flexDirection: 'row', marginBottom: 24, position: 'relative' }}>
+                            {/* Timeline Stem */}
+                            {i !== filteredLogs.length - 1 && (
+                              <View style={{ position: 'absolute', left: 15, top: 32, bottom: -32, width: 2, backgroundColor: '#E2E8F0' }} />
+                            )}
+                            
+                            {/* Timeline Node */}
+                            <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: circleBg, justifyContent: 'center', alignItems: 'center', zIndex: 2, marginTop: 4 }}>
+                              <Ionicons name={iconName} size={18} color={iconColor} />
+                            </View>
+
+                            {/* Event Card */}
+                            <View style={{ flex: 1, marginLeft: 20, backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
+                              
+                              {/* Card Header */}
+                              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                  <View style={{ backgroundColor: badgeBg, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
+                                    <Text style={{ fontSize: 11, fontWeight: '800', color: badgeText, textTransform: 'uppercase' }}>{actUpper}</Text>
+                                  </View>
+                                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#0F172A' }}>{log.record_title || `Company #${log.record_id}`}</Text>
+                                </View>
+                                <Text style={{ fontSize: 12, color: '#94A3B8' }}>{log.created_at ? new Date(log.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute:'2-digit' }) : ''}</Text>
+                              </View>
+
+                              {/* User Info */}
+                              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16, backgroundColor: '#F8FAFC', padding: 12, borderRadius: 8 }}>
+                                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#78350F', justifyContent: 'center', alignItems: 'center' }}>
+                                  <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '700' }}>{initials}</Text>
+                                </View>
+                                <View style={{ marginLeft: 12 }}>
+                                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>
+                                    {log.performed_by} <Text style={{ color: '#64748B', fontWeight: '400' }}>({log.user_role || 'User'})</Text>
+                                  </Text>
+                                  {log.user_email && <Text style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>{log.user_email}</Text>}
+                                </View>
+                              </View>
+
+                              {/* Summary Text */}
+                              <Text style={{ fontSize: 14, color: '#334155', lineHeight: 22, marginBottom: diffList.length > 0 ? 16 : 0 }}>
+                                {log.action_summary || `${actUpper} performed on company record.`}
+                              </Text>
+
+                              {/* Diff Table for Updates */}
+                              {isUpdate && diffList.length > 0 && (
+                                <View style={{ borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, overflow: 'hidden' }}>
+                                  <View style={{ flexDirection: 'row', backgroundColor: '#F1F5F9', paddingVertical: 8, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' }}>
+                                    <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#64748B' }}>FIELD</Text>
+                                    <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#64748B' }}>BEFORE</Text>
+                                    <Text style={{ width: 24 }}></Text>
+                                    <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#64748B' }}>AFTER</Text>
+                                  </View>
+                                  {diffList.map((diff, idx) => {
+                                    const fieldLabel = String(diff.field || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                                    return (
+                                      <View key={idx} style={{ flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: idx === diffList.length - 1 ? 0 : 1, borderBottomColor: '#F1F5F9', alignItems: 'center' }}>
+                                        <Text style={{ flex: 1.5, fontSize: 12, fontWeight: '600', color: '#334155' }}>{fieldLabel}</Text>
+                                        <View style={{ flex: 2, backgroundColor: '#FEF2F2', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
+                                          <Text style={{ fontSize: 12, color: '#EF4444', textDecorationLine: 'line-through' }}>{String(diff.old !== undefined && diff.old !== null && diff.old !== '' ? diff.old : '—')}</Text>
+                                        </View>
+                                        <View style={{ width: 24, justifyContent: 'center', alignItems: 'center' }}>
+                                          <Ionicons name="arrow-forward" size={14} color="#94A3B8" />
+                                        </View>
+                                        <View style={{ flex: 2, backgroundColor: '#ECFDF5', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
+                                          <Text style={{ fontSize: 12, color: '#10B981', fontWeight: '500' }}>{String(diff.new !== undefined && diff.new !== null && diff.new !== '' ? diff.new : '—')}</Text>
+                                        </View>
+                                      </View>
+                                    );
+                                  })}
+                                </View>
+                              )}
+
+                            </View>
+                          </View>
+                        );
+                      });
+                    })()}
+                  </ScrollView>
+                )}
+              </View>
+
+              {/* Modal Footer */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#FFFFFF' }}>
+                <Text style={{ fontSize: 13, color: '#64748B' }}>
+                  Showing {employeeHistoryLogs.length} audit trail event{employeeHistoryLogs.length !== 1 ? 's' : ''}
+                </Text>
+                <TouchableOpacity onPress={() => setEmployeeHistoryModalOpen(false)} style={{ borderWidth: 1, borderColor: '#CBD5E1', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 8 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#475569' }}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
         <View style={{ height: 40 }} />
       </ScrollView>
     );
@@ -4464,7 +4930,19 @@ export default function DashboardScreen({ user, onSignOut }) {
         </View>
 
         <View style={[styles.tableCard, { marginTop: SPACING.md }]}>
-          {renderTableToolbar(companiesSearch, setCompaniesSearch, setCompaniesPage, 'Search companies...')}
+          {renderTableToolbar(companiesSearch, setCompaniesSearch, setCompaniesPage, 'Search companies...', (
+            <TouchableOpacity 
+              style={{
+                flexDirection: 'row', alignItems: 'center', backgroundColor: '#D97706',
+                paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8, gap: 8,
+                shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2
+              }}
+              onPress={fetchCompanyGlobalHistory}
+            >
+              <Ionicons name="time-outline" size={18} color="#FFFFFF" />
+              <Text style={{ color: '#FFFFFF', fontWeight: '600', fontSize: 13 }}>History</Text>
+            </TouchableOpacity>
+          ))}
 
           {companiesLoading ? (
             <View style={styles.tableLoaderContainer}>
@@ -4514,12 +4992,270 @@ export default function DashboardScreen({ user, onSignOut }) {
               {renderTablePagination(filtered.length, companiesPage, setCompaniesPage)}
             </>
           ) : (
-            <View style={styles.emptyView}>
+            <View style={{ padding: 40, alignItems: 'center' }}>
               <Ionicons name="business-outline" size={48} color={COLORS.textMuted} />
-              <Text style={styles.emptyText}>No Companies Found</Text>
+              <Text style={{ marginTop: 16, color: COLORS.textSecondary, fontSize: 15 }}>No companies found</Text>
             </View>
           )}
         </View>
+
+
+              {/* COMPANY HISTORY MODAL */}
+              <Modal
+                visible={companyHistoryModalOpen}
+                transparent={true}
+          animationType="fade"
+          onRequestClose={() => setCompanyHistoryModalOpen(false)}
+        >
+          <View style={{
+            flex: 1,
+            backgroundColor: 'rgba(15, 23, 42, 0.55)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 24,
+          }}>
+            <View style={{
+              width: '100%',
+              maxWidth: 860,
+              minHeight: 580,
+              maxHeight: '90%',
+              backgroundColor: '#FFFFFF',
+              borderRadius: 16,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              elevation: 24,
+            }}>
+              {/* Modal Header */}
+              <View style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                paddingHorizontal: 24,
+                paddingVertical: 18,
+                borderBottomWidth: 1,
+                borderBottomColor: '#E2E8F0',
+                backgroundColor: '#FFFFFF',
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="time" size={22} color="#10B981" />
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 20, fontWeight: '700', color: '#064E3B' }}>Activity Log</Text>
+                    <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>
+                      Chronological audit trail of creations, updates, and removals
+                    </Text>
+                  </View>
+                </View>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity onPress={fetchCompanyGlobalHistory} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="refresh" size={18} color="#64748B" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setCompanyHistoryModalOpen(false)} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="close" size={20} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Filters & Search */}
+              <View style={{ paddingHorizontal: 24, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {['All Activities', 'Created', 'Updated', 'Deleted'].map(tab => (
+                    <TouchableOpacity
+                      key={tab}
+                      onPress={() => setCompanyHistoryFilter(tab)}
+                      style={{
+                        paddingHorizontal: 16,
+                        paddingVertical: 8,
+                        borderRadius: 20,
+                        backgroundColor: companyHistoryFilter === tab ? '#064E3B' : '#F1F5F9',
+                      }}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: companyHistoryFilter === tab ? '600' : '500', color: companyHistoryFilter === tab ? '#FFFFFF' : '#475569' }}>
+                        {tab}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 20, paddingHorizontal: 12, height: 36, width: 220 }}>
+                  <Ionicons name="search" size={16} color="#94A3B8" />
+                  <TextInput
+                    style={{ flex: 1, marginLeft: 8, fontSize: 13, color: '#334155', outlineStyle: 'none' }}
+                    placeholder="Filter by title or user..."
+                    placeholderTextColor="#94A3B8"
+                    value={companyHistorySearch}
+                    onChangeText={setCompanyHistorySearch}
+                  />
+                </View>
+              </View>
+
+              {/* Timeline Content */}
+              <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+                {companyHistoryLoading ? (
+                  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <ActivityIndicator size="large" color="#10B981" />
+                  </View>
+                ) : (
+                  <ScrollView style={{ flex: 1, padding: 24 }} contentContainerStyle={{ paddingBottom: 24 }}>
+                    {(() => {
+                      const filteredLogs = companyHistoryLogs.filter(log => {
+                        if (companyHistoryFilter !== 'All Activities') {
+                          if (companyHistoryFilter === 'Created' && log.action !== 'CREATED') return false;
+                          if (companyHistoryFilter === 'Updated' && log.action !== 'UPDATED') return false;
+                          if (companyHistoryFilter === 'Deleted' && log.action !== 'DELETED') return false;
+                        }
+                        if (companyHistorySearch.trim()) {
+                          const s = companyHistorySearch.toLowerCase();
+                          if (!log.performed_by?.toLowerCase().includes(s) &&
+                              !log.record_title?.toLowerCase().includes(s) &&
+                              !log.action_summary?.toLowerCase().includes(s)) {
+                            return false;
+                          }
+                        }
+                        return true;
+                      });
+
+                      if (filteredLogs.length === 0) {
+                        return (
+                          <View style={{ alignItems: 'center', marginTop: 60 }}>
+                            <Ionicons name="document-text-outline" size={48} color="#CBD5E1" />
+                            <Text style={{ marginTop: 12, fontSize: 15, color: '#64748B' }}>No matching activity logs found.</Text>
+                          </View>
+                        );
+                      }
+
+                      return filteredLogs.map((log, i) => {
+                        const isCreate = log.action === 'CREATED';
+                        const isUpdate = log.action === 'UPDATED';
+                        const isDelete = log.action === 'DELETED';
+                        
+                        const iconName = isCreate ? 'add' : isUpdate ? 'pencil' : 'trash';
+                        const iconColor = '#FFFFFF';
+                        const circleBg = isCreate ? '#10B981' : isUpdate ? '#3B82F6' : '#EF4444';
+                        const badgeBg = isCreate ? '#D1FAE5' : isUpdate ? '#DBEAFE' : '#FEE2E2';
+                        const badgeText = isCreate ? '#065F46' : isUpdate ? '#1E40AF' : '#991B1B';
+
+                        const initials = log.performed_by ? log.performed_by.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'S';
+
+                        let changedFieldsData = null;
+                        if (log.changed_fields) {
+                          try {
+                            changedFieldsData = typeof log.changed_fields === 'string' ? JSON.parse(log.changed_fields) : log.changed_fields;
+                          } catch(e) {}
+                        }
+
+                        let diffList = [];
+                        if (Array.isArray(changedFieldsData)) {
+                          diffList = changedFieldsData.map(item => ({
+                            field: item.field || item.fieldName || item.key || 'Field',
+                            old: item.old !== undefined ? item.old : (item.old_value !== undefined ? item.old_value : null),
+                            new: item.new !== undefined ? item.new : (item.new_value !== undefined ? item.new_value : null),
+                          }));
+                        } else if (changedFieldsData && typeof changedFieldsData === 'object') {
+                          diffList = Object.entries(changedFieldsData).map(([field, values]) => ({
+                            field,
+                            old: values?.old !== undefined ? values.old : (values?.old_value !== undefined ? values.old_value : null),
+                            new: values?.new !== undefined ? values.new : (values?.new_value !== undefined ? values.new_value : null),
+                          }));
+                        }
+
+                        return (
+                          <View key={i} style={{ flexDirection: 'row', marginBottom: 24, position: 'relative' }}>
+                            {/* Timeline Stem */}
+                            {i !== filteredLogs.length - 1 && (
+                              <View style={{ position: 'absolute', left: 15, top: 32, bottom: -32, width: 2, backgroundColor: '#E2E8F0' }} />
+                            )}
+                            
+                            {/* Timeline Node */}
+                            <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: circleBg, justifyContent: 'center', alignItems: 'center', zIndex: 2, marginTop: 4 }}>
+                              <Ionicons name={iconName} size={18} color={iconColor} />
+                            </View>
+
+                            {/* Event Card */}
+                            <View style={{ flex: 1, marginLeft: 20, backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
+                              
+                              {/* Card Header */}
+                              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                  <View style={{ backgroundColor: badgeBg, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
+                                    <Text style={{ fontSize: 11, fontWeight: '800', color: badgeText, textTransform: 'uppercase' }}>{log.action}</Text>
+                                  </View>
+                                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#0F172A' }}>{log.record_title || `Employee #${log.record_id}`}</Text>
+                                </View>
+                                <Text style={{ fontSize: 12, color: '#94A3B8' }}>{new Date(log.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute:'2-digit' })}</Text>
+                              </View>
+
+                              {/* User Info */}
+                              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16, backgroundColor: '#F8FAFC', padding: 12, borderRadius: 8 }}>
+                                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#064E3B', justifyContent: 'center', alignItems: 'center' }}>
+                                  <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '700' }}>{initials}</Text>
+                                </View>
+                                <View style={{ marginLeft: 12 }}>
+                                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>
+                                    {log.performed_by} <Text style={{ color: '#64748B', fontWeight: '400' }}>({log.user_role || 'User'})</Text>
+                                  </Text>
+                                  {log.user_email && <Text style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>{log.user_email}</Text>}
+                                </View>
+                              </View>
+
+                              {/* Summary Text */}
+                              <Text style={{ fontSize: 14, color: '#334155', lineHeight: 22, marginBottom: diffList.length > 0 ? 16 : 0 }}>
+                                {log.action_summary || `${log.action} performed on this employee.`}
+                              </Text>
+
+                              {/* Diff Table for Updates */}
+                              {isUpdate && diffList.length > 0 && (
+                                <View style={{ borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, overflow: 'hidden' }}>
+                                  <View style={{ flexDirection: 'row', backgroundColor: '#F1F5F9', paddingVertical: 8, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' }}>
+                                    <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#64748B' }}>FIELD</Text>
+                                    <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#64748B' }}>BEFORE</Text>
+                                    <Text style={{ width: 24 }}></Text>
+                                    <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#64748B' }}>AFTER</Text>
+                                  </View>
+                                  {diffList.map((diff, idx) => {
+                                    const fieldLabel = String(diff.field || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                                    return (
+                                      <View key={idx} style={{ flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: idx === diffList.length - 1 ? 0 : 1, borderBottomColor: '#F1F5F9', alignItems: 'center' }}>
+                                        <Text style={{ flex: 1.5, fontSize: 12, fontWeight: '600', color: '#334155' }}>{fieldLabel}</Text>
+                                        <View style={{ flex: 2, backgroundColor: '#FEF2F2', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
+                                          <Text style={{ fontSize: 12, color: '#EF4444', textDecorationLine: 'line-through' }}>{String(diff.old !== undefined && diff.old !== null && diff.old !== '' ? diff.old : '—')}</Text>
+                                        </View>
+                                        <View style={{ width: 24, justifyContent: 'center', alignItems: 'center' }}>
+                                          <Ionicons name="arrow-forward" size={14} color="#94A3B8" />
+                                        </View>
+                                        <View style={{ flex: 2, backgroundColor: '#ECFDF5', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
+                                          <Text style={{ fontSize: 12, color: '#10B981', fontWeight: '500' }}>{String(diff.new !== undefined && diff.new !== null && diff.new !== '' ? diff.new : '—')}</Text>
+                                        </View>
+                                      </View>
+                                    );
+                                  })}
+                                </View>
+                              )}
+
+                            </View>
+                          </View>
+                        );
+                      });
+                    })()}
+                  </ScrollView>
+                )}
+              </View>
+
+              {/* Modal Footer */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#FFFFFF' }}>
+                <Text style={{ fontSize: 13, color: '#64748B' }}>
+                  Showing {companyHistoryLogs.length} audit trail event{companyHistoryLogs.length !== 1 ? 's' : ''}
+                </Text>
+                <TouchableOpacity onPress={() => setCompanyHistoryModalOpen(false)} style={{ borderWidth: 1, borderColor: '#CBD5E1', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 8 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#475569' }}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
       </ScrollView>
     );
   };
@@ -4558,41 +5294,53 @@ export default function DashboardScreen({ user, onSignOut }) {
             </View>
           </View>
 
-          <TouchableOpacity
-            style={styles.addModuleBtn}
-            onPress={() => {
-              setEditingClient(null);
-              setClientName('');
-              setCompanyName('');
-              setCompanyShortname('');
-              setIndustry('');
-              setAddress('');
-              setCountry('');
-              setStateName('');
-              setCity('');
-              setClientEmail('');
-              setTrnNo('');
-              setContactNo('');
-              setPhoneNo('');
-              setWebsite('');
-              setTradeLicenseno('');
-              setMaxCompanies('');
-              setMaxEmployess('');
-              setMaxAsset('');
-              setClientStatus(1);
-              setEnabledModule('');
-              setSelectedPlanId('');
-              setClientPassword('');
-              setShowClientPassword(false);
-              setClientFormError('');
-              setClientWizardStep(1);
-              setIsAddClientModalOpen(true);
-            }}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="add-circle" size={18} color={COLORS.white} />
-            <Text style={styles.addModuleBtnText}>Add Client</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            {/* Activity Log Button */}
+            <TouchableOpacity
+              style={[styles.addModuleBtn, { backgroundColor: '#D97706' }]}
+              onPress={() => fetchClientGlobalHistory(null)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="time-outline" size={18} color={COLORS.white} style={{ marginRight: 6 }} />
+              <Text style={styles.addModuleBtnText}>Activity Log</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.addModuleBtn}
+              onPress={() => {
+                setEditingClient(null);
+                setClientName('');
+                setCompanyName('');
+                setCompanyShortname('');
+                setIndustry('');
+                setAddress('');
+                setCountry('');
+                setStateName('');
+                setCity('');
+                setClientEmail('');
+                setTrnNo('');
+                setContactNo('');
+                setPhoneNo('');
+                setWebsite('');
+                setTradeLicenseno('');
+                setMaxCompanies('');
+                setMaxEmployess('');
+                setMaxAsset('');
+                setClientStatus(1);
+                setEnabledModule('');
+                setSelectedPlanId('');
+                setClientPassword('');
+                setShowClientPassword(false);
+                setClientFormError('');
+                setClientWizardStep(1);
+                setIsAddClientModalOpen(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add-circle" size={18} color={COLORS.white} />
+              <Text style={styles.addModuleBtnText}>Add Client</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* SYSTEM CLIENTS TABLE */}
@@ -4607,7 +5355,7 @@ export default function DashboardScreen({ user, onSignOut }) {
           ) : filteredClients.length > 0 ? (
             <>
               <ScrollView horizontal={true} showsHorizontalScrollIndicator={true} style={{ width: '100%' }} contentContainerStyle={{ minWidth: '100%' }}>
-                <View style={[styles.modulesTableWrapper, { minWidth: 1000 }]}><View style={{ paddingBottom: 10 }}>
+                <View style={[styles.modulesTableWrapper, { minWidth: 1080 }]}><View style={{ paddingBottom: 10 }}>
                   {/* Table Header Row */}
                   <View style={styles.modulesTableHeader}>
                     <Text style={[styles.thCell, { flex: 0.6 }]}>ID</Text>
@@ -4619,6 +5367,7 @@ export default function DashboardScreen({ user, onSignOut }) {
                     <Text style={[styles.thCell, { flex: 0.8, textAlign: 'center' }]}>View</Text>
                     <Text style={[styles.thCell, { flex: 0.8, textAlign: 'center' }]}>Edit</Text>
                     <Text style={[styles.thCell, { flex: 0.8, textAlign: 'center' }]}>Password</Text>
+                    <Text style={[styles.thCell, { flex: 0.8, textAlign: 'center' }]}>History</Text>
                     <Text style={[styles.thCell, { flex: 0.8, textAlign: 'center' }]}>Delete</Text>
                   </View>
 
@@ -4727,6 +5476,15 @@ export default function DashboardScreen({ user, onSignOut }) {
                           <Ionicons name="key-outline" size={18} color="#f59e0b" />
                         </TouchableOpacity>
 
+                        {/* History trigger */}
+                        <TouchableOpacity
+                          style={[styles.tdCell, { flex: 0.8, alignItems: 'center' }]}
+                          onPress={() => fetchClientGlobalHistory(item)}
+                          title="View Client History"
+                        >
+                          <Ionicons name="time-outline" size={18} color="#D97706" />
+                        </TouchableOpacity>
+
                         {/* Delete trigger */}
                         <TouchableOpacity
                           style={[styles.tdCell, { flex: 0.8, alignItems: 'center' }]}
@@ -4747,6 +5505,305 @@ export default function DashboardScreen({ user, onSignOut }) {
             </View>
           )}
         </View>
+
+        {/* CLIENT HISTORY / ACTIVITY LOG MODAL */}
+        <Modal
+          visible={clientHistoryModalOpen}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setClientHistoryModalOpen(false)}
+        >
+          <View style={{
+            flex: 1,
+            backgroundColor: 'rgba(15, 23, 42, 0.55)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 24,
+          }}>
+            <View style={{
+              width: '100%',
+              maxWidth: 860,
+              minHeight: 580,
+              maxHeight: '90%',
+              backgroundColor: '#FFFFFF',
+              borderRadius: 16,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              elevation: 24,
+            }}>
+              {/* Modal Header */}
+              <View style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                paddingHorizontal: 24,
+                paddingVertical: 18,
+                borderBottomWidth: 1,
+                borderBottomColor: '#E2E8F0',
+                backgroundColor: '#FFFFFF',
+              }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: '#ECECFE', justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="time" size={22} color={COLORS.primary} />
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 20, fontWeight: '700', color: COLORS.primaryDark || '#1E1B4B' }}>
+                      {clientHistoryTargetRecord ? `Activity Log: ${clientHistoryTargetRecord.client_name || `Client #${clientHistoryTargetRecord.id}`}` : 'Client Management Activity Log'}
+                    </Text>
+                    <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>
+                      {clientHistoryTargetRecord ? 'Audit trail specifically for this client enterprise' : 'Chronological audit trail of client registrations, updates, and removals'}
+                    </Text>
+                  </View>
+                </View>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity onPress={() => fetchClientGlobalHistory(clientHistoryTargetRecord)} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }} title="Refresh">
+                    <Ionicons name="refresh" size={18} color="#64748B" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setClientHistoryModalOpen(false)} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }} title="Close">
+                    <Ionicons name="close" size={20} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Filters & Search */}
+              <View style={{ paddingHorizontal: 24, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFFFFF', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {['All Activities', 'Created', 'Updated', 'Deleted'].map(tab => (
+                    <TouchableOpacity
+                      key={tab}
+                      onPress={() => setClientHistoryFilter(tab)}
+                      style={{
+                        paddingHorizontal: 16,
+                        paddingVertical: 8,
+                        borderRadius: 20,
+                        backgroundColor: clientHistoryFilter === tab ? COLORS.primary : '#F1F5F9',
+                      }}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: clientHistoryFilter === tab ? '600' : '500', color: clientHistoryFilter === tab ? '#FFFFFF' : '#475569' }}>
+                        {tab}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 20, paddingHorizontal: 12, height: 36, width: 240 }}>
+                  <Ionicons name="search" size={16} color="#94A3B8" />
+                  <TextInput
+                    style={{ flex: 1, marginLeft: 8, fontSize: 13, color: '#334155', outlineStyle: 'none' }}
+                    placeholder="Filter by client, user, or action..."
+                    placeholderTextColor="#94A3B8"
+                    value={clientHistorySearch}
+                    onChangeText={setClientHistorySearch}
+                  />
+                  {clientHistorySearch ? (
+                    <TouchableOpacity onPress={() => setClientHistorySearch('')}>
+                      <Ionicons name="close-circle" size={16} color="#94A3B8" />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </View>
+
+              {/* Timeline Content */}
+              <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+                {clientHistoryLoading ? (
+                  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                    <ActivityIndicator size="large" color={COLORS.primary} />
+                  </View>
+                ) : (
+                  <ScrollView style={{ flex: 1, padding: 24 }} contentContainerStyle={{ paddingBottom: 24 }}>
+                    {(() => {
+                      const filteredLogs = clientHistoryLogs.filter(log => {
+                        const actUpper = String(log.action || log.action_type || '').toUpperCase();
+                        if (clientHistoryFilter !== 'All Activities') {
+                          if (clientHistoryFilter === 'Created' && actUpper !== 'CREATED' && actUpper !== 'CREATE') return false;
+                          if (clientHistoryFilter === 'Updated' && actUpper !== 'UPDATED' && actUpper !== 'UPDATE') return false;
+                          if (clientHistoryFilter === 'Deleted' && actUpper !== 'DELETED' && actUpper !== 'DELETE') return false;
+                        }
+                        if (clientHistorySearch.trim()) {
+                          const s = clientHistorySearch.toLowerCase();
+                          if (!log.performed_by?.toLowerCase().includes(s) &&
+                              !log.record_title?.toLowerCase().includes(s) &&
+                              !log.action_summary?.toLowerCase().includes(s) &&
+                              !log.user_email?.toLowerCase().includes(s)) {
+                            return false;
+                          }
+                        }
+                        return true;
+                      });
+
+                      if (filteredLogs.length === 0) {
+                        return (
+                          <View style={{ alignItems: 'center', marginTop: 60 }}>
+                            <Ionicons name="time-outline" size={48} color="#CBD5E1" />
+                            <Text style={{ marginTop: 12, fontSize: 15, color: '#64748B' }}>No matching activity logs found.</Text>
+                            <Text style={{ marginTop: 4, fontSize: 13, color: '#94A3B8' }}>
+                              {clientHistorySearch || clientHistoryFilter !== 'All Activities'
+                                ? 'No records match your filter criteria.'
+                                : 'Any client creation, profile update, or removal will appear here automatically.'}
+                            </Text>
+                          </View>
+                        );
+                      }
+
+                      return filteredLogs.map((log, i) => {
+                        const actUpper = String(log.action || log.action_type || '').toUpperCase();
+                        const isCreate = actUpper === 'CREATED' || actUpper === 'CREATE';
+                        const isUpdate = actUpper === 'UPDATED' || actUpper === 'UPDATE';
+                        const isDelete = actUpper === 'DELETED' || actUpper === 'DELETE';
+                        
+                        const iconName = isCreate ? 'add' : isUpdate ? 'pencil' : 'trash';
+                        const iconColor = '#FFFFFF';
+                        const circleBg = isCreate ? '#10B981' : isUpdate ? '#3B82F6' : '#EF4444';
+                        const badgeBg = isCreate ? '#D1FAE5' : isUpdate ? '#DBEAFE' : '#FEE2E2';
+                        const badgeText = isCreate ? '#065F46' : isUpdate ? '#1E40AF' : '#991B1B';
+
+                        const initials = log.performed_by ? log.performed_by.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'S';
+
+                        let changedFieldsData = null;
+                        if (log.changed_fields) {
+                          try {
+                            changedFieldsData = typeof log.changed_fields === 'string' ? JSON.parse(log.changed_fields) : log.changed_fields;
+                          } catch(e) {}
+                        }
+
+                        let diffList = [];
+                        if (Array.isArray(changedFieldsData)) {
+                          diffList = changedFieldsData.map(item => ({
+                            field: item.field || item.fieldName || item.key || 'Field',
+                            old: item.old !== undefined ? item.old : (item.old_value !== undefined ? item.old_value : null),
+                            new: item.new !== undefined ? item.new : (item.new_value !== undefined ? item.new_value : null),
+                          }));
+                        } else if (changedFieldsData && typeof changedFieldsData === 'object') {
+                          diffList = Object.entries(changedFieldsData).map(([field, values]) => ({
+                            field,
+                            old: values?.old !== undefined ? values.old : (values?.old_value !== undefined ? values.old_value : null),
+                            new: values?.new !== undefined ? values.new : (values?.new_value !== undefined ? values.new_value : null),
+                          }));
+                        }
+
+                        const CLIENT_FIELD_LABELS = {
+                          client_name: 'Client Name',
+                          companyname: 'Company Name',
+                          company_shortname: 'Company Shortname',
+                          industry: 'Industry',
+                          address: 'Address',
+                          country: 'Country',
+                          state: 'State / Emirate',
+                          city: 'City',
+                          email: 'Email',
+                          contact_no: 'Contact No',
+                          phone_no: 'Phone No',
+                          trn_no: 'TRN No',
+                          website: 'Website',
+                          trade_licenseno: 'Trade License No',
+                          max_companies: 'Max Companies',
+                          max_employess: 'Max Employees',
+                          max_asset: 'Max Assets',
+                          status: 'Status',
+                          plan_id: 'Subscription Plan',
+                          enabled_module: 'Enabled Modules'
+                        };
+
+                        return (
+                          <View key={i} style={{ flexDirection: 'row', marginBottom: 24, position: 'relative' }}>
+                            {/* Timeline Stem */}
+                            {i !== filteredLogs.length - 1 && (
+                              <View style={{ position: 'absolute', left: 15, top: 32, bottom: -32, width: 2, backgroundColor: '#E2E8F0' }} />
+                            )}
+                            
+                            {/* Timeline Node */}
+                            <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: circleBg, justifyContent: 'center', alignItems: 'center', zIndex: 2, marginTop: 4 }}>
+                              <Ionicons name={iconName} size={18} color={iconColor} />
+                            </View>
+
+                            {/* Event Card */}
+                            <View style={{ flex: 1, marginLeft: 20, backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
+                              
+                              {/* Card Header */}
+                              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                  <View style={{ backgroundColor: badgeBg, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
+                                    <Text style={{ fontSize: 11, fontWeight: '800', color: badgeText, textTransform: 'uppercase' }}>{actUpper}</Text>
+                                  </View>
+                                  <Text style={{ fontSize: 14, fontWeight: '700', color: '#0F172A' }}>{log.record_title || `Client #${log.record_id}`}</Text>
+                                </View>
+                                <Text style={{ fontSize: 12, color: '#94A3B8' }}>{log.created_at ? new Date(log.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute:'2-digit' }) : ''}</Text>
+                              </View>
+
+                              {/* User Info */}
+                              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16, backgroundColor: '#F8FAFC', padding: 12, borderRadius: 8 }}>
+                                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center' }}>
+                                  <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '700' }}>{initials}</Text>
+                                </View>
+                                <View style={{ marginLeft: 12 }}>
+                                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#0F172A' }}>
+                                    {log.performed_by} <Text style={{ color: '#64748B', fontWeight: '400' }}>({log.user_role || 'Super Admin'})</Text>
+                                  </Text>
+                                  {log.user_email && <Text style={{ fontSize: 12, color: '#64748B', marginTop: 2 }}>{log.user_email}</Text>}
+                                </View>
+                              </View>
+
+                              {/* Summary Text */}
+                              <Text style={{ fontSize: 14, color: '#334155', lineHeight: 22, marginBottom: diffList.length > 0 ? 16 : 0 }}>
+                                {log.action_summary || `${actUpper} performed on client record.`}
+                              </Text>
+
+                              {/* Diff Table for Updates */}
+                              {isUpdate && diffList.length > 0 && (
+                                <View style={{ borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 8, overflow: 'hidden' }}>
+                                  <View style={{ flexDirection: 'row', backgroundColor: '#F1F5F9', paddingVertical: 8, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: '#E2E8F0' }}>
+                                    <Text style={{ flex: 1.5, fontSize: 11, fontWeight: '700', color: '#64748B' }}>FIELD</Text>
+                                    <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#64748B' }}>BEFORE</Text>
+                                    <Text style={{ width: 24 }}></Text>
+                                    <Text style={{ flex: 2, fontSize: 11, fontWeight: '700', color: '#64748B' }}>AFTER</Text>
+                                  </View>
+                                  {diffList.map((diff, idx) => {
+                                    const fieldLabel = CLIENT_FIELD_LABELS[diff.field] || String(diff.field || '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                                    const formatVal = (v, f) => {
+                                      if (f === 'status') return v === 1 || v === '1' ? 'Active' : (v === 0 || v === '0' ? 'Inactive' : '—');
+                                      if (v === null || v === undefined || v === '') return '—';
+                                      return String(v);
+                                    };
+                                    return (
+                                      <View key={idx} style={{ flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: idx === diffList.length - 1 ? 0 : 1, borderBottomColor: '#F1F5F9', alignItems: 'center' }}>
+                                        <Text style={{ flex: 1.5, fontSize: 12, fontWeight: '600', color: '#334155' }}>{fieldLabel}</Text>
+                                        <View style={{ flex: 2, backgroundColor: '#FEF2F2', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
+                                          <Text style={{ fontSize: 12, color: '#EF4444', textDecorationLine: 'line-through' }}>{formatVal(diff.old, diff.field)}</Text>
+                                        </View>
+                                        <View style={{ width: 24, justifyContent: 'center', alignItems: 'center' }}>
+                                          <Ionicons name="arrow-forward" size={14} color="#94A3B8" />
+                                        </View>
+                                        <View style={{ flex: 2, backgroundColor: '#ECFDF5', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
+                                          <Text style={{ fontSize: 12, color: '#10B981', fontWeight: '500' }}>{formatVal(diff.new, diff.field)}</Text>
+                                        </View>
+                                      </View>
+                                    );
+                                  })}
+                                </View>
+                              )}
+
+                            </View>
+                          </View>
+                        );
+                      });
+                    })()}
+                  </ScrollView>
+                )}
+              </View>
+
+              {/* Modal Footer */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#FFFFFF' }}>
+                <Text style={{ fontSize: 13, color: '#64748B' }}>
+                  Showing {clientHistoryLogs.length} audit trail event{clientHistoryLogs.length !== 1 ? 's' : ''}
+                </Text>
+                <TouchableOpacity onPress={() => setClientHistoryModalOpen(false)} style={{ borderWidth: 1, borderColor: '#CBD5E1', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 8 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: '#475569' }}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </ScrollView>
     );
   };
@@ -5952,6 +7009,9 @@ export default function DashboardScreen({ user, onSignOut }) {
       case 'maintenance':
       case 'vehicle_maintenance_details':
         return <VehicleMaintenanceTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('vehicle_maintenance')} checkRowPermission={(compId, act) => checkRowPermission('vehicle_maintenance', compId, act)} />;
+      case 'premises_info':
+      case 'premise_info':
+        return <PremisesInfoTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('premises_info')} checkRowPermission={(compId, act) => checkRowPermission('premises_info', compId, act)} />;
       case 'premises_details':
         return <PremisesDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('premises_details')} checkRowPermission={(compId, act) => checkRowPermission('premises_details', compId, act)} />;
       case 'asset_details':

@@ -1,6 +1,29 @@
 const db = require('../config/db');
 const fs = require('fs');
 const path = require('path');
+const { logAudit } = require('../utils/auditLogger');
+
+function extractMaintenanceTitle(fieldData, fallbackId, vehicleName = null) {
+  if (vehicleName && vehicleName !== 'N/A' && String(vehicleName).trim()) {
+    return String(vehicleName).trim();
+  }
+  if (!fieldData || typeof fieldData !== 'object') return `Maintenance #${fallbackId}`;
+
+  const vName = fieldData.vehicle_name || fieldData['Vehicle Name'] || fieldData.name;
+  const pNo = fieldData.plate_no || fieldData['Plate Number'];
+  if (vName && pNo && vName !== pNo) return `${vName} - ${pNo}`;
+  if (vName) return String(vName);
+
+  const vals = Object.values(fieldData).filter(v => typeof v === 'string' && v.trim().length > 0 && !v.includes('http') && !v.includes('/'));
+  const dashMatch = vals.find(v => v.includes(' - ') && !v.startsWith('{') && v.length < 80);
+  if (dashMatch) return dashMatch.trim();
+
+  const sType = fieldData.service_type || fieldData['Service Type'] || fieldData['1786967942496'];
+  if (sType) return `${sType} #${fallbackId}`;
+
+  if (vals.length > 0) return vals[0];
+  return `Maintenance #${fallbackId}`;
+}
 
 const saveAttachmentLocally = (base64String, fileName) => {
   if (!base64String) return null;
@@ -251,6 +274,162 @@ const resolveVehicleId = async (vehicle_id, field_data) => {
   return null;
 };
 
+// Helper to resolve Vehicle Display Name ("Vehicle Name - Plate Number") for display & audit titles
+const resolveVehicleDisplayName = async (vehicleId, maintenanceFieldData = null) => {
+  let targetId = vehicleId;
+  if (!targetId && maintenanceFieldData) {
+    targetId = await resolveVehicleId(null, maintenanceFieldData);
+  }
+
+  // 1. If maintenanceFieldData itself has a combined string like "Nissan - p1"
+  if (maintenanceFieldData && typeof maintenanceFieldData === 'object') {
+    const vals = Object.values(maintenanceFieldData).filter(v => typeof v === 'string' && v.trim().length > 0 && !v.includes('http') && !v.includes('/'));
+    const dashMatch = vals.find(v => v.includes(' - ') && !v.startsWith('{') && v.length < 80);
+    if (dashMatch) return dashMatch.trim();
+  }
+
+  if (!targetId) return null;
+
+  try {
+    const vRes = await db.query(
+      'SELECT id, vehicle_id, field_data FROM tbl_vehicle_details WHERE (id::text = $1 OR vehicle_id::text = $1) LIMIT 1',
+      [String(targetId).trim()]
+    );
+    if (vRes.rows.length === 0) return null;
+
+    let vFd = vRes.rows[0].field_data;
+    if (typeof vFd === 'string') {
+      try { vFd = JSON.parse(vFd); } catch (e) { vFd = {}; }
+    }
+    if (!vFd || typeof vFd !== 'object') return null;
+
+    // Fetch custom field definitions to locate vehicle name and plate number fields
+    let primaryVehicleNameFieldIds = [];
+    let fallbackModelFieldIds = [];
+    let fallbackMakeFieldIds = [];
+    let vehiclePlateFieldIds = [];
+
+    try {
+      const allFieldsRes = await db.query('SELECT field_id, field_name FROM tbl_customfield_details');
+      allFieldsRes.rows.forEach(f => {
+        const fn = (f.field_name || '').toLowerCase().trim();
+        if (fn.includes('vehicle') && fn.includes('name')) {
+          primaryVehicleNameFieldIds.push(String(f.field_id).trim());
+        } else if (fn.includes('vehicle') && !fn.includes('type') && !fn.includes('number') && !fn.includes('status') && !fn.includes('id') && !fn.includes('company')) {
+          primaryVehicleNameFieldIds.push(String(f.field_id).trim());
+        } else if (fn.includes('model')) {
+          fallbackModelFieldIds.push(String(f.field_id).trim());
+        } else if (fn.includes('make')) {
+          fallbackMakeFieldIds.push(String(f.field_id).trim());
+        }
+
+        if (fn.includes('plate') || fn.includes('liceno') || fn.includes('license')) {
+          vehiclePlateFieldIds.push(String(f.field_id).trim());
+        }
+      });
+    } catch (e) {
+      console.error('[resolveVehicleDisplayName] Error querying custom fields:', e.message);
+    }
+
+    // A. Resolve vehicle name
+    let vName = '';
+    for (const fid of primaryVehicleNameFieldIds) {
+      if (vFd[fid] && typeof vFd[fid] === 'string' && vFd[fid].trim()) {
+        vName = vFd[fid].trim();
+        break;
+      }
+    }
+    if (!vName) {
+      const directName = vFd['Vehicle Name'] || vFd['vehicle_name'] || vFd['VehicleName'] || vFd['vehicleName'] || vFd['name'];
+      if (directName && typeof directName === 'string' && directName.trim()) {
+        vName = directName.trim();
+      }
+    }
+    if (!vName) {
+      for (const fid of fallbackModelFieldIds) {
+        if (vFd[fid] && typeof vFd[fid] === 'string' && vFd[fid].trim()) {
+          vName = vFd[fid].trim();
+          break;
+        }
+      }
+      if (!vName && (vFd['Model'] || vFd['model'])) {
+        vName = String(vFd['Model'] || vFd['model']).trim();
+      }
+    }
+    if (!vName) {
+      for (const fid of fallbackMakeFieldIds) {
+        if (vFd[fid] && typeof vFd[fid] === 'string' && vFd[fid].trim()) {
+          vName = vFd[fid].trim();
+          break;
+        }
+      }
+      if (!vName && (vFd['Make'] || vFd['make'])) {
+        vName = String(vFd['Make'] || vFd['make']).trim();
+      }
+    }
+
+    // B. Resolve plate number
+    let pNo = '';
+    for (const fid of vehiclePlateFieldIds) {
+      if (vFd[fid] && typeof vFd[fid] === 'string' && vFd[fid].trim()) {
+        pNo = vFd[fid].trim();
+        break;
+      }
+    }
+    if (!pNo) {
+      const directPlate = vFd['Plate Number'] || vFd['plate_no'] || vFd['Plate No'] || vFd['PlateNumber'] || vFd['License No'] || vFd['liceno'];
+      if (directPlate && typeof directPlate === 'string' && directPlate.trim()) {
+        pNo = directPlate.trim();
+      }
+    }
+
+    // Fallbacks from string values if still completely empty
+    const stringValues = Object.values(vFd).filter(v => typeof v === 'string' && v.trim() && !v.includes('http') && !v.includes('/') && isNaN(Number(v)));
+    if (!vName && stringValues.length > 0) vName = stringValues[0];
+    if (!pNo && stringValues.length > 1) pNo = stringValues[1];
+
+    if (vName && pNo && vName.toLowerCase() !== pNo.toLowerCase()) {
+      return `${vName} - ${pNo}`;
+    }
+    return vName || pNo || null;
+  } catch (err) {
+    console.error('Error resolving vehicle display name:', err);
+    return null;
+  }
+};
+
+// Auto-repair past audit logs for vehicle maintenance that only have plate_no or partial title
+const autoRepairMaintenanceAuditTitles = async () => {
+  try {
+    const rawRes = await db.query(`
+      SELECT a.id, a.record_id, a.record_title, a.action_summary, m.vehicle_id, m.field_data
+      FROM tbl_audit_history a
+      LEFT JOIN tbl_vehicle_maintenance m ON a.record_id::text = m.id::text
+      WHERE a.module_name = 'VEHICLE_MAINTENANCE'
+        AND (a.record_title NOT LIKE '% - %' OR a.record_title IS NULL)
+      LIMIT 100
+    `);
+    for (const row of rawRes.rows) {
+      const vDisplay = await resolveVehicleDisplayName(row.vehicle_id, row.field_data);
+      if (vDisplay && vDisplay.includes(' - ')) {
+        const oldTitle = row.record_title || '';
+        let newSummary = row.action_summary || '';
+        if (oldTitle && newSummary.includes(oldTitle)) {
+          newSummary = newSummary.replace(oldTitle, vDisplay);
+        } else {
+          newSummary = newSummary.replace(/record for .*/i, `record for ${vDisplay}`);
+        }
+        await db.query(
+          'UPDATE tbl_audit_history SET record_title = $1, action_summary = $2 WHERE id = $3',
+          [vDisplay, newSummary, row.id]
+        );
+      }
+    }
+  } catch (e) {
+    // Non-blocking
+  }
+};
+
 exports.saveVehicleMaintenance = async (req, res) => {
   try {
     const { vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id } = req.body;
@@ -282,7 +461,28 @@ exports.saveVehicleMaintenance = async (req, res) => {
     ];
 
     const result = await db.query(query, values);
-    res.status(201).json(result.rows[0]);
+    const savedRecord = result.rows[0];
+
+    // Log Creation Audit
+    try {
+      const vDisplayTitle = await resolveVehicleDisplayName(resolvedVehicleId, cleanFieldData);
+      const vTitle = extractMaintenanceTitle(cleanFieldData, savedRecord.id, vDisplayTitle);
+      logAudit({
+        req,
+        clientid: clientid || savedRecord.clientid,
+        company_id: company_id || savedRecord.company_id,
+        module_name: 'VEHICLE_MAINTENANCE',
+        record_id: savedRecord.id,
+        record_title: vTitle,
+        action_type: 'CREATE',
+        action_summary: `Recorded new vehicle maintenance: ${vTitle}`,
+        new_data: cleanFieldData
+      }).catch(e => console.error('[AUDIT] Failed to log vehicle maintenance creation:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing vehicle maintenance create log:', e.message);
+    }
+
+    res.status(201).json(savedRecord);
   } catch (error) {
     console.error('Error saving vehicle maintenance:', error);
     res.status(500).json({ message: 'Error saving vehicle maintenance', error: error.message });
@@ -292,6 +492,10 @@ exports.saveVehicleMaintenance = async (req, res) => {
 exports.getMaintenanceRecords = async (req, res) => {
   try {
     const { clientid } = req.query;
+
+    // Trigger asynchronous audit log title self-healing for past records
+    autoRepairMaintenanceAuditTitles().catch(() => {});
+
     let query = `
       SELECT 
         m.*, 
@@ -509,7 +713,10 @@ exports.getMaintenanceRecords = async (req, res) => {
         field_data: cleanFd,
         vehicle_id: vId || row.vehicle_id || null,
         vehicle_name: matchedVehicle ? matchedVehicle.vehicle_name : 'N/A',
-        plate_no: matchedVehicle ? matchedVehicle.plate_no : 'N/A'
+        plate_no: matchedVehicle ? matchedVehicle.plate_no : 'N/A',
+        vehicle_display_name: (matchedVehicle && matchedVehicle.vehicle_name !== 'N/A' && matchedVehicle.plate_no !== 'N/A')
+          ? `${matchedVehicle.vehicle_name} - ${matchedVehicle.plate_no}`
+          : (matchedVehicle ? (matchedVehicle.vehicle_name !== 'N/A' ? matchedVehicle.vehicle_name : matchedVehicle.plate_no) : 'N/A')
       };
     });
 
@@ -527,18 +734,39 @@ exports.deleteMaintenance = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const selectQuery = 'SELECT field_data FROM tbl_vehicle_maintenance WHERE id = $1';
+    const selectQuery = 'SELECT * FROM tbl_vehicle_maintenance WHERE id = $1';
     const selectResult = await db.query(selectQuery, [id]);
 
     if (selectResult.rows.length === 0) {
       return res.status(404).json({ message: 'Maintenance record not found' });
     }
 
-    const oldFieldData = selectResult.rows[0].field_data;
+    const existingRecord = selectResult.rows[0];
+    const oldFieldData = existingRecord.field_data;
     const oldPaths = extractFilePaths(oldFieldData);
 
     const query = 'UPDATE tbl_vehicle_maintenance SET is_deleted = true, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *';
     const result = await db.query(query, [id]);
+
+    // Log Deletion Audit
+    try {
+      const oldParsed = typeof oldFieldData === 'string' ? JSON.parse(oldFieldData) : (oldFieldData || {});
+      const vDisplayTitle = await resolveVehicleDisplayName(existingRecord.vehicle_id, oldParsed);
+      const vTitle = extractMaintenanceTitle(oldParsed, id, vDisplayTitle);
+      logAudit({
+        req,
+        clientid: existingRecord.clientid,
+        company_id: existingRecord.company_id,
+        module_name: 'VEHICLE_MAINTENANCE',
+        record_id: id,
+        record_title: vTitle,
+        action_type: 'DELETE',
+        action_summary: `Deleted vehicle maintenance record: ${vTitle}`,
+        old_data: oldParsed
+      }).catch(e => console.error('[AUDIT] Failed to log vehicle maintenance deletion:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing vehicle maintenance delete log:', e.message);
+    }
 
     for (const p of oldPaths) {
       try {
@@ -563,14 +791,15 @@ exports.updateMaintenance = async (req, res) => {
     const { id } = req.params;
     const { vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id } = req.body;
 
-    const selectQuery = 'SELECT field_data FROM tbl_vehicle_maintenance WHERE id = $1';
+    const selectQuery = 'SELECT * FROM tbl_vehicle_maintenance WHERE id = $1';
     const selectResult = await db.query(selectQuery, [id]);
 
     if (selectResult.rows.length === 0) {
       return res.status(404).json({ message: 'Maintenance record not found' });
     }
 
-    const oldFieldData = selectResult.rows[0].field_data;
+    const existingRecord = selectResult.rows[0];
+    const oldFieldData = existingRecord.field_data;
     const oldPaths = extractFilePaths(oldFieldData);
 
     const processedFieldData = await processAndSyncFieldDataFiles(field_data, clientid, company_id);
@@ -606,17 +835,41 @@ exports.updateMaintenance = async (req, res) => {
       resolvedVehicleId || null,
       custom_field_id || null,
       jsonData,
-      clientid || null,
-      country_id || null,
-      moduleid || 75,
-      roleid || null,
-      user_id || null,
-      company_id || null,
+      clientid || existingRecord.clientid || null,
+      country_id || existingRecord.country_id || null,
+      moduleid || existingRecord.moduleid || 75,
+      roleid || existingRecord.roleid || null,
+      user_id || existingRecord.user_id || null,
+      company_id || existingRecord.company_id || null,
       id
     ];
 
     const result = await db.query(query, values);
-    res.status(200).json(result.rows[0]);
+    const updatedRecord = result.rows[0];
+
+    // Log Update Audit
+    try {
+      const oldParsed = typeof oldFieldData === 'string' ? JSON.parse(oldFieldData) : (oldFieldData || {});
+      const targetVId = resolvedVehicleId || existingRecord.vehicle_id;
+      const vDisplayTitle = await resolveVehicleDisplayName(targetVId, cleanFieldData);
+      const vTitle = extractMaintenanceTitle(cleanFieldData, id, vDisplayTitle);
+      logAudit({
+        req,
+        clientid: clientid || existingRecord.clientid,
+        company_id: company_id || existingRecord.company_id,
+        module_name: 'VEHICLE_MAINTENANCE',
+        record_id: id,
+        record_title: vTitle,
+        action_type: 'UPDATE',
+        action_summary: `Updated vehicle maintenance record for ${vTitle}`,
+        old_data: oldParsed,
+        new_data: cleanFieldData
+      }).catch(e => console.error('[AUDIT] Failed to log vehicle maintenance update:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing vehicle maintenance update log:', e.message);
+    }
+
+    res.status(200).json(updatedRecord);
   } catch (error) {
     console.error('Error updating maintenance record:', error);
     res.status(500).json({ message: 'Error updating maintenance record', error: error.message });

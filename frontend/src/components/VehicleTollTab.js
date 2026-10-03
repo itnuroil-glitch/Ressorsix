@@ -97,6 +97,52 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
   const [viewDetailModalVisible, setViewDetailModalVisible] = useState(false);
   const [selectedViewRecord, setSelectedViewRecord] = useState(null);
 
+  // History / Audit Trail Modal state
+  const [historyModalVisible, setHistoryModalVisible] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyLogs, setHistoryLogs] = useState([]);
+  const [historyFilterAction, setHistoryFilterAction] = useState('ALL');
+  const [historySearchQuery, setHistorySearchQuery] = useState('');
+  const [historyTargetRecord, setHistoryTargetRecord] = useState(null);
+
+  const fetchHistoryLogs = async (recordId = null) => {
+    try {
+      setHistoryLoading(true);
+      const targetModule = isOverview ? 'VEHICLE_TOLL_OVERVIEW' : (isTransaction ? 'TOLL_TRANSACTIONS' : 'VEHICLE_TOLL');
+      let url = `${API_URL}/api/audit-history?module=${targetModule}&limit=100`;
+      if (recordId) {
+        url += `&record_id=${recordId}`;
+      } else if (user && String(user.roleId) !== '1' && user.clientid) {
+        url += `&clientid=${user.clientid}`;
+      }
+      const token = user?.token;
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(url, { credentials: 'include', headers });
+      if (res.ok) {
+        const json = await res.json();
+        setHistoryLogs(json.data || []);
+      }
+    } catch (err) {
+      console.error('Error fetching toll audit logs:', err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const handleOpenHistory = (specificRecord = null) => {
+    setHistoryFilterAction('ALL');
+    setHistorySearchQuery('');
+    setHistoryTargetRecord(specificRecord);
+    if (specificRecord) {
+      fetchHistoryLogs(specificRecord.id);
+    } else {
+      fetchHistoryLogs();
+    }
+    setHistoryModalVisible(true);
+  };
+
   // Excel Preview & 2-Step Import Modal state
   const [excelPreviewVisible, setExcelPreviewVisible] = useState(false);
   const [excelPreviewRows, setExcelPreviewRows] = useState([]);
@@ -655,8 +701,17 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
   const handleConfirmDelete = async () => {
     if (deleteConfirmationText !== 'YES' || !recordToDelete) return;
     try {
+      const token = user?.token;
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (user?.id) headers['x-user-id'] = String(user.id);
+      if (user?.roleId) headers['x-role-id'] = String(user.roleId);
+      if (user?.clientid) headers['x-client-id'] = String(user.clientid);
+      if (user?.name || user?.username) headers['x-user-name'] = String(user.name || user.username);
+
       const res = await fetch(`${API_URL}${apiRoute}/${recordToDelete.id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers
       });
       if (!res.ok) throw new Error('Failed to delete vehicle toll record');
 
@@ -691,9 +746,17 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
         : `${API_URL}${apiRoute}`;
       const method = isEditing ? 'PUT' : 'POST';
 
+      const token = user?.token;
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (user?.id) headers['x-user-id'] = String(user.id);
+      if (user?.roleId) headers['x-role-id'] = String(user.roleId);
+      if (user?.clientid) headers['x-client-id'] = String(user.clientid);
+      if (user?.name || user?.username) headers['x-user-name'] = String(user.name || user.username);
+
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload)
       });
 
@@ -1297,7 +1360,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
         ) : (
           <View style={{ flex: 1, backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#F1F5F9', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1, overflow: 'hidden' }}>
             {/* Top Toolbar */}
-            <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}>
+            <View style={{ padding: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: '#E2E8F0', width: 300 }}>
                 <Ionicons name="search" size={16} color="#94A3B8" />
                 <TextInput
@@ -1308,6 +1371,32 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                   onChangeText={(text) => { setSearchQuery(text); setCurrentPage(1); }}
                 />
               </View>
+
+              {isOverview && (
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: '#FFFFFF',
+                    borderWidth: 1,
+                    borderColor: '#CBD5E1',
+                    paddingHorizontal: 14,
+                    paddingVertical: 8,
+                    borderRadius: 6,
+                    gap: 6,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.05,
+                    shadowRadius: 2,
+                    elevation: 1,
+                    cursor: 'pointer'
+                  }}
+                  onPress={() => handleOpenHistory(null)}
+                >
+                  <Ionicons name="time-outline" size={16} color="#475569" />
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#475569' }}>History</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Table Header */}
@@ -1335,7 +1424,7 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                 <Text style={{ flex: 1.8, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>{isOverview ? 'TOLL TYPE' : 'DATA PREVIEW'}</Text>
                 <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Submitted By</Text>
                 <Text style={{ flex: 1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase' }}>Status</Text>
-                <Text style={{ flex: 1.1, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>ACTION</Text>
+                <Text style={{ flex: 1.4, fontSize: 11, fontWeight: '700', color: '#475569', textTransform: 'uppercase', textAlign: 'center' }}>ACTION</Text>
               </View>
             )}
 
@@ -1550,19 +1639,25 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
                             </View>
                           </View>
 
-                          <View style={{ flex: 1.2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-                            <TouchableOpacity style={{ padding: 4 }} onPress={() => handleView(record)}>
+                          <View style={{ flex: 1.4, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                            <TouchableOpacity style={{ padding: 4 }} onPress={() => handleView(record)} title="View Details">
                               <Ionicons name="eye-outline" size={18} color="#0F172A" />
                             </TouchableOpacity>
 
+                            {isOverview && (
+                              <TouchableOpacity style={{ padding: 4 }} onPress={() => handleOpenHistory(record)} title="View History">
+                                <Ionicons name="time-outline" size={18} color="#D97706" />
+                              </TouchableOpacity>
+                            )}
+
                             {(checkRowPermission ? checkRowPermission(record.company_id || record.companyid, 'edit') : canEdit) && (
-                              <TouchableOpacity style={{ padding: 4 }} onPress={() => handleEdit(record)}>
+                              <TouchableOpacity style={{ padding: 4 }} onPress={() => handleEdit(record)} title="Edit Record">
                                 <Ionicons name="pencil" size={18} color="#166534" />
                               </TouchableOpacity>
                             )}
 
                             {(checkRowPermission ? checkRowPermission(record.company_id || record.companyid, 'delete') : canDelete) && (
-                              <TouchableOpacity style={{ padding: 4 }} onPress={() => handleDelete(record)}>
+                              <TouchableOpacity style={{ padding: 4 }} onPress={() => handleDelete(record)} title="Delete Record">
                                 <Ionicons name="trash-outline" size={18} color="#EF4444" />
                               </TouchableOpacity>
                             )}
@@ -2442,6 +2537,271 @@ export default function VehicleTollTab({ user, showToast, isSidebarCollapsed, pe
           </View>
         </View>
       </Modal>
+
+      {/* ACTIVITY HISTORY / AUDIT TRAIL MODAL */}
+      <Modal
+        visible={historyModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setHistoryModalVisible(false)}
+      >
+        <View style={styles.historyModalOverlay}>
+          <View style={styles.historyModalCard}>
+            {/* Modal Header */}
+            <View style={styles.historyModalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={styles.historyIconBadge}>
+                  <Ionicons name="time" size={22} color="#166534" />
+                </View>
+                <View>
+                  <Text style={styles.historyModalTitle}>
+                    {historyTargetRecord
+                      ? `History: ${historyTargetRecord.id ? `Account #${historyTargetRecord.id}` : 'Record'}`
+                      : 'Vehicle Toll Overview History'}
+                  </Text>
+                  <Text style={styles.historyModalSubtitle}>
+                    {historyTargetRecord ? 'Audit trail specifically for this toll account' : 'Chronological audit trail of all toll account creations, updates, and removals'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <TouchableOpacity
+                  style={styles.historyHeaderBtn}
+                  onPress={() => fetchHistoryLogs(historyTargetRecord ? historyTargetRecord.id : null)}
+                  disabled={historyLoading}
+                  activeOpacity={0.7}
+                  title="Refresh Log"
+                >
+                  <Ionicons name="refresh-outline" size={18} color="#475569" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.historyHeaderBtn}
+                  onPress={() => setHistoryModalVisible(false)}
+                  activeOpacity={0.7}
+                  title="Close"
+                >
+                  <Ionicons name="close" size={20} color="#475569" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Filter and Search Bar inside Modal */}
+            <View style={styles.historyToolbar}>
+              {/* Action Filter Pills */}
+              <View style={styles.historyPillGroup}>
+                {['ALL', 'CREATE', 'UPDATE', 'DELETE'].map((act) => {
+                  const isActive = historyFilterAction === act;
+                  return (
+                    <TouchableOpacity
+                      key={act}
+                      style={[styles.historyPill, isActive && styles.historyPillActive]}
+                      onPress={() => setHistoryFilterAction(act)}
+                    >
+                      <Text style={[styles.historyPillText, isActive && styles.historyPillTextActive]}>
+                        {act === 'ALL' ? 'All Activities' : act === 'CREATE' ? 'Created' : act === 'UPDATE' ? 'Updated' : 'Deleted'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* Search Box */}
+              <View style={styles.historySearchBox}>
+                <Ionicons name="search-outline" size={15} color="#94A3B8" />
+                <TextInput
+                  style={styles.historySearchInput}
+                  placeholder="Filter by account or user..."
+                  placeholderTextColor="#94A3B8"
+                  value={historySearchQuery}
+                  onChangeText={setHistorySearchQuery}
+                />
+                {historySearchQuery ? (
+                  <TouchableOpacity onPress={() => setHistorySearchQuery('')}>
+                    <Ionicons name="close-circle" size={16} color="#94A3B8" />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </View>
+
+            {/* Timeline Body */}
+            <ScrollView style={{ flex: 1, padding: 24 }} showsVerticalScrollIndicator={true}>
+              {historyLoading ? (
+                <View style={{ padding: 48, alignItems: 'center', justifyContent: 'center' }}>
+                  <ActivityIndicator size="large" color="#166534" />
+                  <Text style={{ marginTop: 12, color: '#64748B', fontSize: 14 }}>Loading activity history...</Text>
+                </View>
+              ) : (() => {
+                const filtered = historyLogs.filter((log) => {
+                  if (historyFilterAction !== 'ALL' && String(log.action_type).toUpperCase() !== historyFilterAction) {
+                    return false;
+                  }
+                  if (historySearchQuery && historySearchQuery.trim()) {
+                    const q = historySearchQuery.toLowerCase();
+                    const titleMatch = (log.record_title || '').toLowerCase().includes(q);
+                    const userMatch = (log.user_name || '').toLowerCase().includes(q) || (log.user_email || '').toLowerCase().includes(q);
+                    const summaryMatch = (log.action_summary || '').toLowerCase().includes(q);
+                    return titleMatch || userMatch || summaryMatch;
+                  }
+                  return true;
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <View style={styles.historyEmptyState}>
+                      <Ionicons name="time-outline" size={48} color="#CBD5E1" />
+                      <Text style={styles.historyEmptyTitle}>No Activity Logs Found</Text>
+                      <Text style={styles.historyEmptyText}>
+                        {historySearchQuery || historyFilterAction !== 'ALL'
+                          ? 'No records match your filter criteria.'
+                          : 'Any changes, updates, or accounts created will appear here automatically.'}
+                      </Text>
+                    </View>
+                  );
+                }
+
+                return (
+                  <View style={styles.timelineContainer}>
+                    {filtered.map((item, idx) => {
+                      const isLast = idx === filtered.length - 1;
+                      const act = String(item.action_type || 'UPDATE').toUpperCase();
+                      const isCreate = act === 'CREATE';
+                      const isDelete = act === 'DELETE';
+
+                      const badgeBg = isCreate ? '#DCFCE7' : isDelete ? '#FEE2E2' : '#E0F2FE';
+                      const badgeColor = isCreate ? '#15803D' : isDelete ? '#B91C1C' : '#0369A1';
+                      const dotBg = isCreate ? '#22C55E' : isDelete ? '#EF4444' : '#3B82F6';
+
+                      const formatTime = (iso) => {
+                        if (!iso) return '';
+                        const d = new Date(iso);
+                        if (isNaN(d.getTime())) return iso;
+                        return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
+                          ' • ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                      };
+
+                      const initials = (item.user_name || item.user_email || 'U').substring(0, 2).toUpperCase();
+
+                      let diffs = [];
+                      if (Array.isArray(item.changed_fields)) {
+                        diffs = item.changed_fields;
+                      } else if (typeof item.changed_fields === 'string') {
+                        try { diffs = JSON.parse(item.changed_fields); } catch (e) { diffs = []; }
+                      }
+
+                      return (
+                        <View key={item.id || idx} style={styles.timelineItem}>
+                          {/* Left Line & Dot */}
+                          <View style={styles.timelineLeftColumn}>
+                            <View style={[styles.timelineDot, { backgroundColor: dotBg }]}>
+                              <Ionicons
+                                name={isCreate ? 'add' : isDelete ? 'trash' : 'pencil'}
+                                size={11}
+                                color="#FFFFFF"
+                              />
+                            </View>
+                            {!isLast && <View style={styles.timelineVerticalLine} />}
+                          </View>
+
+                          {/* Right Content Card */}
+                          <View style={styles.timelineContentCard}>
+                            {/* Card Top Row */}
+                            <View style={styles.timelineCardTopRow}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                <View style={[styles.actionBadge, { backgroundColor: badgeBg }]}>
+                                  <Text style={[styles.actionBadgeText, { color: badgeColor }]}>{act}</Text>
+                                </View>
+                                <Text style={styles.timelineRecordTitle} numberOfLines={1}>
+                                  {item.record_title || `Toll Account #${item.record_id}`}
+                                </Text>
+                              </View>
+                              <Text style={styles.timelineDateText}>{formatTime(item.created_at)}</Text>
+                            </View>
+
+                            {/* User Attribution Row */}
+                            <View style={styles.timelineUserRow}>
+                              <View style={styles.timelineUserAvatar}>
+                                <Text style={styles.timelineUserAvatarText}>{initials}</Text>
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                  <Text style={styles.timelineUserName}>{item.user_name || 'System'}</Text>
+                                  {item.user_role && (
+                                    <Text style={styles.timelineUserRole}>• {item.user_role}</Text>
+                                  )}
+                                </View>
+                                {item.user_email && (
+                                  <Text style={styles.timelineUserEmail}>{item.user_email}</Text>
+                                )}
+                              </View>
+                            </View>
+
+                            {/* Summary Text */}
+                            <Text style={styles.timelineSummaryText}>
+                              {item.action_summary || `${act} operation on toll account`}
+                            </Text>
+
+                            {/* Changed Fields Diff Table */}
+                            {diffs.length > 0 && (
+                              <View style={styles.diffTableContainer}>
+                                <View style={styles.diffTableHeader}>
+                                  <Text style={[styles.diffHeaderCol, { flex: 1.5 }]}>FIELD</Text>
+                                  <Text style={[styles.diffHeaderCol, { flex: 2 }]}>PREVIOUS VALUE</Text>
+                                  <Text style={[styles.diffHeaderCol, { flex: 2 }]}>NEW VALUE</Text>
+                                </View>
+                                {diffs.map((d, dIdx) => {
+                                  const getDiffLabel = (f) => {
+                                    if (f === '1786788666800' || f === '1786629185586') return 'Toll Name';
+                                    if (f === '1786788673616' || f === '1786629206891') return 'Account No';
+                                    if (/^\d+$/.test(f)) return `Field #${f.slice(-4)}`;
+                                    return f.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
+                                  };
+                                  return (
+                                    <View key={dIdx} style={styles.diffTableRow}>
+                                      <Text style={[styles.diffFieldCol, { flex: 1.5 }]} numberOfLines={1}>
+                                        {getDiffLabel(d.field)}
+                                      </Text>
+                                      <View style={[styles.diffValBox, { flex: 2, backgroundColor: '#FEF2F2' }]}>
+                                        <Text style={styles.diffOldValText} numberOfLines={2}>
+                                          {d.old_value !== null && d.old_value !== undefined ? String(typeof d.old_value === 'object' ? JSON.stringify(d.old_value) : d.old_value) : '(empty)'}
+                                        </Text>
+                                      </View>
+                                      <View style={[styles.diffValBox, { flex: 2, backgroundColor: '#F0FDF4' }]}>
+                                        <Text style={styles.diffNewValText} numberOfLines={2}>
+                                          {d.new_value !== null && d.new_value !== undefined ? String(typeof d.new_value === 'object' ? JSON.stringify(d.new_value) : d.new_value) : '(cleared)'}
+                                        </Text>
+                                      </View>
+                                    </View>
+                                  );
+                                })}
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                );
+              })()}
+            </ScrollView>
+
+            {/* Modal Footer */}
+            <View style={styles.historyModalFooter}>
+              <Text style={{ fontSize: 12, color: '#64748B', fontWeight: '500' }}>
+                Showing {historyLogs.length} audit trail event{historyLogs.length === 1 ? '' : 's'}
+              </Text>
+              <TouchableOpacity
+                style={styles.historyCloseFooterBtn}
+                onPress={() => setHistoryModalVisible(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={{ fontSize: 13, fontWeight: '600', color: '#334155' }}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2876,4 +3236,329 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // History Modal Styles
+  historyModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    zIndex: 9999,
+  },
+  historyModalCard: {
+    width: '100%',
+    maxWidth: 820,
+    height: '88%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.2,
+    shadowRadius: 32,
+    elevation: 24,
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  historyModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: '#BBF7D0',
+    backgroundColor: '#F0FDF4',
+  },
+  historyIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(22, 101, 52, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyModalTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  historyModalSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  historyHeaderBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+  },
+  historyToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    gap: 12,
+    flexWrap: 'wrap',
+  },
+  historyPillGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  historyPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    cursor: 'pointer',
+  },
+  historyPillActive: {
+    backgroundColor: '#166534',
+    borderColor: '#166534',
+  },
+  historyPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  historyPillTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  historySearchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 12,
+    height: 34,
+    width: 240,
+  },
+  historySearchInput: {
+    flex: 1,
+    fontSize: 12,
+    color: '#1E293B',
+    outlineStyle: 'none',
+  },
+  historyEmptyState: {
+    paddingVertical: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyEmptyTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#334155',
+    marginTop: 14,
+  },
+  historyEmptyText: {
+    fontSize: 13,
+    color: '#94A3B8',
+    textAlign: 'center',
+    maxWidth: 360,
+    marginTop: 6,
+    lineHeight: 18,
+  },
+  timelineContainer: {
+    paddingLeft: 4,
+    paddingBottom: 24,
+  },
+  timelineItem: {
+    flexDirection: 'row',
+    marginBottom: 20,
+  },
+  timelineLeftColumn: {
+    width: 28,
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  timelineDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  timelineVerticalLine: {
+    width: 2,
+    flex: 1,
+    backgroundColor: '#E2E8F0',
+    marginTop: 4,
+    marginBottom: -8,
+  },
+  timelineContentCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  timelineCardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  actionBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  actionBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  timelineRecordTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  timelineDateText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '500',
+  },
+  timelineUserRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F8FAFC',
+    padding: 8,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  timelineUserAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#166534',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timelineUserAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  timelineUserName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  timelineUserRole: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#64748B',
+  },
+  timelineUserEmail: {
+    fontSize: 11,
+    color: '#94A3B8',
+  },
+  timelineSummaryText: {
+    fontSize: 13,
+    color: '#334155',
+    marginBottom: 10,
+    lineHeight: 18,
+  },
+  diffTableContainer: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+    marginTop: 6,
+  },
+  diffTableHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  diffHeaderCol: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.5,
+  },
+  diffTableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
+  },
+  diffFieldCol: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  diffValBox: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  diffOldValText: {
+    fontSize: 11,
+    color: '#DC2626',
+    textDecorationLine: 'line-through',
+  },
+  diffNewValText: {
+    fontSize: 11,
+    color: '#16A34A',
+    fontWeight: '700',
+  },
+  historyModalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#BBF7D0',
+    backgroundColor: '#F0FDF4',
+  },
+  historyCloseFooterBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    cursor: 'pointer',
+  }
 });

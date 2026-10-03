@@ -18,6 +18,7 @@ const vehicleDetailsRoutes = require('./routes/vehicleDetailsRoutes');
 const vehiclePurchaseRoutes = require('./routes/vehiclePurchaseRoutes');
 const vehicleTollRoutes = require('./routes/vehicleTollRoutes');
 const premisesDetailsRoutes = require('./routes/premisesDetailsRoutes');
+const premisesInfoRoutes = require('./routes/premisesInfoRoutes');
 const premisesTypeRoutes = require('./routes/premisesTypeRoutes');
 const assetDetailsRoutes = require('./routes/assetDetailsRoutes');
 const assetCategoryRoutes = require('./routes/assetCategoryRoutes');
@@ -204,6 +205,7 @@ const tollGateRoutes = require('./routes/tollGateRoutes');
 app.use('/api/toll-gate', tollGateRoutes);
 app.use('/api/toll-gates', tollGateRoutes);
 app.use('/api/premises-details', premisesDetailsRoutes);
+app.use('/api/premises-info', premisesInfoRoutes);
 app.use('/api/premises-types', premisesTypeRoutes);
 app.use('/api/asset-details', assetDetailsRoutes);
 app.use('/api/asset-categories', assetCategoryRoutes);
@@ -290,6 +292,10 @@ app.use('/api/add-ons', addOnRoutes);
 app.use('/api/add-on', addOnRoutes);
 app.use('/api/addons', addOnRoutes);
 app.use('/api/addon', addOnRoutes);
+const auditHistoryRoutes = require('./routes/auditHistoryRoutes');
+app.use('/api/audit-history', auditHistoryRoutes);
+app.use('/api/audit-logs', auditHistoryRoutes);
+
 
 // Global Error Handler
 app.use((err, req, res, next) => {

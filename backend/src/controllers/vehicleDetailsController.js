@@ -1,6 +1,21 @@
 const db = require('../config/db');
 const fs = require('fs');
 const path = require('path');
+const { logAudit } = require('../utils/auditLogger');
+
+function extractVehicleDetailTitle(fieldData, fallbackId) {
+  if (!fieldData || typeof fieldData !== 'object') return `Vehicle #${fallbackId}`;
+  const vals = Object.values(fieldData);
+  const match = vals.find(v => typeof v === 'string' && v.includes(' - '));
+  if (match) return match;
+  for (const [k, v] of Object.entries(fieldData)) {
+    if (typeof v === 'string' && v.trim().length > 0 && isNaN(v) && !v.includes('/') && !v.includes('http') && v.length < 50) {
+      return v;
+    }
+  }
+  return `Vehicle #${fallbackId}`;
+}
+
 
 const resolveExpireDate = async (currentFieldId, fieldData) => {
   if (!currentFieldId || !fieldData) return null;
@@ -220,8 +235,27 @@ exports.saveVehicleDetails = async (req, res) => {
     const values = [finalVehicleId, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null, roleid || null, user_id || null, company_id || null];
 
     const result = await db.query(query, values);
+    const savedRecord = result.rows[0];
 
-    res.status(201).json(result.rows[0]);
+    // Log Creation Audit
+    try {
+      const vTitle = extractVehicleDetailTitle(processedFieldData, savedRecord.id);
+      logAudit({
+        req,
+        clientid: clientid || savedRecord.clientid,
+        company_id: company_id || savedRecord.company_id,
+        module_name: 'VEHICLE_DETAILS',
+        record_id: savedRecord.id,
+        record_title: vTitle,
+        action_type: 'CREATE',
+        action_summary: `Registered new vehicle: ${vTitle}`,
+        new_data: processedFieldData
+      }).catch(e => console.error('[AUDIT] Failed to log vehicle details creation:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing vehicle details create log:', e.message);
+    }
+
+    res.status(201).json(savedRecord);
   } catch (error) {
     console.error('Error saving vehicle details:', error);
     res.status(500).json({ message: 'Error saving vehicle details' });
@@ -347,19 +381,39 @@ exports.deleteVehicleDetails = async (req, res) => {
     const { id } = req.params;
 
     // Fetch the existing record to find associated files
-    const selectQuery = 'SELECT field_data FROM tbl_vehicle_details WHERE id = $1';
+    const selectQuery = 'SELECT * FROM tbl_vehicle_details WHERE id = $1';
     const selectResult = await db.query(selectQuery, [id]);
 
     if (selectResult.rowCount === 0) {
       return res.status(404).json({ message: 'Vehicle details record not found' });
     }
 
-    const oldFieldData = selectResult.rows[0].field_data;
+    const existingRecord = selectResult.rows[0];
+    const oldFieldData = existingRecord.field_data;
     const oldPaths = extractFilePaths(oldFieldData);
 
     // Delete the vehicle details record
     const query = 'DELETE FROM tbl_vehicle_details WHERE id = $1 RETURNING *';
     const result = await db.query(query, [id]);
+
+    // Log Deletion Audit
+    try {
+      const oldParsed = typeof oldFieldData === 'string' ? JSON.parse(oldFieldData) : (oldFieldData || {});
+      const vTitle = extractVehicleDetailTitle(oldParsed, id);
+      logAudit({
+        req,
+        clientid: existingRecord.clientid,
+        company_id: existingRecord.company_id,
+        module_name: 'VEHICLE_DETAILS',
+        record_id: id,
+        record_title: vTitle,
+        action_type: 'DELETE',
+        action_summary: `Deleted vehicle record: ${vTitle}`,
+        old_data: oldParsed
+      }).catch(e => console.error('[AUDIT] Failed to log vehicle details deletion:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing vehicle details delete log:', e.message);
+    }
 
     // Mark files as deleted in the attachment table
     for (const path of oldPaths) {
@@ -386,19 +440,20 @@ exports.updateVehicleDetails = async (req, res) => {
     const { vehicle_id, custom_field_id, field_data, clientid, country_id, moduleid, roleid, user_id, company_id } = req.body;
 
     // Fetch the existing record to find previously associated files
-    const selectQuery = 'SELECT vehicle_id, field_data FROM tbl_vehicle_details WHERE id = $1';
+    const selectQuery = 'SELECT * FROM tbl_vehicle_details WHERE id = $1';
     const selectResult = await db.query(selectQuery, [id]);
 
     if (selectResult.rowCount === 0) {
       return res.status(404).json({ message: 'Vehicle details record not found' });
     }
 
-    const oldFieldData = selectResult.rows[0].field_data;
+    const existingRecord = selectResult.rows[0];
+    const oldFieldData = existingRecord.field_data;
     const oldPaths = extractFilePaths(oldFieldData);
-    const existingVehicleId = selectResult.rows[0].vehicle_id;
+    const existingVehicleId = existingRecord.vehicle_id;
 
     // Save any new base64 files locally, insert new attachments, and replace their data with local paths
-    const processedFieldData = await processAndSyncFieldDataFiles(field_data, clientid);
+    const processedFieldData = await processAndSyncFieldDataFiles(field_data, clientid || existingRecord.clientid);
     const newPaths = extractFilePaths(processedFieldData);
 
     // Identify files that were removed
@@ -431,10 +486,42 @@ exports.updateVehicleDetails = async (req, res) => {
       RETURNING *
     `;
 
-    const values = [finalVehicleId, custom_field_id || null, jsonData, clientid || null, country_id || null, moduleid || null, roleid || null, user_id || null, company_id || null, id];
+    const values = [
+      finalVehicleId,
+      custom_field_id || null,
+      jsonData,
+      clientid || existingRecord.clientid || null,
+      country_id || existingRecord.country_id || null,
+      moduleid || existingRecord.moduleid || null,
+      roleid || existingRecord.roleid || null,
+      user_id || existingRecord.user_id || null,
+      company_id || existingRecord.company_id || null,
+      id
+    ];
     const result = await db.query(query, values);
+    const updatedRecord = result.rows[0];
 
-    res.status(200).json(result.rows[0]);
+    // Log Update Audit
+    try {
+      const oldParsed = typeof oldFieldData === 'string' ? JSON.parse(oldFieldData) : (oldFieldData || {});
+      const vTitle = extractVehicleDetailTitle(processedFieldData, id);
+      logAudit({
+        req,
+        clientid: clientid || existingRecord.clientid,
+        company_id: company_id || existingRecord.company_id,
+        module_name: 'VEHICLE_DETAILS',
+        record_id: id,
+        record_title: vTitle,
+        action_type: 'UPDATE',
+        action_summary: `Updated vehicle details for ${vTitle}`,
+        old_data: oldParsed,
+        new_data: processedFieldData
+      }).catch(e => console.error('[AUDIT] Failed to log vehicle details update:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing vehicle details update log:', e.message);
+    }
+
+    res.status(200).json(updatedRecord);
   } catch (error) {
     console.error('Error updating vehicle details:', error);
     res.status(500).json({ message: 'Error updating vehicle details' });

@@ -277,6 +277,26 @@ exports.adminChangePassword = async (req, res) => {
       return res.status(404).json({ message: 'User account not found for this email.' });
     }
 
+    try {
+      const empRes = await db.query('SELECT * FROM employee WHERE email = $1 AND (is_deleted = false OR is_deleted IS NULL) LIMIT 1', [email.toLowerCase().trim()]);
+      if (empRes.rows.length > 0) {
+        const emp = empRes.rows[0];
+        const { logAudit } = require('../utils/auditLogger');
+        await logAudit({
+          req,
+          clientid: emp.clientid,
+          company_id: emp.basecompany_id,
+          module_name: 'EMPLOYEE',
+          record_id: emp.id,
+          record_title: emp.full_name,
+          action_type: 'UPDATED',
+          action_summary: `Password reset/assigned for employee "${emp.full_name}" (${emp.email})`,
+        });
+      }
+    } catch (auditErr) {
+      console.warn('[AuditHistory] Failed to log password change audit:', auditErr.message);
+    }
+
     res.status(200).json({ message: 'Password updated successfully.' });
   } catch (error) {
     console.error('Error changing employee password:', error);

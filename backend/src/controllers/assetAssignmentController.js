@@ -1,5 +1,73 @@
 const db = require('../config/db');
 const { recalculateAssetInventory, logInventoryMovement } = require('../utils/inventorySync');
+const { logAudit } = require('../utils/auditLogger');
+
+// Helper to extract a friendly assignment title (e.g. "HP mouse 34 (Ana Loren Jimenez)")
+const extractAssignmentTitle = async (fieldData, id, assetId = null) => {
+  let assetName = '';
+  let employeeName = '';
+
+  if (fieldData) {
+    let parsed = typeof fieldData === 'string' ? JSON.parse(fieldData) : fieldData;
+    if (parsed && typeof parsed === 'object') {
+      // 1. Try to find asset name from assetItems
+      if (parsed.assetItems && Array.isArray(parsed.assetItems) && parsed.assetItems.length > 0) {
+        const itemNames = [];
+        for (const item of parsed.assetItems) {
+          if (item.asset_name) {
+            itemNames.push(item.asset_name);
+          } else if (item.asset_id) {
+            try {
+              const aRes = await db.query('SELECT field_data FROM tbl_asset WHERE id = $1', [item.asset_id]);
+              if (aRes.rows.length > 0) {
+                let aFd = aRes.rows[0].field_data;
+                if (typeof aFd === 'string') try { aFd = JSON.parse(aFd); } catch(e){}
+                const name = aFd?.['1781609374288'] || aFd?.asset_name || Object.values(aFd || {})[0];
+                if (name) itemNames.push(String(name));
+              }
+            } catch(e){}
+          }
+        }
+        if (itemNames.length > 0) assetName = itemNames.join(', ');
+      }
+
+      // 2. Try single asset_id if assetItems didn't give name
+      if (!assetName && (parsed.asset_id || assetId)) {
+        try {
+          const aRes = await db.query('SELECT field_data FROM tbl_asset WHERE id = $1', [parsed.asset_id || assetId]);
+          if (aRes.rows.length > 0) {
+            let aFd = aRes.rows[0].field_data;
+            if (typeof aFd === 'string') try { aFd = JSON.parse(aFd); } catch(e){}
+            const name = aFd?.['1781609374288'] || aFd?.asset_name || Object.values(aFd || {})[0];
+            if (name) assetName = String(name);
+          }
+        } catch(e){}
+      }
+
+      // 3. Try to resolve employee name
+      for (const [key, value] of Object.entries(parsed)) {
+        if (key !== 'assetItems' && value && typeof value === 'string' && value.length > 0 && value.length < 50 && !key.toLowerCase().includes('date') && !value.includes('-')) {
+          try {
+            const empRes = await db.query('SELECT full_name, name FROM employee WHERE id::text = $1', [value]);
+            if (empRes.rows.length > 0) {
+              employeeName = empRes.rows[0].full_name || empRes.rows[0].name || '';
+              break;
+            }
+          } catch(e){}
+        }
+      }
+    }
+  }
+
+  if (assetName && employeeName) {
+    return `${assetName} (${employeeName})`;
+  } else if (assetName) {
+    return assetName;
+  } else if (employeeName) {
+    return `Assignment to ${employeeName}`;
+  }
+  return `Assignment #${id}`;
+};
 
 // Helper to update stock status
 const updateStockStatus = async (assetItems, status) => {
@@ -101,6 +169,24 @@ exports.saveAssetAssignment = async (req, res) => {
     }
     if (asset_id) {
       await recalculateAssetInventory(asset_id, clientid, country_id);
+    }
+
+    // Log Creation Audit
+    try {
+      const aTitle = await extractAssignmentTitle(field_data, result.rows[0].id, asset_id);
+      logAudit({
+        req,
+        clientid: clientid || result.rows[0].clientid,
+        company_id: company_id || result.rows[0].company_id,
+        module_name: 'ASSET_ASSIGNMENT',
+        record_id: result.rows[0].id,
+        record_title: aTitle,
+        action_type: 'CREATE',
+        action_summary: `Created asset assignment: ${aTitle}`,
+        new_data: field_data
+      }).catch(e => console.error('[AUDIT] Failed to log asset assignment creation:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing asset assignment create log:', e.message);
     }
 
     res.status(201).json(result.rows[0]);
@@ -212,7 +298,7 @@ exports.updateAssetAssignment = async (req, res) => {
     const { asset_id, custom_field_id, field_data, clientid, country_id, moduleid, company_id } = req.body;
 
     // Get old record to free up old barcodes
-    const oldRecord = await db.query('SELECT asset_id, clientid, country_id, field_data FROM tbl_asset_assigned WHERE id = $1', [id]);
+    const oldRecord = await db.query('SELECT asset_id, clientid, country_id, company_id, field_data FROM tbl_asset_assigned WHERE id = $1', [id]);
     if (oldRecord.rows.length === 0) return res.status(404).json({ message: 'Not found' });
 
     const oldAssetId = oldRecord.rows[0].asset_id;
@@ -321,6 +407,25 @@ exports.updateAssetAssignment = async (req, res) => {
       await recalculateAssetInventory(aid, clientid || oldClientid, country_id || oldCountryId);
     }
 
+    // Log Update Audit
+    try {
+      const aTitle = await extractAssignmentTitle(field_data, id, asset_id);
+      logAudit({
+        req,
+        clientid: clientid || oldClientid,
+        company_id: company_id || oldRecord.rows[0].company_id,
+        module_name: 'ASSET_ASSIGNMENT',
+        record_id: id,
+        record_title: aTitle,
+        action_type: 'UPDATE',
+        action_summary: `Updated asset assignment for ${aTitle}`,
+        old_data: oldFieldData,
+        new_data: field_data
+      }).catch(e => console.error('[AUDIT] Failed to log asset assignment update:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing asset assignment update log:', e.message);
+    }
+
     res.status(200).json(result.rows[0]);
   } catch (error) {
     console.error('Error updating asset assignment:', error);
@@ -331,12 +436,13 @@ exports.updateAssetAssignment = async (req, res) => {
 exports.deleteAssetAssignment = async (req, res) => {
   try {
     const { id } = req.params;
-    const oldRecord = await db.query('SELECT asset_id, clientid, country_id, field_data FROM tbl_asset_assigned WHERE id = $1', [id]);
+    const oldRecord = await db.query('SELECT asset_id, clientid, country_id, company_id, field_data FROM tbl_asset_assigned WHERE id = $1', [id]);
     if (oldRecord.rows.length === 0) return res.status(404).json({ message: 'Not found' });
 
     const oldAssetId = oldRecord.rows[0].asset_id;
     const oldClientid = oldRecord.rows[0].clientid;
     const oldCountryId = oldRecord.rows[0].country_id;
+    const oldCompanyId = oldRecord.rows[0].company_id;
     const oldFieldData = typeof oldRecord.rows[0].field_data === 'string' ? JSON.parse(oldRecord.rows[0].field_data) : oldRecord.rows[0].field_data;
     
     let oldEmployeeId = null;
@@ -373,6 +479,25 @@ exports.deleteAssetAssignment = async (req, res) => {
           }
         }
       }
+    }
+
+    // Log Delete Audit
+    try {
+      const aTitle = await extractAssignmentTitle(oldFieldData, id, oldAssetId);
+      logAudit({
+        req,
+        clientid: oldClientid,
+        company_id: oldCompanyId,
+        module_name: 'ASSET_ASSIGNMENT',
+        record_id: id,
+        record_title: aTitle,
+        action_type: 'DELETE',
+        action_summary: `Deleted asset assignment for ${aTitle}`,
+        old_data: oldFieldData,
+        new_data: null
+      }).catch(e => console.error('[AUDIT] Failed to log asset assignment deletion:', e.message));
+    } catch (e) {
+      console.error('[AUDIT] Error preparing asset assignment delete log:', e.message);
     }
 
     await db.query('DELETE FROM tbl_asset_assigned WHERE id = $1', [id]);
