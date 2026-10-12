@@ -28,6 +28,19 @@ const COLORS = {
   purple: '#8B5CF6'
 };
 
+const THEME = COLORS;
+
+const companySelectStyle = {
+  backgroundColor: 'transparent',
+  color: '#FFFFFF',
+  border: 'none',
+  fontSize: '13px',
+  fontWeight: '700',
+  outline: 'none',
+  cursor: 'pointer',
+  padding: '6px 2px',
+};
+
 const isSmsCategory = (cat) => {
   if (!cat) return false;
   return ['National SMS', 'International SMS', 'Premium SMS', 'Roaming SMS'].includes(cat) || String(cat).toLowerCase().includes('sms');
@@ -46,12 +59,12 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
   const [sortColumn, setSortColumn] = useState('date'); // 'date' | 'source_number' | 'destination_number'
   const [sortDirection, setSortDirection] = useState('DESC'); // 'ASC' | 'DESC'
   const dateSortOrder = sortDirection; // for backward compatibility
-  
+
   const [selectedCompanyFilter, setSelectedCompanyFilter] = useState('All');
   const [availableCompanies, setAvailableCompanies] = useState([]);
-  
+
   const isSmsFilterSelected = isSmsCategory(selectedCategoryFilter);
-  
+
   // Date Range Filter States
   const [showDatePickerDropdown, setShowDatePickerDropdown] = useState(false);
   const [activeDatePreset, setActiveDatePreset] = useState('Custom Range');
@@ -255,7 +268,7 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
       const matchesCat = selectedCategoryFilter === 'All' || log.category === selectedCategoryFilter;
       const matchesProv = selectedProviderFilter === 'All' || (log.provider && log.provider.toLowerCase() === selectedProviderFilter.toLowerCase());
       const matchesMonth = selectedMonthFilter === 'All' || (log.call_date && log.call_date.toLowerCase().includes(selectedMonthFilter.toLowerCase()));
-      
+
       // Date Range Filter
       let matchesDateRange = true;
       if (appliedDateRange.from && appliedDateRange.to && log.call_date) {
@@ -275,17 +288,17 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
       const srcDigits = srcNum.replace(/\D/g, '');
       const destDigits = destNum.replace(/\D/g, '');
 
-      const matchesQuery = !rawQuery || 
+      const matchesQuery = !rawQuery ||
         (destNum.toLowerCase().includes(rawQuery)) ||
         (srcNum.toLowerCase().includes(rawQuery)) ||
         (digitQuery.length >= 2 && (srcDigits.includes(digitQuery) || destDigits.includes(digitQuery))) ||
         (log.country_name && log.country_name.toLowerCase().includes(rawQuery)) ||
         (log.provider && log.provider.toLowerCase().includes(rawQuery)) ||
         (log.bill_number && log.bill_number.toLowerCase().includes(rawQuery));
-      
-      const matchesCompany = selectedCompanyFilter === 'All' || 
+
+      const matchesCompany = selectedCompanyFilter === 'All' ||
         (log.company_name && log.company_name.toLowerCase() === selectedCompanyFilter.toLowerCase());
-      
+
       return matchesCat && matchesProv && matchesMonth && matchesDateRange && matchesCompany && matchesQuery;
     })
     .sort((a, b) => {
@@ -375,7 +388,7 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
             <select
               value={selectedCompanyFilter}
               onChange={(e) => handleCompanyChange(e.target.value)}
-              style={styles.companySelect}
+              style={companySelectStyle}
             >
               <option value="All" style={{ color: '#0F172A', fontWeight: '700' }}>🏢 All Companies</option>
               {availableCompanies.map((comp, idx) => (
@@ -831,7 +844,7 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
                           setFromDateInput(e.target.value);
                           setActiveDatePreset('Custom Range');
                         }}
-                        onClick={(e) => { try { if (e.target.showPicker) e.target.showPicker(); } catch(err){} }}
+                        onClick={(e) => { try { if (e.target.showPicker) e.target.showPicker(); } catch (err) { } }}
                         style={{
                           width: '100%',
                           padding: '8px 12px',
@@ -856,7 +869,7 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
                           setToDateInput(e.target.value);
                           setActiveDatePreset('Custom Range');
                         }}
-                        onClick={(e) => { try { if (e.target.showPicker) e.target.showPicker(); } catch(err){} }}
+                        onClick={(e) => { try { if (e.target.showPicker) e.target.showPicker(); } catch (err) { } }}
                         style={{
                           width: '100%',
                           padding: '8px 12px',
@@ -909,7 +922,7 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
             </View>
 
             {/* Clear Filters Button */}
-            <TouchableOpacity 
+            <TouchableOpacity
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -1134,16 +1147,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 3,
-  },
-  companySelect: {
-    backgroundColor: 'transparent',
-    color: '#FFFFFF',
-    border: 'none',
-    fontSize: '13px',
-    fontWeight: '700',
-    outline: 'none',
-    cursor: 'pointer',
-    padding: '6px 2px',
   },
   kpiRow: {
     flexDirection: 'row',
@@ -1572,5 +1575,112 @@ const styles = StyleSheet.create({
   moreFiltersBtnTextActive: {
     color: COLORS.primary,
     fontWeight: '800'
-  }
+  },
+  viewDetailPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'center'
+  },
+  viewDetailPillText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700'
+  },
+
+  // DRILL-DOWN MODAL
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16
+  },
+  modalContentCard: {
+    width: '100%',
+    maxWidth: 720,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 20
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    backgroundColor: '#FFFFFF'
+  },
+  modalIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.textPrimary
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2
+  },
+  modalCloseBtn: {
+    padding: 6
+  },
+  modalFooter: {
+    padding: 14,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    alignItems: 'flex-end',
+    backgroundColor: '#F8FAFC'
+  },
+  modalCloseFooterBtn: {
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8
+  },
+  modalCloseFooterBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.textPrimary
+  },
+insidePlanTag: {
+  backgroundColor: '#ECFDF5',
+    paddingHorizontal: 6,
+      paddingVertical: 2,
+        borderRadius: 4,
+          alignSelf: 'flex-start'
+},
+insidePlanTagText: {
+  color: '#065F46',
+    fontSize: 11,
+      fontWeight: '700'
+},
+overLimitTag: {
+  backgroundColor: '#FEF2F2',
+    paddingHorizontal: 6,
+      paddingVertical: 2,
+        borderRadius: 4,
+          alignSelf: 'flex-start'
+},
+overLimitTagText: {
+  color: '#991B1B',
+    fontSize: 11,
+      fontWeight: '700'
+}
 });

@@ -46,6 +46,7 @@ import PlanManagementTab from './PlanManagementTab';
 import SimPlanTab from './SimPlanTab';
 import SimConnectionTypeTab from './SimConnectionTypeTab';
 import TelecomProviderTab from './TelecomProviderTab';
+import TelecomTestTab from './TelecomTestTab';
 import TelecomReportTab from './TelecomReportTab';
 import TeleCategoryTab from './TeleCategoryTab';
 import TeleChargeTypeTab from './TeleChargeTypeTab';
@@ -2527,6 +2528,7 @@ export default function DashboardScreen({ user, onSignOut }) {
 
     // 1. Telecom Section Priority (Separated to prevent ID collisions across Local and Live databases)
     if (isTele) {
+      if (r === '/telecom-test' || r === '/telecome-test' || n.includes('test') || r.includes('test')) return 'telecom_test';
       if (r === '/telecom-details' || r === '/telecome-details' || n.includes('detail') || r.includes('detail')) return 'sim_details';
       if (r === '/telecom-bill-form' || r === '/telecom-bill' || n.includes('bill') || r.includes('bill')) return 'telecom_bill';
       if (r === '/telecom-report' || r === '/telecome-report' || r === '/telecome_report' || r === '/telecom_report' || n.includes('report') || r.includes('report')) return 'telecom_report';
@@ -2555,6 +2557,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     }
 
     // 3. Explicit Route matches
+    if (r === '/telecom-test' || r === '/telecome-test' || n === 'telecom test' || n === 'telecome test') return 'telecom_test';
     if (r === '/telecom-details' || r === '/telecome-details') return 'sim_details';
     if (r === '/telecom-bill-form' || r === '/telecom-bill') return 'telecom_bill';
     if (r === '/telecom-report' || r === '/telecome-report' || r === '/telecome_report' || r === '/telecom_report') return 'telecom_report';
@@ -7061,6 +7064,8 @@ export default function DashboardScreen({ user, onSignOut }) {
       case 'telecom_data':
       case 'telecome_data':
         return <SimDetailsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('sim_details')} checkRowPermission={(compId, act) => checkRowPermission('sim_details', compId, act)} title="Telecom Data" buttonLabel="+ Add Telecom Data" />;
+      case 'telecom_test':
+        return <TelecomTestTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'telecom_bill':
       case 'telecome_bill':
         return <TelecomBillTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('telecom_bill')} checkRowPermission={(compId, act) => checkRowPermission('telecom_bill', compId, act)} />;
