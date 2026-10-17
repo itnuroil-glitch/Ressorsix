@@ -812,7 +812,7 @@ exports.getEmployeesByCompanyAll = async (req, res) => {
     } else {
       targetCompanyName = trimmedParam;
       const cRes = await db.query(
-        'SELECT id, company_name, clientid FROM company WHERE LOWER(TRIM(company_name)) = LOWER(TRIM($1)) OR LOWER(TRIM(name)) = LOWER(TRIM($1)) LIMIT 1',
+        'SELECT id, company_name, clientid FROM company WHERE LOWER(TRIM(company_name)) = LOWER(TRIM($1)) OR LOWER(TRIM(short_code)) = LOWER(TRIM($1)) LIMIT 1',
         [trimmedParam]
       );
       if (cRes.rows.length > 0) {

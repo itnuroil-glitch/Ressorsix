@@ -12,6 +12,7 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as XLSX from 'xlsx';
 import { API_URL } from '../config';
+import { TELECOM_DATASETS, CONNECTION_LINES, getMatchingDataset } from './telecomTestData';
 
 // -----------------------------------------------------------------------------
 // PREMIUM DESIGN TOKENS & COLOR PALETTE
@@ -585,7 +586,7 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
 
   // Filter lists
   const availableCompanies = useMemo(() => {
-    const list = new Set(['All', 'ASAS GEN TR LLC']);
+    const list = new Set(['All', 'ASAS GEN TR LLC', 'Bynur Agro Trading L.L.C', 'Nuragro FZE']);
     dbBills.forEach(b => {
       const comp = b.company_name || b.Company;
       if (comp) list.add(comp);
@@ -594,28 +595,41 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
   }, [dbBills]);
 
   const availableAccounts = useMemo(() => {
-    const list = new Set(['All']);
-    if (filterCompany === 'All' || filterCompany === 'ASAS GEN TR LLC') {
-      list.add('054 305 1035');
-    }
+    const list = [{ value: 'All', label: 'All Accounts' }];
+    CONNECTION_LINES.forEach(line => {
+      const comp = line.company.toLowerCase();
+      const selComp = filterCompany.toLowerCase();
+      if (filterCompany === 'All' || comp.includes(selComp) || selComp.includes(comp)) {
+        list.push({
+          value: line.mobile,
+          label: `${line.mobile} · ${line.holder} (${line.department || line.holderType})`
+        });
+      }
+    });
     dbBills.forEach(b => {
       const comp = (b.company_name || b.Company || '').trim().toLowerCase();
       const mob = b.mobile_number || b['Mobile Number / Account'];
-      if (filterCompany === 'All' || comp === filterCompany.trim().toLowerCase()) {
-        if (mob) list.add(mob);
+      if (mob && !list.some(item => item.value === mob)) {
+        if (filterCompany === 'All' || comp.includes(filterCompany.toLowerCase())) {
+          list.push({
+            value: mob,
+            label: `${mob} · ${b.company_name || 'DB Account'}`
+          });
+        }
       }
     });
-    return Array.from(list);
+    return list;
   }, [dbBills, filterCompany]);
 
   // Apply & Reset Filters logic
   const handleApplyFilters = () => {
-    // 1. If Company is ASAS GEN TR LLC
-    if (filterCompany === 'ASAS GEN TR LLC') {
+    // 1. Check audited reference datasets (Jun 2026, Aug 2026, Sep 2026 for ASAS & Bynur)
+    const matchDataset = getMatchingDataset(filterCompany, filterMobile || filterAccount, filterPeriod);
+    if (matchDataset) {
       setDataSourceMode('reference');
-      setDashboardData(REFERENCE_DASHBOARD_DATA);
+      setDashboardData(matchDataset);
       setSelectedDbBillId(null);
-      showToast && showToast('Applied filter: ASAS GEN TR LLC (Reference Audit)', 'success');
+      showToast && showToast(`Loaded ${matchDataset.account.billingPeriod} Statement: ${matchDataset.account.companyName} (${matchDataset.account.mobileNumber})`, 'success');
       return;
     }
 
@@ -653,20 +667,16 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
         setDataSourceMode('database');
         const selected = matchingBills[0];
         handleSelectDbBill(selected.tele_bill_id || selected.id);
-        showToast && showToast(`Loaded ${matchingBills.length} matching bill(s) for ${filterCompany !== 'All' ? filterCompany : (filterAccount || 'selection')}`, 'success');
+        showToast && showToast(`Loaded ${matchingBills.length} matching bill(s) from database`, 'success');
         return;
       }
     }
 
-    // 3. Fallback checks
-    if (filterCompany === 'All' && !filterMobile.trim() && filterAccount === 'All') {
-      setDataSourceMode('reference');
-      setDashboardData(REFERENCE_DASHBOARD_DATA);
-      setSelectedDbBillId(null);
-      showToast && showToast('Loaded Reference Audit (Aug 2026)', 'success');
-    } else {
-      showToast && showToast(`No matching bills found for ${filterCompany !== 'All' ? filterCompany : ''} ${filterMobile || filterAccount || ''}`.trim(), 'warning');
-    }
+    // 3. Fallback to default
+    setDataSourceMode('reference');
+    setDashboardData(TELECOM_DATASETS['ASAS-0543051035-AUG2026']);
+    setSelectedDbBillId(null);
+    showToast && showToast('Loaded Reference Audit Statement (Aug 2026)', 'info');
   };
 
   const handleResetFilters = () => {
@@ -674,11 +684,11 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
     setFilterAccount('All');
     setFilterMobile('');
     setFilterProvider('All');
-    setFilterPeriod('Aug 2026');
+    setFilterPeriod('All');
     setDataSourceMode('reference');
-    setDashboardData(REFERENCE_DASHBOARD_DATA);
+    setDashboardData(TELECOM_DATASETS['ASAS-0543051035-AUG2026']);
     setSelectedDbBillId(null);
-    showToast && showToast('Filters reset to default reference statement', 'info');
+    showToast && showToast('Filters reset to default statement', 'info');
   };
 
   // Computed metrics
@@ -691,7 +701,7 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
     const excessPercent = totalBill > 0 ? ((excess / totalBill) * 100).toFixed(1) : '0.0';
 
     const numbers = dashboardData.dialledNumbers || [];
-    const totalCalls = numbers.reduce((acc, curr) => acc + (parseInt(curr.calls, 10) || 0), 0);
+    const totalCalls = dashboardData.billSummary?.totalCalls || numbers.reduce((acc, curr) => acc + (parseInt(curr.calls, 10) || 0), 0);
     const totalMinutes = numbers.reduce((acc, curr) => acc + (parseFloat(curr.totalMinutes) || 0), 0);
     const totalExtraCost = numbers.reduce((acc, curr) => acc + (parseFloat(curr.extraCost) || 0), 0);
 
@@ -699,16 +709,16 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
     const th = Math.floor(totalSeconds / 3600);
     const tm = Math.floor((totalSeconds % 3600) / 60);
     const ts = totalSeconds % 60;
-    const totalTalkTimeFormatted = totalCalls > 0 && numbers.length === 75
+    const totalTalkTimeFormatted = dashboardData.billSummary?.totalTalkTimeFormatted || (totalCalls > 0 && numbers.length === 75
       ? '22:53:53'
-      : `${th}:${String(tm).padStart(2, '0')}:${String(ts).padStart(2, '0')}`;
+      : `${th}:${String(tm).padStart(2, '0')}:${String(ts).padStart(2, '0')}`);
 
     const avgSec = totalCalls > 0 ? Math.round(totalSeconds / totalCalls) : 0;
     const am = Math.floor(avgSec / 60);
     const as = avgSec % 60;
-    const avgCallLengthFormatted = totalCalls > 0 && numbers.length === 75
+    const avgCallLengthFormatted = dashboardData.billSummary?.avgCallDuration || (totalCalls > 0 && numbers.length === 75
       ? '2:09'
-      : `${am}:${String(as).padStart(2, '0')}`;
+      : `${am}:${String(as).padStart(2, '0')}`);
 
     let mostCalled = null;
     let longestTalk = null;
@@ -742,7 +752,7 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
       excessPercent,
       totalCalls,
       totalTalkTimeFormatted,
-      uniqueNumbers: numbers.length,
+      uniqueNumbers: dashboardData.billSummary?.uniqueNumbers || numbers.length,
       avgCallLengthFormatted,
       totalExtraCost,
       mostCalled,
@@ -1224,6 +1234,93 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
                       {dashboardData.account?.planName || 'Special SMB offer5 (10.5 GB)'}
                     </Text>
                   </View>
+
+                  {dashboardData.account?.holder && (
+                    <View style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      backgroundColor: '#ECFDF5',
+                      paddingHorizontal: 11,
+                      paddingVertical: 5,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: '#A7F3D0'
+                    }}>
+                      <Ionicons name="person" size={13} color="#059669" />
+                      <Text style={{ fontSize: 12, color: '#047857', fontWeight: '600' }}>Holder:</Text>
+                      <Text style={{ fontSize: 12.5, fontWeight: '800', color: '#065F46' }}>
+                        {dashboardData.account.holder} {dashboardData.account.holderType ? `(${dashboardData.account.holderType})` : ''}
+                      </Text>
+                    </View>
+                  )}
+
+                  {dashboardData.account?.approvedLimit && (
+                    <View style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      backgroundColor: parseFloat(dashboardData.billSummary?.totalBill || 0) > parseFloat(dashboardData.account.approvedLimit) ? '#FFF1F2' : '#F0FDF4',
+                      paddingHorizontal: 11,
+                      paddingVertical: 5,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: parseFloat(dashboardData.billSummary?.totalBill || 0) > parseFloat(dashboardData.account.approvedLimit) ? '#FECDD3' : '#BBF7D0'
+                    }}>
+                      <Ionicons name="shield-outline" size={13} color={parseFloat(dashboardData.billSummary?.totalBill || 0) > parseFloat(dashboardData.account.approvedLimit) ? '#BE123C' : '#166534'} />
+                      <Text style={{ fontSize: 12, color: '#64748B' }}>Limit:</Text>
+                      <Text style={{ fontSize: 12.5, fontWeight: '800', color: '#0F172A' }}>
+                        AED {dashboardData.account.approvedLimit}
+                      </Text>
+                      {parseFloat(dashboardData.billSummary?.totalBill || 0) > parseFloat(dashboardData.account.approvedLimit) && (
+                        <View style={{ backgroundColor: '#BE123C', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 }}>
+                          <Text style={{ fontSize: 10.5, fontWeight: '800', color: '#FFF' }}>
+                            +AED {(parseFloat(dashboardData.billSummary?.totalBill || 0) - parseFloat(dashboardData.account.approvedLimit)).toFixed(2)} Over
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {dashboardData.account?.contractDays && (
+                    <View style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      backgroundColor: '#FEF3C7',
+                      paddingHorizontal: 11,
+                      paddingVertical: 5,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: '#FDE68A'
+                    }}>
+                      <Ionicons name="time-outline" size={13} color="#B45309" />
+                      <Text style={{ fontSize: 12, color: '#92400E', fontWeight: '600' }}>Contract:</Text>
+                      <Text style={{ fontSize: 12.5, fontWeight: '800', color: '#78350F' }}>
+                        {dashboardData.account.contractDays} ({dashboardData.account.lineStatus || 'Active'})
+                      </Text>
+                    </View>
+                  )}
+
+                  {dashboardData.account?.costCenter && (
+                    <View style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      backgroundColor: '#F8FAFC',
+                      paddingHorizontal: 11,
+                      paddingVertical: 5,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: '#CBD5E1'
+                    }}>
+                      <Ionicons name="business-outline" size={13} color="#475569" />
+                      <Text style={{ fontSize: 12, color: '#64748B' }}>Cost Center:</Text>
+                      <Text style={{ fontSize: 12.5, fontWeight: '700', color: '#334155' }}>
+                        {dashboardData.account.costCenter}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </View>
 
@@ -1367,11 +1464,12 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
                   const newComp = e.target.value;
                   setFilterCompany(newComp);
                   setFilterAccount('All');
-                  if (newComp === 'ASAS GEN TR LLC') {
+                  const match = getMatchingDataset(newComp, filterMobile, filterPeriod);
+                  if (match) {
                     setDataSourceMode('reference');
-                    setDashboardData(REFERENCE_DASHBOARD_DATA);
+                    setDashboardData(match);
                     setSelectedDbBillId(null);
-                    showToast && showToast('Loaded Reference Audit for ASAS GEN TR LLC', 'success');
+                    showToast && showToast(`Loaded ${match.account.billingPeriod} statement for ${match.account.companyName}`, 'success');
                   } else if (newComp !== 'All') {
                     const match = dbBills.find(b => (b.company_name || b.Company || '').toLowerCase() === newComp.toLowerCase());
                     if (match) {
@@ -1396,7 +1494,7 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
               </select>
             </View>
 
-            <View style={{ flex: 1, minWidth: 160 }}>
+            <View style={{ flex: 1, minWidth: 180 }}>
               <Text style={{ fontSize: 11, fontWeight: '800', color: '#64748B', letterSpacing: 0.5, marginBottom: 5 }}>
                 EMPLOYEE / ACCOUNT
               </Text>
@@ -1405,10 +1503,12 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
                 onChange={(e) => {
                   const newAcc = e.target.value;
                   setFilterAccount(newAcc);
-                  if (newAcc === '054 305 1035') {
+                  const match = getMatchingDataset(filterCompany, newAcc, filterPeriod);
+                  if (match) {
                     setDataSourceMode('reference');
-                    setDashboardData(REFERENCE_DASHBOARD_DATA);
+                    setDashboardData(match);
                     setSelectedDbBillId(null);
+                    showToast && showToast(`Loaded ${match.account.billingPeriod} statement for ${match.account.mobileNumber}`, 'success');
                   } else if (newAcc !== 'All') {
                     const match = dbBills.find(b => (b.mobile_number || b['Mobile Number / Account']) === newAcc);
                     if (match) {
@@ -1429,7 +1529,7 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
                   backgroundColor: '#F8FAFC'
                 }}
               >
-                {availableAccounts.map(a => <option key={a} value={a}>{a}</option>)}
+                {availableAccounts.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
               </select>
             </View>
 
@@ -1483,13 +1583,23 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
               </select>
             </View>
 
-            <View style={{ width: 130 }}>
+            <View style={{ width: 135 }}>
               <Text style={{ fontSize: 11, fontWeight: '800', color: '#64748B', letterSpacing: 0.5, marginBottom: 5 }}>
                 BILLING PERIOD
               </Text>
               <select
                 value={filterPeriod}
-                onChange={(e) => setFilterPeriod(e.target.value)}
+                onChange={(e) => {
+                  const newPeriod = e.target.value;
+                  setFilterPeriod(newPeriod);
+                  const match = getMatchingDataset(filterCompany, filterMobile || filterAccount, newPeriod);
+                  if (match) {
+                    setDataSourceMode('reference');
+                    setDashboardData(match);
+                    setSelectedDbBillId(null);
+                    showToast && showToast(`Loaded ${match.account.billingPeriod} statement`, 'success');
+                  }
+                }}
                 style={{
                   width: '100%',
                   padding: '9px 12px',
@@ -1502,8 +1612,9 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
                   backgroundColor: '#F8FAFC'
                 }}
               >
+                <option value="All">All Periods</option>
+                <option value="Sep 2026">Sep 2026</option>
                 <option value="Aug 2026">Aug 2026</option>
-                <option value="Jul 2026">Jul 2026</option>
                 <option value="Jun 2026">Jun 2026</option>
               </select>
             </View>
@@ -1559,7 +1670,7 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
               </Text>
             </View>
             <Text style={{ fontSize: 12.5, color: '#64748B' }}>
-              Base Plan: <Text style={{ fontWeight: '800', color: '#0F172A' }}>40.6%</Text> · Excess Overage: <Text style={{ fontWeight: '800', color: '#E11D48' }}>59.4%</Text>
+              Base Plan: <Text style={{ fontWeight: '800', color: '#0F172A' }}>{((metrics.planInclVat / (metrics.totalBill || 1)) * 100).toFixed(1)}%</Text> · Excess Overage: <Text style={{ fontWeight: '800', color: '#E11D48' }}>{metrics.excessPercent}%</Text>
             </Text>
           </View>
 
@@ -1572,45 +1683,27 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
             overflow: 'hidden',
             marginBottom: 14
           }}>
-            {/* Plan Base: 40.6% */}
-            <View style={{ width: '40.6%', backgroundColor: '#1E293B' }} />
-            {/* Extra Mobile Voice: 46.6% */}
-            <View style={{ width: '46.6%', backgroundColor: '#E11D48' }} />
-            {/* Sharjah Parking: 11.6% */}
-            <View style={{ width: '11.6%', backgroundColor: '#D97706' }} />
-            {/* Extra Landline: 1.2% */}
-            <View style={{ width: '1.2%', backgroundColor: '#7C3AED' }} />
+            {(dashboardData.budgetSplit || [
+              { name: 'Contractual Plan', amt: metrics.planInclVat.toFixed(2), pct: `${((metrics.planInclVat / (metrics.totalBill || 1)) * 100).toFixed(1)}%`, color: '#1E293B' },
+              { name: 'Extra Overage', amt: metrics.excess.toFixed(2), pct: `${metrics.excessPercent}%`, color: '#E11D48' }
+            ]).map((seg, idx) => (
+              <View key={idx} style={{ width: seg.pct, backgroundColor: seg.color }} />
+            ))}
           </View>
 
           {/* Legend Items */}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 14, alignItems: 'center' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#1E293B' }} />
-              <Text style={{ fontSize: 12, color: '#475569' }}>
-                Contractual Plan: <Text style={{ fontWeight: '800', color: '#0F172A' }}>AED 105.00</Text> (40.6%)
-              </Text>
-            </View>
-
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#E11D48' }} />
-              <Text style={{ fontSize: 12, color: '#475569' }}>
-                Extra Mobile Calls: <Text style={{ fontWeight: '800', color: '#E11D48' }}>AED 120.71</Text> (46.6%)
-              </Text>
-            </View>
-
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#D97706' }} />
-              <Text style={{ fontSize: 12, color: '#475569' }}>
-                Sharjah Parking & SMS: <Text style={{ fontWeight: '800', color: '#D97706' }}>AED 29.99</Text> (11.6%)
-              </Text>
-            </View>
-
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#7C3AED' }} />
-              <Text style={{ fontSize: 12, color: '#475569' }}>
-                Landline 06-5995922: <Text style={{ fontWeight: '800', color: '#7C3AED' }}>AED 3.11</Text> (1.2%)
-              </Text>
-            </View>
+            {(dashboardData.budgetSplit || [
+              { name: 'Contractual Plan', amt: metrics.planInclVat.toFixed(2), pct: `${((metrics.planInclVat / (metrics.totalBill || 1)) * 100).toFixed(1)}%`, color: '#1E293B' },
+              { name: 'Extra Overage', amt: metrics.excess.toFixed(2), pct: `${metrics.excessPercent}%`, color: '#E11D48' }
+            ]).map((seg, idx) => (
+              <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: seg.color }} />
+                <Text style={{ fontSize: 12, color: '#475569' }}>
+                  {seg.name}: <Text style={{ fontWeight: '800', color: seg.color === '#1E293B' ? '#0F172A' : seg.color }}>AED {seg.amt}</Text> ({seg.pct})
+                </Text>
+              </View>
+            ))}
           </View>
         </View>
 
@@ -1765,7 +1858,7 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
                 {metrics.totalCalls}
               </Text>
               <Text style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>
-                636 Mobile · 4 Landline calls
+                {metrics.totalCalls} total outgoing connections
               </Text>
             </View>
 
@@ -1792,7 +1885,7 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
                 {metrics.totalTalkTimeFormatted}
               </Text>
               <Text style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>
-                1,374 cumulative minutes
+                {dashboardData.billSummary?.minutesUsedTotal ? `${dashboardData.billSummary.minutesUsedTotal} cumulative minutes` : 'cumulative minutes'}
               </Text>
             </View>
 
@@ -1819,7 +1912,7 @@ export default function TelecomTestTab({ isSidebarCollapsed, user, showToast }) 
                 {metrics.uniqueNumbers}
               </Text>
               <Text style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>
-                Top 4 account for 52% of calls
+                {metrics.concentrationCallPct && metrics.concentrationCallPct !== '0' ? `Top 4 account for ${metrics.concentrationCallPct}% of calls` : 'Unique dialled contacts'}
               </Text>
             </View>
 
