@@ -50,6 +50,7 @@ import TelecomConnectionTab from './TelecomConnectionTab';
 import PhoneNumberAssignmentTab from './PhoneNumberAssignmentTab';
 import TelecomTestTab from './TelecomTestTab';
 import ImportTelecomBillsTab from './ImportTelecomBillsTab';
+import ExcessUsageReportTab from './ExcessUsageReportTab';
 import TelecomReportTab from './TelecomReportTab';
 import TeleCategoryTab from './TeleCategoryTab';
 import TeleChargeTypeTab from './TeleChargeTypeTab';
@@ -973,6 +974,18 @@ export default function DashboardScreen({ user, onSignOut }) {
             module_name: "Import Telecom Bills",
             parent_id: telecomParent.id,
             route: "/import-telecom-bills",
+            status: "active"
+          });
+        }
+
+        // Self-healing fallback for Excess Usage Report module under Telecom parent
+        const hasExcessUsageReport = data.some(m => (m.module_name || '').toLowerCase().includes('excess usage') || m.route === '/excess-usage-report');
+        if (telecomParent && !hasExcessUsageReport) {
+          data.push({
+            id: 99960,
+            module_name: "Excess Usage Report",
+            parent_id: telecomParent.id,
+            route: "/excess-usage-report",
             status: "active"
           });
         }
@@ -2580,6 +2593,8 @@ export default function DashboardScreen({ user, onSignOut }) {
     let r = route ? route.toLowerCase().trim() : '';
     let n = name ? name.toLowerCase().trim() : '';
 
+    if (r === '/excess-usage-report' || n === 'excess usage report') return 'excess_usage_report';
+
     const isTele = n.includes('tele') || r.includes('tele') || n.includes('sim') || r.includes('sim');
     const isToll = n.includes('toll') || r.includes('toll');
 
@@ -2783,7 +2798,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (tabId === 'plans') {
       return String(user.roleId) === '1';
     }
-    if (tabId === 'dashboard' || tabId === 'profile' || tabId === 'shipments' || tabId === 'analytics' || tabId === 'tele_doc_type' || tabId === 'telecom_report' || tabId === 'telecome_report' || tabId === 'telecom_connection' || tabId === 'telecome_connection' || tabId === 'phone_number_assignment' || tabId === 'phone_assignment') {
+    if (tabId === 'dashboard' || tabId === 'profile' || tabId === 'shipments' || tabId === 'analytics' || tabId === 'tele_doc_type' || tabId === 'telecom_report' || tabId === 'telecome_report' || tabId === 'telecom_connection' || tabId === 'telecome_connection' || tabId === 'phone_number_assignment' || tabId === 'phone_assignment' || tabId === 'excess_usage_report') {
       return true;
     }
     const tabModules = modules.filter(m => getTabIdByRoute(m.module_name, m.route, m.id) === tabId);
@@ -7132,6 +7147,8 @@ export default function DashboardScreen({ user, onSignOut }) {
         return <SimDetailsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('sim_details')} checkRowPermission={(compId, act) => checkRowPermission('sim_details', compId, act)} title="Telecom Data" buttonLabel="+ Add Telecom Data" />;
       case 'telecom_test':
         return <TelecomTestTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
+      case 'excess_usage_report':
+        return <ExcessUsageReportTab user={user} showToast={showToast} onNavigate={(t) => setActiveTab(t)} />;
       case 'import_telecom_bills':
       case 'import_telecome_bills':
         return <ImportTelecomBillsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
