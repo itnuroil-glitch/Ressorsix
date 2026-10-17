@@ -99,6 +99,85 @@ const filterBillDisplayItems = (rawItems) => {
   return filtered;
 };
 
+// -----------------------------------------------------------------------------
+// Telecom Bill Details (view popup): figures + plan comparison built from real data
+// -----------------------------------------------------------------------------
+const EXCESS_MARGIN_AED = 10;
+
+const buildBillInsights = (rec, connections, employees) => {
+  const num = (v) => {
+    const n = parseFloat(String(v === undefined || v === null ? '' : v).replace(/,/g, ''));
+    return isNaN(n) ? 0 : n;
+  };
+  const keyOf = (v) => String(v || '').replace(/\D/g, '').slice(-9);
+  const money = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const total = num(rec?.total_bill ?? rec?.['Total Bill'] ?? rec?.total_amount);
+  const plan = num(rec?.plan_rental ?? rec?.['Monthly Plan Amount'] ?? rec?.['Service Rental']);
+  const usage = num(rec?.usage_charges ?? rec?.['Usage Charges']);
+  const vat = num(rec?.vat_current_period ?? rec?.vat_amount ?? rec?.['VAT']);
+  const excess = Math.max(0, total - vat - plan);
+
+  const mobile = rec?.mobile_number || rec?.['Mobile Number / Account'] || rec?.account || '';
+  const key = keyOf(mobile);
+  const conn = key ? (connections || []).find(c => keyOf(c.connection_number) === key) : null;
+  let employee = conn ? ((conn.employee_name || '').trim() || 'Unassigned') : (key ? 'Not in system' : '—');
+  if (conn && employee !== 'Unassigned') {
+    const emp = (employees || []).find(e => (e.full_name || e.name) === conn.employee_name);
+    if (emp && emp.department_name) employee = `${employee} · ${emp.department_name}`;
+  }
+
+  // plan limit vs actual usage (used values come from the imported call logs when present)
+  const logs = Array.isArray(rec?.call_logs) ? rec.call_logs : [];
+  const toMin = (d) => {
+    const m = /^(\d+):(\d{2}):(\d{2})$/.exec(String(d || '').trim());
+    return m ? Math.ceil((Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])) / 60) : 0;
+  };
+  const groupOf = (l) => {
+    const c = String(l.category || '').toLowerCase();
+    if (/special|premium/.test(c)) return 'special';
+    if (/international|roaming/.test(c)) return 'intl';
+    return 'local';
+  };
+  const agg = { local: { min: 0, amt: 0, n: 0 }, intl: { min: 0, amt: 0, n: 0 }, special: { min: 0, amt: 0, n: 0 } };
+  logs.forEach(l => { const g = agg[groupOf(l)]; g.min += toMin(l.duration); g.amt += num(l.amount); g.n += 1; });
+  const hasLogs = logs.length > 0;
+
+  const limitNum = (v) => { const n = parseFloat(String(v === undefined || v === null ? '' : v).replace(/,/g, '')); return isNaN(n) ? null : n; };
+  const minRow = (label, limitRaw, g) => {
+    const limit = limitNum(limitRaw);
+    const used = hasLogs ? g.min : null;
+    const over = (limit !== null && used !== null && used > limit) ? used - limit : null;
+    return {
+      item: label,
+      planLimit: limit !== null ? `${limit.toLocaleString()} min` : '–',
+      used: used !== null ? `${used.toLocaleString()} min` : '–',
+      overBy: over !== null ? `+${over.toLocaleString()} min` : '–',
+      extraCharge: over !== null && g.amt > 0 ? money(g.amt) : '–',
+      isExceeded: over !== null
+    };
+  };
+  const dataLimit = conn ? limitNum(conn.data_allowance) : null;
+  const smsLimit = conn ? limitNum(conn.local_sms) : null;
+  const rows = [
+    minRow('Local minutes', conn?.local_minutes, agg.local),
+    minRow('International minutes', conn?.international_minutes, agg.intl),
+    { item: 'Data', planLimit: dataLimit !== null ? `${dataLimit.toLocaleString()} ${conn.data_unit || 'GB'}` : '–', used: '–', overBy: '–', extraCharge: '–', isExceeded: false },
+    { item: 'Local SMS', planLimit: smsLimit !== null ? smsLimit.toLocaleString() : '–', used: '–', overBy: '–', extraCharge: '–', isExceeded: false },
+    {
+      item: 'Calls to special numbers',
+      planLimit: 'Not included',
+      used: hasLogs ? `${agg.special.n} calls` : '–',
+      overBy: hasLogs && agg.special.n > 0 ? 'All' : '–',
+      extraCharge: hasLogs && agg.special.amt > 0 ? money(agg.special.amt) : '–',
+      isExceeded: hasLogs && agg.special.n > 0
+    }
+  ];
+  const exceededCount = rows.filter(r => r.isExceeded).length;
+
+  return { total, plan, usage, vat, excess, isOver: excess > EXCESS_MARGIN_AED, conn, employee, rows, exceededCount, hasLogs, money };
+};
+
 const TelecomBillTab = ({
   user,
   showToast,
@@ -145,6 +224,8 @@ const TelecomBillTab = ({
   const [viewMode, setViewMode] = useState('table'); // 'table' or 'form'
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [teleConnections, setTeleConnections] = useState([]);
+  const [billEmployees, setBillEmployees] = useState([]);
 
   // Delete modal state
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -767,6 +848,22 @@ const TelecomBillTab = ({
       if (event.target) event.target.value = '';
     }
   };
+
+  // Telecom Connections, used to show the employee a bill's number is assigned to
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/tele-connections`);
+        const data = res.ok ? await res.json() : [];
+        setTeleConnections(Array.isArray(data) ? data : []);
+        const er = await fetch(`${API_URL}/api/employees`);
+        const ed = er.ok ? await er.json() : [];
+        setBillEmployees(Array.isArray(ed) ? ed : []);
+      } catch (err) {
+        console.warn('Could not load telecom connections', err);
+      }
+    })();
+  }, []);
 
   const handleConfirmImport = async () => {
     setImporting(true);
@@ -1886,7 +1983,7 @@ const TelecomBillTab = ({
                   </View>
                   <Text style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>
                     {isViewOnly
-                      ? 'Detailed summary breakdown and itemized records from tbl_telecome_bill'
+                      ? 'Summary, plan comparison and itemized charges'
                       : 'Upload official Etisalat or du transaction sheets into corporate asset log'}
                   </Text>
                 </View>
@@ -2000,233 +2097,151 @@ const TelecomBillTab = ({
                 <ScrollView style={{ flex: 1, backgroundColor: '#F8FAFC' }} contentContainerStyle={{ padding: 24, paddingBottom: 24 }}>
                   {isViewOnly ? (
                     <View style={styles.viewModalContainer}>
-                      {/* 1. TOP SUMMARY KPI CARDS (FROM tbl_telecome_bill) */}
-                      <View style={styles.viewKpiRow}>
-                        {/* Total Bill Amount */}
-                        <View style={[styles.viewKpiCard, styles.viewKpiCardTotal]}>
-                          <View style={styles.viewKpiHeader}>
-                            <Text style={styles.viewKpiTitleTotal}>TOTAL BILL AMOUNT</Text>
-                            <View style={styles.viewKpiIconWrapTotal}>
-                              <Ionicons name="receipt" size={15} color="#047857" />
-                            </View>
+                      {/* 1-2. SUMMARY CARDS + SPECIFICATIONS + PLAN LIMIT VS ACTUAL USAGE */}
+                      {(() => {
+                        const ins = buildBillInsights(editingRecord, teleConnections, billEmployees);
+                        const statusTxt = ((editingRecord?.status || editingRecord?.['Payment Status'] || '').toLowerCase() === 'pending' ? 'ACTIVE' : (editingRecord?.status || editingRecord?.['Payment Status'] || 'ACTIVE')).toUpperCase();
+                        const isInactive = (editingRecord?.status || editingRecord?.['Payment Status'] || '').toLowerCase() === 'inactive';
+                        const fmtD = (v) => formatBillDateDisplay(v);
+                        const pFrom = fmtD(editingRecord?.period_from || editingRecord?.['Bill Period From'] || editingRecord?.bill_period_from || editingRecord?.field_data?.['Bill Period From'] || editingRecord?.field_data?.period_from || editingRecord?.field_data?.f_from);
+                        const pTo = fmtD(editingRecord?.period_to || editingRecord?.['Bill Period To'] || editingRecord?.bill_period_to || editingRecord?.field_data?.['Bill Period To'] || editingRecord?.field_data?.period_to || editingRecord?.field_data?.f_to);
+                        const billNo = (() => {
+                          const isValidBill = (v) => v && v !== 'MULLAH' && /\d/.test(v);
+                          const b = isValidBill(editingRecord?.bill_number) ? editingRecord.bill_number : (isValidBill(editingRecord?.['Bill Number']) ? editingRecord['Bill Number'] : null);
+                          if (b) return b;
+                          const fnMatch = String(editingRecord?.pdf_filename || '').match(/(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12})/i);
+                          return fnMatch ? fnMatch[1] : `BILL-#${editingRecord?.tele_bill_id || editingRecord?.id || ''}`;
+                        })();
+                        const rawProv = editingRecord?.telecom_provider || editingRecord?.['Telecom Provider'] || editingRecord?.provider || '';
+                        const mobileVal = editingRecord?.mobile_number || editingRecord?.['Mobile Number / Account'] || editingRecord?.account || '—';
+                        const Newtag = () => (
+                          <View style={{ backgroundColor: '#DBEAFE', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+                            <Text style={{ fontSize: 8, fontWeight: '800', color: '#1D4ED8' }}>NEW</Text>
                           </View>
-                          <Text style={styles.viewKpiValueTotal}>
-                            AED {Number(editingRecord?.total_bill || editingRecord?.['Total Bill'] || editingRecord?.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </Text>
-                          <Text style={styles.viewKpiSubtextTotal}>Official Net Payable Amount</Text>
-                        </View>
-
-                        {/* Monthly Plan Rental */}
-                        <View style={styles.viewKpiCard}>
-                          <View style={styles.viewKpiHeader}>
-                            <Text style={styles.viewKpiTitle}>PLAN / SERVICE RENTAL</Text>
-                            <View style={styles.viewKpiIconWrap}>
-                              <Ionicons name="calendar-outline" size={15} color="#004D34" />
-                            </View>
-                          </View>
-                          <Text style={styles.viewKpiValue}>
-                            AED {Number(editingRecord?.plan_rental || editingRecord?.['Monthly Plan Amount'] || editingRecord?.['Service Rental'] || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </Text>
-                          <Text style={styles.viewKpiSubtext}>Fixed recurring package charge</Text>
-                        </View>
-
-                        {/* Usage Charges */}
-                        <View style={styles.viewKpiCard}>
-                          <View style={styles.viewKpiHeader}>
-                            <Text style={styles.viewKpiTitle}>USAGE CHARGES</Text>
-                            <View style={styles.viewKpiIconWrap}>
-                              <Ionicons name="cellular-outline" size={15} color="#004D34" />
-                            </View>
-                          </View>
-                          <Text style={styles.viewKpiValue}>
-                            AED {Number(editingRecord?.usage_charges || editingRecord?.['Usage Charges'] || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </Text>
-                          <Text style={styles.viewKpiSubtext}>Calls, data & excess usage</Text>
-                        </View>
-
-                        {/* VAT Current Period (5%) */}
-                        <View style={styles.viewKpiCard}>
-                          <View style={styles.viewKpiHeader}>
-                            <Text style={styles.viewKpiTitle}>VAT CURRENT PERIOD (5%)</Text>
-                            <View style={styles.viewKpiIconWrap}>
-                              <Ionicons name="calculator-outline" size={15} color="#004D34" />
-                            </View>
-                          </View>
-                          <Text style={styles.viewKpiValue}>
-                            AED {Number(editingRecord?.vat_current_period || editingRecord?.vat_amount || editingRecord?.['VAT'] || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </Text>
-                          <Text style={styles.viewKpiSubtext}>Tax authority compliance</Text>
-                        </View>
-                      </View>
-
-                      {/* 2. BILL & ACCOUNT DETAILS SPECIFICATIONS */}
-                      <View style={styles.viewDetailCard}>
-                        <View style={styles.viewDetailCardHeader}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                            <Ionicons name="information-circle-outline" size={18} color="#004D34" />
-                            <Text style={styles.viewDetailCardTitle}>BILL & SUBSCRIPTION SPECIFICATIONS</Text>
-                          </View>
-                          <View style={[styles.statusBadge, ((editingRecord?.status || editingRecord?.['Payment Status'] || '').toLowerCase() !== 'inactive') ? styles.statusActive : styles.statusInactive]}>
-                            <Text style={[styles.statusText, ((editingRecord?.status || editingRecord?.['Payment Status'] || '').toLowerCase() !== 'inactive') ? styles.statusTextActive : styles.statusTextInactive]}>
-                              {((editingRecord?.status || editingRecord?.['Payment Status'] || '').toLowerCase() === 'pending' ? 'ACTIVE' : (editingRecord?.status || editingRecord?.['Payment Status'] || 'ACTIVE')).toUpperCase()}
-                            </Text>
-                          </View>
-                        </View>
-
-                        <View style={styles.viewGrid}>
-                          {/* Client */}
-                          <View style={styles.viewGridItem}>
-                            <Text style={styles.viewGridLabel}>CLIENT</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                              <Ionicons name="person-circle-outline" size={18} color="#64748B" />
-                              <Text style={styles.viewGridValue}>
-                                {editingRecord?.client_name || clientsList.find(c => String(c.id) === String(editingRecord?.clientid))?.client_name || user?.client_name || 'Nirmal Raj'}
-                              </Text>
-                            </View>
-                          </View>
-
-                          {/* Company */}
-                          <View style={styles.viewGridItem}>
-                            <Text style={styles.viewGridLabel}>COMPANY / SUBSIDIARY</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                              <Ionicons name="business-outline" size={18} color="#64748B" />
-                              <Text style={styles.viewGridValue}>
-                                {editingRecord?.company_name || editingRecord?.Company || selectedCompany || '—'}
-                              </Text>
-                            </View>
-                          </View>
-
-                          {/* Telecom Provider */}
-                          <View style={styles.viewGridItem}>
-                            <Text style={styles.viewGridLabel}>TELECOM PROVIDER</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                              <Ionicons name="radio-outline" size={18} color="#004D34" />
-                              <Text style={[styles.viewGridValue, { fontWeight: '700', color: '#004D34' }]}>
-                                {(() => {
-                                  const rawProv = editingRecord?.telecom_provider || editingRecord?.['Telecom Provider'] || editingRecord?.provider || '';
-                                  const acc = String(editingRecord?.mobile_number || editingRecord?.['Mobile Number / Account'] || '').replace(/\D/g, '');
-                                  const bNo = String(editingRecord?.bill_number || '');
-                                  if ((acc.startsWith('28') || bNo.startsWith('I400') || bNo.startsWith('1400')) && (!rawProv || rawProv.toLowerCase() === 'etisalat')) {
-                                    return 'du';
-                                  }
-                                  return rawProv || '—';
-                                })()}
-                              </Text>
-                            </View>
-                          </View>
-
-                          {/* Mobile Number / Account */}
-                          <View style={styles.viewGridItem}>
-                            <Text style={styles.viewGridLabel}>MOBILE / ACCOUNT NUMBER</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                              <Ionicons name="call-outline" size={18} color="#64748B" />
-                              <Text style={[styles.viewGridValue, { fontFamily: 'monospace', fontWeight: '700' }]}>
-                                {editingRecord?.mobile_number || editingRecord?.['Mobile Number / Account'] || editingRecord?.account || '—'}
-                              </Text>
-                            </View>
-                          </View>
-
-                          {/* Bill Number */}
-                          <View style={styles.viewGridItem}>
-                            <Text style={styles.viewGridLabel}>INVOICE / BILL NUMBER</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                              <Ionicons name="barcode-outline" size={18} color="#64748B" />
-                              <Text style={styles.viewGridValue}>
-                                {(() => {
-                                  const isValidBill = (v) => v && v !== 'MULLAH' && /\d/.test(v);
-                                  const bNo = isValidBill(editingRecord?.bill_number) ? editingRecord.bill_number : (isValidBill(editingRecord?.['Bill Number']) ? editingRecord['Bill Number'] : null);
-                                  if (bNo) return bNo;
-                                  const fnMatch = String(editingRecord?.pdf_filename || '').match(/(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12})/i);
-                                  if (fnMatch) return fnMatch[1];
-                                  const isDu = String(editingRecord?.telecom_provider || editingRecord?.['Telecom Provider'] || '').toLowerCase() === 'du' ||
-                                    String(editingRecord?.pdf_filename || '').toLowerCase().includes('du') ||
-                                    String(editingRecord?.mobile_number || '').startsWith('6.');
-                                  return isDu
-                                    ? `DU-#${editingRecord?.tele_bill_id || editingRecord?.id || ''}`
-                                    : `BILL-#${editingRecord?.tele_bill_id || editingRecord?.id || ''}`;
-                                })()}
-                              </Text>
-                            </View>
-                          </View>
-
-                          {/* Bill Period From */}
-                          <View style={styles.viewGridItem}>
-                            <Text style={styles.viewGridLabel}>BILL PERIOD FROM</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                              <Ionicons name="calendar-clear-outline" size={18} color="#64748B" />
-                              <Text style={styles.viewGridValue}>
-                                {formatBillDateDisplay(editingRecord?.period_from || editingRecord?.['Bill Period From'] || editingRecord?.bill_period_from || editingRecord?.field_data?.['Bill Period From'] || editingRecord?.field_data?.period_from || editingRecord?.field_data?.f_from)}
-                              </Text>
-                            </View>
-                          </View>
-
-                          {/* Bill Period To */}
-                          <View style={styles.viewGridItem}>
-                            <Text style={styles.viewGridLabel}>BILL PERIOD TO</Text>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                              <Ionicons name="calendar-outline" size={18} color="#64748B" />
-                              <Text style={styles.viewGridValue}>
-                                {formatBillDateDisplay(editingRecord?.period_to || editingRecord?.['Bill Period To'] || editingRecord?.bill_period_to || editingRecord?.field_data?.['Bill Period To'] || editingRecord?.field_data?.period_to || editingRecord?.field_data?.f_to)}
-                              </Text>
-                            </View>
-                          </View>
-                        </View>
-
-                        {/* ATTACHED BILL PDF INVOICE SECTION */}
-                        <View style={{ marginTop: 18, borderTopWidth: 1, borderTopColor: '#F1F5F9', paddingTop: 16 }}>
-                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                        );
+                        const Spec = ({ label, isNew, children, red }) => (
+                          <View style={[styles.viewGridItem, red && { backgroundColor: '#FEF2F2', borderColor: '#FCA5A5' }]}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                              <Ionicons name="attach" size={16} color="#DC2626" />
-                              <Text style={{ fontSize: 11, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                                Attached Statement / Invoice PDF
-                              </Text>
+                              <Text style={styles.viewGridLabel}>{label}</Text>
+                              {isNew && <Newtag />}
                             </View>
+                            <View style={{ marginTop: 4 }}>{children}</View>
                           </View>
-
-                          <View style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            backgroundColor: '#F8FAFC',
-                            borderRadius: 10,
-                            borderWidth: 1,
-                            borderColor: '#E2E8F0',
-                            padding: 12
-                          }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, paddingRight: 12 }}>
-                              <View style={{ width: 42, height: 42, borderRadius: 8, backgroundColor: '#FEF2F2', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#FCA5A5' }}>
-                                <Ionicons name="document-text" size={22} color="#DC2626" />
+                        );
+                        return (
+                          <>
+                            <View style={styles.viewKpiRow}>
+                              <View style={[styles.viewKpiCard, styles.viewKpiCardTotal]}>
+                                <Text style={styles.viewKpiTitleTotal}>TOTAL BILL</Text>
+                                <Text style={styles.viewKpiValueTotal}>AED {ins.money(ins.total)}</Text>
+                                <Text style={styles.viewKpiSubtextTotal}>Net payable incl. VAT</Text>
                               </View>
-                              <View style={{ flex: 1 }}>
-                                <Text style={{ fontSize: 13, fontWeight: '700', color: '#0F172A' }} numberOfLines={1}>
-                                  {((editingRecord?.pdf_filename || editingRecord?.['Invoice PDF'] || editingRecord?.field_data?.['Invoice PDF'] || '').split('/').pop()) || `${editingRecord?.bill_number || 'Telecom_Bill'}_Invoice.pdf`}
-                                </Text>
-                                <Text style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>
-                                  {editingRecord?.telecom_provider || 'Telecom'} • Tax Invoice & Itemized Call Statement PDF
-                                </Text>
+                              <View style={styles.viewKpiCard}>
+                                <Text style={styles.viewKpiTitle}>PLAN RENTAL</Text>
+                                <Text style={styles.viewKpiValue}>AED {ins.money(ins.plan)}</Text>
+                                <Text style={styles.viewKpiSubtext}>Fixed monthly charge</Text>
+                              </View>
+                              <View style={styles.viewKpiCard}>
+                                <Text style={styles.viewKpiTitle}>USAGE CHARGES</Text>
+                                <Text style={styles.viewKpiValue}>AED {ins.money(ins.usage)}</Text>
+                                <Text style={styles.viewKpiSubtext}>Calls, data, SMS</Text>
+                              </View>
+                              <View style={styles.viewKpiCard}>
+                                <Text style={styles.viewKpiTitle}>VAT (5%)</Text>
+                                <Text style={styles.viewKpiValue}>AED {ins.money(ins.vat)}</Text>
+                                <Text style={styles.viewKpiSubtext}>Tax</Text>
+                              </View>
+                              <View style={[styles.viewKpiCard, ins.isOver && { backgroundColor: '#FEF2F2', borderColor: '#FCA5A5', borderWidth: 2 }]}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                  <Text style={[styles.viewKpiTitle, ins.isOver && { color: '#B91C1C' }]}>EXCESS USAGE</Text>
+                                  <Newtag />
+                                </View>
+                                <Text style={[styles.viewKpiValue, ins.isOver && { color: '#B91C1C' }]}>AED {ins.money(ins.excess)}</Text>
+                                <Text style={[styles.viewKpiSubtext, ins.isOver && { color: '#B91C1C' }]}>Over plan amount</Text>
                               </View>
                             </View>
 
-                            <TouchableOpacity
-                              onPress={() => handleOpenPdfView(editingRecord)}
-                              style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                gap: 6,
-                                backgroundColor: '#004D34',
-                                paddingHorizontal: 16,
-                                paddingVertical: 8,
-                                borderRadius: 8,
-                                cursor: 'pointer'
-                              }}
-                              activeOpacity={0.8}
-                            >
-                              <Ionicons name="open-outline" size={15} color="#FFFFFF" />
-                              <Text style={{ fontSize: 13, fontWeight: '700', color: '#FFFFFF' }}>View PDF</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      </View>
+                            {/* BILL & SUBSCRIPTION SPECIFICATIONS */}
+                            <View style={styles.viewDetailCard}>
+                              <View style={styles.viewDetailCardHeader}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                  <Text style={styles.viewDetailCardTitle}>BILL & SUBSCRIPTION SPECIFICATIONS</Text>
+                                </View>
+                                <View style={[styles.statusBadge, !isInactive ? styles.statusActive : styles.statusInactive]}>
+                                  <Text style={[styles.statusText, !isInactive ? styles.statusTextActive : styles.statusTextInactive]}>{statusTxt}</Text>
+                                </View>
+                              </View>
+                              <View style={styles.viewGrid}>
+                                <Spec label="COMPANY / SUBSIDIARY">
+                                  <Text style={styles.viewGridValue}>{editingRecord?.company_name || editingRecord?.Company || selectedCompany || '—'}</Text>
+                                </Spec>
+                                <Spec label="TELECOM PROVIDER">
+                                  <Text style={[styles.viewGridValue, { fontWeight: '700', color: '#004D34' }]}>{rawProv || '—'}</Text>
+                                </Spec>
+                                <Spec label="MOBILE NUMBER" red={ins.isOver}>
+                                  <Text style={[styles.viewGridValue, { fontWeight: '700', color: ins.isOver ? '#B91C1C' : '#0F172A' }]}>{mobileVal}</Text>
+                                </Spec>
+                                <Spec label="EMPLOYEE" isNew>
+                                  <Text style={styles.viewGridValue}>{ins.employee}</Text>
+                                </Spec>
+                                <Spec label="CONNECTION TYPE" isNew>
+                                  <Text style={styles.viewGridValue}>{ins.conn ? (ins.conn.connection_type || 'SIM') : '—'}</Text>
+                                </Spec>
+                                <Spec label="PLAN" isNew>
+                                  <Text style={styles.viewGridValue}>{ins.conn ? (ins.conn.plan_name || '—') : '—'}</Text>
+                                </Spec>
+                                <Spec label="INVOICE / BILL NUMBER">
+                                  <Text style={styles.viewGridValue}>{billNo}</Text>
+                                </Spec>
+                                <Spec label="BILL PERIOD">
+                                  <Text style={styles.viewGridValue}>{pFrom} to {pTo}</Text>
+                                </Spec>
+                                <Spec label="ATTACHED PDF">
+                                  <TouchableOpacity onPress={() => handleOpenPdfView(editingRecord)}>
+                                    <Text style={[styles.viewGridValue, { fontWeight: '700', textDecorationLine: 'underline' }]}>View PDF</Text>
+                                  </TouchableOpacity>
+                                </Spec>
+                              </View>
+                            </View>
+
+                            {/* PLAN LIMIT VS ACTUAL USAGE */}
+                            <View style={styles.viewDetailCard}>
+                              <View style={styles.viewDetailCardHeader}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                  <Text style={styles.viewDetailCardTitle}>PLAN LIMIT VS ACTUAL USAGE</Text>
+                                  <Newtag />
+                                </View>
+                                <View style={{ backgroundColor: ins.exceededCount > 0 ? '#FEE2E2' : '#DCFCE7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                                  <Text style={{ fontSize: 11, fontWeight: '700', color: ins.exceededCount > 0 ? '#B91C1C' : '#166534' }}>
+                                    {ins.exceededCount} {ins.exceededCount === 1 ? 'limit' : 'limits'} exceeded
+                                  </Text>
+                                </View>
+                              </View>
+                              <View style={styles.itemTableHeader}>
+                                <Text style={[styles.itemThCell, { flex: 2.5 }]}>ITEM</Text>
+                                <Text style={[styles.itemThCell, { flex: 1.5, textAlign: 'right' }]}>PLAN LIMIT</Text>
+                                <Text style={[styles.itemThCell, { flex: 1.5, textAlign: 'right' }]}>USED</Text>
+                                <Text style={[styles.itemThCell, { flex: 1.5, textAlign: 'right' }]}>OVER BY</Text>
+                                <Text style={[styles.itemThCell, { flex: 2, textAlign: 'right' }]}>EXTRA CHARGE (AED)</Text>
+                              </View>
+                              {ins.rows.map((r, i) => (
+                                <View key={r.item} style={[styles.itemTableRow, r.isExceeded && { backgroundColor: '#FEF2F2' }]}>
+                                  <Text style={[styles.itemTdCell, { flex: 2.5, fontWeight: r.isExceeded ? '700' : '500', color: r.isExceeded ? '#B91C1C' : '#0F172A' }]}>{r.item}</Text>
+                                  <Text style={[styles.itemTdCell, { flex: 1.5, textAlign: 'right', color: '#475569' }]}>{r.planLimit}</Text>
+                                  <Text style={[styles.itemTdCell, { flex: 1.5, textAlign: 'right', fontWeight: r.isExceeded ? '700' : '500', color: r.isExceeded ? '#DC2626' : '#0F172A' }]}>{r.used}</Text>
+                                  <Text style={[styles.itemTdCell, { flex: 1.5, textAlign: 'right', fontWeight: r.isExceeded ? '700' : '500', color: r.isExceeded ? '#DC2626' : '#0F172A' }]}>{r.overBy}</Text>
+                                  <Text style={[styles.itemTdCell, { flex: 2, textAlign: 'right', fontWeight: r.isExceeded ? '700' : '500', color: r.isExceeded ? '#DC2626' : '#0F172A' }]}>{r.extraCharge}</Text>
+                                </View>
+                              ))}
+                              {!ins.hasLogs && (
+                                <Text style={{ fontSize: 11, color: '#64748B', padding: 12 }}>
+                                  Used amounts appear when call logs are imported for this bill. Plan limits come from the number's Telecom Connection.
+                                </Text>
+                              )}
+                            </View>
+                          </>
+                        );
+                      })()}
 
                       {/* 3. ITEMIZED BREAKDOWN FROM TBL_TELECOME_BILL_ITEMS */}
                       {(() => {
