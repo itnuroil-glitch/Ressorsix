@@ -46,11 +46,16 @@ import PlanManagementTab from './PlanManagementTab';
 import SimPlanTab from './SimPlanTab';
 import SimConnectionTypeTab from './SimConnectionTypeTab';
 import TelecomProviderTab from './TelecomProviderTab';
+import TelecomConnectionTab from './TelecomConnectionTab';
+import PhoneNumberAssignmentTab from './PhoneNumberAssignmentTab';
+import TelecomTestTab from './TelecomTestTab';
+import ImportTelecomBillsTab from './ImportTelecomBillsTab';
 import TelecomReportTab from './TelecomReportTab';
 import TeleCategoryTab from './TeleCategoryTab';
 import TeleChargeTypeTab from './TeleChargeTypeTab';
 import SimDetailsTab from './SimDetailsTab';
 import TelecomBillTab from './TelecomBillTab';
+import TelecomBillDetailsTab from './TelecomBillDetailsTab';
 import UsageChargesTab from './UsageChargesTab';
 import PremiumExtraChargesTab from './PremiumExtraChargesTab';
 import PremiumExtraChargeTypeTab from './PremiumExtraChargeTypeTab';
@@ -931,6 +936,59 @@ export default function DashboardScreen({ user, onSignOut }) {
             module_name: "Vehicle",
             parent_id: null,
             route: null,
+            status: "active"
+          });
+        }
+
+        // Self-healing fallback for Telecom Connection module under Telecom parent (57 or 51)
+        const telecomParent = data.find(m => (m.module_name === 'Telecom' || m.id === 57 || m.id === 51) && (m.parent_id === null || m.parent_id === undefined));
+        const hasTelecomConnection = data.some(m => (m.module_name || '').toLowerCase().includes('telecom connection') || m.route === '/telecom-connection');
+        if (telecomParent && !hasTelecomConnection) {
+          data.push({
+            id: 99957,
+            module_name: "Telecom Connection",
+            parent_id: telecomParent.id,
+            route: "/telecom-connection",
+            status: "active"
+          });
+        }
+
+        // Self-healing fallback for Phone Number Assignment module under Telecom parent
+        const hasPhoneAssignment = data.some(m => (m.module_name || '').toLowerCase().includes('phone number assignment') || (m.module_name || '').toLowerCase().includes('phone assignment') || m.route === '/phone-number-assignment');
+        if (telecomParent && !hasPhoneAssignment) {
+          data.push({
+            id: 99958,
+            module_name: "Phone Number Assignment",
+            parent_id: telecomParent.id,
+            route: "/phone-number-assignment",
+            status: "active"
+          });
+        }
+
+        // Self-healing fallback for Import Telecom Bills module under Telecom parent
+        const hasImportTelecomBills = data.some(m => (m.module_name || '').toLowerCase().includes('import tel') || m.route === '/import-telecom-bills');
+        if (telecomParent && !hasImportTelecomBills) {
+          data.push({
+            id: 99959,
+            module_name: "Import Telecom Bills",
+            parent_id: telecomParent.id,
+            route: "/import-telecom-bills",
+            status: "active"
+          });
+        }
+
+        // Static module for Telecom Bill Details under Telecom parent
+        const hasTelecomBillDetails = data.some(m =>
+          (m.module_name || '').toLowerCase().includes('telecom bill detail') ||
+          (m.module_name || '').toLowerCase().includes('telcome bill detail') ||
+          m.route === '/telecom-bill-details'
+        );
+        if (telecomParent && !hasTelecomBillDetails) {
+          data.push({
+            id: 68,
+            module_name: "Telecom Bill Details",
+            parent_id: telecomParent.id,
+            route: "/telecom-bill-details",
             status: "active"
           });
         }
@@ -2527,6 +2585,10 @@ export default function DashboardScreen({ user, onSignOut }) {
 
     // 1. Telecom Section Priority (Separated to prevent ID collisions across Local and Live databases)
     if (isTele) {
+      if (r === '/phone-number-assignment' || r === '/phone-number-assignments' || r === '/phone-assignment' || n === 'phone number assignment' || n === 'phone number assignments' || n === 'phone assignment' || (n.includes('phone') && n.includes('assign')) || modId === '66') return 'phone_number_assignment';
+      if (r === '/import-telecom-bills' || r === '/import-telecome-bills' || n === 'import telecom bills' || n === 'import telcome bills' || n.includes('import tel') || modId === '67') return 'import_telecom_bills';
+      if (r === '/telecom-connection' || r === '/telecom-connections' || r === '/telecome-connection' || n === 'telecom connection' || n === 'telecome connection' || n === 'telecom connections' || n === 'telecome connections' || modId === '65') return 'telecom_connection';
+      if (r === '/telecom-test' || r === '/telecome-test' || n.includes('test') || r.includes('test')) return 'telecom_test';
       if (r === '/telecom-details' || r === '/telecome-details' || n.includes('detail') || r.includes('detail')) return 'sim_details';
       if (r === '/telecom-bill-form' || r === '/telecom-bill' || n.includes('bill') || r.includes('bill')) return 'telecom_bill';
       if (r === '/telecom-report' || r === '/telecome-report' || r === '/telecome_report' || r === '/telecom_report' || n.includes('report') || r.includes('report')) return 'telecom_report';
@@ -2555,6 +2617,9 @@ export default function DashboardScreen({ user, onSignOut }) {
     }
 
     // 3. Explicit Route matches
+    if (r === '/telecom-bill-details' || r === '/telcome-bill-details' || n === 'telecom bill details' || n === 'telcome bill details' || n.includes('telecom bill detail') || n.includes('telcome bill detail') || n.includes('bill detail')) return 'telecom_bill_details';
+    if (r === '/import-telecom-bills' || r === '/import-telecome-bills' || n === 'import telecom bills' || n === 'import telcome bills') return 'import_telecom_bills';
+    if (r === '/telecom-test' || r === '/telecome-test' || n === 'telecom test' || n === 'telecome test') return 'telecom_test';
     if (r === '/telecom-details' || r === '/telecome-details') return 'sim_details';
     if (r === '/telecom-bill-form' || r === '/telecom-bill') return 'telecom_bill';
     if (r === '/telecom-report' || r === '/telecome-report' || r === '/telecome_report' || r === '/telecom_report') return 'telecom_report';
@@ -2624,6 +2689,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (r.includes('doc') || n.includes('doc') || r.includes('document') || n.includes('document')) return 'telecom_document';
     if ((r.includes('tele') || n.includes('tele')) && (r.includes('report') || n.includes('report'))) return 'telecom_report';
     if (r.includes('telecom') || n.includes('telecom') || r.includes('telecome') || n.includes('telecome')) return 'telecom_provider';
+    if (r === '/phone-number-assignment' || r === '/phone-number-assignments' || r === '/phone-assignment' || n === 'phone number assignment' || n === 'phone number assignments' || (n.includes('phone') && n.includes('assign'))) return 'phone_number_assignment';
     if (r.includes('connection') || n.includes('connection') || r.includes('connect') || n.includes('connect')) return 'sim_connection_type';
     if (r.includes('sim') || n.includes('sim')) return 'sim_plan';
     return null; // unknown route — don't switch tab
@@ -2660,6 +2726,8 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (n.includes('asset') || r.includes('asset')) return 'wallet-outline';
     if (n.includes('uom') || r.includes('uom')) return 'options-outline';
     if (n.includes('currency') || r.includes('currency')) return 'cash-outline';
+    if (n.includes('phone') && (n.includes('assign') || n.includes('number'))) return 'call-outline';
+    if (n.includes('import') && (n.includes('tele') || n.includes('bill'))) return 'cloud-upload-outline';
     if (n.includes('vat') || r.includes('vat')) return 'calculator-outline';
     return 'document-text-outline';
   };
@@ -2685,6 +2753,7 @@ export default function DashboardScreen({ user, onSignOut }) {
 
   // Helper to check view permissions for a given module ID
   const hasViewPermission = (moduleId) => {
+    if (moduleId === 65 || moduleId === '65' || moduleId === 66 || moduleId === '66' || moduleId === 68 || moduleId === '68' || moduleId === 99957 || moduleId === '99957' || moduleId === 99958 || moduleId === '99958' || moduleId === 99960 || moduleId === '99960' || moduleId === 'virtual-telecom-connection' || moduleId === 'virtual-phone-assignment' || moduleId === 'telecom_bill_details' || moduleId === 'telcome_bill_details') return true;
     if (!user) return false;
     // Superadmin bypass
     if (String(user.roleId) === '1') return true;
@@ -2714,7 +2783,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (tabId === 'plans') {
       return String(user.roleId) === '1';
     }
-    if (tabId === 'dashboard' || tabId === 'profile' || tabId === 'shipments' || tabId === 'analytics' || tabId === 'tele_doc_type' || tabId === 'telecom_report' || tabId === 'telecome_report') {
+    if (tabId === 'dashboard' || tabId === 'profile' || tabId === 'shipments' || tabId === 'analytics' || tabId === 'tele_doc_type' || tabId === 'telecom_report' || tabId === 'telecome_report' || tabId === 'telecom_connection' || tabId === 'telecome_connection' || tabId === 'phone_number_assignment' || tabId === 'phone_assignment') {
       return true;
     }
     const tabModules = modules.filter(m => getTabIdByRoute(m.module_name, m.route, m.id) === tabId);
@@ -7061,6 +7130,20 @@ export default function DashboardScreen({ user, onSignOut }) {
       case 'telecom_data':
       case 'telecome_data':
         return <SimDetailsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('sim_details')} checkRowPermission={(compId, act) => checkRowPermission('sim_details', compId, act)} title="Telecom Data" buttonLabel="+ Add Telecom Data" />;
+      case 'telecom_test':
+        return <TelecomTestTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
+      case 'import_telecom_bills':
+      case 'import_telecome_bills':
+        return <ImportTelecomBillsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
+      case 'telecom_connection':
+      case 'telecome_connection':
+        return <TelecomConnectionTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
+      case 'phone_number_assignment':
+      case 'phone_assignment':
+        return <PhoneNumberAssignmentTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
+      case 'telecom_bill_details':
+      case 'telcome_bill_details':
+        return <TelecomBillDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} onNavigate={(t) => setActiveTab(t)} />;
       case 'telecom_bill':
       case 'telecome_bill':
         return <TelecomBillTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('telecom_bill')} checkRowPermission={(compId, act) => checkRowPermission('telecom_bill', compId, act)} />;
@@ -11813,11 +11896,11 @@ const styles = StyleSheet.create({
 
   scrollContainer: {
     flexGrow: 1,
-    padding: SPACING.lg,
+    padding: SPACING.md || 16,
   },
   dashboardWrapper: {
     width: '100%',
-    maxWidth: 1400,
+    maxWidth: '100%',
     alignSelf: 'center',
   },
   tabContent: {

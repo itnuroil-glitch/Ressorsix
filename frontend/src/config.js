@@ -51,3 +51,5 @@ export const resolveFileUrl = (filePath) => {
   }
   return `${API_URL}${cleanPath}`;
 };
+
+export default API_URL;

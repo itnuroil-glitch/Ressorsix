@@ -70,7 +70,7 @@ const resolveDatesFromPdfFile = async (rawPdfFilename, billNumber) => {
         return false;
       });
       if (found) targetPath = path.join(attachmentDir, found);
-    } catch (e) {}
+    } catch (e) { }
   }
 
   if (!targetPath || !fs.existsSync(targetPath)) {
@@ -87,7 +87,7 @@ const resolveDatesFromPdfFile = async (rawPdfFilename, billNumber) => {
         const res = await instance.getText();
         if (res && res.text) rawText = res.text;
         else if (typeof res === 'string') rawText = res;
-      } catch (e1) {}
+      } catch (e1) { }
     }
 
     if (!rawText) {
@@ -105,7 +105,7 @@ const resolveDatesFromPdfFile = async (rawPdfFilename, billNumber) => {
             const instance = new fn({ data: buffer });
             const res = await instance.getText();
             if (res && res.text) rawText = res.text;
-          } catch (e2) {}
+          } catch (e2) { }
         }
       }
     }
@@ -191,7 +191,7 @@ const resolveDatesFromPdfFile = async (rawPdfFilename, billNumber) => {
 
       // 6. Match Bill Number
       const duBillNoMatch = rawText.match(/(?:your\s*bill\s*number|bill\s*number|tax\s*invoice\s*(?:no|number)|invoice\s*(?:no|number)|tax\s*invoice)[^\w\d]*[\r\n\s]*([0-9]{7,12}|0191\d{6}|0185\d{6}|018\d{7}|I400\d+|1400\d+)/i) ||
-                            rawText.match(/\b(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12})\b/i);
+        rawText.match(/\b(0191\d{6}|0185\d{6}|018\d{7}|I400\d{6,12}|1400\d{6,12})\b/i);
       if (duBillNoMatch) {
         billNumberResolved = duBillNoMatch[1].trim();
       }
@@ -292,7 +292,7 @@ const logTelecomBillAction = async (billId, action, performedBy, oldData, newDat
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    
+
     await db.query(`
       INSERT INTO tbl_telecom_bill_logs (bill_id, action, performed_by, old_data, new_data)
       VALUES ($1, $2, $3, $4, $5)
@@ -349,7 +349,7 @@ const saveToAttachmentTable = async ({ clientid, companyid, company_name, savedP
         if (compRes.rows.length > 0) {
           finalCompanyId = compRes.rows[0].id;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (!finalCompanyId && finalClientId) {
@@ -361,7 +361,7 @@ const saveToAttachmentTable = async ({ clientid, companyid, company_name, savedP
         if (compRes.rows.length > 0) {
           finalCompanyId = compRes.rows[0].id;
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const insertQuery = `
@@ -409,7 +409,7 @@ async function getLogFkCol() {
       LIMIT 1
     `);
     if (res.rows.length > 0) return res.rows[0].column_name;
-  } catch (e) {}
+  } catch (e) { }
   return 'tele_bill_id';
 }
 
@@ -423,7 +423,7 @@ async function getItemFkCol() {
       LIMIT 1
     `);
     if (res.rows.length > 0) return res.rows[0].column_name;
-  } catch (e) {}
+  } catch (e) { }
   return 'tele_bill_id';
 }
 
@@ -462,7 +462,7 @@ exports.getAllTelecomBills = async (req, res) => {
     const { clientid } = req.query;
 
     // Auto-update any pending status records to Active
-    await db.query(`UPDATE tbl_telecome_bill SET status = 'Active' WHERE status IS NULL OR LOWER(status) = 'pending'`).catch(() => {});
+    await db.query(`UPDATE tbl_telecome_bill SET status = 'Active' WHERE status IS NULL OR LOWER(status) = 'pending'`).catch(() => { });
 
     // Auto-correct provider name and missing dates for du bills
     await db.query(`
@@ -470,13 +470,13 @@ exports.getAllTelecomBills = async (req, res) => {
       SET telecom_provider = 'du' 
       WHERE (bill_number ILIKE 'I400%' OR bill_number ILIKE '1400%' OR bill_number ILIKE '0191%' OR mobile_number LIKE '28%' OR mobile_number LIKE '6.%' OR pdf_filename ILIKE '%du%')
         AND (telecom_provider IS NULL OR LOWER(telecom_provider) = 'etisalat' OR telecom_provider = '')
-    `).catch(() => {});
+    `).catch(() => { });
     await db.query(`
       UPDATE tbl_telecome_bill 
       SET provider = 'du' 
       WHERE (bill_number ILIKE 'I400%' OR bill_number ILIKE '1400%' OR bill_number ILIKE '0191%' OR mobile_number LIKE '28%' OR mobile_number LIKE '6.%' OR pdf_filename ILIKE '%du%')
         AND (provider IS NULL OR LOWER(provider) = 'etisalat' OR provider = '')
-    `).catch(() => {});
+    `).catch(() => { });
 
 
     let query = `
@@ -534,7 +534,7 @@ exports.getAllTelecomBills = async (req, res) => {
       const vatAmt = row.vat_current_period || row.vat_amount || 0;
 
       const rawFd = typeof row.field_data === 'string' ? JSON.parse(row.field_data || '{}') : (row.field_data || {});
-      
+
       let periodFrom = row.period_from || row.bill_period_from || rawFd['Bill Period From'] || rawFd.period_from || rawFd.f_from || null;
       let periodTo = row.period_to || row.bill_period_to || rawFd['Bill Period To'] || rawFd.period_to || rawFd.f_to || null;
       let issueDate = row.issue_date || row.bill_date || row.bill_issue_date || rawFd['Bill Issue Date'] || rawFd.issue_date || rawFd.f_issue || null;
@@ -586,7 +586,7 @@ exports.getAllTelecomBills = async (req, res) => {
               periodFrom = `${y}-${m}-01`;
               periodTo = periodTo || `${y}-${m}-${d}`;
             }
-          } catch (e) {}
+          } catch (e) { }
         }
       }
 
@@ -788,7 +788,7 @@ exports.getTelecomBillById = async (req, res) => {
             periodFrom = `${y}-${m}-01`;
             periodTo = periodTo || `${y}-${m}-${d}`;
           }
-        } catch (e) {}
+        } catch (e) { }
       }
     }
 
@@ -912,7 +912,7 @@ exports.getTelecomBillLogs = async (req, res) => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    
+
     const { id } = req.params;
     const result = await db.query(
       'SELECT * FROM tbl_telecom_bill_logs WHERE bill_id = $1 ORDER BY created_at DESC',
@@ -1310,7 +1310,7 @@ exports.updateTelecomBill = async (req, res) => {
     }
 
     params.push(id);
-    
+
     // Fetch old data before update
     const oldBillRes = await db.query(`SELECT * FROM tbl_telecome_bill WHERE ${pkCol} = $1`, [id]).catch(() => ({ rows: [] }));
     const oldData = oldBillRes.rows.length > 0 ? oldBillRes.rows[0] : null;
@@ -1723,3 +1723,160 @@ exports.getTelecomReportAnalytics = async (req, res) => {
     res.status(500).json({ error: err.message || 'Internal Server Error' });
   }
 };
+
+exports.getTelecomTestAuditReport = async (req, res) => {
+  try {
+    const reportData = {
+      account: {
+        mobileNumber: '054 305 1035',
+        companyName: 'ASAS GEN TR LLC',
+        billNumber: 'INV2048551311',
+        billingPeriod: '1–31 August 2026',
+        reportDate: 'Oct 3, 2026',
+        auditor: 'Navaneetha Krishnan',
+        provider: 'e& (Etisalat)',
+        planName: 'Special SMB offer5 (10.5 GB)',
+        includedMinutesEstimated: 900,
+        includedDataGB: 10.5
+      },
+      billSummary: {
+        totalBill: 258.81,
+        totalExclVat: 247.72,
+        totalVat: 11.09,
+        planAmount: 105.00,
+        extraUsageAmount: 153.81,
+        extraUsagePercent: 59.4,
+        dataUsedGB: 10.01,
+        dataIncludedGB: 10.5,
+        dataExtraCost: 0.00
+      },
+      billItems: [
+        { item: 'Monthly plan (Special SMB offer5, 10.5 GB)', amountExclVat: 100.00, vat: 5.00, total: 105.00, category: 'Plan' },
+        { item: 'Extra calls to mobiles (after free minutes ran out)', amountExclVat: 114.96, vat: 5.75, total: 120.71, category: 'Voice Extra' },
+        { item: 'Extra calls to landline 06-5995922', amountExclVat: 2.96, vat: 0.15, total: 3.11, category: 'Voice Extra' },
+        { item: 'Parking SMS to 05566 (10 SMS)', amountExclVat: 3.80, vat: 0.19, total: 3.99, category: 'SMS' },
+        { item: 'Sharjah mParking fees (no VAT)', amountExclVat: 26.00, vat: 0.00, total: 26.00, category: 'Parking' }
+      ],
+      minutesAudit: {
+        exhaustionDate: '17 Aug 2026',
+        exhaustionTime: '15:27',
+        exhaustionMinutes: 897,
+        ratePerMinute: 0.30,
+        rateBillingUnit: 'second',
+        periods: [
+          { period: '1 Aug – 17 Aug 15:27 (inside plan)', calls: 398, minutes: 896, chargeExclVat: 0.00, status: 'Covered by Plan' },
+          { period: '17 Aug 15:27 – 31 Aug (extra usage)', calls: 218, minutes: 392, chargeExclVat: 117.92, status: 'Over Limit (~AED 0.30/min)' },
+          { period: 'Calls to 050-2728659 (favourite / free)', calls: 24, minutes: 86, chargeExclVat: 0.00, status: 'Free Favourite Number' }
+        ],
+        totalCalls: 640,
+        totalMinutes: 1374,
+        totalTalkTimeFormatted: '22:53:53',
+        totalChargeExclVat: 117.92
+      },
+      kpiSummary: {
+        outgoingCalls: 640,
+        totalTalkTime: '22:53:53',
+        uniqueNumbers: 75,
+        avgCallLength: '2:09',
+        callChargesBeforeVat: 117.92
+      },
+      highlights: [
+        {
+          type: 'most_called',
+          title: 'CALLED MOST OFTEN',
+          number: '052 503 8532',
+          stat: '131 calls (20.5% of all calls)',
+          subtext: 'Active on 28 of 31 days · 3:33:39 total talk time · avg 1:38 per call'
+        },
+        {
+          type: 'longest_talk',
+          title: 'LONGEST TOTAL TALK TIME',
+          number: '052 390 9665',
+          stat: '4:46:21 across 54 calls',
+          subtext: '20.8% of all talk time · avg 5:18 per call · Longest single call 0:26:24'
+        },
+        {
+          type: 'concentration',
+          title: 'HIGH CALL CONCENTRATION',
+          number: 'Top 4 Numbers = 52% of calls',
+          stat: '333 of 640 calls (55.5% of talk time: 12:43:07)',
+          subtext: '27 numbers were dialled only once during the entire month'
+        }
+      ],
+      parkingLogs: [
+        { date: '20 Aug', time: '23:02', smsCost: 0.38, parkingFee: 2.00, total: 2.38 },
+        { date: '13 Aug', time: '19:51', smsCost: 0.38, parkingFee: 3.00, total: 3.38 },
+        { date: '13 Aug', time: '18:49', smsCost: 0.38, parkingFee: 3.00, total: 3.38 },
+        { date: '13 Aug', time: '17:53', smsCost: 0.38, parkingFee: 2.00, total: 2.38 },
+        { date: '13 Aug', time: '09:51', smsCost: 0.38, parkingFee: 3.00, total: 3.38 },
+        { date: '13 Aug', time: '01:45', smsCost: 0.38, parkingFee: 5.00, total: 5.38 },
+        { date: '12 Aug', time: '13:15', smsCost: 0.38, parkingFee: 2.00, total: 2.38 },
+        { date: '11 Aug', time: '12:36', smsCost: 0.38, parkingFee: 2.00, total: 2.38 },
+        { date: '10 Aug', time: '13:36', smsCost: 0.38, parkingFee: 2.00, total: 2.38 },
+        { date: '2 Aug', time: '20:42', smsCost: 0.38, parkingFee: 2.00, total: 2.38 }
+      ],
+      managementAccounts: [
+        {
+          account: '054 305 1035',
+          user: 'ASAS GEN TR LLC',
+          planInclVat: 105.00,
+          totalBill: 258.81,
+          excessAmount: 153.81,
+          remarks: 'Excessive local voice overage (392 min over 900 quota) + frequent SMS parking fees.',
+          reasonForExcess: 'Allowance exhausted on 17 Aug at 15:27 (AED 123.82) + Sharjah mParking (AED 29.99).',
+          recommendation: 'Evaluate 1,400 min business plan upgrade; use Sharjah digital app for parking to eliminate carrier fees.'
+        },
+        {
+          account: '050 107 0455',
+          user: 'Bynur Agro Trading LLC',
+          planInclVat: 115.50,
+          totalBill: 251.49,
+          excessAmount: 135.99,
+          remarks: 'Data overage & extra mobile calls.',
+          reasonForExcess: 'Extra voice calls beyond plan threshold + supplemental data bundle usage.',
+          recommendation: 'Monitor international calling usage and bundle higher data allowance.'
+        },
+        {
+          account: '052 480 6401',
+          user: 'Operations Line (du)',
+          planInclVat: 491.75,
+          totalBill: 506.99,
+          excessAmount: 15.24,
+          remarks: 'Minimal overage within acceptable operational threshold.',
+          reasonForExcess: 'Occasional off-net calls and premium SMS queries.',
+          recommendation: 'Current plan is well-sized for workload.'
+        }
+      ],
+      recommendations: [
+        {
+          title: 'Calls beyond the plan – AED 123.82 incl. VAT',
+          details: 'About 392 minutes were charged over the quota at ~AED 0.30/min. A business plan with ~1,400 local minutes would cover this month\'s calling comfortably; evaluate plan upgrade cost vs AED 124 overage.',
+          impact: 'High',
+          potentialSavings: 'AED 80 - 120 / mo'
+        },
+        {
+          title: 'Parking by SMS – AED 29.99 total',
+          details: 'AED 26.00 is the parking fee and AED 3.99 is carrier SMS fees. Using the Sharjah digital parking app instead of SMS will eliminate the recurring SMS surcharges.',
+          impact: 'Medium',
+          potentialSavings: 'AED 3.99 / mo + automated receipts'
+        },
+        {
+          title: 'Add Top Numbers as Free/Favourite',
+          details: 'Numbers 056-8421267 and 052-5038532 alone generated AED 41.84 extra cost (excl. VAT). Adding one or both as preferred business numbers (like 050-2728659) can instantly recover this amount.',
+          impact: 'High',
+          potentialSavings: 'AED 41.84 / mo'
+        }
+      ]
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'Telecom Test Audit Report fetched successfully',
+      data: reportData
+    });
+  } catch (err) {
+    console.error('Error fetching telecom test audit report:', err);
+    res.status(500).json({ error: err.message || 'Internal Server Error' });
+  }
+};
+

@@ -4,6 +4,7 @@ const telecomBillController = require('../controllers/telecomBillController');
 
 router.get('/', telecomBillController.getAllTelecomBills);
 router.get('/report-analytics', telecomBillController.getTelecomReportAnalytics);
+router.get('/test-report', telecomBillController.getTelecomTestAuditReport);
 router.get('/:id', telecomBillController.getTelecomBillById);
 router.get('/:id/call-logs', telecomBillController.getCallLogsByBillId);
 router.post('/', telecomBillController.createTelecomBill);
