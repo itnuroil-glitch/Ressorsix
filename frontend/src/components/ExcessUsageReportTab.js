@@ -47,11 +47,11 @@ const usageReasons = (bill, conn) => {
   const reasons = [];
   const logs = Array.isArray(bill.call_logs) ? bill.call_logs : [];
   if (logs.length > 0) {
-    const agg = { local: 0, intl: 0, special: 0 };
+    const agg = { local: 0, intl: 0, special: 0, roaming: 0 }; // roaming calls are not part of the plan limits
     const cnt = { special: 0 };
     logs.forEach(l => {
       const c = String(l.category || '').toLowerCase();
-      const g = /special|premium/.test(c) ? 'special' : /international|roaming/.test(c) ? 'intl' : 'local';
+      const g = /special|premium/.test(c) ? 'special' : /roaming/.test(c) ? 'roaming' : /international/.test(c) ? 'intl' : 'local';
       agg[g] += toMin(l.duration);
       if (g === 'special') cnt.special += 1;
     });
@@ -107,60 +107,71 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate }) {
     })();
   }, []);
 
-  // only months that have a bill for a number saved in Telecom Connections
+  // every month that has at least one bill, newest first
   const monthOptions = useMemo(() => {
-    const known = new Set(connections.map(c => keyOf(c.connection_number)).filter(Boolean));
-    const keys = bills
-      .filter(b => known.has(keyOf(b.mobile_number || b['Mobile Number / Account'])))
-      .map(billMonthKey)
-      .filter(Boolean);
+    const keys = bills.map(billMonthKey).filter(Boolean);
     return Array.from(new Set(keys)).sort().reverse();
-  }, [bills, connections]);
+  }, [bills]);
 
+  // start on the newest month
   useEffect(() => {
     if (!monthFilter && monthOptions.length > 0) setMonthFilter(monthOptions[0]);
   }, [monthOptions, monthFilter]);
 
-  const companyOptions = useMemo(
-    () => ['All Companies', ...Array.from(new Set(connections.map(c => c.company_name).filter(Boolean))).sort()],
-    [connections]
-  );
+  // companies that have a connection or a bill
+  const companyOptions = useMemo(() => {
+    const names = [
+      ...connections.map(c => c.company_name),
+      ...bills.map(b => b.company_name || b.Company),
+    ].filter(Boolean);
+    return ['All Companies', ...Array.from(new Set(names)).sort()];
+  }, [connections, bills]);
 
-  // one row per connection for the selected month
+  // one row per number + company for the selected month (latest bill wins).
+  // The plan amount comes from the number's Telecom Connection; if the number is not saved there, from the bill's own plan rental.
   const { rows, billedCount } = useMemo(() => {
     const connByKey = new Map();
     connections.forEach(c => { const k = keyOf(c.connection_number); if (k && !connByKey.has(k)) connByKey.set(k, c); });
 
-    const latest = new Map(); // connection id -> latest bill of the month
+    const latest = new Map();
     bills.forEach(b => {
       if (monthFilter && billMonthKey(b) !== monthFilter) return;
-      const conn = connByKey.get(keyOf(b.mobile_number || b['Mobile Number / Account']));
-      if (!conn) return;
-      const prev = latest.get(conn.id);
+      const rawNo = b.mobile_number || b['Mobile Number / Account'];
+      const k = keyOf(rawNo);
+      if (!k) return;
+      const conn = connByKey.get(k) || null;
+      const company = (conn && conn.company_name) || b.company_name || b.Company || '';
+      const gk = `${k}|${company.toLowerCase()}`;
+      const prev = latest.get(gk);
       const id = Number(b.tele_bill_id || b.id || 0);
-      if (!prev || id > prev.id) latest.set(conn.id, { id, bill: b, conn });
+      if (!prev || id > prev.id) latest.set(gk, { id, gk, bill: b, conn, company, rawNo });
     });
 
+    const inferType = (no) => {
+      const d = String(no || '').replace(/\D/g, '');
+      return /^(0?5\d{8}|9715\d{8})$/.test(d) ? 'SIM' : 'Landline';
+    };
+
     const all = Array.from(latest.values())
-      .filter(x => companyFilter === 'All Companies' || x.conn.company_name === companyFilter)
-      .map(({ bill, conn }) => {
+      .filter(x => companyFilter === 'All Companies' || x.company === companyFilter)
+      .map(({ gk, bill, conn, company, rawNo }) => {
         const total = num(bill.total_bill ?? bill['Total Bill'] ?? bill.total_amount);
         const vat = num(bill.vat_current_period ?? bill.vat_amount ?? bill['VAT']);
         const billExcl = vat > 0 && total > vat ? total - vat : total;
-        const plan = num(conn.monthly_plan_amount);
+        const plan = conn ? num(conn.monthly_plan_amount) : num(bill.plan_rental ?? bill['Monthly Plan Amount']);
         const excess = billExcl - plan;
-        const emp = employees.find(e => (e.full_name || e.name) === conn.employee_name);
-        const empName = (conn.employee_name || '').trim();
+        const emp = conn ? employees.find(e => (e.full_name || e.name) === conn.employee_name) : null;
+        const empName = conn ? (conn.employee_name || '').trim() : '';
         return {
-          key: conn.id,
-          number: conn.connection_number,
-          employee: empName && empName.toLowerCase() !== 'unassigned' ? empName : 'Unassigned',
-          sub: emp && emp.department_name ? emp.department_name : (conn.sub_company || ''),
-          company: conn.company_name,
-          type: conn.connection_type || 'SIM',
-          provider: conn.provider || bill.telecom_provider || '',
+          key: gk,
+          number: conn ? conn.connection_number : String(rawNo || ''),
+          employee: !conn ? 'Not in system' : (empName && empName.toLowerCase() !== 'unassigned' ? empName : 'Unassigned'),
+          sub: !conn ? 'Add it in Telecom Connection' : (emp && emp.department_name ? emp.department_name : (conn.sub_company || '')),
+          company,
+          type: conn ? (conn.connection_type || 'SIM') : inferType(rawNo),
+          provider: (conn && conn.provider) || bill.telecom_provider || '',
           plan, billExcl, excess,
-          reasons: usageReasons(bill, conn),
+          reasons: usageReasons(bill, conn || {}),
         };
       });
     return { rows: all.filter(r => r.excess > EXCESS_MARGIN_AED).sort((a, b) => b.excess - a.excess), billedCount: all.length };
@@ -173,6 +184,10 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate }) {
   const byType = rows.reduce((m, r) => { m[r.type] = (m[r.type] || 0) + 1; return m; }, {});
 
   const handleExport = () => {
+    if (visible.length === 0) {
+      if (showToast) showToast('Nothing to export for this month and filter', 'info');
+      return;
+    }
     try {
       const data = visible.map(r => ({
         Number: r.number, Employee: r.employee, Department: r.sub, Company: r.company, Type: r.type,
@@ -243,7 +258,7 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate }) {
         <View style={[styles.kpi, { borderLeftColor: '#B91C1C' }]}>
           <Text style={styles.kpiLabel}>NUMBERS OVER LIMIT</Text>
           <Text style={[styles.kpiBig, { color: '#B91C1C' }]}>{rows.length}</Text>
-          <Text style={styles.kpiNote}>of {billedCount} connections billed</Text>
+          <Text style={styles.kpiNote}>of {billedCount} numbers billed</Text>
         </View>
         <View style={[styles.kpi, { borderLeftColor: '#D9691F' }]}>
           <Text style={styles.kpiLabel}>TOTAL EXCESS AMOUNT</Text>

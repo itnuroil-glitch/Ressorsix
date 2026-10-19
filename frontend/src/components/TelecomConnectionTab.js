@@ -115,6 +115,9 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
   const [isReassignModalOpen, setIsReassignModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [historyLogs, setHistoryLogs] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [billMonthLabel, setBillMonthLabel] = useState('');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Dropdown popover open states inside the Add/Edit form
@@ -213,7 +216,52 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
             cug: c.cug || '',
             status: c.status || 'ACTIVE'
           }));
-          setConnections(mapped);
+          // Latest bill per number: real bill amount (excl. VAT) and over-plan flag (more than AED 10 above plan)
+          let bills = [];
+          try {
+            const br = await fetch(`${API_URL}/api/telecom-bills`);
+            if (br.ok) {
+              const bd = await br.json();
+              bills = Array.isArray(bd) ? bd : (bd && Array.isArray(bd.data) ? bd.data : []);
+            }
+          } catch (e) {
+            console.warn('Could not load bills for connections', e);
+          }
+          const keyOfNum = (v) => String(v || '').replace(/\D/g, '').slice(-9);
+          const monthKeyOf = (b) => {
+            const raw = b.period_to || b.period_from || b['Bill Period To'] || b['Bill Period From'] || b.created_at;
+            const d = raw ? new Date(raw) : null;
+            return d && !isNaN(d.getTime()) ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : null;
+          };
+          const known = new Set(mapped.map(m => keyOfNum(m.connectionNumber)));
+          const billMonths = bills
+            .filter(b => known.has(keyOfNum(b.mobile_number || b['Mobile Number / Account'])))
+            .map(monthKeyOf)
+            .filter(Boolean)
+            .sort();
+          const latestMonth = billMonths.length ? billMonths[billMonths.length - 1] : '';
+          if (latestMonth) {
+            const [yy, mm] = latestMonth.split('-');
+            setBillMonthLabel(`${['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][Number(mm) - 1]} ${yy}`);
+          } else {
+            setBillMonthLabel('');
+          }
+          const withBills = mapped.map(m => {
+            const matching = bills
+              .filter(b => keyOfNum(b.mobile_number || b['Mobile Number / Account']) === keyOfNum(m.connectionNumber) && monthKeyOf(b) === latestMonth)
+              .sort((a, b) => Number(b.tele_bill_id || b.id || 0) - Number(a.tele_bill_id || a.id || 0));
+            if (!latestMonth || matching.length === 0) {
+              return { ...m, currentBillAED: null, isOverPlan: false, billSub: '' };
+            }
+            const b = matching[0];
+            const total = parseFloat(b.total_bill ?? b['Total Bill'] ?? b.total_amount) || 0;
+            const vat = parseFloat(b.vat_current_period ?? b.vat_amount ?? b['VAT']) || 0;
+            const billExcl = vat > 0 && total > vat ? total - vat : total;
+            const excess = billExcl - (m.monthlyRentAED || 0);
+            const over = excess > 10;
+            return { ...m, currentBillAED: billExcl, isOverPlan: over, billSub: over ? `+${excess.toFixed(2)} over plan` : '' };
+          });
+          setConnections(withBills);
         } else {
           setConnections([]);
         }
@@ -272,14 +320,27 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     return STATIC_COMPANIES.filter(c => c !== 'All Companies');
   }, [apiCompanies]);
 
+  // Company filter lists only companies that have connections (with the connection count)
+  const companyConnectionCounts = useMemo(() => {
+    const counts = {};
+    connections.forEach(c => { if (c.company) counts[c.company] = (counts[c.company] || 0) + 1; });
+    return counts;
+  }, [connections]);
+
   const toolbarCompanyOptions = useMemo(() => {
-    return ['All Companies', ...companyOptions];
-  }, [companyOptions]);
+    const withConnections = Object.keys(companyConnectionCounts).sort((a, b) => a.localeCompare(b));
+    return ['All Companies', ...withConnections];
+  }, [companyConnectionCounts]);
 
   // ---------------------------------------------------------------------------
   // FILTERING & SEARCH
   // ---------------------------------------------------------------------------
-  const filteredConnections = useMemo(() => {
+  // One definition of "unassigned" shared by the list filter and the tab counts
+  const isUnassignedConn = (c) =>
+    c.status === 'UNASSIGNED' || !c.employeeName || !c.employeeName.trim() || c.employeeName.toLowerCase().includes('unassigned');
+
+  // Connections after company / type / search / excess filters (before the All | Assigned | Unassigned tab)
+  const scopeConnections = useMemo(() => {
     return connections.filter(item => {
       // Search Match
       const term = searchTerm.toLowerCase().trim();
@@ -290,12 +351,6 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
         (item.provider && item.provider.toLowerCase().includes(term)) ||
         (item.company && item.company.toLowerCase().includes(term)) ||
         (item.planName && item.planName.toLowerCase().includes(term));
-
-      // Tab Match ('All' | 'Assigned' | 'Unassigned')
-      const isUnassigned = item.status === 'UNASSIGNED' || (item.employeeName && item.employeeName.toLowerCase().includes('unassigned'));
-      let matchTab = true;
-      if (activeFilterTab === 'Assigned') matchTab = !isUnassigned;
-      if (activeFilterTab === 'Unassigned') matchTab = isUnassigned;
 
       // Excess usage filter toggle
       let matchExcess = true;
@@ -309,9 +364,47 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
       // Type dropdown match
       const matchType = selectedType === 'All Types' || item.connectionType === selectedType;
 
-      return matchSearch && matchTab && matchExcess && matchCompany && matchType;
+      return matchSearch && matchExcess && matchCompany && matchType;
     });
-  }, [connections, searchTerm, activeFilterTab, isExcessFilterActive, selectedCompany, selectedType]);
+  }, [connections, searchTerm, isExcessFilterActive, selectedCompany, selectedType]);
+
+  // Real history & audit trail, loaded each time the History popup opens
+  useEffect(() => {
+    if (!isHistoryModalOpen) return;
+    setHistoryLoading(true);
+    (async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/tele-connections/history/all`);
+        const data = res.ok ? await res.json() : [];
+        setHistoryLogs(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.warn('Could not load connection history', err);
+        setHistoryLogs([]);
+      } finally {
+        setHistoryLoading(false);
+      }
+    })();
+  }, [isHistoryModalOpen]);
+
+  const formatHistoryTime = (v) => {
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return '';
+    const day = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return `${day} ${time}`;
+  };
+
+  // Tab Match ('All' | 'Assigned' | 'Unassigned')
+  const filteredConnections = useMemo(() => {
+    if (activeFilterTab === 'Assigned') return scopeConnections.filter(c => !isUnassignedConn(c));
+    if (activeFilterTab === 'Unassigned') return scopeConnections.filter(c => isUnassignedConn(c));
+    return scopeConnections;
+  }, [scopeConnections, activeFilterTab]);
+
+  // back to page 1 whenever a filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeFilterTab, selectedCompany, selectedType, searchTerm, isExcessFilterActive]);
 
   // Available employees dynamically filtered by the selected company in the form
   const availableEmployees = useMemo(() => {
@@ -354,9 +447,10 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
   }, [apiEmployees, formData.company]);
 
   // Tab Badge Counts
-  const totalCount = connections.length;
-  const assignedCount = connections.filter(c => c.status !== 'UNASSIGNED' && c.employeeName && c.employeeName !== 'Unassigned').length;
-  const unassignedCount = connections.filter(c => c.status === 'UNASSIGNED' || !c.employeeName || c.employeeName === 'Unassigned').length;
+  // counts follow the company / type / search filters, so each tab matches what it will show
+  const totalCount = scopeConnections.length;
+  const unassignedCount = scopeConnections.filter(isUnassignedConn).length;
+  const assignedCount = totalCount - unassignedCount;
   const excessCount = connections.filter(c => c.isOverPlan).length;
 
   // Pagination Slice
@@ -369,6 +463,20 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
   // ---------------------------------------------------------------------------
   // CRUD ACTIONS
   // ---------------------------------------------------------------------------
+  // Coming from a bill's "Add to Telecom Connection" button: open the add form already filled in
+  useEffect(() => {
+    let raw = null;
+    try { raw = typeof localStorage !== 'undefined' ? localStorage.getItem('teleConnPrefill') : null; } catch (e) { }
+    if (!raw) return;
+    try { localStorage.removeItem('teleConnPrefill'); } catch (e) { }
+    try {
+      const pre = JSON.parse(raw);
+      setFormData({ ...defaultFormState, ...pre });
+      setActiveItem(null);
+      setIsAddEditModalOpen(true);
+    } catch (e) { }
+  }, []);
+
   const handleOpenAdd = () => {
     setFormData({
       id: '',
@@ -738,10 +846,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
         </View>
       </View>
 
-      {/* --------------------------------------------------------------------- */}
-      {/* FILTER & SEARCH TOOLBAR ROW                                           */}
-      {/* --------------------------------------------------------------------- */}
-      <View style={styles.toolbarRow}>
+      <View style={[styles.toolbarRow, { zIndex: (isCompanyFilterOpen || isTypeFilterOpen) ? 1000 : 20 }]}>
         {/* Left Segmented Filter Pills (All 77 | Assigned 65 | Unassigned 12) */}
         <View style={styles.segmentedPillsWrap}>
           {[
@@ -783,9 +888,29 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
         </View>
 
         {/* Right Select Dropdowns & History Button */}
-        <View style={styles.toolbarRightWrap}>
+        <View style={[styles.toolbarRightWrap, { zIndex: (isCompanyFilterOpen || isTypeFilterOpen) ? 1000 : 25 }]}>
+          {/* Backdrop to close on click outside */}
+          {(isCompanyFilterOpen || isTypeFilterOpen) && (
+            <TouchableOpacity
+              style={{
+                position: Platform.OS === 'web' ? 'fixed' : 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 990,
+                backgroundColor: 'transparent',
+              }}
+              onPress={() => {
+                setIsCompanyFilterOpen(false);
+                setIsTypeFilterOpen(false);
+              }}
+              activeOpacity={1}
+            />
+          )}
+
           {/* Company Filter Dropdown */}
-          <View style={{ position: 'relative' }}>
+          <View style={{ position: 'relative', zIndex: isCompanyFilterOpen ? 1001 : 1 }}>
             <TouchableOpacity
               style={styles.filterDropdownBtn}
               onPress={() => {
@@ -798,27 +923,29 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
             </TouchableOpacity>
 
             {isCompanyFilterOpen && (
-              <View style={[styles.popoverMenu, { width: 190 }]}>
-                {toolbarCompanyOptions.map(comp => (
-                  <TouchableOpacity
-                    key={comp}
-                    style={[styles.popoverItem, selectedCompany === comp && styles.popoverItemActive]}
-                    onPress={() => {
-                      setSelectedCompany(comp);
-                      setIsCompanyFilterOpen(false);
-                    }}
-                  >
-                    <Text style={[styles.popoverItemText, selectedCompany === comp && styles.popoverItemTextActive]}>
-                      {comp}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+              <View style={[styles.popoverMenu, { minWidth: 200, maxWidth: 280, zIndex: 1002 }]}>
+                <ScrollView style={{ maxHeight: 240 }} nestedScrollEnabled={true}>
+                  {toolbarCompanyOptions.map(comp => (
+                    <TouchableOpacity
+                      key={comp}
+                      style={[styles.popoverItem, selectedCompany === comp && styles.popoverItemActive]}
+                      onPress={() => {
+                        setSelectedCompany(comp);
+                        setIsCompanyFilterOpen(false);
+                      }}
+                    >
+                      <Text style={[styles.popoverItemText, selectedCompany === comp && styles.popoverItemTextActive]}>
+                        {comp === 'All Companies' ? `${comp} (${connections.length})` : `${comp} (${companyConnectionCounts[comp] || 0})`}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
               </View>
             )}
           </View>
 
           {/* Type Filter Dropdown */}
-          <View style={{ position: 'relative' }}>
+          <View style={{ position: 'relative', zIndex: isTypeFilterOpen ? 1001 : 1 }}>
             <TouchableOpacity
               style={styles.filterDropdownBtn}
               onPress={() => {
@@ -831,21 +958,23 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
             </TouchableOpacity>
 
             {isTypeFilterOpen && (
-              <View style={[styles.popoverMenu, { width: 140 }]}>
-                {STATIC_CONNECTION_TYPES.map(type => (
-                  <TouchableOpacity
-                    key={type}
-                    style={[styles.popoverItem, selectedType === type && styles.popoverItemActive]}
-                    onPress={() => {
-                      setSelectedType(type);
-                      setIsTypeFilterOpen(false);
-                    }}
-                  >
-                    <Text style={[styles.popoverItemText, selectedType === type && styles.popoverItemTextActive]}>
-                      {type}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+              <View style={[styles.popoverMenu, { width: 150, zIndex: 1002 }]}>
+                <ScrollView style={{ maxHeight: 240 }} nestedScrollEnabled={true}>
+                  {STATIC_CONNECTION_TYPES.map(type => (
+                    <TouchableOpacity
+                      key={type}
+                      style={[styles.popoverItem, selectedType === type && styles.popoverItemActive]}
+                      onPress={() => {
+                        setSelectedType(type);
+                        setIsTypeFilterOpen(false);
+                      }}
+                    >
+                      <Text style={[styles.popoverItemText, selectedType === type && styles.popoverItemTextActive]}>
+                        {type}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
               </View>
             )}
           </View>
@@ -866,30 +995,30 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
       {/* DATA LIST TABLE (EXACT 100% REPLICA)                                  */}
       {/* --------------------------------------------------------------------- */}
       <View style={styles.tableCardContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={true} style={{ width: '100%' }}>
-          <View style={{ minWidth: 1250, width: '100%' }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={true} style={{ width: '100%' }} contentContainerStyle={{ flexGrow: 1, minWidth: '100%' }}>
+          <View style={{ minWidth: 980, flex: 1, width: '100%' }}>
             {/* Table Header Row */}
             <View style={styles.tableHeaderRow}>
-              <Text style={[styles.colHeader, { width: 210 }]}>COMPANY NAME</Text>
-              <View style={[{ width: 100, flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+              <Text style={[styles.colHeader, { flex: 2.4 }]}>COMPANY NAME</Text>
+              <View style={[{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
                 <Text style={styles.colHeader}>TYPE</Text>
                 <View style={styles.newHeaderBadge}>
                   <Text style={styles.newHeaderBadgeText}>NEW</Text>
                 </View>
               </View>
-              <Text style={[styles.colHeader, { width: 110 }]}>PROVIDER</Text>
-              <Text style={[styles.colHeader, { width: 130 }]}>NUMBER</Text>
-              <Text style={[styles.colHeader, { width: 180 }]}>EMPLOYEE</Text>
-              <Text style={[styles.colHeader, { width: 170 }]}>PLAN NAME</Text>
-              <Text style={[styles.colHeader, { width: 140 }]}>MONTHLY AMOUNT</Text>
-              <View style={[{ width: 150, flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
-                <Text style={styles.colHeader}>SEP 2026 BILL</Text>
+              <Text style={[styles.colHeader, { flex: 1.2 }]}>PROVIDER</Text>
+              <Text style={[styles.colHeader, { flex: 1.3 }]}>NUMBER</Text>
+              <Text style={[styles.colHeader, { flex: 2 }]}>EMPLOYEE</Text>
+              <Text style={[styles.colHeader, { flex: 1.7 }]}>PLAN NAME</Text>
+              <Text style={[styles.colHeader, { flex: 1.3 }]}>MONTHLY AMOUNT</Text>
+              <View style={[{ flex: 1.4, flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+                <Text style={styles.colHeader}>{billMonthLabel ? `${billMonthLabel} BILL` : 'LATEST BILL'}</Text>
                 <View style={styles.newHeaderBadge}>
                   <Text style={styles.newHeaderBadgeText}>NEW</Text>
                 </View>
               </View>
-              <Text style={[styles.colHeader, { width: 120 }]}>STATUS</Text>
-              <Text style={[styles.colHeader, { width: 130, textAlign: 'center' }]}>ACTION</Text>
+              <Text style={[styles.colHeader, { flex: 1.2 }]}>STATUS</Text>
+              <Text style={[styles.colHeader, { flex: 1.7, textAlign: 'center' }]}>ACTION</Text>
             </View>
 
             {/* Table Body Rows */}
@@ -912,20 +1041,20 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     ]}
                   >
                     {/* 1. COMPANY NAME */}
-                    <View style={[{ width: 210, paddingRight: 8 }]}>
-                      <Text style={styles.companyNameText} numberOfLines={1}>{row.company}</Text>
+                    <View style={[{ flex: 2.4, paddingRight: 8 }]}>
+                      <Text style={styles.companyNameText}>{row.company}</Text>
                       <Text style={styles.companySubText}>{row.subCompany || 'Krish'}</Text>
                     </View>
 
                     {/* 2. TYPE */}
-                    <View style={[{ width: 100 }]}>
+                    <View style={[{ flex: 1 }]}>
                       <View style={styles.typeBadgePill}>
                         <Text style={styles.typeBadgePillText}>{row.connectionType}</Text>
                       </View>
                     </View>
 
                     {/* 3. PROVIDER */}
-                    <View style={[{ width: 110, paddingRight: 6 }]}>
+                    <View style={[{ flex: 1.2, paddingRight: 6 }]}>
                       <Text style={styles.providerLineOne}>
                         {row.provider.includes('(Etisalat)') ? 'e&' : row.provider}
                       </Text>
@@ -935,7 +1064,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     </View>
 
                     {/* 4. NUMBER (Blue link or Red if overage) */}
-                    <View style={[{ width: 130 }]}>
+                    <View style={[{ flex: 1.3 }]}>
                       <TouchableOpacity
                         onPress={() => {
                           setActiveItem(row);
@@ -954,7 +1083,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     </View>
 
                     {/* 5. EMPLOYEE */}
-                    <View style={[{ width: 180, paddingRight: 8 }]}>
+                    <View style={[{ flex: 2, paddingRight: 8 }]}>
                       <Text
                         style={[
                           styles.employeeNameText,
@@ -968,26 +1097,26 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     </View>
 
                     {/* 6. PLAN NAME */}
-                    <View style={[{ width: 170, paddingRight: 8 }]}>
+                    <View style={[{ flex: 1.7, paddingRight: 8 }]}>
                       <Text style={styles.planNameText} numberOfLines={1}>{row.planName}</Text>
                     </View>
 
                     {/* 7. MONTHLY AMOUNT */}
-                    <View style={[{ width: 140 }]}>
+                    <View style={[{ flex: 1.3 }]}>
                       <Text style={styles.monthlyAmountText}>
                         {row.monthlyRentAED} AED
                       </Text>
                     </View>
 
                     {/* 8. SEP 2026 BILL */}
-                    <View style={[{ width: 150 }]}>
+                    <View style={[{ flex: 1.4 }]}>
                       <Text
                         style={[
                           styles.billAmountText,
                           isOver && styles.billAmountTextOver, // Red if over plan
                         ]}
                       >
-                        {Number(row.currentBillAED || 0).toFixed(2)} AED
+                        {row.currentBillAED === null || row.currentBillAED === undefined ? '—' : `${Number(row.currentBillAED).toFixed(2)} AED`}
                       </Text>
                       {row.billSub && (
                         <Text
@@ -1002,7 +1131,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     </View>
 
                     {/* 9. STATUS */}
-                    <View style={[{ width: 120 }]}>
+                    <View style={[{ flex: 1.2 }]}>
                       <View
                         style={[
                           styles.statusBadgePill,
@@ -1075,7 +1204,12 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
         {/* TABLE FOOTER & PAGINATION BAR                                       */}
         {/* ------------------------------------------------------------------- */}
         <View style={styles.tableFooterBar}>
-          {/* Legend Indicator on Left */}
+          {/* Showing x to y of z entries on the left */}
+          <Text style={styles.showingEntriesText}>
+            Showing <Text style={styles.showingBold}>{filteredConnections.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1}</Text> to <Text style={styles.showingBold}>{Math.min(currentPage * itemsPerPage, filteredConnections.length)}</Text> of <Text style={styles.showingBold}>{filteredConnections.length}</Text> entries
+          </Text>
+
+          {/* Legend Indicator in the middle */}
           <View style={styles.legendWrap}>
             <View style={styles.legendColorBox} />
             <Text style={styles.legendLabelText}>
@@ -1083,22 +1217,22 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
             </Text>
           </View>
 
-          {/* Showing 0 of 0 entries in Center */}
-          <Text style={styles.showingEntriesText}>
-            Showing {filteredConnections.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredConnections.length)} of {totalCount} entries
-          </Text>
-
-          {/* Prev / Next Buttons on Right */}
+          {/* Prev / Page x of y / Next on the right */}
           <View style={styles.paginationBtnsWrap}>
             <TouchableOpacity
               style={[styles.paginationBtn, currentPage === 1 && styles.paginationBtnDisabled]}
               disabled={currentPage === 1}
               onPress={() => setCurrentPage(prev => Math.max(1, prev - 1))}
             >
+              <Ionicons name="chevron-back" size={13} color={THEME.slate600} />
               <Text style={[styles.paginationBtnText, currentPage === 1 && styles.paginationBtnTextDisabled]}>
                 Prev
               </Text>
             </TouchableOpacity>
+
+            <Text style={styles.pageOfText}>
+              Page <Text style={styles.showingBold}>{currentPage}</Text> of <Text style={styles.showingBold}>{totalPages}</Text>
+            </Text>
 
             <TouchableOpacity
               style={[styles.paginationBtn, currentPage === totalPages && styles.paginationBtnDisabled]}
@@ -1108,6 +1242,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
               <Text style={[styles.paginationBtnText, currentPage === totalPages && styles.paginationBtnTextDisabled]}>
                 Next
               </Text>
+              <Ionicons name="chevron-forward" size={13} color={THEME.slate600} />
             </TouchableOpacity>
           </View>
         </View>
@@ -1783,7 +1918,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
       {/* --------------------------------------------------------------------- */}
       <Modal visible={isViewModalOpen} transparent animationType="fade" onRequestClose={() => setIsViewModalOpen(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalBox, { maxWidth: 640 }]}>
+          <View style={[styles.modalBox, { maxWidth: 1200, width: '94%' }]}>
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <View style={styles.viewModalIconWrap}>
@@ -1800,7 +1935,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
             </View>
 
             {activeItem && (
-              <ScrollView style={{ maxHeight: 480, paddingHorizontal: 20, paddingVertical: 14 }}>
+              <ScrollView style={{ maxHeight: 520, backgroundColor: '#F8FAFC' }} contentContainerStyle={{ padding: 16 }}>
                 <View style={styles.profileSection}>
                   <Text style={styles.sectionHeading}>CONNECTION ATTRIBUTES</Text>
                   <View style={styles.detailsGrid}>
@@ -1847,7 +1982,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     </View>
                     <View style={styles.detailCol}>
                       <Text style={styles.detailLabel}>Status</Text>
-                      <Text style={styles.detailValue}>{activeItem.status}</Text>
+                      <Text style={[styles.statusPill, String(activeItem.status).toUpperCase() !== 'ACTIVE' && { backgroundColor: '#F1F5F9', color: '#475569' }]}>{activeItem.status}</Text>
                     </View>
                   </View>
                 </View>
@@ -1882,7 +2017,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                   </View>
                 </View>
 
-                <View style={[styles.profileSection, { borderBottomWidth: 0 }]}>
+                <View style={[styles.profileSection, { marginBottom: 0 }]}>
                   <Text style={styles.sectionHeading}>ASSIGNMENT DETAILS</Text>
                   <View style={styles.detailsGrid}>
                     <View style={styles.detailCol}>
@@ -2114,11 +2249,17 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
             </View>
 
             <ScrollView style={{ maxHeight: 420, padding: 18 }}>
-              {STATIC_TELECOM_HISTORY_LOGS.map(log => (
+              {historyLoading && (
+                <Text style={{ fontSize: 13, color: THEME.slate500, padding: 12 }}>Loading history...</Text>
+              )}
+              {!historyLoading && historyLogs.length === 0 && (
+                <Text style={{ fontSize: 13, color: THEME.slate500, padding: 12 }}>No history recorded yet.</Text>
+              )}
+              {historyLogs.map(log => (
                 <View key={log.id} style={styles.historyLogCard}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                     <Text style={{ fontSize: 13, fontWeight: '700', color: THEME.slate900 }}>{log.action} • {log.line}</Text>
-                    <Text style={{ fontSize: 11, color: THEME.slate500 }}>{log.date}</Text>
+                    <Text style={{ fontSize: 11, color: THEME.slate500 }}>{formatHistoryTime(log.at)}</Text>
                   </View>
                   <Text style={{ fontSize: 12, color: THEME.slate600, lineHeight: 18 }}>{log.details}</Text>
                   <Text style={{ fontSize: 11, color: THEME.amberDark, fontWeight: '600', marginTop: 4 }}>By: {log.user}</Text>
@@ -2317,6 +2458,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     marginBottom: 16,
+    position: 'relative',
+    zIndex: 20,
   },
   segmentedPillsWrap: {
     flexDirection: 'row',
@@ -2366,6 +2509,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    position: 'relative',
+    zIndex: 25,
   },
   filterDropdownBtn: {
     height: 38,
@@ -2406,7 +2551,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRadius: 8,
-    zIndex: 999,
+    zIndex: 99999,
+    elevation: 30,
+    boxShadow: '0 12px 28px -5px rgba(0, 0, 0, 0.18), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
     ...SHADOWS.large,
     overflow: 'hidden',
   },
@@ -2436,21 +2583,23 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     overflow: 'hidden',
     width: '100%',
+    position: 'relative',
+    zIndex: 1,
     ...SHADOWS.small,
   },
   tableHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: THEME.white,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
     borderBottomWidth: 1,
     borderColor: '#E2E8F0',
   },
   colHeader: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#64748B',
+    color: '#475569',
     letterSpacing: 0.5,
   },
   newHeaderBadge: {
@@ -2468,8 +2617,8 @@ const styles = StyleSheet.create({
   tableRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
     borderBottomWidth: 1,
     borderColor: '#F1F5F9',
     backgroundColor: THEME.white,
@@ -2478,8 +2627,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF5F5', // Tint red when bill > plan amount
   },
   companyNameText: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '600',
     color: '#0F172A',
   },
   companySubText: {
@@ -2509,18 +2658,17 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   phoneNumberText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#2563EB', // Blue link
-    textDecorationLine: 'underline',
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#1D4ED8', // Blue link
   },
   phoneNumberTextOver: {
     color: '#DC2626', // Red if over plan
     textDecorationLine: 'underline',
   },
   employeeNameText: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '600',
     color: '#0F172A',
   },
   employeeSubText: {
@@ -2579,7 +2727,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   actionsCol: {
-    width: 130,
+    flex: 1.7,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -2595,12 +2743,21 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingHorizontal: 24,
+    paddingVertical: 18,
     borderTopWidth: 1,
     borderColor: '#E2E8F0',
     backgroundColor: THEME.white,
     gap: 12,
+  },
+  showingBold: {
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  pageOfText: {
+    fontSize: 12,
+    color: '#64748B',
+    marginHorizontal: 4,
   },
   legendWrap: {
     flexDirection: 'row',
@@ -2629,8 +2786,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   paginationBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#CBD5E1',
@@ -3021,40 +3181,68 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   profileSection: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderColor: '#F1F5F9',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
   },
   sectionHeading: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#94A3B8',
-    letterSpacing: 0.6,
-    marginBottom: 8,
+    color: '#0E5434',
+    letterSpacing: 0.8,
+    marginBottom: 10,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderColor: '#F1F5F9',
   },
   detailsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    columnGap: '2%',
+    rowGap: 10,
   },
   detailCol: {
-    width: '47%',
+    width: '23.5%',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
   },
   detailLabel: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#64748B',
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginBottom: 4,
   },
   detailValue: {
-    fontSize: 13,
+    fontSize: 13.5,
     color: '#1E293B',
-    fontWeight: '500',
-    marginTop: 2,
+    fontWeight: '600',
   },
   detailValueBold: {
-    fontSize: 13,
+    fontSize: 13.5,
     color: '#0F172A',
     fontWeight: '700',
-    marginTop: 2,
+  },
+  statusPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#DCFCE7',
+    color: '#166534',
+    fontSize: 11,
+    fontWeight: '700',
+    paddingVertical: 2,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    overflow: 'hidden',
   },
   primaryBtn: {
     flexDirection: 'row',

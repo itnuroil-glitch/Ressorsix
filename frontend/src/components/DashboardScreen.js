@@ -7163,7 +7163,7 @@ export default function DashboardScreen({ user, onSignOut }) {
         return <TelecomBillDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} onNavigate={(t) => setActiveTab(t)} />;
       case 'telecom_bill':
       case 'telecome_bill':
-        return <TelecomBillTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('telecom_bill')} checkRowPermission={(compId, act) => checkRowPermission('telecom_bill', compId, act)} />;
+        return <TelecomBillTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} onNavigate={(t) => setActiveTab(t)} permissions={getTabPermissions('telecom_bill')} checkRowPermission={(compId, act) => checkRowPermission('telecom_bill', compId, act)} />;
       case 'usage_charges':
       case 'usage_charge':
       case 'tele_usage_charges':
