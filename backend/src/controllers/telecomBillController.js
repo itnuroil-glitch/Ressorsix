@@ -399,6 +399,28 @@ async function getBillPkCol() {
   return billPkCol;
 }
 
+// Usage logs are saved when the PDF is parsed, before the bill exists, so they are matched by bill number + mobile number
+const last9 = (v) => String(v || '').replace(/\D/g, '').slice(-9);
+const logKeyOf = (billNumber, source) => `${String(billNumber || '').trim()}|${last9(source)}`;
+const dedupeLogs = (rows) => {
+  const seen = new Set();
+  return (rows || []).filter(r => {
+    const k = [r.call_date, r.call_time, r.destination_number, r.duration, r.category, Number(r.amount || 0)].join('|');
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+};
+const dedupeSms = (rows) => {
+  const seen = new Set();
+  return (rows || []).filter(r => {
+    const k = [r.sms_date, r.sms_time, r.destination_number, r.sms_type, r.sms_count, Number(r.amount || 0)].join('|');
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+};
+
 async function getLogFkCol() {
   try {
     const res = await db.query(`
@@ -524,10 +546,39 @@ exports.getAllTelecomBills = async (req, res) => {
       logsMap.get(bId).push(log);
     });
 
+    // logs not linked to a bill id yet, grouped by bill number + mobile number
+    const looseLogs = new Map();
+    (logsRes.rows || []).forEach(log => {
+      if (log[logFk]) return;
+      const k = logKeyOf(log.bill_number, log.source_number);
+      if (!looseLogs.has(k)) looseLogs.set(k, []);
+      looseLogs.get(k).push(log);
+    });
+    const smsRes = await db.query(`SELECT * FROM tbl_telecome_sms_logs ORDER BY sms_log_id ASC`).catch(() => ({ rows: [] }));
+    const smsMap = new Map();
+    (smsRes.rows || []).forEach(sms => {
+      const k = logKeyOf(sms.bill_number, sms.source_number);
+      if (!smsMap.has(k)) smsMap.set(k, []);
+      smsMap.get(k).push(sms);
+    });
+
+    // plan allowances + usage totals read from the PDF, by bill number
+    const usageRes = await db.query(`SELECT * FROM tbl_telecome_usage_summary ORDER BY id ASC`).catch(() => ({ rows: [] }));
+    const usageMap = new Map();
+    (usageRes.rows || []).forEach(u => {
+      const k = String(u.bill_number || '').trim();
+      if (!usageMap.has(k)) usageMap.set(k, []);
+      usageMap.get(k).push(u);
+    });
+
     const formattedRows = await Promise.all(result.rows.map(async (row) => {
       const bId = String(row[pkCol] || row.bill_id || row.tele_bill_id || row.id);
       const childItems = itemsMap.get(bId) || [];
-      const callLogs = logsMap.get(bId) || [];
+      const usageKey = logKeyOf(row.bill_number, row.mobile_number);
+      const linkedLogs = logsMap.get(bId) || [];
+      const callLogs = dedupeLogs(linkedLogs.length > 0 ? linkedLogs : (looseLogs.get(usageKey) || []));
+      const smsLogs = dedupeSms(smsMap.get(usageKey) || []);
+      const usageSums = usageMap.get(String(row.bill_number || '').trim()) || [];
 
       const providerVal = row.telecom_provider || row.provider || '';
       const totalAmt = row.total_bill || row.total_amount || 0;
@@ -667,6 +718,8 @@ exports.getAllTelecomBills = async (req, res) => {
         'Due Date': dueDate,
         items: childItems,
         call_logs: callLogs,
+        sms_logs: smsLogs,
+        usage_summaries: usageSums,
         field_data: {
           ...rawFd,
           Company: row.company_name,
@@ -689,7 +742,9 @@ exports.getAllTelecomBills = async (req, res) => {
           issue_date: issueDate,
           due_date: dueDate,
           items: childItems,
-          call_logs: callLogs
+          call_logs: callLogs,
+          sms_logs: smsLogs,
+          usage_summaries: usageSums
         }
       };
     }));
@@ -733,7 +788,28 @@ exports.getTelecomBillById = async (req, res) => {
     const row = result.rows[0];
 
     const itemsRes = await db.query(`SELECT * FROM tbl_telecome_bill_items WHERE ${itemFk} = $1 ORDER BY item_id ASC`, [id]).catch(() => ({ rows: [] }));
-    const logsRes = await db.query(`SELECT * FROM tbl_telecome_call_logs WHERE ${logFk} = $1 ORDER BY log_id ASC`, [id]).catch(() => ({ rows: [] }));
+    let logsRes = await db.query(`SELECT * FROM tbl_telecome_call_logs WHERE ${logFk} = $1 ORDER BY log_id ASC`, [id]).catch(() => ({ rows: [] }));
+    if (!logsRes.rows.length) {
+      logsRes = await db.query(
+        `SELECT * FROM tbl_telecome_call_logs
+         WHERE bill_number = $1 AND RIGHT(REGEXP_REPLACE(COALESCE(source_number, ''), '\\D', '', 'g'), 9) = $2
+         ORDER BY log_id ASC`,
+        [row.bill_number, last9(row.mobile_number)]
+      ).catch(() => ({ rows: [] }));
+    }
+    logsRes = { rows: dedupeLogs(logsRes.rows) };
+    const smsRes = await db.query(
+      `SELECT * FROM tbl_telecome_sms_logs
+       WHERE bill_number = $1 AND RIGHT(REGEXP_REPLACE(COALESCE(source_number, ''), '\\D', '', 'g'), 9) = $2
+       ORDER BY sms_log_id ASC`,
+      [row.bill_number, last9(row.mobile_number)]
+    ).catch(() => ({ rows: [] }));
+    const smsLogsOut = dedupeSms(smsRes.rows);
+    const usageOutRes = await db.query(
+      `SELECT * FROM tbl_telecome_usage_summary WHERE bill_number = $1 ORDER BY id ASC`,
+      [String(row.bill_number || '').trim()]
+    ).catch(() => ({ rows: [] }));
+    const usageOut = usageOutRes.rows;
 
     const rawFd = typeof row.field_data === 'string' ? JSON.parse(row.field_data || '{}') : (row.field_data || {});
     let periodFrom = row.period_from || row.bill_period_from || rawFd['Bill Period From'] || rawFd.period_from || rawFd.f_from || null;
@@ -856,6 +932,8 @@ exports.getTelecomBillById = async (req, res) => {
       'Due Date': dueDate,
       items: itemsRes.rows,
       call_logs: logsRes.rows,
+      sms_logs: smsLogsOut,
+      usage_summaries: usageOut,
       field_data: {
         ...rawFd,
         Company: row.company_name,
@@ -878,7 +956,9 @@ exports.getTelecomBillById = async (req, res) => {
         issue_date: issueDate,
         due_date: dueDate,
         items: itemsRes.rows,
-        call_logs: logsRes.rows
+        call_logs: logsRes.rows,
+        sms_logs: smsLogsOut,
+        usage_summaries: usageOut
       }
     });
   } catch (err) {
@@ -1136,7 +1216,16 @@ exports.createTelecomBill = async (req, res) => {
     }
 
     // 3. Insert Call Logs into tbl_telecome_call_logs if present
-    const rawLogs = body.call_logs || body.logs || fd.call_logs || [];
+    let rawLogs = body.call_logs || body.logs || fd.call_logs || [];
+    // the PDF parser already saved these logs for this bill number + mobile number, so do not save them again
+    try {
+      const existingLogs = await db.query(
+        `SELECT 1 FROM tbl_telecome_call_logs
+         WHERE bill_number = $1 AND RIGHT(REGEXP_REPLACE(COALESCE(source_number, ''), '\\D', '', 'g'), 9) = $2 LIMIT 1`,
+        [bill_number, last9(mobile_number)]
+      );
+      if (existingLogs.rows.length > 0) rawLogs = [];
+    } catch (e) { }
     const insertedLogs = [];
     for (const log of rawLogs) {
       try {

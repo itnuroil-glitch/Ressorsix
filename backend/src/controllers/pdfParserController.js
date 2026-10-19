@@ -1,5 +1,6 @@
 const { PDFDocument } = require('pdf-lib');
 const pdfParseReq = require('pdf-parse');
+const { extractUsageSummaries, saveUsageSummaries } = require('../utils/usageSummaryExtractor');
 const db = require('../config/db');
 
 const getPdfParseFn = () => {
@@ -830,6 +831,42 @@ exports.parsePdfDocument = async (req, res) => {
       }
     }
 
+    // Plan allowances and usage totals printed in the PDF (minutes, data GB, SMS)
+    let usageSummaries = [];
+    try {
+      usageSummaries = extractUsageSummaries(rawText, { mobile: matchedMobileAccount });
+      if (usageSummaries.length > 0 && matchedDocNumber) {
+        await saveUsageSummaries(matchedDocNumber, usageSummaries);
+        console.log(`Stored usage summary for ${usageSummaries.length} number(s) of bill ${matchedDocNumber}.`);
+      }
+    } catch (usageErr) {
+      console.error('Could not extract usage summary:', usageErr.message);
+    }
+
+    // Parsing the same PDF again must replace its earlier (not yet linked) logs, not add them a second time
+    try {
+      const usagePairs = new Map();
+      [...extractedCallLogs, ...extractedSmsLogs].forEach(l => {
+        const b = l.bill_number || matchedDocNumber || '';
+        const m = l.source_number || matchedMobileAccount || '';
+        if (b) usagePairs.set(`${b}|${m}`, { b, m });
+      });
+      for (const { b, m } of usagePairs.values()) {
+        await db.query(
+          `DELETE FROM tbl_telecome_call_logs
+           WHERE bill_number = $1 AND source_number = $2 AND tele_bill_id IS NULL`,
+          [b, m]
+        );
+        await db.query(
+          `DELETE FROM tbl_telecome_sms_logs
+           WHERE bill_number = $1 AND source_number = $2 AND tele_bill_id IS NULL`,
+          [b, m]
+        );
+      }
+    } catch (cleanErr) {
+      console.error('Could not clear earlier logs for this bill:', cleanErr.message);
+    }
+
     // Insert extracted SMS logs into tbl_telecome_sms_logs table (only if real logs were found)
     for (const sms of extractedSmsLogs) {
       try {
@@ -907,6 +944,7 @@ exports.parsePdfDocument = async (req, res) => {
         remarks: matchedRemarks,
         call_logs: extractedCallLogs,
         sms_logs: extractedSmsLogs,
+        usage_summaries: usageSummaries,
         dynamic_field_map: dynamicFieldMap
       },
       rawTextSnippet: rawText.slice(0, 500)

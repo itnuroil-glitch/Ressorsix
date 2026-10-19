@@ -136,52 +136,96 @@ const buildBillInsights = (rec, connections, employees) => {
   const groupOf = (l) => {
     const c = String(l.category || '').toLowerCase();
     if (/special|premium/.test(c)) return 'special';
-    if (/international|roaming/.test(c)) return 'intl';
+    if (/roaming/.test(c)) return 'roaming'; // incoming roaming calls are not part of the plan limits
+    if (/international/.test(c)) return 'intl';
     return 'local';
   };
   const agg = { local: { min: 0, amt: 0, n: 0 }, intl: { min: 0, amt: 0, n: 0 }, special: { min: 0, amt: 0, n: 0 } };
-  logs.forEach(l => { const g = agg[groupOf(l)]; g.min += toMin(l.duration); g.amt += num(l.amount); g.n += 1; });
+  logs.forEach(l => { const g = agg[groupOf(l)]; if (!g) return; g.min += toMin(l.duration); g.amt += num(l.amount); g.n += 1; });
+
+  // SMS used: national SMS counted from the SMS logs saved with the bill
+  const smsLogs = Array.isArray(rec?.sms_logs) ? rec.sms_logs : [];
+  const nationalSms = smsLogs.filter(x => /national|local/i.test(String(x.sms_type || '')));
+  const smsUsed = nationalSms.reduce((n, x) => n + num(x.sms_count || 1), 0);
+  const smsAmt = nationalSms.reduce((n, x) => n + num(x.amount), 0);
   const hasLogs = logs.length > 0;
 
+  // totals and allowances printed in the PDF (saved when the PDF was extracted)
+  const sums = Array.isArray(rec?.usage_summaries) ? rec.usage_summaries : [];
+  const us = sums.find(x => keyOf(x.mobile_number) === key) || (sums.length === 1 ? sums[0] : null);
+  const has = (v) => v !== null && v !== undefined && v !== '';
+
   const limitNum = (v) => { const n = parseFloat(String(v === undefined || v === null ? '' : v).replace(/,/g, '')); return isNaN(n) ? null : n; };
-  const minRow = (label, limitRaw, g) => {
-    const limit = limitNum(limitRaw);
-    const used = hasLogs ? g.min : null;
+  const fmtN = (n) => Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  // Over by: "+x" when the limit is passed, "x left" when within it, "–" when there is no limit or no usage to compare
+  const overText = (limit, used, unit = '') => {
+    if (limit === null || limit === undefined || used === null || used === undefined) return '–';
+    return used > limit ? `+${fmtN(used - limit)}${unit}` : `${fmtN(limit - used)}${unit} left`;
+  };
+
+  const minRow = (label, limitFromConn, limitFromPdf, usedFromPdf, g) => {
+    const limit = limitNum(limitFromConn) !== null ? limitNum(limitFromConn) : limitNum(limitFromPdf);
+    const used = has(usedFromPdf) ? num(usedFromPdf) : (hasLogs ? g.min : null);
     const over = (limit !== null && used !== null && used > limit) ? used - limit : null;
     return {
       item: label,
-      planLimit: limit !== null ? `${limit.toLocaleString()} min` : '–',
-      used: used !== null ? `${used.toLocaleString()} min` : '–',
-      overBy: over !== null ? `+${over.toLocaleString()} min` : '–',
+      planLimit: limit !== null ? `${fmtN(limit)} min` : '–',
+      used: used !== null ? `${fmtN(used)} min` : '–',
+      overBy: overText(limit, used, ' min'),
       extraCharge: over !== null && g.amt > 0 ? money(g.amt) : '–',
       isExceeded: over !== null
     };
   };
-  const dataLimit = conn ? limitNum(conn.data_allowance) : null;
+
+  // data: allowance from the connection, else from the PDF (plan name / du plan); used from the PDF
+  const dataLimit = conn && limitNum(conn.data_allowance) !== null ? limitNum(conn.data_allowance) : (us && has(us.data_limit_gb) ? num(us.data_limit_gb) : null);
+  const dataUnit = conn && limitNum(conn.data_allowance) !== null ? (conn.data_unit || 'GB') : 'GB';
+  const dataUnlimited = !!(us && us.data_unlimited) && dataLimit === null;
+  const dataUsed = us && has(us.data_used_gb) ? num(us.data_used_gb) : null;
+  const dataOver = dataLimit !== null && dataUsed !== null && dataUsed > dataLimit ? dataUsed - dataLimit : null;
+
   const smsLimit = conn ? limitNum(conn.local_sms) : null;
+  const smsUsedFinal = us && has(us.sms_used) ? num(us.sms_used) : (smsLogs.length > 0 ? smsUsed : null);
+  const smsOver = smsLimit !== null && smsUsedFinal !== null && smsUsedFinal > smsLimit ? smsUsedFinal - smsLimit : null;
+
   const rows = [
-    minRow('Local minutes', conn?.local_minutes, agg.local),
-    minRow('International minutes', conn?.international_minutes, agg.intl),
-    { item: 'Data', planLimit: dataLimit !== null ? `${dataLimit.toLocaleString()} ${conn.data_unit || 'GB'}` : '–', used: '–', overBy: '–', extraCharge: '–', isExceeded: false },
-    { item: 'Local SMS', planLimit: smsLimit !== null ? smsLimit.toLocaleString() : '–', used: '–', overBy: '–', extraCharge: '–', isExceeded: false },
+    minRow('Local minutes', conn?.local_minutes, us?.local_minutes_limit, us?.local_minutes_used, agg.local),
+    minRow('International minutes', conn?.international_minutes, null, us?.intl_minutes_used, agg.intl),
+    {
+      item: 'Data',
+      planLimit: dataUnlimited ? 'Unlimited' : (dataLimit !== null ? `${fmtN(dataLimit)} ${dataUnit}` : '–'),
+      used: dataUsed !== null ? `${fmtN(dataUsed)} GB` : '–',
+      overBy: overText(dataLimit, dataUsed, ' GB'),
+      extraCharge: '–',
+      isExceeded: dataOver !== null
+    },
+    {
+      item: 'Local SMS',
+      planLimit: smsLimit !== null ? fmtN(smsLimit) : '–',
+      used: smsUsedFinal !== null ? fmtN(smsUsedFinal) : '–',
+      overBy: overText(smsLimit, smsUsedFinal),
+      extraCharge: smsOver !== null && smsAmt > 0 ? money(smsAmt) : '–',
+      isExceeded: smsOver !== null
+    },
     {
       item: 'Calls to special numbers',
       planLimit: 'Not included',
       used: hasLogs ? `${agg.special.n} calls` : '–',
-      overBy: hasLogs && agg.special.n > 0 ? 'All' : '–',
+      overBy: hasLogs && agg.special.n > 0 ? `${agg.special.n} calls · ${fmtN(agg.special.min)} min` : '–',
       extraCharge: hasLogs && agg.special.amt > 0 ? money(agg.special.amt) : '–',
       isExceeded: hasLogs && agg.special.n > 0
     }
   ];
   const exceededCount = rows.filter(r => r.isExceeded).length;
 
-  return { total, plan, usage, vat, excess, isOver: excess > EXCESS_MARGIN_AED, conn, employee, rows, exceededCount, hasLogs, money };
+  return { total, plan, usage, vat, excess, isOver: excess > EXCESS_MARGIN_AED, conn, employee, rows, exceededCount, hasLogs: hasLogs || !!us, money };
 };
 
 const TelecomBillTab = ({
   user,
   showToast,
   isSidebarCollapsed,
+  onNavigate,
   permissions = { can_view: true, can_create: true, can_edit: true, can_delete: true, full_control: true },
   checkRowPermission = () => true
 }) => {
@@ -2233,6 +2277,33 @@ const TelecomBillTab = ({
                                   <Text style={[styles.itemTdCell, { flex: 2, textAlign: 'right', fontWeight: r.isExceeded ? '700' : '500', color: r.isExceeded ? '#DC2626' : '#0F172A' }]}>{r.extraCharge}</Text>
                                 </View>
                               ))}
+                              {!ins.conn && (
+                                <TouchableOpacity
+                                  style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, margin: 12, backgroundColor: '#004D34', paddingHorizontal: 14, paddingVertical: 9, borderRadius: 8 }}
+                                  onPress={() => {
+                                    const sums = Array.isArray(editingRecord?.usage_summaries) ? editingRecord.usage_summaries : [];
+                                    const k9 = String(mobileVal || '').replace(/\D/g, '').slice(-9);
+                                    const us = sums.find(x => String(x.mobile_number || '').replace(/\D/g, '').slice(-9) === k9) || (sums.length === 1 ? sums[0] : null);
+                                    const digitsOnly = String(mobileVal || '').split(/[,|\n]+/)[0].replace(/\D/g, '');
+                                    const prefill = {
+                                      connectionNumber: digitsOnly,
+                                      company: editingRecord?.company_name || editingRecord?.Company || selectedCompany || '',
+                                      provider: /du/i.test(String(rawProv)) && !/etisalat/i.test(String(rawProv)) ? 'du' : 'e& (Etisalat)',
+                                      connectionType: /^(0?5\d{8})$/.test(digitsOnly) ? 'SIM' : 'Landline',
+                                      monthlyRentAED: ins.plan ? String(ins.plan) : '',
+                                      dataAllowance: us && us.data_limit_gb ? String(us.data_limit_gb) : '',
+                                      localMinutes: us && us.local_minutes_limit ? String(us.local_minutes_limit) : '',
+                                    };
+                                    try { if (typeof localStorage !== 'undefined') localStorage.setItem('teleConnPrefill', JSON.stringify(prefill)); } catch (e) { }
+                                    closeModal();
+                                    if (onNavigate) onNavigate('telecom_connection');
+                                  }}
+                                  activeOpacity={0.8}
+                                >
+                                  <Ionicons name="add-circle-outline" size={16} color="#FFFFFF" />
+                                  <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 12 }}>Add to Telecom Connection to set plan limits</Text>
+                                </TouchableOpacity>
+                              )}
                               {!ins.hasLogs && (
                                 <Text style={{ fontSize: 11, color: '#64748B', padding: 12 }}>
                                   Used amounts appear when call logs are imported for this bill. Plan limits come from the number's Telecom Connection.

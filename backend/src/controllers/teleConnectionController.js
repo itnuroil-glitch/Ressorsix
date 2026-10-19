@@ -509,3 +509,95 @@ exports.releaseConnection = async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 };
+
+// ---------------------------------------------------------------------------
+// HISTORY & AUDIT TRAIL (built from what the database stores)
+// ---------------------------------------------------------------------------
+exports.getConnectionHistory = async (req, res) => {
+  try {
+    const keyOf = (v) => String(v || '').replace(/\D/g, '').slice(-9);
+    const parseDmy = (s) => {
+      const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(s || ''));
+      return m ? new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), 12, 0, 0) : null;
+    };
+    const events = [];
+
+    const conns = await db.query(
+      `SELECT id, connection_number, connection_type, company_name, created_by, updated_by, created_at, updated_at, is_deleted
+       FROM tbl_tele_connection`
+    );
+    const byId = new Map();
+    const byKey = new Map();
+    conns.rows.forEach(c => {
+      byId.set(c.id, c);
+      if (!c.is_deleted) byKey.set(keyOf(c.connection_number), c);
+      events.push({
+        id: `C${c.id}`, action: 'Created Connection', line: c.connection_number,
+        details: `Added new ${c.connection_type || 'SIM'} connection under ${c.company_name}`,
+        user: c.created_by || 'System', at: c.created_at
+      });
+      const created = new Date(c.created_at).getTime();
+      const updated = new Date(c.updated_at).getTime();
+      if (c.is_deleted) {
+        events.push({
+          id: `D${c.id}`, action: 'Deleted Connection', line: c.connection_number,
+          details: `Connection removed from ${c.company_name}`,
+          user: c.updated_by || 'Admin', at: c.updated_at
+        });
+      } else if (updated - created > 5000) {
+        events.push({
+          id: `U${c.id}`, action: 'Connection Updated', line: c.connection_number,
+          details: `Connection details updated for ${c.company_name}`,
+          user: c.updated_by || 'Admin', at: c.updated_at
+        });
+      }
+    });
+
+    // employee assignments
+    try {
+      await ensureAssignmentTable();
+      const ra = await db.query(`SELECT * FROM tbl_tele_reassignment ORDER BY id`);
+      ra.rows.forEach(r => {
+        const c = byId.get(r.connection_id);
+        if (!c) return;
+        events.push({
+          id: `A${r.id}`, action: 'Employee Assigned', line: c.connection_number,
+          details: `Assigned to ${r.employee_name}${r.assigned_from ? ` from ${r.assigned_from}` : ''}`,
+          user: r.performed_by || 'Admin', at: r.created_at
+        });
+        if (r.assigned_to) {
+          const end = parseDmy(r.assigned_to);
+          events.push({
+            id: `R${r.id}`, action: 'Employee De-assigned', line: c.connection_number,
+            details: `${r.employee_name} released on ${r.assigned_to}${r.reason ? ` (${r.reason})` : ''}`,
+            user: r.performed_by || 'Admin', at: end ? end.toISOString() : r.created_at
+          });
+        }
+      });
+    } catch (e) {
+      console.warn('History: assignments unavailable', e.message);
+    }
+
+    // bills added for numbers saved in Telecom Connections
+    try {
+      const bills = await db.query(`SELECT tele_bill_id, bill_number, mobile_number, total_bill, created_at FROM tbl_telecome_bill`);
+      bills.rows.forEach(b => {
+        const c = byKey.get(keyOf(b.mobile_number));
+        if (!c) return;
+        events.push({
+          id: `B${b.tele_bill_id}`, action: 'Bill Added', line: c.connection_number,
+          details: `Bill ${b.bill_number || '#' + b.tele_bill_id} saved: AED ${Number(b.total_bill || 0).toFixed(2)}`,
+          user: 'Telecom Bill Form', at: b.created_at
+        });
+      });
+    } catch (e) {
+      console.warn('History: bills unavailable', e.message);
+    }
+
+    events.sort((a, b) => new Date(b.at) - new Date(a.at));
+    res.status(200).json(events.slice(0, 200));
+  } catch (error) {
+    console.error('Error building connection history:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
