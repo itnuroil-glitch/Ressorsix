@@ -2408,39 +2408,6 @@ const TelecomBillTab = ({
                         );
                       })()}
 
-
-                      {/* 4. CALL LOGS IF AVAILABLE (tbl_telecome_call_logs) */}
-                      {editingRecord?.call_logs && editingRecord.call_logs.length > 0 && (
-                        <View style={styles.viewDetailCard}>
-                          <View style={styles.viewDetailCardHeader}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                              <Ionicons name="call" size={18} color="#004D34" />
-                              <Text style={styles.viewDetailCardTitle}>
-                                CALL & USAGE LOGS ({editingRecord.call_logs.length})
-                              </Text>
-                            </View>
-                          </View>
-
-                          <View style={{ overflow: 'hidden' }}>
-                            <View style={styles.itemTableHeader}>
-                              <Text style={[styles.itemThCell, { flex: 1.2 }]}>DATE & TIME</Text>
-                              <Text style={[styles.itemThCell, { flex: 1.2 }]}>DESTINATION</Text>
-                              <Text style={[styles.itemThCell, { flex: 1.0 }]}>CATEGORY</Text>
-                              <Text style={[styles.itemThCell, { flex: 0.8 }]}>DURATION</Text>
-                              <Text style={[styles.itemThCell, { flex: 0.8, textAlign: 'right' }]}>AMOUNT</Text>
-                            </View>
-                            {editingRecord.call_logs.slice(0, 30).map((log, lIdx) => (
-                              <View key={log.log_id || lIdx} style={[styles.itemTableRow, lIdx % 2 === 1 && { backgroundColor: '#F8FAFC' }]}>
-                                <Text style={[styles.itemTdCell, { flex: 1.2, color: '#334155' }]}>{log.call_date} {log.call_time}</Text>
-                                <Text style={[styles.itemTdCell, { flex: 1.2, fontFamily: 'monospace' }]}>{log.destination_number}</Text>
-                                <Text style={[styles.itemTdCell, { flex: 1.0, color: '#0F172A', fontWeight: '600' }]}>{log.category}</Text>
-                                <Text style={[styles.itemTdCell, { flex: 0.8, color: '#64748B' }]}>{log.duration}</Text>
-                                <Text style={[styles.itemTdCell, { flex: 0.8, textAlign: 'right', fontWeight: '700', color: '#004D34' }]}>AED {Number(log.amount || 0).toFixed(2)}</Text>
-                              </View>
-                            ))}
-                          </View>
-                        </View>
-                      )}
                     </View>
                   ) : (
                     <>
