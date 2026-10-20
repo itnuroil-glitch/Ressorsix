@@ -172,6 +172,9 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
   const [planDraftError, setPlanDraftError] = useState('');
   const [isPlanDropdownOpen, setIsPlanDropdownOpen] = useState(false);
   const [isConnTypeDropdownOpen, setIsConnTypeDropdownOpen] = useState(false);
+  const [showErrors, setShowErrors] = useState(false);
+  const isMissing = key => showErrors && !String(formData[key] ?? '').trim();
+  const errBorder = { borderColor: '#DC2626', backgroundColor: '#FEF2F2' };
   const [customPlans, setCustomPlans] = useState([]);
   const [hiddenPlans, setHiddenPlans] = useState([]);
   const [editingPlanName, setEditingPlanName] = useState('');
@@ -502,7 +505,8 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
       const pre = JSON.parse(raw);
       setFormData({ ...defaultFormState, ...pre });
       setActiveItem(null);
-      setIsAddEditModalOpen(true);
+      setShowErrors(false);
+    setIsAddEditModalOpen(true);
     } catch (e) { }
   }, []);
 
@@ -540,6 +544,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     setIsProviderDropdownOpen(false);
     setIsDataUnitDropdownOpen(false);
     setIsEmployeeDropdownOpen(false);
+    setShowErrors(false);
     setIsAddEditModalOpen(true);
   };
 
@@ -564,10 +569,22 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     setIsProviderDropdownOpen(false);
     setIsDataUnitDropdownOpen(false);
     setIsEmployeeDropdownOpen(false);
+    setShowErrors(false);
     setIsAddEditModalOpen(true);
   };
 
   const handleSaveConnection = async () => {
+    const missingLabels = [];
+    if (!String(formData.company || '').trim()) missingLabels.push('Company');
+    if (!String(formData.provider || '').trim()) missingLabels.push('Provider');
+    if (!String(formData.connectionNumber || '').trim()) missingLabels.push('Mobile / Line Number');
+    if (!String(formData.accountNumber || '').trim()) missingLabels.push('Account No');
+    if (!String(formData.planName || '').trim()) missingLabels.push('Package Plan');
+    if (missingLabels.length > 0) {
+      setShowErrors(true);
+      if (showToast) showToast(`Please fill mandatory fields: ${missingLabels.join(', ')}`, 'error');
+      return;
+    }
     if (!formData.connectionNumber || !formData.connectionNumber.trim()) {
       if (showToast) showToast('Mobile / Line Number is required', 'error');
       return;
@@ -771,12 +788,19 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     if (!activeItem) return;
 
     try {
+      let token = null;
+      try { token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null; } catch (e) { }
       const res = await fetch(`${API_URL}/api/tele-connections/${activeItem.id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        credentials: 'include',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      const data = await res.json();
+      // The server (or a proxy in front of it) may answer with non-JSON, so read it safely
+      const raw = await res.text();
+      let data = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch (e) { data = {}; }
       if (!res.ok) {
-        throw new Error(data.message || 'Failed to delete connection');
+        throw new Error(data.message || `Failed to delete connection (HTTP ${res.status})`);
       }
 
       if (showToast) showToast(`Connection ${activeItem.connectionNumber} removed!`, 'info');
@@ -869,7 +893,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
 
           {/* + Add Connection Button */}
           <TouchableOpacity style={styles.addConnectionBtn} onPress={handleOpenAdd} activeOpacity={0.8}>
-            <Ionicons name="add" size={18} color={THEME.white} />
+            <Ionicons name="add" size={22} color="#0E5434" />
             <Text style={styles.addConnectionBtnText}>+ Add Connection</Text>
           </TouchableOpacity>
         </View>
@@ -1177,7 +1201,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                               : styles.statusBadgeTextUnassigned,
                           ]}
                         >
-                          {row.status}
+                          {row.status === 'ACTIVE' ? 'ASSIGNED' : row.status}
                         </Text>
                       </View>
                     </View>
@@ -1312,62 +1336,59 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
               <View style={[styles.formSectionBox, { zIndex: isConnTypeDropdownOpen ? 1000 : 2 }]}>
                 <Text style={styles.formSectionHeader}>CONNECTION DETAILS</Text>
 
-                {/* Connection Type with NEW badge */}
-                <View style={{ marginBottom: 18, zIndex: isConnTypeDropdownOpen ? 1002 : 11 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                    <Text style={styles.exactFieldLabel}>
-                      Connection Type <Text style={{ color: THEME.redAlertText }}>*</Text>
-                    </Text>
-                  </View>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.dropdownSelector,
-                      isConnTypeDropdownOpen && { borderColor: '#166534', backgroundColor: '#FFFFFF' },
-                    ]}
-                    onPress={() => {
-                      setIsConnTypeDropdownOpen(!isConnTypeDropdownOpen);
-                      setIsCompanyDropdownOpen(false);
-                      setIsProviderDropdownOpen(false);
-                      setIsDataUnitDropdownOpen(false);
-                      setIsEmployeeDropdownOpen(false);
-                      setIsPlanDropdownOpen(false);
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.dropdownValueText}>{formData.connectionType || 'SIM'}</Text>
-                    <Ionicons
-                      name={isConnTypeDropdownOpen ? 'chevron-up' : 'chevron-down'}
-                      size={14}
-                      color={THEME.slate500}
-                    />
-                  </TouchableOpacity>
-
-                  {isConnTypeDropdownOpen && (
-                    <View style={styles.dropdownListPopover}>
-                      {['SIM', 'Internet', 'Landline'].map(type => (
-                        <TouchableOpacity
-                          key={type}
-                          style={[styles.dropdownItem, formData.connectionType === type && styles.dropdownItemActive]}
-                          onPress={() => {
-                            setFormData({ ...formData, connectionType: type });
-                            setIsConnTypeDropdownOpen(false);
-                          }}
-                        >
-                          <Text
-                            style={[styles.dropdownItemText, formData.connectionType === type && styles.dropdownItemTextActive]}
-                          >
-                            {type}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
+                {/* Row 1: Connection Type * | Company * */}
+                <View style={[styles.formTwoColRow, { zIndex: (isConnTypeDropdownOpen || isCompanyDropdownOpen) ? 1000 : 12 }]}>
+                  <View style={[styles.formCol, { zIndex: isConnTypeDropdownOpen ? 1002 : 1 }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                      <Text style={styles.exactFieldLabel}>
+                        Connection Type <Text style={{ color: THEME.redAlertText }}>*</Text>
+                      </Text>
                     </View>
-                  )}
-                </View>
 
-                {/* Row 1: Company * [NEW] | Provider * */}
-                <View style={[styles.formTwoColRow, { zIndex: (isCompanyDropdownOpen || isProviderDropdownOpen) ? 1000 : 10 }]}>
-                  {/* Company Dropdown */}
+                    <TouchableOpacity
+                      style={[
+                        styles.dropdownSelector,
+                        isConnTypeDropdownOpen && { borderColor: '#166534', backgroundColor: '#FFFFFF' },
+                      ]}
+                      onPress={() => {
+                        setIsConnTypeDropdownOpen(!isConnTypeDropdownOpen);
+                        setIsCompanyDropdownOpen(false);
+                        setIsProviderDropdownOpen(false);
+                        setIsDataUnitDropdownOpen(false);
+                        setIsEmployeeDropdownOpen(false);
+                        setIsPlanDropdownOpen(false);
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.dropdownValueText}>{formData.connectionType || 'SIM'}</Text>
+                      <Ionicons
+                        name={isConnTypeDropdownOpen ? 'chevron-up' : 'chevron-down'}
+                        size={14}
+                        color={THEME.slate500}
+                      />
+                    </TouchableOpacity>
+
+                    {isConnTypeDropdownOpen && (
+                      <View style={styles.dropdownListPopover}>
+                        {['SIM', 'Internet', 'Landline'].map(type => (
+                          <TouchableOpacity
+                            key={type}
+                            style={[styles.dropdownItem, formData.connectionType === type && styles.dropdownItemActive]}
+                            onPress={() => {
+                              setFormData({ ...formData, connectionType: type });
+                              setIsConnTypeDropdownOpen(false);
+                            }}
+                          >
+                            <Text
+                              style={[styles.dropdownItemText, formData.connectionType === type && styles.dropdownItemTextActive]}
+                            >
+                              {type}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+                  </View>
                   <View style={[styles.formCol, { zIndex: isCompanyDropdownOpen ? 1001 : 1 }]}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                       <Text style={styles.exactFieldLabel}>
@@ -1378,6 +1399,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     <TouchableOpacity
                       style={[
                         styles.dropdownSelector,
+                        isMissing('company') && errBorder,
                         isCompanyDropdownOpen && { borderColor: '#166534', backgroundColor: '#FFFFFF' },
                       ]}
                       onPress={() => {
@@ -1395,6 +1417,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                         color={isCompanyDropdownOpen ? '#166534' : THEME.slate500}
                       />
                     </TouchableOpacity>
+                    {isMissing('company') && <Text style={styles.fieldErrorText}>Company is required</Text>}
 
                     {isCompanyDropdownOpen && (
                       <View style={styles.dropdownListPopover}>
@@ -1428,8 +1451,10 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                       </View>
                     )}
                   </View>
+                </View>
 
-                  {/* Provider Dropdown */}
+                {/* Row 2: Provider * | Mobile / Line Number * */}
+                <View style={[styles.formTwoColRow, { zIndex: isProviderDropdownOpen ? 1000 : 11 }]}>
                   <View style={[styles.formCol, { zIndex: isProviderDropdownOpen ? 1001 : 1 }]}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                       <Text style={styles.exactFieldLabel}>
@@ -1440,6 +1465,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     <TouchableOpacity
                       style={[
                         styles.dropdownSelector,
+                        isMissing('provider') && errBorder,
                         isProviderDropdownOpen && { borderColor: '#166534', backgroundColor: '#FFFFFF' },
                       ]}
                       onPress={() => {
@@ -1457,6 +1483,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                         color={isProviderDropdownOpen ? '#166534' : THEME.slate500}
                       />
                     </TouchableOpacity>
+                    {isMissing('provider') && <Text style={styles.fieldErrorText}>Provider is required</Text>}
 
                     {isProviderDropdownOpen && (
                       <View style={styles.dropdownListPopover}>
@@ -1490,10 +1517,6 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                       </View>
                     )}
                   </View>
-                </View>
-
-                {/* Row 2: Mobile / Line Number * [NEW] | Account No * */}
-                <View style={[styles.formTwoColRow, { zIndex: 5 }]}>
                   <View style={styles.formCol}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                       <Text style={styles.exactFieldLabel}>
@@ -1501,17 +1524,21 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                       </Text>
                     </View>
                     <TextInput
-                      style={styles.exactTextInput}
+                      style={[styles.exactTextInput, isMissing('connectionNumber') && errBorder]}
                       value={formData.connectionNumber}
                       onChangeText={val => setFormData({ ...formData, connectionNumber: val })}
                       placeholder="e.g. 0527901846"
                       placeholderTextColor={THEME.slate400}
                     />
+                    {isMissing('connectionNumber') && <Text style={styles.fieldErrorText}>Mobile / Line Number is required</Text>}
                     <Text style={styles.fieldHelperText}>
                       Landline and Internet: the service number, e.g. 04-2856310
                     </Text>
                   </View>
+                </View>
 
+                {/* Row 3: Account No * | ICCID */}
+                <View style={[styles.formTwoColRow, { zIndex: 5 }]}>
                   <View style={styles.formCol}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
                       <Text style={styles.exactFieldLabel}>
@@ -1519,17 +1546,14 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                       </Text>
                     </View>
                     <TextInput
-                      style={styles.exactTextInput}
+                      style={[styles.exactTextInput, isMissing('accountNumber') && errBorder]}
                       value={formData.accountNumber}
                       onChangeText={val => setFormData({ ...formData, accountNumber: val })}
                       placeholder="Provider account number from the bill"
                       placeholderTextColor={THEME.slate400}
                     />
+                    {isMissing('accountNumber') && <Text style={styles.fieldErrorText}>Account No is required</Text>}
                   </View>
-                </View>
-
-                {/* Row 3: ICCID | Contract No */}
-                <View style={styles.formTwoColRow}>
                   <View style={styles.formCol}>
                     <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>ICCID</Text>
                     <TextInput
@@ -1544,17 +1568,6 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                       placeholderTextColor={THEME.slate400}
                     />
                     <Text style={styles.fieldHelperText}>SIM only</Text>
-                  </View>
-
-                  <View style={styles.formCol}>
-                    <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Contract No</Text>
-                    <TextInput
-                      style={styles.exactTextInput}
-                      value={formData.contractNo}
-                      onChangeText={val => setFormData({ ...formData, contractNo: val })}
-                      placeholder="Enter Contract No"
-                      placeholderTextColor={THEME.slate400}
-                    />
                   </View>
                 </View>
 
@@ -1584,7 +1597,6 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                       />
                     )}
                   </View>
-
                   <View style={styles.formCol}>
                     <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Contract To</Text>
                     {Platform.OS === 'web' ? (
@@ -1608,7 +1620,22 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                         placeholderTextColor={THEME.slate400}
                       />
                     )}
-                                  </View>
+                  </View>
+                </View>
+
+                {/* Row 5: Contract No */}
+                <View style={styles.formTwoColRow}>
+                  <View style={styles.formCol}>
+                    <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Contract No</Text>
+                    <TextInput
+                      style={styles.exactTextInput}
+                      value={formData.contractNo}
+                      onChangeText={val => setFormData({ ...formData, contractNo: val })}
+                      placeholder="Enter Contract No"
+                      placeholderTextColor={THEME.slate400}
+                    />
+                  </View>
+                  <View style={styles.formCol} />
                 </View>
               </View>
 
@@ -1622,12 +1649,36 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     <Text style={styles.exactFieldLabel}>
                       Package Plan <Text style={{ color: THEME.redAlertText }}>*</Text>
                     </Text>
+                    <TouchableOpacity
+                      style={{ marginLeft: 8, padding: 2 }}
+                      onPress={() => {
+                        setIsPlanDropdownOpen(false);
+                        setEditingPlanName('');
+                        setPlanDraft({
+                          planName: '',
+                          monthlyRentAED: '',
+                          dataAllowance: '',
+                          dataUnit: 'GB',
+                          localMinutes: '',
+                          intlMinutes: '',
+                          localSMS: '',
+                          intlSMS: '',
+                          cug: '',
+                        });
+                        setPlanDraftError('');
+                        setIsPlanModalOpen(true);
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="add" size={22} color="#0E5434" />
+                    </TouchableOpacity>
                   </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <TouchableOpacity
                       style={[
                         styles.dropdownSelector,
                         { flex: 1 },
+                        isMissing('planName') && errBorder,
                         isPlanDropdownOpen && { borderColor: '#166534', backgroundColor: '#FFFFFF' },
                       ]}
                       onPress={() => {
@@ -1650,29 +1701,6 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                         size={14}
                         color={THEME.slate500}
                       />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.planAddBtn}
-                      onPress={() => {
-                        setIsPlanDropdownOpen(false);
-                        setEditingPlanName('');
-                        setPlanDraft({
-                          planName: '',
-                          monthlyRentAED: '',
-                          dataAllowance: '',
-                          dataUnit: 'GB',
-                          localMinutes: '',
-                          intlMinutes: '',
-                          localSMS: '',
-                          intlSMS: '',
-                          cug: '',
-                        });
-                        setPlanDraftError('');
-                        setIsPlanModalOpen(true);
-                      }}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons name="add" size={20} color={THEME.white} />
                     </TouchableOpacity>
                     {!!formData.planName && (
                       <>
@@ -1729,9 +1757,10 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                       </>
                     )}
                   </View>
+                  {isMissing('planName') && <Text style={styles.fieldErrorText}>Package Plan is required</Text>}
 
                   {isPlanDropdownOpen && (
-                    <View style={[styles.dropdownListPopover, { left: 0, right: formData.planName ? 128 : 48 }]}>
+                    <View style={[styles.dropdownListPopover, { top: 74, left: 0, right: formData.planName ? 88 : 0 }]}>
                       <View style={{ maxHeight: 220, overflow: 'auto' }}>
                         {planOptions.length === 0 && (
                           <View style={styles.dropdownItem}>
@@ -1817,11 +1846,11 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
 
               {/* SECTION 3: NOTES */}
               <View style={[styles.formSectionBox, { marginTop: 18 }]}>
-                <Text style={styles.formSectionHeader}>NOTES</Text>
+                <Text style={styles.formSectionHeader}>ADDITIONAL DETAILS</Text>
 
                 {/* Row 2: Notes */}
                 <View style={{ marginBottom: 4 }}>
-                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Notes</Text>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Remarks</Text>
                   <TextInput
                     style={styles.exactTextInput}
                     value={formData.notes}
@@ -2034,197 +2063,152 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
       {/* --------------------------------------------------------------------- */}
       <Modal visible={isViewModalOpen} transparent animationType="fade" onRequestClose={() => setIsViewModalOpen(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalBox, { maxWidth: 960, width: '95%', borderRadius: 16, overflow: 'hidden', padding: 0 }]}>
-            {/* Modal Header with Green Document Icon & Circular Close Button */}
-            <View style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              paddingHorizontal: 24,
-              paddingVertical: 18,
-              borderBottomWidth: 1,
-              borderBottomColor: '#E2E8F0',
-              backgroundColor: '#FFFFFF',
-            }}>
+          <View style={styles.addModalContainer}>
+            {/* Header (same as Edit form) */}
+            <View style={styles.addModalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Ionicons name="document-text" size={24} color="#166534" />
-                <Text style={{ fontSize: 20, fontWeight: '700', color: '#0F172A' }}>
-                  View Telecom Connection Record #{activeItem?.id || ''}
-                </Text>
+                <Ionicons name="document-text" size={20} color={THEME.textGreen} />
+                <Text style={styles.addModalTitle}>View Telecom Connection</Text>
               </View>
               <TouchableOpacity
+                style={styles.modalCloseCircle}
                 onPress={() => setIsViewModalOpen(false)}
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 18,
-                  backgroundColor: '#F1F5F9',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                }}
-                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Ionicons name="close" size={22} color="#64748B" />
+                <Ionicons name="close" size={18} color={THEME.slate600} />
               </TouchableOpacity>
             </View>
 
-            {/* Modal Body with Telecom Details Section Card & 2-Column Form Fields */}
-            {activeItem && (
-              <ScrollView style={{ maxHeight: 540, backgroundColor: '#FFFFFF' }} contentContainerStyle={{ padding: 24 }}>
-                <View style={{
-                  backgroundColor: '#FFFFFF',
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: '#E2E8F0',
-                  overflow: 'hidden',
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.05,
-                  shadowRadius: 8,
-                  elevation: 2,
-                }}>
-                  {/* Section Header matching Telecom Details */}
-                  <View style={{
-                    backgroundColor: '#F8FAFC',
-                    paddingHorizontal: 20,
-                    paddingVertical: 14,
-                    borderBottomWidth: 1,
-                    borderBottomColor: '#E2E8F0',
-                  }}>
-                    <Text style={{
-                      fontSize: 14,
-                      fontWeight: '700',
-                      color: '#166534',
-                      textTransform: 'uppercase',
-                      letterSpacing: 0.5,
-                    }}>
-                      TELECOM DETAILS
+            {/* Read-only body: identical sections, order and field styling as the Edit form */}
+            {activeItem && (() => {
+              const dash = v => (v === undefined || v === null || String(v).trim() === '' ? '—' : String(v));
+              const Field = ({ label, value, dropdown, calendar, required, helper, disabled }) => (
+                <View style={styles.formCol}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>
+                    {label}
+                    {required ? <Text style={{ color: THEME.redAlertText }}> *</Text> : null}
+                  </Text>
+                  <View
+                    style={[
+                      styles.exactTextInput,
+                      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+                      disabled && { backgroundColor: '#F1F5F9' },
+                    ]}
+                  >
+                    <Text
+                      style={{ fontSize: 13, color: value === '—' || disabled ? '#94A3B8' : '#1E293B', flexShrink: 1 }}
+                      numberOfLines={1}
+                    >
+                      {value}
                     </Text>
+                    {dropdown && <Ionicons name="chevron-down" size={14} color={THEME.slate500} />}
+                    {calendar && <Ionicons name="calendar-outline" size={17} color={THEME.slate500} />}
                   </View>
-
-                  {/* 2-Column Form Fields Grid */}
-                  <View style={{
-                    padding: 20,
-                    flexDirection: 'row',
-                    flexWrap: 'wrap',
-                    justifyContent: 'space-between',
-                  }}>
-                    {[
-                      { label: 'Provider', value: activeItem.provider || 'e& (Etisalat)', isDropdown: true },
-                      { label: 'Connection Type', value: activeItem.connectionType || 'SIM', isDropdown: true },
-                      { label: 'Account No', value: activeItem.accountNumber || activeItem.connectionNumber || '—' },
-                      { label: 'Contract No', value: activeItem.contractNo || 'Enter Contract No', isPlaceholder: !activeItem.contractNo },
-                      { label: 'ICCID', value: activeItem.iccid || '—' },
-                      { label: 'Contract From', value: activeItem.contractFrom || '—' },
-                      { label: 'Contract To', value: activeItem.contractTo || '—' },
-                      { label: 'CUG', value: activeItem.cug || '—' },
-                      { label: 'Package Plan', value: activeItem.planName || '—' },
-                      { label: 'Monthly Plan Amount', value: activeItem.monthlyRentAED !== undefined && activeItem.monthlyRentAED !== null ? String(activeItem.monthlyRentAED) : '0' },
-                      { label: 'Data Allowance', value: activeItem.dataAllowance ? `${activeItem.dataAllowance} ${activeItem.dataUnit || 'GB'}` : '—' },
-                      { label: 'Local Minutes', value: activeItem.localMinutes || '—' },
-                      { label: 'International Minutes', value: activeItem.intlMinutes || '—' },
-                      { label: 'Local SMS', value: activeItem.localSMS || '—' },
-                      { label: 'International SMS', value: activeItem.intlSMS || '—' },
-                      { label: 'Assigned Employee', value: activeItem.employeeName || 'Unassigned' },
-                      { label: 'Company', value: activeItem.company || '—', isDropdown: true },
-                      { label: 'Status', value: activeItem.status || 'ACTIVE', isDropdown: true },
-                      ...(activeItem.subCompany ? [{ label: 'Sub Company', value: activeItem.subCompany }] : []),
-                      ...(activeItem.notes ? [{ label: 'Notes', value: activeItem.notes, fullWidth: true }] : []),
-                    ].map((f, idx) => (
-                      <View
-                        key={idx}
-                        style={{
-                          width: f.fullWidth || width < 640 ? '100%' : '48%',
-                          marginBottom: 18,
-                        }}
-                      >
-                        <Text style={{
-                          fontSize: 13,
-                          fontWeight: '600',
-                          color: '#1E293B',
-                          marginBottom: 8,
-                        }}>
-                          {f.label}
-                        </Text>
-                        <View style={{
-                          height: 44,
-                          backgroundColor: '#F8FAFC',
-                          borderWidth: 1,
-                          borderColor: '#CBD5E1',
-                          borderRadius: 8,
-                          paddingHorizontal: 16,
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                        }}>
-                          <Text
-                            style={{
-                              fontSize: 14,
-                              color: f.isPlaceholder || f.value === '—' || f.value === 'Enter Contract No' ? '#94A3B8' : '#1E293B',
-                              fontFamily: 'Inter_400Regular, Roboto, sans-serif',
-                            }}
-                            numberOfLines={1}
-                          >
-                            {f.value}
-                          </Text>
-                          {f.isDropdown && (
-                            <Ionicons name="chevron-down" size={16} color="#64748B" />
-                          )}
-                        </View>
-                      </View>
-                    ))}
-                  </View>
+                  {!!helper && <Text style={styles.fieldHelperText}>{helper}</Text>}
                 </View>
-              </ScrollView>
-            )}
+              );
+              const Row = ({ children }) => <View style={styles.formTwoColRow}>{children}</View>;
+              const isSim = (activeItem.connectionType || 'SIM') === 'SIM';
+              const tiles = [
+                ['Monthly Plan Amount', activeItem.monthlyRentAED !== undefined && activeItem.monthlyRentAED !== null ? `${activeItem.monthlyRentAED} AED` : '—'],
+                ['Data Allowance', activeItem.dataAllowance ? `${activeItem.dataAllowance} ${activeItem.dataUnit || 'GB'}` : '—'],
+                ['Local Minutes', dash(activeItem.localMinutes)],
+                ['International Minutes', dash(activeItem.intlMinutes)],
+                ['Local SMS', dash(activeItem.localSMS)],
+                ['International SMS', dash(activeItem.intlSMS)],
+                ['CUG', dash(activeItem.cug)],
+              ];
+              return (
+                <ScrollView
+                  style={styles.addModalScroll}
+                  contentContainerStyle={styles.addModalScrollContent}
+                  showsVerticalScrollIndicator={true}
+                >
+                  {/* SECTION 1: CONNECTION DETAILS */}
+                  <View style={styles.formSectionBox}>
+                    <Text style={styles.formSectionHeader}>CONNECTION DETAILS</Text>
+                    <Row>
+                      <Field required label="Connection Type" value={dash(activeItem.connectionType || 'SIM')} dropdown />
+                      <Field required label="Company" value={dash(activeItem.company)} dropdown />
+                    </Row>
+                    <Row>
+                      <Field required label="Provider" value={dash(activeItem.provider)} dropdown />
+                      <Field
+                        required
+                        label="Mobile / Line Number"
+                        value={dash(activeItem.connectionNumber)}
+                        helper="Landline and Internet: the service number, e.g. 04-2856310"
+                      />
+                    </Row>
+                    <Row>
+                      <Field required label="Account No" value={dash(activeItem.accountNumber)} />
+                      <Field
+                        label="ICCID"
+                        value={dash(activeItem.iccid)}
+                        disabled={!isSim}
+                        helper="SIM only"
+                      />
+                    </Row>
+                    <Row>
+                      <Field label="Contract From" value={dash(activeItem.contractFrom)} calendar />
+                      <Field label="Contract To" value={dash(activeItem.contractTo)} calendar />
+                    </Row>
+                    <Row>
+                      <Field label="Contract No" value={dash(activeItem.contractNo)} />
+                      <View style={styles.formCol} />
+                    </Row>
+                  </View>
 
-            {/* Modal Footer with Left-Aligned Close Button & Right-Aligned Edit Button */}
-            <View style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingHorizontal: 24,
-              paddingVertical: 16,
-              borderTopWidth: 1,
-              borderTopColor: '#E2E8F0',
-              backgroundColor: '#FFFFFF',
-            }}>
+                  {/* SECTION 2: PLAN & LIMITS */}
+                  <View style={[styles.formSectionBox, { marginTop: 18 }]}>
+                    <Text style={styles.formSectionHeader}>PLAN & LIMITS</Text>
+                    <Row>
+                      <Field required label="Package Plan" value={dash(activeItem.planName)} dropdown />
+                    </Row>
+                    <View style={styles.planSummaryGrid}>
+                      {tiles.map(([label, value]) => (
+                        <View key={label} style={styles.planSummaryTile}>
+                          <Text style={styles.detailLabel}>{label}</Text>
+                          <Text style={styles.detailValue}>{value}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+
+                  {/* SECTION 3: ADDITIONAL DETAILS */}
+                  <View style={[styles.formSectionBox, { marginTop: 18 }]}>
+                    <Text style={styles.formSectionHeader}>ADDITIONAL DETAILS</Text>
+                    <Row>
+                      <Field label="Remarks" value={dash(activeItem.notes)} />
+                    </Row>
+                  </View>
+                </ScrollView>
+              );
+            })()}
+
+            {/* Footer (same as Edit form): Close on the left, Edit Details on the right */}
+            <View style={styles.addModalFooter}>
               <TouchableOpacity
-                style={{
-                  backgroundColor: '#F1F5F9',
-                  borderWidth: 1,
-                  borderColor: '#CBD5E1',
-                  borderRadius: 8,
-                  paddingVertical: 10,
-                  paddingHorizontal: 24,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
+                style={styles.formBackBtn}
                 onPress={() => setIsViewModalOpen(false)}
                 activeOpacity={0.8}
               >
-                <Text style={{ fontSize: 14, fontWeight: '600', color: '#475569' }}>Close</Text>
+                <Text style={styles.formBackBtnText}>Close</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={{
-                  backgroundColor: '#004D34',
-                  borderRadius: 8,
-                  paddingVertical: 10,
-                  paddingHorizontal: 22,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 8,
-                }}
-                onPress={() => {
-                  setIsViewModalOpen(false);
-                  handleOpenEdit(activeItem);
-                }}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="pencil-outline" size={15} color="#FFFFFF" />
-                <Text style={{ fontSize: 14, fontWeight: '700', color: '#FFFFFF' }}>Edit Details</Text>
-              </TouchableOpacity>
+              <View style={styles.formFooterRightActions}>
+                <TouchableOpacity
+                  style={[styles.formSaveBtn, { flexDirection: 'row', alignItems: 'center', gap: 8 }]}
+                  onPress={() => {
+                    setIsViewModalOpen(false);
+                    handleOpenEdit(activeItem);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="pencil-outline" size={15} color="#FFFFFF" />
+                  <Text style={styles.formSaveBtnText}>Edit Details</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </View>
@@ -2275,6 +2259,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
               })()}
 
               {/* Employee leaving? Release number */}
+              {activeItem && !isUnassignedConn(activeItem) && (
               <View style={naStyles.card}>
                 <Text style={naStyles.cardTitle}>EMPLOYEE LEAVING? RELEASE NUMBER</Text>
                 <View style={{ flexDirection: 'row', gap: 12, marginTop: 10 }}>
@@ -2325,6 +2310,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                   When an employee is marked as left in the employee master, his numbers move to the Unassigned list automatically on the last working day.
                 </Text>
               </View>
+              )}
 
               {/* Assign to another employee */}
               <View style={naStyles.card}>
@@ -3160,6 +3146,12 @@ const styles = StyleSheet.create({
     fontFamily: 'inherit',
     cursor: 'pointer',
     boxSizing: 'border-box',
+  },
+  fieldErrorText: {
+    fontSize: 11,
+    color: '#DC2626',
+    marginTop: 4,
+    fontWeight: '500',
   },
   fieldHelperText: {
     fontSize: 11,
