@@ -167,6 +167,14 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
   };
 
   const [formData, setFormData] = useState(defaultFormState);
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [planDraft, setPlanDraft] = useState({});
+  const [planDraftError, setPlanDraftError] = useState('');
+  const [isPlanDropdownOpen, setIsPlanDropdownOpen] = useState(false);
+  const [isConnTypeDropdownOpen, setIsConnTypeDropdownOpen] = useState(false);
+  const [customPlans, setCustomPlans] = useState([]);
+  const [hiddenPlans, setHiddenPlans] = useState([]);
+  const [editingPlanName, setEditingPlanName] = useState('');
 
   // Reassign Form State
   const [reassignData, setReassignData] = useState({
@@ -407,6 +415,27 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
   }, [activeFilterTab, selectedCompany, selectedType, searchTerm, isExcessFilterActive]);
 
   // Available employees dynamically filtered by the selected company in the form
+  // Saved package plans: taken from existing connections + plans created via the + modal
+  const planOptions = useMemo(() => {
+    const map = new Map();
+    [...customPlans, ...connections].forEach(c => {
+      const name = (c.planName || '').trim();
+      if (!name || map.has(name.toLowerCase()) || hiddenPlans.includes(name.toLowerCase())) return;
+      map.set(name.toLowerCase(), {
+        planName: name,
+        monthlyRentAED: c.monthlyRentAED,
+        dataAllowance: c.dataAllowance,
+        dataUnit: c.dataUnit || 'GB',
+        localMinutes: c.localMinutes,
+        intlMinutes: c.intlMinutes,
+        localSMS: c.localSMS,
+        intlSMS: c.intlSMS,
+        cug: c.cug,
+      });
+    });
+    return Array.from(map.values());
+  }, [connections, customPlans, hiddenPlans]);
+
   const availableEmployees = useMemo(() => {
     const comp = (formData.company || '').trim().toLowerCase();
 
@@ -1280,46 +1309,60 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
               keyboardShouldPersistTaps="handled"
             >
               {/* SECTION 1: CONNECTION DETAILS */}
-              <View style={styles.formSectionBox}>
+              <View style={[styles.formSectionBox, { zIndex: isConnTypeDropdownOpen ? 1000 : 2 }]}>
                 <Text style={styles.formSectionHeader}>CONNECTION DETAILS</Text>
 
                 {/* Connection Type with NEW badge */}
-                <View style={{ marginBottom: 18 }}>
+                <View style={{ marginBottom: 18, zIndex: isConnTypeDropdownOpen ? 1002 : 11 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                     <Text style={styles.exactFieldLabel}>
                       Connection Type <Text style={{ color: THEME.redAlertText }}>*</Text>
                     </Text>
-                    <View style={styles.newBadge}>
-                      <Text style={styles.newBadgeText}>NEW</Text>
-                    </View>
                   </View>
 
-                  {/* Segmented 3-Option Switcher: SIM | Internet | Landline */}
-                  <View style={styles.connectionTypeSegment}>
-                    {['SIM', 'Internet', 'Landline'].map(type => {
-                      const isSelected = formData.connectionType === type;
-                      return (
+                  <TouchableOpacity
+                    style={[
+                      styles.dropdownSelector,
+                      isConnTypeDropdownOpen && { borderColor: '#166534', backgroundColor: '#FFFFFF' },
+                    ]}
+                    onPress={() => {
+                      setIsConnTypeDropdownOpen(!isConnTypeDropdownOpen);
+                      setIsCompanyDropdownOpen(false);
+                      setIsProviderDropdownOpen(false);
+                      setIsDataUnitDropdownOpen(false);
+                      setIsEmployeeDropdownOpen(false);
+                      setIsPlanDropdownOpen(false);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.dropdownValueText}>{formData.connectionType || 'SIM'}</Text>
+                    <Ionicons
+                      name={isConnTypeDropdownOpen ? 'chevron-up' : 'chevron-down'}
+                      size={14}
+                      color={THEME.slate500}
+                    />
+                  </TouchableOpacity>
+
+                  {isConnTypeDropdownOpen && (
+                    <View style={styles.dropdownListPopover}>
+                      {['SIM', 'Internet', 'Landline'].map(type => (
                         <TouchableOpacity
                           key={type}
-                          style={[
-                            styles.typeSegmentBtn,
-                            isSelected && styles.typeSegmentBtnActive,
-                          ]}
-                          onPress={() => setFormData({ ...formData, connectionType: type })}
-                          activeOpacity={0.8}
+                          style={[styles.dropdownItem, formData.connectionType === type && styles.dropdownItemActive]}
+                          onPress={() => {
+                            setFormData({ ...formData, connectionType: type });
+                            setIsConnTypeDropdownOpen(false);
+                          }}
                         >
                           <Text
-                            style={[
-                              styles.typeSegmentBtnText,
-                              isSelected && styles.typeSegmentBtnTextActive,
-                            ]}
+                            style={[styles.dropdownItemText, formData.connectionType === type && styles.dropdownItemTextActive]}
                           >
                             {type}
                           </Text>
                         </TouchableOpacity>
-                      );
-                    })}
-                  </View>
+                      ))}
+                    </View>
+                  )}
                 </View>
 
                 {/* Row 1: Company * [NEW] | Provider * */}
@@ -1330,9 +1373,6 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                       <Text style={styles.exactFieldLabel}>
                         Company <Text style={{ color: THEME.redAlertText }}>*</Text>
                       </Text>
-                      <View style={styles.newBadge}>
-                        <Text style={styles.newBadgeText}>NEW</Text>
-                      </View>
                     </View>
 
                     <TouchableOpacity
@@ -1459,9 +1499,6 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                       <Text style={styles.exactFieldLabel}>
                         Mobile / Line Number <Text style={{ color: THEME.redAlertText }}>*</Text>
                       </Text>
-                      <View style={styles.newBadge}>
-                        <Text style={styles.newBadgeText}>NEW</Text>
-                      </View>
                     </View>
                     <TextInput
                       style={styles.exactTextInput}
@@ -1571,300 +1608,216 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                         placeholderTextColor={THEME.slate400}
                       />
                     )}
-                  </View>
+                                  </View>
                 </View>
               </View>
 
               {/* SECTION 2: PLAN & LIMITS */}
-              <View style={[styles.formSectionBox, { marginTop: 18 }]}>
+              <View style={[styles.formSectionBox, { marginTop: 18, zIndex: isPlanDropdownOpen ? 1000 : 1 }]}>
                 <Text style={styles.formSectionHeader}>PLAN & LIMITS</Text>
 
-                {/* Row 1: Package Plan * | Monthly Plan Amount (AED) * */}
-                <View style={styles.formTwoColRow}>
-                  <View style={styles.formCol}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                      <Text style={styles.exactFieldLabel}>
-                        Package Plan <Text style={{ color: THEME.redAlertText }}>*</Text>
-                      </Text>
-                    </View>
-                    <TextInput
-                      style={styles.exactTextInput}
-                      value={formData.planName}
-                      onChangeText={val => setFormData({ ...formData, planName: val })}
-                      placeholder="e.g. Standard 100 AED Plan"
-                      placeholderTextColor={THEME.slate400}
-                    />
+                {/* Package Plan dropdown (+ creates a new plan) */}
+                <View style={[styles.formCol, { zIndex: isPlanDropdownOpen ? 1000 : 1 }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={styles.exactFieldLabel}>
+                      Package Plan <Text style={{ color: THEME.redAlertText }}>*</Text>
+                    </Text>
                   </View>
-
-                  <View style={styles.formCol}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                      <Text style={styles.exactFieldLabel}>
-                        Monthly Plan Amount (AED) <Text style={{ color: THEME.redAlertText }}>*</Text>
-                      </Text>
-                    </View>
-                    <TextInput
-                      style={styles.exactTextInput}
-                      value={formData.monthlyRentAED}
-                      onChangeText={val => setFormData({ ...formData, monthlyRentAED: val })}
-                      placeholder="100"
-                      keyboardType="numeric"
-                      placeholderTextColor={THEME.slate400}
-                    />
-                    <Text style={styles.fieldHelperText}>Bills above this amount are marked as excess</Text>
-                  </View>
-                </View>
-
-                {/* Row 2: Data Allowance (Composite with unit) | Local Minutes */}
-                <View style={[styles.formTwoColRow, { zIndex: isDataUnitDropdownOpen ? 1000 : 2 }]}>
-                  {/* Data Allowance */}
-                  <View style={[styles.formCol, { zIndex: isDataUnitDropdownOpen ? 1001 : 1 }]}>
-                    <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Data Allowance</Text>
-                    <View style={styles.compositeDataInputWrap}>
-                      <TextInput
-                        style={styles.compositeNumberInput}
-                        value={formData.dataAllowance}
-                        onChangeText={val => setFormData({ ...formData, dataAllowance: val })}
-                        placeholder="10.5"
-                        placeholderTextColor={THEME.slate400}
-                      />
-                      <TouchableOpacity
-                        style={styles.compositeUnitSelector}
-                        onPress={() => {
-                          setIsDataUnitDropdownOpen(!isDataUnitDropdownOpen);
-                          setIsCompanyDropdownOpen(false);
-                          setIsProviderDropdownOpen(false);
-                          setIsEmployeeDropdownOpen(false);
-                        }}
-                      >
-                        <Text style={styles.compositeUnitText}>{formData.dataUnit}</Text>
-                        <Ionicons
-                          name={isDataUnitDropdownOpen ? 'chevron-up' : 'chevron-down'}
-                          size={14}
-                          color={THEME.slate500}
-                        />
-                      </TouchableOpacity>
-                    </View>
-
-                    {isDataUnitDropdownOpen && (
-                      <View style={[styles.dropdownListPopover, { right: 0, width: 110 }]}>
-                        <View style={{ maxHeight: 180, overflow: 'auto' }}>
-                          {STATIC_DATA_UNITS.map(unit => (
-                            <TouchableOpacity
-                              key={unit}
-                              style={[
-                                styles.dropdownItem,
-                                formData.dataUnit === unit && styles.dropdownItemActive,
-                              ]}
-                              onPress={() => {
-                                setFormData(prev => ({ ...prev, dataUnit: unit }));
-                                setIsDataUnitDropdownOpen(false);
-                              }}
-                            >
-                              <Text
-                                style={[
-                                  styles.dropdownItemText,
-                                  formData.dataUnit === unit && styles.dropdownItemTextActive,
-                                ]}
-                              >
-                                {unit}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Local Minutes */}
-                  <View style={styles.formCol}>
-                    <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Local Minutes</Text>
-                    <TextInput
-                      style={styles.exactTextInput}
-                      value={formData.localMinutes}
-                      onChangeText={val => setFormData({ ...formData, localMinutes: val })}
-                      placeholder="750"
-                      keyboardType="numeric"
-                      placeholderTextColor={THEME.slate400}
-                    />
-                  </View>
-                </View>
-
-                {/* Row 3: International Minutes | Local SMS */}
-                <View style={styles.formTwoColRow}>
-                  <View style={styles.formCol}>
-                    <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>International Minutes</Text>
-                    <TextInput
-                      style={styles.exactTextInput}
-                      value={formData.intlMinutes}
-                      onChangeText={val => setFormData({ ...formData, intlMinutes: val })}
-                      placeholder="250"
-                      keyboardType="numeric"
-                      placeholderTextColor={THEME.slate400}
-                    />
-                  </View>
-
-                  <View style={styles.formCol}>
-                    <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Local SMS</Text>
-                    <TextInput
-                      style={styles.exactTextInput}
-                      value={formData.localSMS}
-                      onChangeText={val => setFormData({ ...formData, localSMS: val })}
-                      placeholder="65"
-                      keyboardType="numeric"
-                      placeholderTextColor={THEME.slate400}
-                    />
-                  </View>
-                </View>
-
-                {/* Row 4: International SMS | CUG */}
-                <View style={styles.formTwoColRow}>
-                  <View style={styles.formCol}>
-                    <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>International SMS</Text>
-                    <TextInput
-                      style={styles.exactTextInput}
-                      value={formData.intlSMS}
-                      onChangeText={val => setFormData({ ...formData, intlSMS: val })}
-                      placeholder="65"
-                      keyboardType="numeric"
-                      placeholderTextColor={THEME.slate400}
-                    />
-                  </View>
-
-                  <View style={styles.formCol}>
-                    <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>CUG</Text>
-                    <TextInput
-                      style={styles.exactTextInput}
-                      value={formData.cug}
-                      onChangeText={val => setFormData({ ...formData, cug: val })}
-                      placeholder="10000"
-                      keyboardType="numeric"
-                      placeholderTextColor={THEME.slate400}
-                    />
-                  </View>
-                </View>
-              </View>
-
-              {/* SECTION 3: ASSIGN TO EMPLOYEE */}
-              <View style={[styles.formSectionBox, { marginTop: 18, zIndex: isEmployeeDropdownOpen ? 1000 : 1 }]}>
-                <Text style={styles.formSectionHeader}>ASSIGN TO EMPLOYEE</Text>
-
-                {/* Row 1: Assigned Employee | Assigned From [NEW] */}
-                <View style={[styles.formTwoColRow, { zIndex: isEmployeeDropdownOpen ? 1001 : 1, marginBottom: 14 }]}>
-                  {/* Assigned Employee Dropdown */}
-                  <View style={[styles.formCol, { zIndex: isEmployeeDropdownOpen ? 1002 : 1 }]}>
-                    <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Assigned Employee</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <TouchableOpacity
                       style={[
                         styles.dropdownSelector,
-                        isEmployeeDropdownOpen && { borderColor: '#166534', backgroundColor: '#FFFFFF' },
+                        { flex: 1 },
+                        isPlanDropdownOpen && { borderColor: '#166534', backgroundColor: '#FFFFFF' },
                       ]}
                       onPress={() => {
-                        setIsEmployeeDropdownOpen(!isEmployeeDropdownOpen);
+                        setIsPlanDropdownOpen(!isPlanDropdownOpen);
                         setIsCompanyDropdownOpen(false);
                         setIsProviderDropdownOpen(false);
+                        setIsEmployeeDropdownOpen(false);
                         setIsDataUnitDropdownOpen(false);
                       }}
                       activeOpacity={0.8}
                     >
-                      <Text style={[styles.dropdownValueText, { fontWeight: '500' }]} numberOfLines={1}>
-                        {formData.employeeName
-                          ? (formData.employeeName === 'Unassigned'
-                              ? 'Unassigned'
-                              : `${formData.employeeName} (${formData.company || 'ASAS Gen Tr LLC'})`)
-                          : 'Select Employee'}
+                      <Text
+                        style={[styles.dropdownValueText, !formData.planName && { color: THEME.slate400 }]}
+                        numberOfLines={1}
+                      >
+                        {formData.planName || 'Select package plan'}
                       </Text>
                       <Ionicons
-                        name={isEmployeeDropdownOpen ? 'chevron-up' : 'chevron-down'}
-                        size={16}
-                        color={isEmployeeDropdownOpen ? '#166534' : THEME.slate500}
+                        name={isPlanDropdownOpen ? 'chevron-up' : 'chevron-down'}
+                        size={14}
+                        color={THEME.slate500}
                       />
                     </TouchableOpacity>
-
-                    {isEmployeeDropdownOpen && (
-                      <View style={styles.dropdownListPopover}>
-                        <View style={{ maxHeight: 220, overflow: 'auto' }}>
-                          {availableEmployees.map(emp => {
-                            const isSelected = formData.employeeName === emp.name;
-                            const label = emp.name === 'Unassigned'
-                              ? 'Unassigned'
-                              : `${emp.name} (${emp.company === 'All' ? formData.company : emp.company})`;
-                            return (
-                              <TouchableOpacity
-                                key={emp.id}
-                                style={[
-                                  styles.dropdownItem,
-                                  isSelected && styles.dropdownItemActive,
-                                ]}
-                                onPress={() => {
-                                  setFormData(prev => ({
-                                    ...prev,
-                                    employeeName: emp.name,
-                                    assignedFrom: emp.joinDate || prev.assignedFrom || '01/01/2026',
-                                    employeeSub: emp.joinDate ? `Since ${emp.joinDate}` : prev.employeeSub,
-                                  }));
-                                  setIsEmployeeDropdownOpen(false);
-                                }}
-                              >
-                                <Text
-                                  style={[
-                                    styles.dropdownItemText,
-                                    isSelected && styles.dropdownItemTextActive,
-                                  ]}
-                                  numberOfLines={1}
-                                >
-                                  {label}
-                                </Text>
-                                {isSelected && (
-                                  <Ionicons name="checkmark" size={14} color={THEME.primaryGreen} />
-                                )}
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </View>
-                      </View>
+                    <TouchableOpacity
+                      style={styles.planAddBtn}
+                      onPress={() => {
+                        setIsPlanDropdownOpen(false);
+                        setEditingPlanName('');
+                        setPlanDraft({
+                          planName: '',
+                          monthlyRentAED: '',
+                          dataAllowance: '',
+                          dataUnit: 'GB',
+                          localMinutes: '',
+                          intlMinutes: '',
+                          localSMS: '',
+                          intlSMS: '',
+                          cug: '',
+                        });
+                        setPlanDraftError('');
+                        setIsPlanModalOpen(true);
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="add" size={20} color={THEME.white} />
+                    </TouchableOpacity>
+                    {!!formData.planName && (
+                      <>
+                        <TouchableOpacity
+                          style={styles.planEditBtn}
+                          onPress={() => {
+                            setIsPlanDropdownOpen(false);
+                            setEditingPlanName(formData.planName);
+                            setPlanDraft({
+                              planName: formData.planName,
+                              monthlyRentAED: formData.monthlyRentAED,
+                              dataAllowance: formData.dataAllowance,
+                              dataUnit: formData.dataUnit || 'GB',
+                              localMinutes: formData.localMinutes,
+                              intlMinutes: formData.intlMinutes,
+                              localSMS: formData.localSMS,
+                              intlSMS: formData.intlSMS,
+                              cug: formData.cug,
+                            });
+                            setPlanDraftError('');
+                            setIsPlanModalOpen(true);
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons name="pencil-outline" size={17} color="#0E5434" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.planDeleteBtn}
+                          onPress={() => {
+                            const ok = Platform.OS === 'web' && typeof window !== 'undefined' && window.confirm
+                              ? window.confirm(`Delete package plan "${formData.planName}"?`)
+                              : true;
+                            if (!ok) return;
+                            const key = formData.planName.trim().toLowerCase();
+                            setHiddenPlans(prev => (prev.includes(key) ? prev : [...prev, key]));
+                            setCustomPlans(prev => prev.filter(pl => pl.planName.toLowerCase() !== key));
+                            setFormData(prev => ({
+                              ...prev,
+                              planName: '',
+                              monthlyRentAED: '',
+                              dataAllowance: '',
+                              dataUnit: 'GB',
+                              localMinutes: '',
+                              intlMinutes: '',
+                              localSMS: '',
+                              intlSMS: '',
+                              cug: '',
+                            }));
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons name="trash-outline" size={17} color={THEME.redAlertText} />
+                        </TouchableOpacity>
+                      </>
                     )}
-                    <Text style={styles.fieldHelperText}>Only employees of the selected company are listed</Text>
                   </View>
 
-                  {/* Assigned From with [NEW] Badge */}
-                  <View style={styles.formCol}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                      <Text style={styles.exactFieldLabel}>Assigned From</Text>
-                      <View style={styles.newBadge}>
-                        <Text style={styles.newBadgeText}>NEW</Text>
+                  {isPlanDropdownOpen && (
+                    <View style={[styles.dropdownListPopover, { left: 0, right: formData.planName ? 128 : 48 }]}>
+                      <View style={{ maxHeight: 220, overflow: 'auto' }}>
+                        {planOptions.length === 0 && (
+                          <View style={styles.dropdownItem}>
+                            <Text style={styles.dropdownItemText}>No saved plans. Click + to add one.</Text>
+                          </View>
+                        )}
+                        {planOptions.map(plan => (
+                          <TouchableOpacity
+                            key={plan.planName}
+                            style={[
+                              styles.dropdownItem,
+                              formData.planName === plan.planName && styles.dropdownItemActive,
+                            ]}
+                            onPress={() => {
+                              setFormData(prev => ({
+                                ...prev,
+                                planName: plan.planName,
+                                monthlyRentAED: plan.monthlyRentAED === undefined || plan.monthlyRentAED === null ? '' : String(plan.monthlyRentAED),
+                                dataAllowance: plan.dataAllowance === undefined || plan.dataAllowance === null ? '' : String(plan.dataAllowance),
+                                dataUnit: plan.dataUnit || 'GB',
+                                localMinutes: plan.localMinutes === undefined || plan.localMinutes === null ? '' : String(plan.localMinutes),
+                                intlMinutes: plan.intlMinutes === undefined || plan.intlMinutes === null ? '' : String(plan.intlMinutes),
+                                localSMS: plan.localSMS === undefined || plan.localSMS === null ? '' : String(plan.localSMS),
+                                intlSMS: plan.intlSMS === undefined || plan.intlSMS === null ? '' : String(plan.intlSMS),
+                                cug: plan.cug === undefined || plan.cug === null ? '' : String(plan.cug),
+                              }));
+                              setIsPlanDropdownOpen(false);
+                            }}
+                          >
+                            <Text
+                              style={[
+                                styles.dropdownItemText,
+                                formData.planName === plan.planName && styles.dropdownItemTextActive,
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {plan.planName}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
                       </View>
                     </View>
-                    {Platform.OS === 'web' ? (
-                      <View style={{ position: 'relative', width: '100%', justifyContent: 'center' }}>
-                        <input
-                          type="date"
-                          value={toDateInputValue(formData.assignedFrom)}
-                          onChange={(e) => {
-                            const formatted = fromDateInputValue(e.target.value);
-                            setFormData({
-                              ...formData,
-                              assignedFrom: formatted,
-                              employeeSub: formatted ? `Since ${formatted}` : 'Never assigned'
-                            });
-                          }}
-                          style={StyleSheet.flatten([styles.exactDateInput])}
-                        />
-                        <View style={{ position: 'absolute', right: 12, pointerEvents: 'none' }}>
-                          <Ionicons name="calendar-outline" size={17} color={THEME.slate500} />
-                        </View>
-                      </View>
-                    ) : (
-                      <TextInput
-                        style={styles.exactTextInput}
-                        value={formData.assignedFrom}
-                        onChangeText={val => setFormData({ ...formData, assignedFrom: val, employeeSub: val ? `Since ${val}` : 'Never assigned' })}
-                        placeholder="DD/MM/YYYY"
-                        placeholderTextColor={THEME.slate400}
-                      />
-                    )}
-                    <Text style={styles.fieldHelperText}>Usually the employee's joining date</Text>
-                  </View>
+                  )}
                 </View>
+
+                {/* Selected plan details */}
+                {!!formData.planName && (
+                  <View style={{ marginTop: 14 }}>
+                    <View style={styles.planSummaryGrid}>
+                      <View style={styles.planSummaryTile}>
+                        <Text style={styles.detailLabel}>Monthly Plan Amount</Text>
+                        <Text style={styles.detailValue}>{formData.monthlyRentAED ? `${formData.monthlyRentAED} AED` : '—'}</Text>
+                      </View>
+                      <View style={styles.planSummaryTile}>
+                        <Text style={styles.detailLabel}>Data Allowance</Text>
+                        <Text style={styles.detailValue}>{formData.dataAllowance ? `${formData.dataAllowance} ${formData.dataUnit || 'GB'}` : '—'}</Text>
+                      </View>
+                      <View style={styles.planSummaryTile}>
+                        <Text style={styles.detailLabel}>Local Minutes</Text>
+                        <Text style={styles.detailValue}>{formData.localMinutes || '—'}</Text>
+                      </View>
+                      <View style={styles.planSummaryTile}>
+                        <Text style={styles.detailLabel}>International Minutes</Text>
+                        <Text style={styles.detailValue}>{formData.intlMinutes || '—'}</Text>
+                      </View>
+                      <View style={styles.planSummaryTile}>
+                        <Text style={styles.detailLabel}>Local SMS</Text>
+                        <Text style={styles.detailValue}>{formData.localSMS || '—'}</Text>
+                      </View>
+                      <View style={styles.planSummaryTile}>
+                        <Text style={styles.detailLabel}>International SMS</Text>
+                        <Text style={styles.detailValue}>{formData.intlSMS || '—'}</Text>
+                      </View>
+                      <View style={styles.planSummaryTile}>
+                        <Text style={styles.detailLabel}>CUG</Text>
+                        <Text style={styles.detailValue}>{formData.cug || '—'}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.fieldHelperText}>Bills above the monthly plan amount are marked as excess</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* SECTION 3: NOTES */}
+              <View style={[styles.formSectionBox, { marginTop: 18 }]}>
+                <Text style={styles.formSectionHeader}>NOTES</Text>
 
                 {/* Row 2: Notes */}
                 <View style={{ marginBottom: 4 }}>
@@ -1908,6 +1861,167 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                   <Text style={styles.formSaveBtnText}>{isSaving ? 'Saving...' : 'Complete & Save'}</Text>
                 </TouchableOpacity>
               </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* --------------------------------------------------------------------- */}
+      {/* MODAL: PLAN DETAILS (opened from + beside Package Plan)               */}
+      {/* --------------------------------------------------------------------- */}
+      <Modal visible={isPlanModalOpen} transparent animationType="fade" onRequestClose={() => setIsPlanModalOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { maxWidth: 640, width: '92%' }]}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>{editingPlanName ? 'Edit Plan' : 'Plan Details'}</Text>
+                <Text style={styles.modalSubtitle}>{editingPlanName ? editingPlanName : 'Create a new package plan'}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setIsPlanModalOpen(false)}>
+                <Ionicons name="close" size={22} color={THEME.slate500} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 480 }} contentContainerStyle={{ padding: 20 }}>
+              <View style={styles.planModalGrid}>
+                <View style={{ width: '100%' }}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>
+                    Package Plan Name <Text style={{ color: THEME.redAlertText }}>*</Text>
+                  </Text>
+                  <TextInput
+                    style={styles.exactTextInput}
+                    value={planDraft.planName}
+                    onChangeText={val => { setPlanDraft(prev => ({ ...prev, planName: val })); setPlanDraftError(''); }}
+                    placeholder="e.g. Standard 100 AED Plan"
+                    placeholderTextColor={THEME.slate400}
+                  />
+                </View>
+
+                <View style={styles.planModalField}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>
+                    Monthly Plan Amount (AED) <Text style={{ color: THEME.redAlertText }}>*</Text>
+                  </Text>
+                  <TextInput
+                    style={[styles.exactTextInput, !!planDraftError && { borderColor: THEME.redAlertText }]}
+                    value={planDraft.monthlyRentAED}
+                    onChangeText={val => { setPlanDraft(prev => ({ ...prev, monthlyRentAED: val })); setPlanDraftError(''); }}
+                    placeholder="100"
+                    keyboardType="numeric"
+                    placeholderTextColor={THEME.slate400}
+                  />
+                  {planDraftError ? (
+                    <Text style={[styles.fieldHelperText, { color: THEME.redAlertText }]}>{planDraftError}</Text>
+                  ) : (
+                    <Text style={styles.fieldHelperText}>Bills above this amount are marked as excess</Text>
+                  )}
+                </View>
+
+                <View style={styles.planModalField}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Data Allowance</Text>
+                  <TextInput
+                    style={styles.exactTextInput}
+                    value={planDraft.dataAllowance}
+                    onChangeText={val => setPlanDraft(prev => ({ ...prev, dataAllowance: val }))}
+                    placeholder="10.5"
+                    placeholderTextColor={THEME.slate400}
+                  />
+                </View>
+
+                <View style={styles.planModalField}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Local Minutes</Text>
+                  <TextInput
+                    style={styles.exactTextInput}
+                    value={planDraft.localMinutes}
+                    onChangeText={val => setPlanDraft(prev => ({ ...prev, localMinutes: val }))}
+                    placeholder="750"
+                    keyboardType="numeric"
+                    placeholderTextColor={THEME.slate400}
+                  />
+                </View>
+
+                <View style={styles.planModalField}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>International Minutes</Text>
+                  <TextInput
+                    style={styles.exactTextInput}
+                    value={planDraft.intlMinutes}
+                    onChangeText={val => setPlanDraft(prev => ({ ...prev, intlMinutes: val }))}
+                    placeholder="250"
+                    keyboardType="numeric"
+                    placeholderTextColor={THEME.slate400}
+                  />
+                </View>
+
+                <View style={styles.planModalField}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Local SMS</Text>
+                  <TextInput
+                    style={styles.exactTextInput}
+                    value={planDraft.localSMS}
+                    onChangeText={val => setPlanDraft(prev => ({ ...prev, localSMS: val }))}
+                    placeholder="65"
+                    keyboardType="numeric"
+                    placeholderTextColor={THEME.slate400}
+                  />
+                </View>
+
+                <View style={styles.planModalField}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>International SMS</Text>
+                  <TextInput
+                    style={styles.exactTextInput}
+                    value={planDraft.intlSMS}
+                    onChangeText={val => setPlanDraft(prev => ({ ...prev, intlSMS: val }))}
+                    placeholder="65"
+                    keyboardType="numeric"
+                    placeholderTextColor={THEME.slate400}
+                  />
+                </View>
+
+                <View style={styles.planModalField}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>CUG</Text>
+                  <TextInput
+                    style={styles.exactTextInput}
+                    value={planDraft.cug}
+                    onChangeText={val => setPlanDraft(prev => ({ ...prev, cug: val }))}
+                    placeholder="10000"
+                    keyboardType="numeric"
+                    placeholderTextColor={THEME.slate400}
+                  />
+                </View>
+
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity style={styles.secondaryBtn} onPress={() => setIsPlanModalOpen(false)}>
+                <Text style={styles.secondaryBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                onPress={() => {
+                  if (!String(planDraft.planName ?? '').trim()) {
+                    setPlanDraftError('Package Plan Name is required');
+                    return;
+                  }
+                  if (!String(planDraft.monthlyRentAED ?? '').trim()) {
+                    setPlanDraftError('Monthly Plan Amount is required');
+                    return;
+                  }
+                  const saved = { ...planDraft, planName: String(planDraft.planName).trim() };
+                  const newKey = saved.planName.toLowerCase();
+                  const oldKey = editingPlanName.trim().toLowerCase();
+                  setHiddenPlans(prev => {
+                    const next = prev.filter(k => k !== newKey);
+                    return oldKey && oldKey !== newKey && !next.includes(oldKey) ? [...next, oldKey] : next;
+                  });
+                  setCustomPlans(prev => [
+                    saved,
+                    ...prev.filter(pl => pl.planName.toLowerCase() !== newKey && pl.planName.toLowerCase() !== oldKey),
+                  ]);
+                  setFormData(prev => ({ ...prev, ...saved }));
+                  setIsPlanModalOpen(false);
+                }}
+              >
+                <Text style={styles.primaryBtnText}>{editingPlanName ? 'Update Plan' : 'Save Plan'}</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -3035,6 +3149,7 @@ const styles = StyleSheet.create({
     height: 42,
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
+    borderStyle: 'solid',
     borderColor: '#E2E8F0',
     borderRadius: 8,
     paddingLeft: 12,
@@ -3306,6 +3421,72 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 999,
     overflow: 'hidden',
+  },
+  planSummaryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    columnGap: '2%',
+    rowGap: 10,
+  },
+  planSummaryTile: {
+    width: '32%',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+  },
+  planEditBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    backgroundColor: '#F0FDF4',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  planDeleteBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    backgroundColor: '#FEF2F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  planAddBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: '#0E5434',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  planModalGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    columnGap: '4%',
+    rowGap: 16,
+  },
+  planModalField: {
+    width: '48%',
+  },
+  planUnitChip: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    backgroundColor: '#E2E8F0',
+  },
+  planUnitChipActive: {
+    backgroundColor: '#0E5434',
+  },
+  planUnitChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
   },
   primaryBtn: {
     flexDirection: 'row',
