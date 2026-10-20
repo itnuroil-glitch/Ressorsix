@@ -23,18 +23,60 @@ const keyOf = (v) => String(v || '').replace(/\D/g, '').slice(-9);
 const fmt = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-// month key "YYYY-MM" of a bill (period end, else period start, else created date)
+// month key "YYYY-MM" of a bill (period end, else period start, else issue date, pdf filename or created date)
 const billMonthKey = (b) => {
-  const raw = b.period_to || b.period_from || b['Bill Period To'] || b['Bill Period From'] || b.created_at;
-  if (!raw) return null;
-  const d = new Date(raw);
-  if (isNaN(d.getTime())) return null;
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  if (!b) return null;
+  const parseStr = (val) => {
+    if (!val) return null;
+    const str = String(val).trim();
+    // 1. Matches YYYY-MM or YYYY-MM-DD
+    const iso = str.match(/\b(20\d{2})[-/](\d{1,2})\b/);
+    if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}`;
+    // 2. Matches DD/MM/YYYY or DD-MM-YYYY
+    const dmy = str.match(/\b(\d{1,2})[-/](\d{1,2})[-/](20\d{2})\b/);
+    if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}`;
+    // 3. Matches Month Name + Year e.g. "Aug 2026", "August 2026", "2026-August"
+    const mNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    for (let i = 0; i < mNames.length; i++) {
+      const reg = new RegExp(`\\b${mNames[i]}[a-z]*\\b`, 'i');
+      if (reg.test(str)) {
+        const yMatch = str.match(/\b(20\d{2})\b/);
+        const y = yMatch ? yMatch[1] : '2026';
+        return `${y}-${String(i + 1).padStart(2, '0')}`;
+      }
+    }
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
+    return null;
+  };
+
+  const raw = b.period_to || b.period_from || b['Bill Period To'] || b['Bill Period From'] || b.bill_date || b.issue_date;
+  const parsed = parseStr(raw);
+  if (parsed) return parsed;
+
+  if (b.pdf_filename) {
+    const fnParsed = parseStr(b.pdf_filename);
+    if (fnParsed) return fnParsed;
+  }
+
+  if (b.created_at) {
+    const crParsed = parseStr(b.created_at);
+    if (crParsed) return crParsed;
+  }
+  return null;
 };
+
 const monthLabel = (key) => {
   if (!key) return '';
-  const [y, m] = key.split('-');
-  return `${MONTHS[Number(m) - 1]} ${y}`;
+  if (key === 'All Months') return 'All Months';
+  const parts = key.split('-');
+  if (parts.length < 2) return key;
+  const [y, m] = parts;
+  const mNum = Number(m);
+  if (isNaN(mNum) || mNum < 1 || mNum > 12) return key;
+  return `${MONTHS[mNum - 1]} ${y}`;
 };
 
 const toMin = (d) => {
@@ -55,8 +97,8 @@ const usageReasons = (bill, conn) => {
       agg[g] += toMin(l.duration);
       if (g === 'special') cnt.special += 1;
     });
-    const localLimit = parseFloat(conn.local_minutes);
-    const intlLimit = parseFloat(conn.international_minutes);
+    const localLimit = parseFloat(conn?.local_minutes);
+    const intlLimit = parseFloat(conn?.international_minutes);
     if (!isNaN(localLimit) && agg.local > localLimit) reasons.push(`Local minutes +${agg.local - localLimit}`);
     if (!isNaN(intlLimit) && agg.intl > intlLimit) reasons.push(`Intl minutes +${agg.intl - intlLimit}`);
     if (cnt.special > 0) reasons.push(`Special numbers ${cnt.special} calls`);
@@ -107,16 +149,41 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate }) {
     })();
   }, []);
 
-  // every month that has at least one bill, newest first
+  // every month that has at least one bill, plus 'All Months'
   const monthOptions = useMemo(() => {
     const keys = bills.map(billMonthKey).filter(Boolean);
-    return Array.from(new Set(keys)).sort().reverse();
+    const unique = Array.from(new Set(keys)).sort().reverse();
+    return ['All Months', ...unique];
   }, [bills]);
 
-  // start on the newest month
+  // Smart initial default: pick the newest month that actually has excess records, or 'All Months'
   useEffect(() => {
-    if (!monthFilter && monthOptions.length > 0) setMonthFilter(monthOptions[0]);
-  }, [monthOptions, monthFilter]);
+    if (!monthFilter && monthOptions.length > 0) {
+      const validMonths = monthOptions.filter(m => m !== 'All Months');
+      const connByKey = new Map();
+      connections.forEach(c => { const k = keyOf(c.connection_number); if (k && !connByKey.has(k)) connByKey.set(k, c); });
+
+      const monthWithExcess = validMonths.find(m => {
+        return bills.some(b => {
+          if (billMonthKey(b) !== m) return false;
+          const total = num(b.total_bill ?? b['Total Bill'] ?? b.total_amount);
+          const vat = num(b.vat_current_period ?? b.vat_amount ?? b['VAT']);
+          const billExcl = vat > 0 && total > vat ? total - vat : total;
+          const conn = connByKey.get(keyOf(b.mobile_number || b['Mobile Number / Account']));
+          const connPlan = conn ? num(conn.monthly_plan_amount) : 0;
+          const billPlan = num(b.plan_rental ?? b['Monthly Plan Amount'] ?? b['Service Rental']);
+          const plan = connPlan > 0 ? connPlan : billPlan;
+          return (billExcl - plan) > EXCESS_MARGIN_AED;
+        });
+      });
+
+      if (monthWithExcess) {
+        setMonthFilter(monthWithExcess);
+      } else {
+        setMonthFilter(validMonths.length > 0 ? validMonths[0] : 'All Months');
+      }
+    }
+  }, [monthOptions, monthFilter, bills, connections]);
 
   // companies that have a connection or a bill
   const companyOptions = useMemo(() => {
@@ -127,24 +194,26 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate }) {
     return ['All Companies', ...Array.from(new Set(names)).sort()];
   }, [connections, bills]);
 
-  // one row per number + company for the selected month (latest bill wins).
-  // The plan amount comes from the number's Telecom Connection; if the number is not saved there, from the bill's own plan rental.
+  // one row per number + company for the selected month (or all months when 'All Months' selected)
   const { rows, billedCount } = useMemo(() => {
     const connByKey = new Map();
     connections.forEach(c => { const k = keyOf(c.connection_number); if (k && !connByKey.has(k)) connByKey.set(k, c); });
 
     const latest = new Map();
     bills.forEach(b => {
-      if (monthFilter && billMonthKey(b) !== monthFilter) return;
+      const bMonth = billMonthKey(b);
+      if (monthFilter && monthFilter !== 'All Months' && bMonth !== monthFilter) return;
       const rawNo = b.mobile_number || b['Mobile Number / Account'];
       const k = keyOf(rawNo);
       if (!k) return;
       const conn = connByKey.get(k) || null;
       const company = (conn && conn.company_name) || b.company_name || b.Company || '';
-      const gk = `${k}|${company.toLowerCase()}`;
+      const gk = (monthFilter === 'All Months')
+        ? `${k}|${bMonth || 'unknown'}|${company.toLowerCase()}`
+        : `${k}|${company.toLowerCase()}`;
       const prev = latest.get(gk);
       const id = Number(b.tele_bill_id || b.id || 0);
-      if (!prev || id > prev.id) latest.set(gk, { id, gk, bill: b, conn, company, rawNo });
+      if (!prev || id > prev.id) latest.set(gk, { id, gk, bill: b, conn, company, rawNo, month: bMonth });
     });
 
     const inferType = (no) => {
@@ -154,16 +223,23 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate }) {
 
     const all = Array.from(latest.values())
       .filter(x => companyFilter === 'All Companies' || x.company === companyFilter)
-      .map(({ gk, bill, conn, company, rawNo }) => {
+      .map(({ gk, bill, conn, company, rawNo, month }) => {
         const total = num(bill.total_bill ?? bill['Total Bill'] ?? bill.total_amount);
         const vat = num(bill.vat_current_period ?? bill.vat_amount ?? bill['VAT']);
         const billExcl = vat > 0 && total > vat ? total - vat : total;
-        const plan = conn ? num(conn.monthly_plan_amount) : num(bill.plan_rental ?? bill['Monthly Plan Amount']);
+        const connPlan = conn ? num(conn.monthly_plan_amount) : 0;
+        const billPlan = num(bill.plan_rental ?? bill['Monthly Plan Amount'] ?? bill['Service Rental']);
+        const plan = connPlan > 0 ? connPlan : billPlan;
         const excess = billExcl - plan;
         const emp = conn ? employees.find(e => (e.full_name || e.name) === conn.employee_name) : null;
         const empName = conn ? (conn.employee_name || '').trim() : '';
+        const reasons = usageReasons(bill, conn || {});
+        if (reasons.length === 0 && excess > 0) {
+          reasons.push(`+AED ${fmt(excess)} over plan`);
+        }
         return {
           key: gk,
+          month: month ? monthLabel(month) : '',
           number: conn ? conn.connection_number : String(rawNo || ''),
           employee: !conn ? 'Not in system' : (empName && empName.toLowerCase() !== 'unassigned' ? empName : 'Unassigned'),
           sub: !conn ? 'Add it in Telecom Connection' : (emp && emp.department_name ? emp.department_name : (conn.sub_company || '')),
@@ -171,7 +247,7 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate }) {
           type: conn ? (conn.connection_type || 'SIM') : inferType(rawNo),
           provider: (conn && conn.provider) || bill.telecom_provider || '',
           plan, billExcl, excess,
-          reasons: usageReasons(bill, conn || {}),
+          reasons,
         };
       });
     return { rows: all.filter(r => r.excess > EXCESS_MARGIN_AED).sort((a, b) => b.excess - a.excess), billedCount: all.length };
@@ -307,12 +383,17 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate }) {
             </View>
             {visible.length === 0 ? (
               <Text style={{ padding: 28, color: '#64748B', fontSize: 14 }}>
-                {monthFilter ? `No numbers went over their plan amount in ${monthLabel(monthFilter)}.` : 'No telecom bills found.'}
+                {monthFilter && monthFilter !== 'All Months'
+                  ? `No numbers went over their plan amount in ${monthLabel(monthFilter)}.`
+                  : 'No numbers went over their plan amount.'}
               </Text>
             ) : visible.map(r => (
               <View key={r.key} style={styles.tr}>
                 <TouchableOpacity style={{ flex: 1.3 }} onPress={() => onNavigate && onNavigate('telecom_bill')}>
                   <Text style={styles.numberLink}>{r.number}</Text>
+                  {monthFilter === 'All Months' && !!r.month && (
+                    <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600', marginTop: 2 }}>{r.month}</Text>
+                  )}
                 </TouchableOpacity>
                 <View style={{ flex: 1.5 }}>
                   <Text style={styles.empName}>{r.employee}</Text>
