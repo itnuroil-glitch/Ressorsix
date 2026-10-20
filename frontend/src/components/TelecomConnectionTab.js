@@ -1916,137 +1916,200 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
       {/* --------------------------------------------------------------------- */}
       {/* MODAL: VIEW DETAILS                                                   */}
       {/* --------------------------------------------------------------------- */}
+      {/* MODAL: VIEW DETAILS (MATCHING TELECOM DETAILS DESIGN 100%)            */}
+      {/* --------------------------------------------------------------------- */}
       <Modal visible={isViewModalOpen} transparent animationType="fade" onRequestClose={() => setIsViewModalOpen(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalBox, { maxWidth: 1200, width: '94%' }]}>
-            <View style={styles.modalHeader}>
+          <View style={[styles.modalBox, { maxWidth: 960, width: '95%', borderRadius: 16, overflow: 'hidden', padding: 0 }]}>
+            {/* Modal Header with Green Document Icon & Circular Close Button */}
+            <View style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              paddingHorizontal: 24,
+              paddingVertical: 18,
+              borderBottomWidth: 1,
+              borderBottomColor: '#E2E8F0',
+              backgroundColor: '#FFFFFF',
+            }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <View style={styles.viewModalIconWrap}>
-                  <Ionicons name="information-circle-outline" size={20} color={THEME.primaryGreen} />
-                </View>
-                <View>
-                  <Text style={styles.modalTitle}>Connection Profile</Text>
-                  <Text style={styles.modalSubtitle}>{activeItem?.connectionNumber} • {activeItem?.company}</Text>
-                </View>
+                <Ionicons name="document-text" size={24} color="#166534" />
+                <Text style={{ fontSize: 20, fontWeight: '700', color: '#0F172A' }}>
+                  View Telecom Connection Record #{activeItem?.id || ''}
+                </Text>
               </View>
-              <TouchableOpacity onPress={() => setIsViewModalOpen(false)}>
-                <Ionicons name="close" size={22} color={THEME.slate500} />
+              <TouchableOpacity
+                onPress={() => setIsViewModalOpen(false)}
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  backgroundColor: '#F1F5F9',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={22} color="#64748B" />
               </TouchableOpacity>
             </View>
 
+            {/* Modal Body with Telecom Details Section Card & 2-Column Form Fields */}
             {activeItem && (
-              <ScrollView style={{ maxHeight: 520, backgroundColor: '#F8FAFC' }} contentContainerStyle={{ padding: 16 }}>
-                <View style={styles.profileSection}>
-                  <Text style={styles.sectionHeading}>CONNECTION ATTRIBUTES</Text>
-                  <View style={styles.detailsGrid}>
-                    <View style={styles.detailCol}>
-                      <Text style={styles.detailLabel}>Line / Service #</Text>
-                      <Text style={styles.detailValueBold}>{activeItem.connectionNumber}</Text>
-                    </View>
-                    <View style={styles.detailCol}>
-                      <Text style={styles.detailLabel}>Account #</Text>
-                      <Text style={styles.detailValue}>{activeItem.accountNumber || 'N/A'}</Text>
-                    </View>
-                    <View style={styles.detailCol}>
-                      <Text style={styles.detailLabel}>Provider</Text>
-                      <Text style={styles.detailValue}>{activeItem.provider}</Text>
-                    </View>
-                    <View style={styles.detailCol}>
-                      <Text style={styles.detailLabel}>Type</Text>
-                      <Text style={styles.detailValue}>{activeItem.connectionType}</Text>
-                    </View>
+              <ScrollView style={{ maxHeight: 540, backgroundColor: '#FFFFFF' }} contentContainerStyle={{ padding: 24 }}>
+                <View style={{
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: '#E2E8F0',
+                  overflow: 'hidden',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.05,
+                  shadowRadius: 8,
+                  elevation: 2,
+                }}>
+                  {/* Section Header matching Telecom Details */}
+                  <View style={{
+                    backgroundColor: '#F8FAFC',
+                    paddingHorizontal: 20,
+                    paddingVertical: 14,
+                    borderBottomWidth: 1,
+                    borderBottomColor: '#E2E8F0',
+                  }}>
+                    <Text style={{
+                      fontSize: 14,
+                      fontWeight: '700',
+                      color: '#166534',
+                      textTransform: 'uppercase',
+                      letterSpacing: 0.5,
+                    }}>
+                      TELECOM DETAILS
+                    </Text>
                   </View>
-                </View>
 
-                <View style={styles.profileSection}>
-                  <Text style={styles.sectionHeading}>MONTHLY TARIFF & BILLED CHARGES</Text>
-                  <View style={styles.detailsGrid}>
-                    <View style={styles.detailCol}>
-                      <Text style={styles.detailLabel}>Package Plan</Text>
-                      <Text style={styles.detailValueBold}>{activeItem.planName}</Text>
-                    </View>
-                    <View style={styles.detailCol}>
-                      <Text style={styles.detailLabel}>Monthly Plan Amount</Text>
-                      <Text style={[styles.detailValueBold, { color: THEME.textGreen }]}>{activeItem.monthlyRentAED} AED</Text>
-                    </View>
-                    <View style={styles.detailCol}>
-                      <Text style={styles.detailLabel}>Sep 2026 Invoiced Bill</Text>
-                      <Text style={[styles.detailValueBold, activeItem.isOverPlan && { color: THEME.redAlertText }]}>
-                        {Number(activeItem.currentBillAED || 0).toFixed(2)} AED
-                      </Text>
-                      {activeItem.billSub && (
-                        <Text style={{ fontSize: 11, color: activeItem.isOverPlan ? THEME.redAlertText : THEME.slate500 }}>
-                          {activeItem.billSub}
+                  {/* 2-Column Form Fields Grid */}
+                  <View style={{
+                    padding: 20,
+                    flexDirection: 'row',
+                    flexWrap: 'wrap',
+                    justifyContent: 'space-between',
+                  }}>
+                    {[
+                      { label: 'Provider', value: activeItem.provider || 'e& (Etisalat)', isDropdown: true },
+                      { label: 'Connection Type', value: activeItem.connectionType || 'SIM', isDropdown: true },
+                      { label: 'Account No', value: activeItem.accountNumber || activeItem.connectionNumber || '—' },
+                      { label: 'Contract No', value: activeItem.contractNo || 'Enter Contract No', isPlaceholder: !activeItem.contractNo },
+                      { label: 'ICCID', value: activeItem.iccid || '—' },
+                      { label: 'Contract From', value: activeItem.contractFrom || '—' },
+                      { label: 'Contract To', value: activeItem.contractTo || '—' },
+                      { label: 'CUG', value: activeItem.cug || '—' },
+                      { label: 'Package Plan', value: activeItem.planName || '—' },
+                      { label: 'Monthly Plan Amount', value: activeItem.monthlyRentAED !== undefined && activeItem.monthlyRentAED !== null ? String(activeItem.monthlyRentAED) : '0' },
+                      { label: 'Data Allowance', value: activeItem.dataAllowance ? `${activeItem.dataAllowance} ${activeItem.dataUnit || 'GB'}` : '—' },
+                      { label: 'Local Minutes', value: activeItem.localMinutes || '—' },
+                      { label: 'International Minutes', value: activeItem.intlMinutes || '—' },
+                      { label: 'Local SMS', value: activeItem.localSMS || '—' },
+                      { label: 'International SMS', value: activeItem.intlSMS || '—' },
+                      { label: 'Assigned Employee', value: activeItem.employeeName || 'Unassigned' },
+                      { label: 'Company', value: activeItem.company || '—', isDropdown: true },
+                      { label: 'Status', value: activeItem.status || 'ACTIVE', isDropdown: true },
+                      ...(activeItem.subCompany ? [{ label: 'Sub Company', value: activeItem.subCompany }] : []),
+                      ...(activeItem.notes ? [{ label: 'Notes', value: activeItem.notes, fullWidth: true }] : []),
+                    ].map((f, idx) => (
+                      <View
+                        key={idx}
+                        style={{
+                          width: f.fullWidth || width < 640 ? '100%' : '48%',
+                          marginBottom: 18,
+                        }}
+                      >
+                        <Text style={{
+                          fontSize: 13,
+                          fontWeight: '600',
+                          color: '#1E293B',
+                          marginBottom: 8,
+                        }}>
+                          {f.label}
                         </Text>
-                      )}
-                    </View>
-                    <View style={styles.detailCol}>
-                      <Text style={styles.detailLabel}>Status</Text>
-                      <Text style={[styles.statusPill, String(activeItem.status).toUpperCase() !== 'ACTIVE' && { backgroundColor: '#F1F5F9', color: '#475569' }]}>{activeItem.status}</Text>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={styles.profileSection}>
-                  <Text style={styles.sectionHeading}>PLAN LIMITS & ALLOWANCES</Text>
-                  <View style={styles.detailsGrid}>
-                    <View style={styles.detailCol}>
-                      <Text style={styles.detailLabel}>Data Allowance</Text>
-                      <Text style={styles.detailValue}>{activeItem.dataAllowance ? `${activeItem.dataAllowance} ${activeItem.dataUnit || 'GB'}` : 'N/A'}</Text>
-                    </View>
-                    <View style={styles.detailCol}>
-                      <Text style={styles.detailLabel}>Local Minutes</Text>
-                      <Text style={styles.detailValue}>{activeItem.localMinutes || 'N/A'}</Text>
-                    </View>
-                    <View style={styles.detailCol}>
-                      <Text style={styles.detailLabel}>International Minutes</Text>
-                      <Text style={styles.detailValue}>{activeItem.intlMinutes || 'N/A'}</Text>
-                    </View>
-                    <View style={styles.detailCol}>
-                      <Text style={styles.detailLabel}>Local SMS</Text>
-                      <Text style={styles.detailValue}>{activeItem.localSMS || 'N/A'}</Text>
-                    </View>
-                    <View style={styles.detailCol}>
-                      <Text style={styles.detailLabel}>International SMS</Text>
-                      <Text style={styles.detailValue}>{activeItem.intlSMS || 'N/A'}</Text>
-                    </View>
-                    <View style={styles.detailCol}>
-                      <Text style={styles.detailLabel}>CUG</Text>
-                      <Text style={styles.detailValue}>{activeItem.cug || 'N/A'}</Text>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={[styles.profileSection, { marginBottom: 0 }]}>
-                  <Text style={styles.sectionHeading}>ASSIGNMENT DETAILS</Text>
-                  <View style={styles.detailsGrid}>
-                    <View style={styles.detailCol}>
-                      <Text style={styles.detailLabel}>Assigned Employee</Text>
-                      <Text style={styles.detailValueBold}>{activeItem.employeeName}</Text>
-                      <Text style={{ fontSize: 11, color: THEME.slate400 }}>{activeItem.employeeSub}</Text>
-                    </View>
-                    <View style={styles.detailCol}>
-                      <Text style={styles.detailLabel}>Company & Admin</Text>
-                      <Text style={styles.detailValue}>{activeItem.company} ({activeItem.subCompany || 'Krish'})</Text>
-                    </View>
+                        <View style={{
+                          height: 44,
+                          backgroundColor: '#F8FAFC',
+                          borderWidth: 1,
+                          borderColor: '#CBD5E1',
+                          borderRadius: 8,
+                          paddingHorizontal: 16,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                        }}>
+                          <Text
+                            style={{
+                              fontSize: 14,
+                              color: f.isPlaceholder || f.value === '—' || f.value === 'Enter Contract No' ? '#94A3B8' : '#1E293B',
+                              fontFamily: 'Inter_400Regular, Roboto, sans-serif',
+                            }}
+                            numberOfLines={1}
+                          >
+                            {f.value}
+                          </Text>
+                          {f.isDropdown && (
+                            <Ionicons name="chevron-down" size={16} color="#64748B" />
+                          )}
+                        </View>
+                      </View>
+                    ))}
                   </View>
                 </View>
               </ScrollView>
             )}
 
-            <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.secondaryBtn} onPress={() => setIsViewModalOpen(false)}>
-                <Text style={styles.secondaryBtnText}>Close</Text>
-              </TouchableOpacity>
+            {/* Modal Footer with Left-Aligned Close Button & Right-Aligned Edit Button */}
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: 24,
+              paddingVertical: 16,
+              borderTopWidth: 1,
+              borderTopColor: '#E2E8F0',
+              backgroundColor: '#FFFFFF',
+            }}>
               <TouchableOpacity
-                style={styles.primaryBtn}
+                style={{
+                  backgroundColor: '#F1F5F9',
+                  borderWidth: 1,
+                  borderColor: '#CBD5E1',
+                  borderRadius: 8,
+                  paddingVertical: 10,
+                  paddingHorizontal: 24,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                onPress={() => setIsViewModalOpen(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#475569' }}>Close</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{
+                  backgroundColor: '#004D34',
+                  borderRadius: 8,
+                  paddingVertical: 10,
+                  paddingHorizontal: 22,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
                 onPress={() => {
                   setIsViewModalOpen(false);
                   handleOpenEdit(activeItem);
                 }}
+                activeOpacity={0.8}
               >
-                <Ionicons name="pencil-outline" size={15} color={THEME.white} />
-                <Text style={styles.primaryBtnText}>Edit Details</Text>
+                <Ionicons name="pencil-outline" size={15} color="#FFFFFF" />
+                <Text style={{ fontSize: 14, fontWeight: '700', color: '#FFFFFF' }}>Edit Details</Text>
               </TouchableOpacity>
             </View>
           </View>

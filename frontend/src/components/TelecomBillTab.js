@@ -2277,33 +2277,7 @@ const TelecomBillTab = ({
                                   <Text style={[styles.itemTdCell, { flex: 2, textAlign: 'right', fontWeight: r.isExceeded ? '700' : '500', color: r.isExceeded ? '#DC2626' : '#0F172A' }]}>{r.extraCharge}</Text>
                                 </View>
                               ))}
-                              {!ins.conn && (
-                                <TouchableOpacity
-                                  style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, margin: 12, backgroundColor: '#004D34', paddingHorizontal: 14, paddingVertical: 9, borderRadius: 8 }}
-                                  onPress={() => {
-                                    const sums = Array.isArray(editingRecord?.usage_summaries) ? editingRecord.usage_summaries : [];
-                                    const k9 = String(mobileVal || '').replace(/\D/g, '').slice(-9);
-                                    const us = sums.find(x => String(x.mobile_number || '').replace(/\D/g, '').slice(-9) === k9) || (sums.length === 1 ? sums[0] : null);
-                                    const digitsOnly = String(mobileVal || '').split(/[,|\n]+/)[0].replace(/\D/g, '');
-                                    const prefill = {
-                                      connectionNumber: digitsOnly,
-                                      company: editingRecord?.company_name || editingRecord?.Company || selectedCompany || '',
-                                      provider: /du/i.test(String(rawProv)) && !/etisalat/i.test(String(rawProv)) ? 'du' : 'e& (Etisalat)',
-                                      connectionType: /^(0?5\d{8})$/.test(digitsOnly) ? 'SIM' : 'Landline',
-                                      monthlyRentAED: ins.plan ? String(ins.plan) : '',
-                                      dataAllowance: us && us.data_limit_gb ? String(us.data_limit_gb) : '',
-                                      localMinutes: us && us.local_minutes_limit ? String(us.local_minutes_limit) : '',
-                                    };
-                                    try { if (typeof localStorage !== 'undefined') localStorage.setItem('teleConnPrefill', JSON.stringify(prefill)); } catch (e) { }
-                                    closeModal();
-                                    if (onNavigate) onNavigate('telecom_connection');
-                                  }}
-                                  activeOpacity={0.8}
-                                >
-                                  <Ionicons name="add-circle-outline" size={16} color="#FFFFFF" />
-                                  <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 12 }}>Add to Telecom Connection to set plan limits</Text>
-                                </TouchableOpacity>
-                              )}
+
                               {!ins.hasLogs && (
                                 <Text style={{ fontSize: 11, color: '#64748B', padding: 12 }}>
                                   Used amounts appear when call logs are imported for this bill. Plan limits come from the number's Telecom Connection.
