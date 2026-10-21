@@ -116,7 +116,7 @@ const usageReasons = (bill, conn) => {
   return reasons;
 };
 
-export default function ExcessUsageReportTab({ user, showToast, onNavigate }) {
+export default function ExcessUsageReportTab({ user, showToast, onNavigate, onOpenBill }) {
   const { width } = useWindowDimensions();
   const isMobile = width < 900;
 
@@ -223,7 +223,7 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate }) {
 
     const all = Array.from(latest.values())
       .filter(x => companyFilter === 'All Companies' || x.company === companyFilter)
-      .map(({ gk, bill, conn, company, rawNo, month }) => {
+      .map(({ id: billId, gk, bill, conn, company, rawNo, month }) => {
         const total = num(bill.total_bill ?? bill['Total Bill'] ?? bill.total_amount);
         const vat = num(bill.vat_current_period ?? bill.vat_amount ?? bill['VAT']);
         const billExcl = vat > 0 && total > vat ? total - vat : total;
@@ -239,6 +239,7 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate }) {
         }
         return {
           key: gk,
+          billId,
           month: month ? monthLabel(month) : '',
           number: conn ? conn.connection_number : String(rawNo || ''),
           employee: !conn ? 'Not in system' : (empName && empName.toLowerCase() !== 'unassigned' ? empName : 'Unassigned'),
@@ -389,7 +390,10 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate }) {
               </Text>
             ) : visible.map(r => (
               <View key={r.key} style={styles.tr}>
-                <TouchableOpacity style={{ flex: 1.3 }} onPress={() => onNavigate && onNavigate('telecom_bill')}>
+                <TouchableOpacity style={{ flex: 1.3 }} onPress={() => {
+                  if (onOpenBill && r.billId) onOpenBill(r.billId, 'excess_usage_report');
+                  else if (onNavigate) onNavigate('telecom_bill');
+                }}>
                   <Text style={styles.numberLink}>{r.number}</Text>
                   {monthFilter === 'All Months' && !!r.month && (
                     <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600', marginTop: 2 }}>{r.month}</Text>

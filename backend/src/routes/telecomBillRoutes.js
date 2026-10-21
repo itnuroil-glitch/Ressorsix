@@ -1,8 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const telecomBillController = require('../controllers/telecomBillController');
+const teleUsageReportController = require('../controllers/teleUsageReportController');
 
 router.get('/', telecomBillController.getAllTelecomBills);
+router.get('/usage-report/options', teleUsageReportController.getUsageReportOptions);
+router.get('/usage-report', teleUsageReportController.getUsageReport);
 router.get('/report-analytics', telecomBillController.getTelecomReportAnalytics);
 router.get('/test-report', telecomBillController.getTelecomTestAuditReport);
 router.get('/:id', telecomBillController.getTelecomBillById);

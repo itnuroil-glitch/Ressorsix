@@ -539,6 +539,10 @@ export default function DashboardScreen({ user, onSignOut }) {
 
   // Logged-in user permissions
   const [userPermissions, setUserPermissions] = useState([]);
+  // Bill to open in the Telecom Bill Details popup (set by the Excess Usage report)
+  const [billRequest, setBillRequest] = useState(null);
+  // Number + bill period to show in the Telecom Report (set by the Bill Details popup)
+  const [reportRequest, setReportRequest] = useState(null);
   const [userCompanyPermissions, setUserCompanyPermissions] = useState([]);
   const [userPermissionsLoading, setUserPermissionsLoading] = useState(true);
 
@@ -2667,7 +2671,7 @@ export default function DashboardScreen({ user, onSignOut }) {
       if (r === '/telecom-test' || r === '/telecome-test' || n.includes('test') || r.includes('test')) return 'telecom_test';
       if (r === '/telecom-details' || r === '/telecome-details' || n.includes('detail') || r.includes('detail')) return 'sim_details';
       if (r === '/telecom-bill-form' || r === '/telecom-bill' || n.includes('bill') || r.includes('bill')) return 'telecom_bill';
-      if (r === '/telecom-report' || r === '/telecome-report' || r === '/telecome_report' || r === '/telecom_report' || n.includes('report') || r.includes('report')) return 'telecom_report';
+      if (r === '/monthly-usage-dashboard' || n === 'monthly usage dashboard' || n.includes('monthly usage') || r === '/telecom-report' || r === '/telecome-report' || r === '/telecome_report' || r === '/telecom_report' || n.includes('report') || r.includes('report')) return 'telecom_report';
       if (r === '/telecom-document' || r === '/telecom-documents' || r === '/telecome-document' || n.includes('doc') || r.includes('doc')) return 'telecom_document';
       if (n.includes('data') || r.includes('data')) return 'telecom_data';
       if (n.includes('usage') || r.includes('usage')) return 'usage_charges';
@@ -7204,7 +7208,8 @@ export default function DashboardScreen({ user, onSignOut }) {
       case 'telecom_report':
       case 'telecome_report':
       case 'tele_report':
-        return <TelecomReportTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
+      case 'monthly_usage_dashboard':
+        return <TelecomReportTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} reportRequest={reportRequest} onReportRequestHandled={() => setReportRequest(null)} onNavigate={(t) => setActiveTab(t)} />;
       case 'tele_service_provider':
         return <TeleServiceProviderTab user={user} showToast={showToast} permissions={getTabPermissions('tele_service_provider')} />;
       case 'tele_connection_type':
@@ -7229,7 +7234,7 @@ export default function DashboardScreen({ user, onSignOut }) {
       case 'telecom_test':
         return <TelecomTestTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'excess_usage_report':
-        return <ExcessUsageReportTab user={user} showToast={showToast} onNavigate={(t) => setActiveTab(t)} />;
+        return <ExcessUsageReportTab user={user} showToast={showToast} onNavigate={(t) => setActiveTab(t)} onOpenBill={(id, back) => { setBillRequest({ id, returnTo: back }); setActiveTab('telecom_bill'); }} />;
       case 'import_telecom_bills':
       case 'import_telecome_bills':
         return <ImportTelecomBillsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
@@ -7241,10 +7246,10 @@ export default function DashboardScreen({ user, onSignOut }) {
         return <PhoneNumberAssignmentTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
       case 'telecom_bill_details':
       case 'telcome_bill_details':
-        return <TelecomBillDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} onNavigate={(t) => setActiveTab(t)} />;
+        return <TelecomBillDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} onNavigate={(t, req) => { if (req) setReportRequest(req); setActiveTab(t); }} />;
       case 'telecom_bill':
       case 'telecome_bill':
-        return <TelecomBillTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} onNavigate={(t) => setActiveTab(t)} permissions={getTabPermissions('telecom_bill')} checkRowPermission={(compId, act) => checkRowPermission('telecom_bill', compId, act)} />;
+        return <TelecomBillTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} onNavigate={(t) => setActiveTab(t)} billRequest={billRequest} onBillRequestHandled={() => setBillRequest(null)} onViewUsageReport={(info) => { setReportRequest(info); setActiveTab('telecom_report'); }} permissions={getTabPermissions('telecom_bill')} checkRowPermission={(compId, act) => checkRowPermission('telecom_bill', compId, act)} />;
       case 'usage_charges':
       case 'usage_charge':
       case 'tele_usage_charges':

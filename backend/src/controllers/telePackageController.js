@@ -26,7 +26,11 @@ const initTable = async () => {
     console.error('Error initializing tbl_tele_package:', err);
   }
 };
-initTable();
+initTable().then(() =>
+  db.query(`ALTER TABLE tbl_tele_package ADD COLUMN IF NOT EXISTS plan_type VARCHAR(20) DEFAULT 'Recurring'`)
+    .catch(err => console.error('Could not add plan_type to tbl_tele_package:', err.message))
+);
+const normPlanType = (v) => (String(v || '').trim().toLowerCase().replace(/[\s_-]/g, '') === 'onetime' ? 'One Time' : 'Recurring');
 
 const clean = (v) => (v === undefined || v === null || String(v).trim() === '' ? null : String(v).trim());
 
@@ -94,13 +98,13 @@ exports.createTelePackage = async (req, res) => {
     const result = await db.query(
       `INSERT INTO tbl_tele_package
         (package_name, monthly_plan_amount, data_allowance, data_unit, local_minutes, international_minutes,
-         local_sms, international_sms, cug, status, client_id, is_deleted)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 0)
+         local_sms, international_sms, cug, status, client_id, is_deleted, plan_type)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 0, $12)
        RETURNING *`,
       [
         name, amount, clean(b.data_allowance), clean(b.data_unit) || 'GB', clean(b.local_minutes),
         clean(b.international_minutes), clean(b.local_sms), clean(b.international_sms), clean(b.cug),
-        clean(b.status) || 'Active', clientId ? String(clientId) : null,
+        clean(b.status) || 'Active', clientId ? String(clientId) : null, normPlanType(b.plan_type),
       ]
     );
     res.status(201).json({ message: 'Tele package created successfully.', package: result.rows[0] });
@@ -143,13 +147,13 @@ exports.updateTelePackage = async (req, res) => {
       `UPDATE tbl_tele_package SET
          package_name = $1, monthly_plan_amount = $2, data_allowance = $3, data_unit = $4,
          local_minutes = $5, international_minutes = $6, local_sms = $7, international_sms = $8,
-         cug = $9, status = $10, updated_at = CURRENT_TIMESTAMP
+         cug = $9, status = $10, plan_type = $12, updated_at = CURRENT_TIMESTAMP
        WHERE id = $11 AND is_deleted = 0
        RETURNING *`,
       [
         name, amount, clean(b.data_allowance), clean(b.data_unit) || 'GB', clean(b.local_minutes),
         clean(b.international_minutes), clean(b.local_sms), clean(b.international_sms), clean(b.cug),
-        clean(b.status) || 'Active', id,
+        clean(b.status) || 'Active', id, normPlanType(b.plan_type),
       ]
     );
     res.status(200).json({ message: 'Tele package updated successfully.', package: result.rows[0] });
@@ -184,11 +188,11 @@ exports.importFromConnections = async (req, res) => {
     const result = await db.query(`
       INSERT INTO tbl_tele_package
         (package_name, monthly_plan_amount, data_allowance, data_unit, local_minutes, international_minutes,
-         local_sms, international_sms, cug, status, client_id, is_deleted)
+         local_sms, international_sms, cug, status, client_id, is_deleted, plan_type)
       SELECT DISTINCT ON (LOWER(TRIM(c.plan_name)))
         TRIM(c.plan_name), COALESCE(c.monthly_plan_amount, 0), c.data_allowance, COALESCE(c.data_unit, 'GB'),
         c.local_minutes, c.international_minutes, c.local_sms, c.international_sms, c.cug,
-        'Active', c.client_id::text, 0
+        'Active', c.client_id::text, 0, COALESCE(c.plan_type, 'Recurring')
       FROM tbl_tele_connection c
       WHERE c.is_deleted = 0
         AND c.plan_name IS NOT NULL AND TRIM(c.plan_name) <> ''

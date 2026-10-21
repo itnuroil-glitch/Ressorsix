@@ -155,6 +155,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     assignedFrom: '',
     notes: '',
     planName: '',
+    planType: 'Recurring',
     monthlyRentAED: '',
     currentBillAED: '',
     dataAllowance: '',
@@ -241,6 +242,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
             assignedFrom: c.assigned_from || '',
             notes: c.notes || '',
             planName: c.plan_name || 'Standard Plan',
+            planType: c.plan_type || 'Recurring',
             monthlyRentAED: parseFloat(c.monthly_plan_amount) || 0,
             currentBillAED: parseFloat(c.monthly_plan_amount) || 0,
             dataAllowance: c.data_allowance || '',
@@ -546,6 +548,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
       .map(pk => ({
         id: pk.id,
         planName: pk.package_name,
+        planType: pk.plan_type || 'Recurring',
         monthlyRentAED: pk.monthly_plan_amount,
         dataAllowance: pk.data_allowance,
         dataUnit: pk.data_unit || 'GB',
@@ -646,6 +649,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
       assignedFrom: '',
       notes: '',
       planName: '',
+      planType: 'Recurring',
       monthlyRentAED: '',
       currentBillAED: '',
       dataAllowance: '',
@@ -681,7 +685,8 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
       intlMinutes: String(item.intlMinutes || '250'),
       localSMS: String(item.localSMS || '65'),
       intlSMS: String(item.intlSMS || '65'),
-      cug: String(item.cug || '10000')
+      cug: String(item.cug || '10000'),
+      planType: item.planType || 'Recurring'
     });
     setIsCompanyDropdownOpen(false);
     setIsProviderDropdownOpen(false);
@@ -731,6 +736,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
       contract_from: formData.contractFrom || null,
       contract_to: formData.contractTo || null,
       plan_name: formData.planName ? formData.planName.trim() : 'Standard Plan',
+      plan_type: formData.planType || 'Recurring',
       monthly_plan_amount: planAmount,
       data_allowance: formData.dataAllowance || null,
       data_unit: formData.dataUnit || 'GB',
@@ -1813,6 +1819,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                         setEditingPlanName('');
                         setPlanDraft({
                           planName: '',
+                          planType: 'Recurring',
                           monthlyRentAED: '',
                           dataAllowance: '',
                           dataUnit: 'GB',
@@ -1869,6 +1876,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                             setEditingPlanName(formData.planName);
                             setPlanDraft({
                               planName: formData.planName,
+                              planType: formData.planType || 'Recurring',
                               monthlyRentAED: formData.monthlyRentAED,
                               dataAllowance: formData.dataAllowance,
                               dataUnit: formData.dataUnit || 'GB',
@@ -1909,6 +1917,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                               setFormData(prev => ({
                                 ...prev,
                                 planName: plan.planName,
+                                planType: plan.planType || 'Recurring',
                                 monthlyRentAED: plan.monthlyRentAED === undefined || plan.monthlyRentAED === null ? '' : String(plan.monthlyRentAED),
                                 dataAllowance: plan.dataAllowance === undefined || plan.dataAllowance === null ? '' : String(plan.dataAllowance),
                                 dataUnit: plan.dataUnit || 'GB',
@@ -1941,6 +1950,10 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                 {!!formData.planName && (
                   <View style={{ marginTop: 14 }}>
                     <View style={styles.planSummaryGrid}>
+                      <View style={styles.planSummaryTile}>
+                        <Text style={styles.detailLabel}>Plan Type</Text>
+                        <Text style={styles.detailValue}>{formData.planType || 'Recurring'}</Text>
+                      </View>
                       <View style={styles.planSummaryTile}>
                         <Text style={styles.detailLabel}>Monthly Plan Amount</Text>
                         <Text style={styles.detailValue}>{formData.monthlyRentAED ? `${formData.monthlyRentAED} AED` : '—'}</Text>
@@ -2055,6 +2068,28 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     placeholder="e.g. Standard 100 AED Plan"
                     placeholderTextColor={THEME.slate400}
                   />
+                </View>
+
+                <View style={{ width: '100%' }}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 8 }]}>Plan Type</Text>
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    {['Recurring', 'One Time'].map(opt => {
+                      const selected = (planDraft.planType || 'Recurring') === opt;
+                      return (
+                        <TouchableOpacity
+                          key={opt}
+                          style={[styles.planTypeOption, selected && styles.planTypeOptionActive]}
+                          onPress={() => setPlanDraft(prev => ({ ...prev, planType: opt }))}
+                          activeOpacity={0.8}
+                        >
+                          <View style={[styles.planTypeRadio, selected && styles.planTypeRadioActive]}>
+                            {selected && <View style={styles.planTypeRadioDot} />}
+                          </View>
+                          <Text style={[styles.planTypeText, selected && styles.planTypeTextActive]}>{opt}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
                 </View>
 
                 <View style={styles.planModalField}>
@@ -2173,6 +2208,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     try {
                       const payload = {
                         package_name: saved.planName,
+                        plan_type: saved.planType || 'Recurring',
                         monthly_plan_amount: saved.monthlyRentAED,
                         data_allowance: saved.dataAllowance,
                         data_unit: saved.dataUnit || 'GB',
@@ -2208,6 +2244,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
                             plan_name: saved.planName,
+                            plan_type: saved.planType || 'Recurring',
                             monthly_plan_amount: saved.monthlyRentAED,
                             data_allowance: saved.dataAllowance || '',
                             data_unit: saved.dataUnit || 'GB',
@@ -2303,6 +2340,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
               const Row = ({ children }) => <View style={styles.formTwoColRow}>{children}</View>;
               const isSim = (activeItem.connectionType || 'SIM') === 'SIM';
               const tiles = [
+                ['Plan Type', dash(activeItem.planType || 'Recurring')],
                 ['Monthly Plan Amount', activeItem.monthlyRentAED !== undefined && activeItem.monthlyRentAED !== null ? `${activeItem.monthlyRentAED} AED` : '—'],
                 ['Data Allowance', activeItem.dataAllowance ? `${activeItem.dataAllowance} ${activeItem.dataUnit || 'GB'}` : '—'],
                 ['Local Minutes', dash(activeItem.localMinutes)],
@@ -3642,6 +3680,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  planTypeOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
+  planTypeOptionActive: { borderColor: '#0E5434', backgroundColor: '#F0FDF4' },
+  planTypeRadio: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: '#94A3B8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  planTypeRadioActive: { borderColor: '#0E5434' },
+  planTypeRadioDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#0E5434' },
+  planTypeText: { fontSize: 13, fontWeight: '600', color: '#475569' },
+  planTypeTextActive: { color: '#0E5434', fontWeight: '700' },
   planAddBtn: {
     width: 40,
     height: 40,
