@@ -4,6 +4,7 @@ const teleConnectionController = require('../controllers/teleConnectionControlle
 
 // Routes for Telecom Connections CRUD
 router.get('/', teleConnectionController.getAllConnections);
+router.get('/latest-bills', teleConnectionController.getLatestBills);
 router.get('/history/all', teleConnectionController.getConnectionHistory);
 router.get('/:id/assignments', teleConnectionController.getAssignmentHistory);
 router.post('/:id/assign', teleConnectionController.assignConnection);
