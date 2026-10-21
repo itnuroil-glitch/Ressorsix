@@ -232,6 +232,8 @@ app.use('/api/telecom-providers', telecomProviderRoutes);
 app.use('/api/telecom-provider', telecomProviderRoutes);
 app.use('/api/telecome-providers', telecomProviderRoutes);
 app.use('/api/telecome-provider', telecomProviderRoutes);
+const telePackageRoutes = require('./routes/telePackageRoutes');
+app.use('/api/tele-packages', telePackageRoutes);
 const teleCategoryRoutes = require('./routes/teleCategoryRoutes');
 app.use('/api/tele-categories', teleCategoryRoutes);
 app.use('/api/tele-category', teleCategoryRoutes);

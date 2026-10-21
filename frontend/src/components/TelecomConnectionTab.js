@@ -177,8 +177,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
   const [showErrors, setShowErrors] = useState(false);
   const isMissing = key => showErrors && !String(formData[key] ?? '').trim();
   const errBorder = { borderColor: '#DC2626', backgroundColor: '#FEF2F2' };
-  const [customPlans, setCustomPlans] = useState([]);
-  const [hiddenPlans, setHiddenPlans] = useState([]);
+  const [telePackages, setTelePackages] = useState([]);
   const [editingPlanName, setEditingPlanName] = useState('');
 
   // Reassign Form State
@@ -300,6 +299,18 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     }
   };
 
+  const fetchTelePackages = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/tele-packages`);
+      if (res.ok) {
+        const data = await res.json();
+        setTelePackages(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.warn('Could not fetch tele packages', err);
+    }
+  };
+
   const fetchEmployees = async () => {
     try {
       const res = await fetch(`${API_URL}/api/employees`);
@@ -332,6 +343,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     fetchConnections();
     fetchEmployees();
     fetchCompanies();
+    fetchTelePackages();
   }, []);
 
   // Dynamic company lists from backend API (falling back to STATIC_COMPANIES)
@@ -433,26 +445,23 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
   }, [activeFilterTab, selectedCompany, selectedType, searchTerm, isExcessFilterActive]);
 
   // Available employees dynamically filtered by the selected company in the form
-  // Saved package plans: taken from existing connections + plans created via the + modal
+  // Package plans come only from the Tele Package master (Settings > Tele Package)
   const planOptions = useMemo(() => {
-    const map = new Map();
-    [...customPlans, ...connections].forEach(c => {
-      const name = (c.planName || '').trim();
-      if (!name || map.has(name.toLowerCase()) || hiddenPlans.includes(name.toLowerCase())) return;
-      map.set(name.toLowerCase(), {
-        planName: name,
-        monthlyRentAED: c.monthlyRentAED,
-        dataAllowance: c.dataAllowance,
-        dataUnit: c.dataUnit || 'GB',
-        localMinutes: c.localMinutes,
-        intlMinutes: c.intlMinutes,
-        localSMS: c.localSMS,
-        intlSMS: c.intlSMS,
-        cug: c.cug,
-      });
-    });
-    return Array.from(map.values());
-  }, [connections, customPlans, hiddenPlans]);
+    return telePackages
+      .filter(pk => String(pk.status || 'Active').toLowerCase() === 'active')
+      .map(pk => ({
+        id: pk.id,
+        planName: pk.package_name,
+        monthlyRentAED: pk.monthly_plan_amount,
+        dataAllowance: pk.data_allowance,
+        dataUnit: pk.data_unit || 'GB',
+        localMinutes: pk.local_minutes,
+        intlMinutes: pk.international_minutes,
+        localSMS: pk.local_sms,
+        intlSMS: pk.international_sms,
+        cug: pk.cug,
+      }));
+  }, [telePackages]);
 
   const availableEmployees = useMemo(() => {
     const comp = (formData.company || '').trim().toLowerCase();
@@ -1758,7 +1767,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                       <View style={{ maxHeight: 220, overflow: 'auto' }}>
                         {planOptions.length === 0 && (
                           <View style={styles.dropdownItem}>
-                            <Text style={styles.dropdownItemText}>No saved plans. Click + to add one.</Text>
+                            <Text style={styles.dropdownItemText}>No packages yet. Click + or add them in Settings → Tele Package.</Text>
                           </View>
                         )}
                         {planOptions.map(plan => (
@@ -2029,18 +2038,80 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     return;
                   }
                   const saved = { ...planDraft, planName: String(planDraft.planName).trim() };
-                  const newKey = saved.planName.toLowerCase();
-                  const oldKey = editingPlanName.trim().toLowerCase();
-                  setHiddenPlans(prev => {
-                    const next = prev.filter(k => k !== newKey);
-                    return oldKey && oldKey !== newKey && !next.includes(oldKey) ? [...next, oldKey] : next;
-                  });
-                  setCustomPlans(prev => [
-                    saved,
-                    ...prev.filter(pl => pl.planName.toLowerCase() !== newKey && pl.planName.toLowerCase() !== oldKey),
-                  ]);
-                  setFormData(prev => ({ ...prev, ...saved }));
-                  setIsPlanModalOpen(false);
+                  const existing = editingPlanName
+                    ? telePackages.find(pk => String(pk.package_name || '').trim().toLowerCase() === editingPlanName.trim().toLowerCase())
+                    : null;
+                  (async () => {
+                    try {
+                      const payload = {
+                        package_name: saved.planName,
+                        monthly_plan_amount: saved.monthlyRentAED,
+                        data_allowance: saved.dataAllowance,
+                        data_unit: saved.dataUnit || 'GB',
+                        local_minutes: saved.localMinutes,
+                        international_minutes: saved.intlMinutes,
+                        local_sms: saved.localSMS,
+                        international_sms: saved.intlSMS,
+                        cug: saved.cug,
+                        status: existing ? existing.status || 'Active' : 'Active',
+                        client_id: user?.clientid || null,
+                      };
+                      const res = await fetch(
+                        existing ? `${API_URL}/api/tele-packages/${existing.id}` : `${API_URL}/api/tele-packages`,
+                        {
+                          method: existing ? 'PUT' : 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(payload),
+                        }
+                      );
+                      const body = await res.json().catch(() => ({}));
+                      if (!res.ok) {
+                        setPlanDraftError(body.message || 'Could not save the package plan');
+                        return;
+                      }
+                      await fetchTelePackages();
+                      setFormData(prev => ({ ...prev, ...saved }));
+
+                      // Editing an existing connection: save the plan values into tbl_tele_connection right away
+                      let savedToConnection = false;
+                      if (activeItem && activeItem.id) {
+                        const connRes = await fetch(`${API_URL}/api/tele-connections/${activeItem.id}`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            plan_name: saved.planName,
+                            monthly_plan_amount: saved.monthlyRentAED,
+                            data_allowance: saved.dataAllowance || '',
+                            data_unit: saved.dataUnit || 'GB',
+                            local_minutes: saved.localMinutes || '',
+                            international_minutes: saved.intlMinutes || '',
+                            local_sms: saved.localSMS || '',
+                            international_sms: saved.intlSMS || '',
+                            cug: saved.cug || '',
+                          }),
+                        });
+                        if (!connRes.ok) {
+                          const connBody = await connRes.json().catch(() => ({}));
+                          setPlanDraftError(connBody.message || 'Package saved, but the connection could not be updated');
+                          return;
+                        }
+                        savedToConnection = true;
+                        await fetchConnections();
+                      }
+
+                      setIsPlanModalOpen(false);
+                      if (showToast) {
+                        showToast(
+                          savedToConnection
+                            ? 'Package plan saved to the Tele Package master and this connection'
+                            : (existing ? 'Package plan updated in Tele Package master' : 'Package plan added to Tele Package master'),
+                          'success'
+                        );
+                      }
+                    } catch (err) {
+                      setPlanDraftError('Could not save the package plan');
+                    }
+                  })();
                 }}
               >
                 <Text style={styles.primaryBtnText}>{editingPlanName ? 'Update Plan' : 'Save Plan'}</Text>
