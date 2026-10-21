@@ -9,6 +9,7 @@ import {
   StyleSheet,
   useWindowDimensions,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as XLSX from 'xlsx';
@@ -168,6 +169,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
 
   const [formData, setFormData] = useState(defaultFormState);
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [isConnectionsLoading, setIsConnectionsLoading] = useState(true);
   const [planDraft, setPlanDraft] = useState({});
   const [planDraftError, setPlanDraftError] = useState('');
   const [isPlanDropdownOpen, setIsPlanDropdownOpen] = useState(false);
@@ -194,6 +196,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
   // FETCH CONNECTIONS FROM POSTGRESQL BACKEND API
   // ---------------------------------------------------------------------------
   const fetchConnections = async () => {
+    setIsConnectionsLoading(true);
     try {
       const res = await fetch(`${API_URL}/api/tele-connections`);
       if (res.ok) {
@@ -234,7 +237,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
           // Latest bill per number: real bill amount (excl. VAT) and over-plan flag (more than AED 10 above plan)
           let bills = [];
           try {
-            const br = await fetch(`${API_URL}/api/telecom-bills`);
+            const br = await fetch(`${API_URL}/api/tele-connections/latest-bills`);
             if (br.ok) {
               const bd = await br.json();
               bills = Array.isArray(bd) ? bd : (bd && Array.isArray(bd.data) ? bd.data : []);
@@ -292,6 +295,8 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     } catch (err) {
       console.warn('Could not fetch from backend, setting empty connections', err);
       setConnections([]);
+    } finally {
+      setIsConnectionsLoading(false);
     }
   };
 
@@ -1085,7 +1090,13 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
             </View>
 
             {/* Table Body Rows */}
-            {paginatedData.length === 0 ? (
+            {paginatedData.length === 0 && isConnectionsLoading ? (
+              <View style={styles.emptyTableState}>
+                <ActivityIndicator size="large" color={THEME.primaryGreen} />
+                <Text style={styles.emptyTableTitle}>Loading connections…</Text>
+                <Text style={styles.emptyTableSub}>Please wait a moment.</Text>
+              </View>
+            ) : paginatedData.length === 0 ? (
               <View style={styles.emptyTableState}>
                 <Ionicons name="search-outline" size={36} color={THEME.slate300} />
                 <Text style={styles.emptyTableTitle}>No Connections Found</Text>
@@ -2985,7 +2996,7 @@ const styles = StyleSheet.create({
   // Add/Edit Modal (Matching user screenshot)
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
@@ -2996,8 +3007,8 @@ const styles = StyleSheet.create({
     maxHeight: '92%',
     backgroundColor: THEME.white,
     borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: '#3B82F6',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     overflow: 'hidden',
     ...SHADOWS.large,
   },

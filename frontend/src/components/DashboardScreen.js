@@ -7259,6 +7259,8 @@ export default function DashboardScreen({ user, onSignOut }) {
       <StatusBar style="light" />
 
       {/* Premium Notification Modal System */}
+      {/* Mounted only while visible so it always stacks above any other open popup */}
+      {toast.visible && (
       <Modal
         visible={toast.visible}
         transparent={true}
@@ -7382,6 +7384,7 @@ export default function DashboardScreen({ user, onSignOut }) {
           </View>
         </View>
       </Modal>
+      )}
 
       {/* CHANGE PASSWORD MODAL */}
       {changePasswordVisible && !adminPasswordResetEmployee && (

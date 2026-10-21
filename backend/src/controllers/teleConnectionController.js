@@ -601,3 +601,90 @@ exports.getConnectionHistory = async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error' });
   }
 };
+
+// ---------------------------------------------------------------------------
+// LATEST BILLS (lightweight): only what the Connections list needs to show each
+// number's latest bill amount. No PDF parsing, call logs or line items, and no
+// table updates, so it stays fast however many bills exist.
+// ---------------------------------------------------------------------------
+let billCols = null;
+const getBillCols = async () => {
+  if (billCols) return billCols;
+  const r = await db.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'tbl_telecome_bill'`
+  ).catch(() => ({ rows: [] }));
+  billCols = new Set(r.rows.map(x => x.column_name));
+  return billCols;
+};
+
+exports.getLatestBills = async (req, res) => {
+  try {
+    const cols = await getBillCols();
+    const pk = ['tele_bill_id', 'bill_id', 'id'].find(c => cols.has(c)) || 'tele_bill_id';
+    const pick = (...names) => names.filter(n => cols.has(n)).map(n => `tb.${n}`);
+    const coalesce = (names, fallback = '0') => {
+      const list = pick(...names);
+      return list.length ? `COALESCE(${list.join(', ')}, ${fallback})` : fallback;
+    };
+
+    const clientId = req.query.clientid || req.query.client_id;
+    const params = [];
+    let where = 'WHERE 1=1';
+    if (clientId && cols.has('clientid')) {
+      params.push(String(clientId));
+      where += ` AND tb.clientid::text = $${params.length}`;
+    }
+
+    const select = [
+      `tb.${pk} AS id`,
+      `tb.${pk} AS tele_bill_id`,
+      cols.has('mobile_number') ? 'tb.mobile_number' : `NULL AS mobile_number`,
+      cols.has('bill_number') ? 'tb.bill_number' : `NULL AS bill_number`,
+      cols.has('pdf_filename') ? 'tb.pdf_filename' : `NULL AS pdf_filename`,
+      cols.has('field_data') ? 'tb.field_data' : `NULL AS field_data`,
+      cols.has('created_at') ? 'tb.created_at' : `NULL AS created_at`,
+      `${coalesce(['period_from', 'bill_period_from'], 'NULL')} AS period_from`,
+      `${coalesce(['period_to', 'bill_period_to'], 'NULL')} AS period_to`,
+      `${coalesce(['total_amount', 'total_bill'])} AS total_bill`,
+      `${coalesce(['vat_amount', 'vat_current_period'])} AS vat_current_period`,
+    ].join(', ');
+
+    const result = await db.query(
+      `SELECT ${select} FROM tbl_telecome_bill tb ${where} ORDER BY tb.${pk} DESC`,
+      params
+    );
+
+    const rows = result.rows.map(row => {
+      let fd = {};
+      try { fd = typeof row.field_data === 'string' ? JSON.parse(row.field_data || '{}') : (row.field_data || {}); } catch (e) { fd = {}; }
+      let periodFrom = row.period_from || fd['Bill Period From'] || fd.period_from || fd.f_from || null;
+      let periodTo = row.period_to || fd['Bill Period To'] || fd.period_to || fd.f_to || null;
+      if (!periodTo && row.pdf_filename) {
+        const m = String(row.pdf_filename).match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
+        if (m) {
+          const y = parseInt(m[1], 10);
+          const mo = parseInt(m[2], 10);
+          const last = new Date(y, mo, 0).getDate();
+          periodFrom = periodFrom || `${y}-${String(mo).padStart(2, '0')}-01`;
+          periodTo = `${y}-${String(mo).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
+        }
+      }
+      return {
+        id: row.id,
+        tele_bill_id: row.tele_bill_id,
+        mobile_number: row.mobile_number || fd['Mobile Number / Account'] || '',
+        bill_number: row.bill_number,
+        period_from: periodFrom,
+        period_to: periodTo,
+        created_at: row.created_at,
+        total_bill: row.total_bill,
+        vat_current_period: row.vat_current_period,
+      };
+    });
+
+    res.status(200).json(rows);
+  } catch (error) {
+    console.error('Error fetching latest telecom bills:', error);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
