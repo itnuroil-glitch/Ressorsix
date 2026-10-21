@@ -1727,40 +1727,13 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                         >
                           <Ionicons name="pencil-outline" size={17} color="#0E5434" />
                         </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.planDeleteBtn}
-                          onPress={() => {
-                            const ok = Platform.OS === 'web' && typeof window !== 'undefined' && window.confirm
-                              ? window.confirm(`Delete package plan "${formData.planName}"?`)
-                              : true;
-                            if (!ok) return;
-                            const key = formData.planName.trim().toLowerCase();
-                            setHiddenPlans(prev => (prev.includes(key) ? prev : [...prev, key]));
-                            setCustomPlans(prev => prev.filter(pl => pl.planName.toLowerCase() !== key));
-                            setFormData(prev => ({
-                              ...prev,
-                              planName: '',
-                              monthlyRentAED: '',
-                              dataAllowance: '',
-                              dataUnit: 'GB',
-                              localMinutes: '',
-                              intlMinutes: '',
-                              localSMS: '',
-                              intlSMS: '',
-                              cug: '',
-                            }));
-                          }}
-                          activeOpacity={0.8}
-                        >
-                          <Ionicons name="trash-outline" size={17} color={THEME.redAlertText} />
-                        </TouchableOpacity>
                       </>
                     )}
                   </View>
                   {isMissing('planName') && <Text style={styles.fieldErrorText}>Package Plan is required</Text>}
 
                   {isPlanDropdownOpen && (
-                    <View style={[styles.dropdownListPopover, { top: 74, left: 0, right: formData.planName ? 88 : 0 }]}>
+                    <View style={[styles.dropdownListPopover, { top: 74, left: 0, right: formData.planName ? 48 : 0 }]}>
                       <View style={{ maxHeight: 220, overflow: 'auto' }}>
                         {planOptions.length === 0 && (
                           <View style={styles.dropdownItem}>
