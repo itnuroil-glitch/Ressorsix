@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -226,6 +226,9 @@ const TelecomBillTab = ({
   showToast,
   isSidebarCollapsed,
   onNavigate,
+  billRequest,
+  onBillRequestHandled,
+  onViewUsageReport,
   permissions = { can_view: true, can_create: true, can_edit: true, can_delete: true, full_control: true },
   checkRowPermission = () => true
 }) => {
@@ -1130,6 +1133,22 @@ const TelecomBillTab = ({
     setIsModalOpen(true);
   };
 
+  const returnToRef = useRef(null);
+
+  // A request from another page: open this bill's details popup as soon as the bills are loaded
+  useEffect(() => {
+    if (!billRequest || loading) return;
+    const rec = records.find(r => Number(r.tele_bill_id || r.id) === Number(billRequest.id));
+    if (rec) {
+      returnToRef.current = billRequest.returnTo || null;
+      openViewModal(rec);
+    } else {
+      if (showToast) showToast('Could not find that bill.', 'error');
+      if (billRequest.returnTo && onNavigate) onNavigate(billRequest.returnTo);
+    }
+    if (onBillRequestHandled) onBillRequestHandled();
+  }, [billRequest, records, loading]);
+
   const openViewModal = async (record) => {
     const rowCompId = getRowCompanyId(record);
     if (checkRowPermission && !checkRowPermission(rowCompId, 'view') && !isSuperAdmin) {
@@ -1270,6 +1289,12 @@ const TelecomBillTab = ({
 
   const closeModal = () => {
     setIsModalOpen(false);
+    // Opened from another page (e.g. Excess Usage report)? Go back there when the popup closes.
+    if (returnToRef.current) {
+      const backTo = returnToRef.current;
+      returnToRef.current = null;
+      if (onNavigate) onNavigate(backTo);
+    }
     setIsPreviewModalOpen(false);
     setEditingRecord(null);
     setIsViewOnly(false);
@@ -2462,6 +2487,33 @@ const TelecomBillTab = ({
                   ) : <View />}
 
                   <View style={{ flexDirection: 'row', gap: 12, marginLeft: 'auto' }}>
+                    {isViewOnly && !!onViewUsageReport && (
+                      <TouchableOpacity
+                        style={styles.usageReportBtn}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          const rec = editingRecord || {};
+                          let parsedFd = {};
+                          try { parsedFd = typeof rec.field_data === 'string' ? JSON.parse(rec.field_data || '{}') : (rec.field_data || {}); } catch (e) { }
+                          const number = String(rec.mobile_number || parsedFd['Mobile Number / Account'] || '').split(/[,|\n]+/)[0].trim();
+                          const toIso = (v) => {
+                            if (!v) return null;
+                            const d = new Date(v);
+                            return isNaN(d.getTime()) ? null : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                          };
+                          const from = toIso(rec.period_from);
+                          const to = toIso(rec.period_to);
+                          const company = rec.company_name || parsedFd['Company'] || parsedFd['Company Name'] || '';
+                          const month = to ? to.slice(0, 7) : (from ? from.slice(0, 7) : null);
+                          const info = { number, from: from && to ? from : null, to: from && to ? to : null, billNumber: rec.bill_number || '', company, month };
+                          closeModal();
+                          onViewUsageReport(info);
+                        }}
+                      >
+                        <Ionicons name="stats-chart-outline" size={16} color="#004D34" style={{ marginRight: 8 }} />
+                        <Text style={styles.usageReportBtnText}>View Usage Report</Text>
+                      </TouchableOpacity>
+                    )}
                     <TouchableOpacity style={styles.cancelBtn} onPress={closeModal}>
                       <Text style={styles.cancelBtnText}>{isViewOnly ? 'Close' : 'Cancel'}</Text>
                     </TouchableOpacity>
@@ -3099,6 +3151,8 @@ const styles = StyleSheet.create({
   backBtnText: { color: '#0F172A', fontWeight: '600', fontSize: 14 },
   cancelBtn: { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: '#CBD5E1', backgroundColor: '#FFFFFF' },
   cancelBtnText: { color: '#64748B', fontWeight: '600', fontSize: 14 },
+  usageReportBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: '#004D34', backgroundColor: '#F0FDF4' },
+  usageReportBtnText: { color: '#004D34', fontWeight: '700', fontSize: 14 },
   saveBtn: { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8, backgroundColor: '#004D34' },
   saveBtnText: { color: COLORS.white, fontWeight: '700', fontSize: 14 },
 

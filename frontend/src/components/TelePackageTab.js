@@ -16,6 +16,7 @@ import { API_URL } from '../config';
 
 const EMPTY_FORM = {
   package_name: '',
+  plan_type: 'Recurring',
   monthly_plan_amount: '',
   data_allowance: '',
   data_unit: 'GB',
@@ -115,6 +116,7 @@ export default function TelePackageTab({ user, showToast, permissions }) {
       setEditingId(item.id);
       setForm({
         package_name: item.package_name || '',
+        plan_type: item.plan_type || 'Recurring',
         monthly_plan_amount:
           item.monthly_plan_amount === null || item.monthly_plan_amount === undefined
             ? ''
@@ -287,10 +289,11 @@ export default function TelePackageTab({ user, showToast, permissions }) {
         ) : filtered.length > 0 ? (
           <>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1, minWidth: '100%' }}>
-              <View style={[styles.tableWrapper, { minWidth: 1100, flexGrow: 1 }]}>
+              <View style={[styles.tableWrapper, { minWidth: 1200, flexGrow: 1 }]}>
                 <View style={styles.tableHeader}>
                   <Text numberOfLines={1} style={[styles.thCell, { flex: 0.7 }]}>ID</Text>
                   <Text numberOfLines={1} style={[styles.thCell, { flex: 2.6 }]}>PACKAGE NAME</Text>
+                  <Text numberOfLines={1} style={[styles.thCell, { flex: 1.2 }]}>TYPE</Text>
                   <Text numberOfLines={1} style={[styles.thCell, { flex: 1.6 }]}>MONTHLY AMOUNT</Text>
                   <Text numberOfLines={1} style={[styles.thCell, { flex: 1.2 }]}>DATA</Text>
                   <Text numberOfLines={1} style={[styles.thCell, { flex: 1.1 }]}>LOCAL MIN</Text>
@@ -311,6 +314,13 @@ export default function TelePackageTab({ user, showToast, permissions }) {
                     >
                       <Text style={[styles.tdCell, { flex: 0.7, fontWeight: '700' }]}>#{item.id}</Text>
                       <Text style={[styles.tdCell, { flex: 2.6, fontWeight: '600' }]}>{item.package_name}</Text>
+                      <View style={[styles.tdCell, { flex: 1.2, alignItems: 'flex-start' }]}>
+                        <View style={[styles.typeBadge, item.plan_type === 'One Time' && styles.typeBadgeOneTime]}>
+                          <Text style={[styles.typeBadgeText, item.plan_type === 'One Time' && styles.typeBadgeTextOneTime]}>
+                            {item.plan_type === 'One Time' ? 'One Time' : 'Recurring'}
+                          </Text>
+                        </View>
+                      </View>
                       <Text style={[styles.tdCell, { flex: 1.6, fontWeight: '700', color: '#166534' }]}>
                         {Number(item.monthly_plan_amount || 0).toFixed(2)} AED
                       </Text>
@@ -404,6 +414,27 @@ export default function TelePackageTab({ user, showToast, permissions }) {
                   required: true,
                   error: missingName,
                 })}
+                <View style={{ width: '100%' }}>
+                  <Text style={styles.inputLabel}>Plan Type</Text>
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    {['Recurring', 'One Time'].map((opt) => {
+                      const selected = (form.plan_type || 'Recurring') === opt;
+                      return (
+                        <TouchableOpacity
+                          key={opt}
+                          style={[styles.planTypeOption, selected && styles.planTypeOptionActive]}
+                          onPress={() => setField('plan_type', opt)}
+                          activeOpacity={0.8}
+                        >
+                          <View style={[styles.planTypeRadio, selected && styles.planTypeRadioActive]}>
+                            {selected && <View style={styles.planTypeRadioDot} />}
+                          </View>
+                          <Text style={[styles.planTypeText, selected && styles.planTypeTextActive]}>{opt}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
                 {renderField('Monthly Plan Amount (AED)', 'monthly_plan_amount', '100', {
                   required: true,
                   numeric: true,
@@ -707,6 +738,37 @@ const styles = StyleSheet.create({
   },
   helperText: { fontSize: 11, color: '#64748B', marginTop: 4 },
   errorText: { fontSize: 11, color: '#DC2626', marginTop: 4, fontWeight: '500' },
+  planTypeOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
+  planTypeOptionActive: { borderColor: '#0E5434', backgroundColor: '#F0FDF4' },
+  planTypeRadio: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: '#94A3B8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  planTypeRadioActive: { borderColor: '#0E5434' },
+  planTypeRadioDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#0E5434' },
+  planTypeText: { fontSize: 13, fontWeight: '600', color: '#475569' },
+  planTypeTextActive: { color: '#0E5434', fontWeight: '700' },
+  typeBadge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3, backgroundColor: '#DCFCE7' },
+  typeBadgeOneTime: { backgroundColor: '#FEF3C7' },
+  typeBadgeText: { fontSize: 11, fontWeight: '700', color: '#166534' },
+  typeBadgeTextOneTime: { color: '#92400E' },
   unitRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   unitChip: { paddingVertical: 6, paddingHorizontal: 8, borderRadius: 6, backgroundColor: '#E2E8F0' },
   unitChipActive: { backgroundColor: '#0E5434' },

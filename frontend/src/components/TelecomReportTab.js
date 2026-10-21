@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { API_URL } from '../config';
+import MonthlyUsageDashboardTab from './MonthlyUsageDashboardTab';
 
 const COLORS = {
   primary: '#4A001A',
@@ -46,10 +47,11 @@ const isSmsCategory = (cat) => {
   return ['National SMS', 'International SMS', 'Premium SMS', 'Roaming SMS'].includes(cat) || String(cat).toLowerCase().includes('sms');
 };
 
-export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }) {
+export default function TelecomReportTab({ user, showToast, isSidebarCollapsed, reportRequest, onReportRequestHandled, onNavigate }) {
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
 
+  const [reportViewMode, setReportViewMode] = useState('monthly_dashboard'); // 'monthly_dashboard' | 'detailed_logs'
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -92,6 +94,25 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
   useEffect(() => {
     fetchReportAnalytics();
   }, []);
+
+  // Opened from a bill's details popup: show that number's usage for the bill period
+  useEffect(() => {
+    if (!reportRequest) return;
+    setReportViewMode('monthly_dashboard');
+    if (reportRequest.number) setSearchQuery(reportRequest.number);
+    if (reportRequest.from && reportRequest.to) {
+      setFromDateInput(reportRequest.from);
+      setToDateInput(reportRequest.to);
+      setAppliedDateRange({ from: reportRequest.from, to: reportRequest.to });
+      setActiveDatePreset('Custom Range');
+    } else {
+      setAppliedDateRange({ from: null, to: null });
+    }
+    setSelectedCategoryFilter('All');
+    setSelectedProviderFilter('All');
+    setSelectedMonthFilter('All');
+    if (onReportRequestHandled) onReportRequestHandled();
+  }, [reportRequest]);
 
   const fetchReportAnalytics = async (companyOverride) => {
     setLoading(true);
@@ -166,7 +187,7 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
     }
   };
 
-  if (loading) {
+  if (loading && reportViewMode !== 'monthly_dashboard') {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
@@ -368,7 +389,105 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
     });
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 60 }}>
+    <View style={{ flex: 1, backgroundColor: '#F8FAFC' }}>
+      {/* Top View Mode Switcher Header */}
+      <View style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#FFFFFF',
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderColor: '#E2E8F0',
+        flexWrap: 'wrap',
+        gap: 10,
+      }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F1F5F9', padding: 4, borderRadius: 10 }}>
+          <TouchableOpacity
+            style={[{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: 14,
+              paddingVertical: 7,
+              borderRadius: 8,
+            }, reportViewMode === 'monthly_dashboard' && {
+              backgroundColor: '#FFFFFF',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+            }]}
+            onPress={() => setReportViewMode('monthly_dashboard')}
+          >
+            <Ionicons name="stats-chart" size={15} color={reportViewMode === 'monthly_dashboard' ? '#004D34' : '#64748B'} />
+            <Text style={{
+              fontSize: 13,
+              fontWeight: reportViewMode === 'monthly_dashboard' ? '800' : '600',
+              color: reportViewMode === 'monthly_dashboard' ? '#004D34' : '#64748B'
+            }}>
+              Monthly Usage Dashboard
+            </Text>
+            <View style={{ backgroundColor: '#DCFCE7', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6, borderWidth: 1, borderColor: '#BBF7D0' }}>
+              <Text style={{ fontSize: 9.5, fontWeight: '800', color: '#15803D' }}>NEW</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: 14,
+              paddingVertical: 7,
+              borderRadius: 8,
+            }, reportViewMode === 'detailed_logs' && {
+              backgroundColor: '#FFFFFF',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+            }]}
+            onPress={() => setReportViewMode('detailed_logs')}
+          >
+            <Ionicons name="list-outline" size={15} color={reportViewMode === 'detailed_logs' ? '#004D34' : '#64748B'} />
+            <Text style={{
+              fontSize: 13,
+              fontWeight: reportViewMode === 'detailed_logs' ? '800' : '600',
+              color: reportViewMode === 'detailed_logs' ? '#004D34' : '#64748B'
+            }}>
+              Itemized Call Logs / Statement
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {onNavigate && (
+          <TouchableOpacity
+            onPress={() => onNavigate('telecom_bill')}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              borderRadius: 8,
+              backgroundColor: '#F8FAFC',
+              borderWidth: 1,
+              borderColor: '#CBD5E1'
+            }}
+          >
+            <Ionicons name="arrow-back-outline" size={14} color="#64748B" />
+            <Text style={{ fontSize: 12.5, fontWeight: '700', color: '#475569' }}>Back to Bills</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {reportViewMode === 'monthly_dashboard' ? (
+        <MonthlyUsageDashboardTab
+          user={user}
+          showToast={showToast}
+          isSidebarCollapsed={isSidebarCollapsed}
+          reportRequest={reportRequest}
+          onReportRequestHandled={onReportRequestHandled}
+          onNavigate={onNavigate}
+        />
+      ) : (
+        <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 60 }}>
       {/* Header Banner */}
       <View style={styles.headerBanner}>
         <View style={{ flex: 1 }}>
@@ -1082,7 +1201,9 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed }
           )}
         </View>
       </View>
-    </ScrollView>
+        </ScrollView>
+      )}
+    </View>
   );
 }
 

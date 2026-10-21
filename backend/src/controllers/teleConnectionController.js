@@ -1,5 +1,10 @@
 const db = require('../config/db');
 
+// Recurring / One Time plan type stored with the connection's plan
+db.query(`ALTER TABLE tbl_tele_connection ADD COLUMN IF NOT EXISTS plan_type VARCHAR(20) DEFAULT 'Recurring'`)
+  .catch(err => console.error('Could not add plan_type to tbl_tele_connection:', err.message));
+const normPlanType = (v) => (String(v || '').trim().toLowerCase().replace(/[\s_-]/g, '') === 'onetime' ? 'One Time' : 'Recurring');
+
 // Keep tbl_tele_reassignment in step with the connection's employee (used by add / edit connection)
 const syncAssignmentRow = async (connectionId, prevEmployee, newEmployee, assignedFrom, performedBy) => {
   try {
@@ -132,6 +137,7 @@ exports.createConnection = async (req, res) => {
       local_sms,
       international_sms,
       cug,
+      plan_type,
       employee_name,
       assigned_from,
       notes,
@@ -174,11 +180,11 @@ exports.createConnection = async (req, res) => {
         contract_from, contract_to, plan_name, monthly_plan_amount,
         data_allowance, data_unit, local_minutes, international_minutes,
         local_sms, international_sms, cug, employee_name, assigned_from,
-        notes, status, client_id, created_by, is_deleted
+        notes, status, client_id, created_by, is_deleted, plan_type
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
         $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-        $21, $22, $23, $24, $25, 0
+        $21, $22, $23, $24, $25, 0, $26
       )
       RETURNING *
     `;
@@ -208,7 +214,8 @@ exports.createConnection = async (req, res) => {
       notes || null,
       finalStatus,
       clientId,
-      createdBy
+      createdBy,
+      normPlanType(plan_type)
     ]);
 
     if (!isUnassigned) {
@@ -249,6 +256,7 @@ exports.updateConnection = async (req, res) => {
       local_sms,
       international_sms,
       cug,
+      plan_type,
       employee_name,
       assigned_from,
       notes,
@@ -313,6 +321,7 @@ exports.updateConnection = async (req, res) => {
         notes = COALESCE($22, notes),
         status = COALESCE($23, status),
         updated_by = COALESCE($24, updated_by),
+        plan_type = COALESCE($26, plan_type),
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $25 AND is_deleted = 0
       RETURNING *
@@ -343,7 +352,8 @@ exports.updateConnection = async (req, res) => {
       notes !== undefined ? notes : null,
       status || (isUnassigned ? 'UNASSIGNED' : 'ACTIVE'),
       updated_by || 'Admin',
-      id
+      id,
+      plan_type !== undefined ? normPlanType(plan_type) : null
     ]);
 
     if (employee_name !== undefined && result.rows.length > 0) {

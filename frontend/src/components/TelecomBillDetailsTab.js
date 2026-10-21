@@ -164,7 +164,12 @@ export default function TelecomBillDetailsTab({
 
   const handleViewUsageReport = () => {
     if (onNavigate) {
-      onNavigate('telecom_report');
+      onNavigate('telecom_report', {
+        number: activeBill.mobileNumber || '054 305 1035',
+        company: activeBill.companyName || 'ASAS Gen Tr LLC',
+        month: '2026-06',
+        billNumber: activeBill.billNumber || activeBill.invoiceNumber || 'INV2039279589'
+      });
     } else {
       setShowUsageModal(true);
     }
