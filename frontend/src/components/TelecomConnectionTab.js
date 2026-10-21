@@ -177,7 +177,30 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
   const [showErrors, setShowErrors] = useState(false);
   const isMissing = key => showErrors && !String(formData[key] ?? '').trim();
   const errBorder = { borderColor: '#DC2626', backgroundColor: '#FEF2F2' };
+
+  // Close any open dropdown when the user clicks outside of it
+  const anyDropdownOpen =
+    isConnTypeDropdownOpen || isCompanyDropdownOpen || isProviderDropdownOpen ||
+    isPlanDropdownOpen || isDataUnitDropdownOpen || isEmployeeDropdownOpen;
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !anyDropdownOpen || typeof document === 'undefined') return undefined;
+    const handleOutside = (e) => {
+      const t = e.target;
+      if (t && t.closest && t.closest('[data-dropdown="1"]')) return;
+      setIsConnTypeDropdownOpen(false);
+      setIsCompanyDropdownOpen(false);
+      setIsProviderDropdownOpen(false);
+      setIsPlanDropdownOpen(false);
+      setIsDataUnitDropdownOpen(false);
+      setIsEmployeeDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [anyDropdownOpen]);
   const [telePackages, setTelePackages] = useState([]);
+  const [teleProviders, setTeleProviders] = useState([]);
+  const [teleConnTypes, setTeleConnTypes] = useState([]);
+  const [teleServiceAccounts, setTeleServiceAccounts] = useState([]);
   const [editingPlanName, setEditingPlanName] = useState('');
 
   // Reassign Form State
@@ -299,6 +322,56 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     }
   };
 
+  const fetchTeleServiceAccounts = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/tele-service-providers`);
+      if (res.ok) {
+        const data = await res.json();
+        setTeleServiceAccounts(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.warn('Could not fetch tele service providers', err);
+    }
+  };
+
+  // Account numbers saved in the Tele Service Provider master for a company + provider pair
+  const accountsFor = (company, provider) => {
+    const c = String(company || '').trim().toLowerCase();
+    const p = String(provider || '').trim().toLowerCase();
+    if (!c || !p) return [];
+    const list = teleServiceAccounts
+      .filter(r => String(r.status || 'Active').toLowerCase() === 'active'
+        && String(r.company_name || '').trim().toLowerCase() === c
+        && String(r.service_provider || '').trim().toLowerCase() === p)
+      .map(r => String(r.account_number || '').trim())
+      .filter(Boolean);
+    return Array.from(new Set(list));
+  };
+
+  const fetchTeleConnTypes = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/tele-connection-types`);
+      if (res.ok) {
+        const data = await res.json();
+        setTeleConnTypes(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.warn('Could not fetch tele connection types', err);
+    }
+  };
+
+  const fetchTeleProviders = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/telecom-providers`);
+      if (res.ok) {
+        const data = await res.json();
+        setTeleProviders(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.warn('Could not fetch tele providers', err);
+    }
+  };
+
   const fetchTelePackages = async () => {
     try {
       const res = await fetch(`${API_URL}/api/tele-packages`);
@@ -344,6 +417,9 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     fetchEmployees();
     fetchCompanies();
     fetchTelePackages();
+    fetchTeleProviders();
+    fetchTeleConnTypes();
+    fetchTeleServiceAccounts();
   }, []);
 
   // Dynamic company lists from backend API (falling back to STATIC_COMPANIES)
@@ -445,6 +521,24 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
   }, [activeFilterTab, selectedCompany, selectedType, searchTerm, isExcessFilterActive]);
 
   // Available employees dynamically filtered by the selected company in the form
+  // Connection types come from the Tele Connection Type master (falls back to the built-in three while it is empty)
+  const connTypeOptions = useMemo(() => {
+    const names = teleConnTypes
+      .filter(ct => String(ct.status || 'Active').toLowerCase() === 'active' && ct.connection_type_name)
+      .map(ct => String(ct.connection_type_name).trim());
+    const unique = Array.from(new Set(names));
+    return unique.length > 0 ? unique : ['SIM', 'Internet', 'Landline'];
+  }, [teleConnTypes]);
+
+  // Providers come from the Tele Provider master (falls back to the built-in list while the master is empty)
+  const providerOptions = useMemo(() => {
+    const names = teleProviders
+      .filter(pr => String(pr.status || 'Active').toLowerCase() === 'active' && pr.provider_name)
+      .map(pr => String(pr.provider_name).trim());
+    const unique = Array.from(new Set(names));
+    return unique.length > 0 ? unique : STATIC_PROVIDERS.filter(pv => pv !== 'All Providers');
+  }, [teleProviders]);
+
   // Package plans come only from the Tele Package master (Settings > Tele Package)
   const planOptions = useMemo(() => {
     return telePackages
@@ -1363,7 +1457,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
               keyboardShouldPersistTaps="handled"
             >
               {/* SECTION 1: CONNECTION DETAILS */}
-              <View style={[styles.formSectionBox, { zIndex: isConnTypeDropdownOpen ? 1000 : 2 }]}>
+              <View style={[styles.formSectionBox, { zIndex: (isConnTypeDropdownOpen || isCompanyDropdownOpen || isProviderDropdownOpen) ? 1000 : 2 }]}>
                 <Text style={styles.formSectionHeader}>CONNECTION DETAILS</Text>
 
                 {/* Row 1: Connection Type * | Company * */}
@@ -1376,6 +1470,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     </View>
 
                     <TouchableOpacity
+                      dataSet={{ dropdown: '1' }}
                       style={[
                         styles.dropdownSelector,
                         isConnTypeDropdownOpen && { borderColor: '#166534', backgroundColor: '#FFFFFF' },
@@ -1399,8 +1494,8 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     </TouchableOpacity>
 
                     {isConnTypeDropdownOpen && (
-                      <View style={styles.dropdownListPopover}>
-                        {['SIM', 'Internet', 'Landline'].map(type => (
+                      <View dataSet={{ dropdown: '1' }} style={styles.dropdownListPopover}>
+                        {connTypeOptions.map(type => (
                           <TouchableOpacity
                             key={type}
                             style={[styles.dropdownItem, formData.connectionType === type && styles.dropdownItemActive]}
@@ -1427,6 +1522,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     </View>
 
                     <TouchableOpacity
+                      dataSet={{ dropdown: '1' }}
                       style={[
                         styles.dropdownSelector,
                         isMissing('company') && errBorder,
@@ -1450,7 +1546,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     {isMissing('company') && <Text style={styles.fieldErrorText}>Company is required</Text>}
 
                     {isCompanyDropdownOpen && (
-                      <View style={styles.dropdownListPopover}>
+                      <View dataSet={{ dropdown: '1' }} style={styles.dropdownListPopover}>
                         <View style={{ maxHeight: 220, overflow: 'auto' }}>
                           {companyOptions.map(comp => (
                             <TouchableOpacity
@@ -1460,7 +1556,10 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                                 formData.company === comp && styles.dropdownItemActive,
                               ]}
                               onPress={() => {
-                                setFormData(prev => ({ ...prev, company: comp }));
+                                setFormData(prev => {
+                                  const accs = accountsFor(comp, prev.provider);
+                                  return { ...prev, company: comp, ...(accs.length ? { accountNumber: accs[0] } : {}) };
+                                });
                                 setIsCompanyDropdownOpen(false);
                               }}
                             >
@@ -1493,6 +1592,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     </View>
 
                     <TouchableOpacity
+                      dataSet={{ dropdown: '1' }}
                       style={[
                         styles.dropdownSelector,
                         isMissing('provider') && errBorder,
@@ -1516,9 +1616,9 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     {isMissing('provider') && <Text style={styles.fieldErrorText}>Provider is required</Text>}
 
                     {isProviderDropdownOpen && (
-                      <View style={styles.dropdownListPopover}>
+                      <View dataSet={{ dropdown: '1' }} style={styles.dropdownListPopover}>
                         <View style={{ maxHeight: 220, overflow: 'auto' }}>
-                          {STATIC_PROVIDERS.filter(p => p !== 'All Providers').map(prov => (
+                          {providerOptions.map(prov => (
                             <TouchableOpacity
                               key={prov}
                               style={[
@@ -1526,7 +1626,10 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                                 formData.provider === prov && styles.dropdownItemActive,
                               ]}
                               onPress={() => {
-                                setFormData(prev => ({ ...prev, provider: prov }));
+                                setFormData(prev => {
+                                  const accs = accountsFor(prev.company, prov);
+                                  return { ...prev, provider: prov, ...(accs.length ? { accountNumber: accs[0] } : {}) };
+                                });
                                 setIsProviderDropdownOpen(false);
                               }}
                             >
@@ -1567,7 +1670,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                   </View>
                 </View>
 
-                {/* Row 3: Account No * | ICCID */}
+                {/* Row 3: Account No * | Serial Name */}
                 <View style={[styles.formTwoColRow, { zIndex: 5 }]}>
                   <View style={styles.formCol}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
@@ -1583,9 +1686,33 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                       placeholderTextColor={THEME.slate400}
                     />
                     {isMissing('accountNumber') && <Text style={styles.fieldErrorText}>Account No is required</Text>}
+                    {accountsFor(formData.company, formData.provider).length > 0 && (
+                      <View style={{ marginTop: 6 }}>
+                        <Text style={styles.fieldHelperText}>
+                          {accountsFor(formData.company, formData.provider).length > 1
+                            ? 'Accounts for this company and provider (Tele Service Provider):'
+                            : 'Filled from Tele Service Provider'}
+                        </Text>
+                        {accountsFor(formData.company, formData.provider).length > 1 && (
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                            {accountsFor(formData.company, formData.provider).map(acc => (
+                              <TouchableOpacity
+                                key={acc}
+                                onPress={() => setFormData(prev => ({ ...prev, accountNumber: acc }))}
+                                style={[styles.planUnitChip, formData.accountNumber === acc && styles.planUnitChipActive]}
+                              >
+                                <Text style={[styles.planUnitChipText, formData.accountNumber === acc && { color: THEME.white }]}>
+                                  {acc}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        )}
+                      </View>
+                    )}
                   </View>
                   <View style={styles.formCol}>
-                    <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>ICCID</Text>
+                    <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Serial Name</Text>
                     <TextInput
                       style={[
                         styles.exactTextInput,
@@ -1705,6 +1832,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                   </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <TouchableOpacity
+                      dataSet={{ dropdown: '1' }}
                       style={[
                         styles.dropdownSelector,
                         { flex: 1 },
@@ -1763,7 +1891,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                   {isMissing('planName') && <Text style={styles.fieldErrorText}>Package Plan is required</Text>}
 
                   {isPlanDropdownOpen && (
-                    <View style={[styles.dropdownListPopover, { top: 74, left: 0, right: formData.planName ? 48 : 0 }]}>
+                    <View dataSet={{ dropdown: '1' }} style={[styles.dropdownListPopover, { top: 74, left: 0, right: formData.planName ? 48 : 0 }]}>
                       <View style={{ maxHeight: 220, overflow: 'auto' }}>
                         {planOptions.length === 0 && (
                           <View style={styles.dropdownItem}>
@@ -2208,7 +2336,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     <Row>
                       <Field required label="Account No" value={dash(activeItem.accountNumber)} />
                       <Field
-                        label="ICCID"
+                        label="Serial Name"
                         value={dash(activeItem.iccid)}
                         disabled={!isSim}
                         helper="SIM only"
