@@ -2810,10 +2810,22 @@ export default function DashboardScreen({ user, onSignOut }) {
   const renderSidebarContent = () => {
     const isSidebarLoading = userPermissionsLoading || modulesLoading;
 
+    // Telecom menu items removed from the sidebar (the pages themselves are untouched)
+    const HIDDEN_SIDEBAR_MODULES = [
+      'telecom details',
+      'telecom test',
+      'phone number assignment',
+      'import telecom bills',
+      'telecom bill details',
+    ];
+    const isHiddenSidebarModule = m =>
+      HIDDEN_SIDEBAR_MODULES.includes(String(m.module_name || '').trim().toLowerCase().replace(/telcome/g, 'telecom'));
+
     // Filter modules array based on view permission, showing parent if any child is allowed.
     const visibleModules = isSidebarLoading
       ? []
       : modules.filter(m => {
+        if (isHiddenSidebarModule(m)) return false;
         // Only Super Admin (roleId === 1) can view the Plans menu
         if (m.route === '/plans' || m.module_name === 'Plans') {
           return user && String(user.roleId) === '1';
