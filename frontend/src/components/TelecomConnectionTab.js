@@ -227,6 +227,10 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
             cug: c.cug || '',
             status: c.status || 'ACTIVE'
           }));
+          // Show the connections straight away; the (slow) bills lookup fills in "Latest Bill" afterwards
+          setConnections(mapped.map(m => ({ ...m, currentBillAED: null, isOverPlan: false, billSub: '' })));
+
+          const loadLatestBills = async () => {
           // Latest bill per number: real bill amount (excl. VAT) and over-plan flag (more than AED 10 above plan)
           let bills = [];
           try {
@@ -272,7 +276,13 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
             const over = excess > 10;
             return { ...m, currentBillAED: billExcl, isOverPlan: over, billSub: over ? `+${excess.toFixed(2)} over plan` : '' };
           });
-          setConnections(withBills);
+          const billInfoById = new Map(withBills.map(w => [w.id, w]));
+          setConnections(prev => prev.map(c => {
+            const w = billInfoById.get(c.id);
+            return w ? { ...c, currentBillAED: w.currentBillAED, isOverPlan: w.isOverPlan, billSub: w.billSub } : c;
+          }));
+          };
+          loadLatestBills().catch(e => console.warn('Could not load latest bills', e));
         } else {
           setConnections([]);
         }
@@ -2975,7 +2985,7 @@ const styles = StyleSheet.create({
   // Add/Edit Modal (Matching user screenshot)
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
