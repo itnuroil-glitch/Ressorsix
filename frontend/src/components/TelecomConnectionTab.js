@@ -959,7 +959,6 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
         'Intl SMS': c.intlSMS || '',
         'CUG': c.cug || '',
         'Monthly Amount (AED)': c.monthlyRentAED,
-        'Sep 2026 Bill (AED)': c.currentBillAED,
         'Excess Over Plan': c.isOverPlan ? `+${c.overPlanAmount} AED` : 'Within Plan',
         'Status': c.status,
       }));
@@ -1185,15 +1184,9 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
               </View>
               <Text style={[styles.colHeader, { flex: 1.2 }]}>PROVIDER</Text>
               <Text style={[styles.colHeader, { flex: 1.3 }]}>NUMBER</Text>
-              <Text style={[styles.colHeader, { flex: 2 }]}>EMPLOYEE</Text>
-              <Text style={[styles.colHeader, { flex: 1.7 }]}>PLAN NAME</Text>
-              <Text style={[styles.colHeader, { flex: 1.3 }]}>MONTHLY AMOUNT</Text>
-              <View style={[{ flex: 1.4, flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
-                <Text style={styles.colHeader}>{billMonthLabel ? `${billMonthLabel} BILL` : 'LATEST BILL'}</Text>
-                <View style={styles.newHeaderBadge}>
-                  <Text style={styles.newHeaderBadgeText}>NEW</Text>
-                </View>
-              </View>
+              <Text style={[styles.colHeader, { flex: 2.1 }]}>EMPLOYEE</Text>
+              <Text style={[styles.colHeader, { flex: 1.8 }]}>PLAN NAME</Text>
+              <Text style={[styles.colHeader, { flex: 1.4 }]}>MONTHLY AMOUNT</Text>
               <Text style={[styles.colHeader, { flex: 1.2 }]}>STATUS</Text>
               <Text style={[styles.colHeader, { flex: 1.7, textAlign: 'center' }]}>ACTION</Text>
             </View>
@@ -1266,7 +1259,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     </View>
 
                     {/* 5. EMPLOYEE */}
-                    <View style={[{ flex: 2, paddingRight: 8 }]}>
+                    <View style={[{ flex: 2.1, paddingRight: 8 }]}>
                       <Text
                         style={[
                           styles.employeeNameText,
@@ -1280,40 +1273,18 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     </View>
 
                     {/* 6. PLAN NAME */}
-                    <View style={[{ flex: 1.7, paddingRight: 8 }]}>
+                    <View style={[{ flex: 1.8, paddingRight: 8 }]}>
                       <Text style={styles.planNameText} numberOfLines={1}>{row.planName}</Text>
                     </View>
 
                     {/* 7. MONTHLY AMOUNT */}
-                    <View style={[{ flex: 1.3 }]}>
+                    <View style={[{ flex: 1.4 }]}>
                       <Text style={styles.monthlyAmountText}>
                         {row.monthlyRentAED} AED
                       </Text>
                     </View>
 
-                    {/* 8. SEP 2026 BILL */}
-                    <View style={[{ flex: 1.4 }]}>
-                      <Text
-                        style={[
-                          styles.billAmountText,
-                          isOver && styles.billAmountTextOver, // Red if over plan
-                        ]}
-                      >
-                        {row.currentBillAED === null || row.currentBillAED === undefined ? '—' : `${Number(row.currentBillAED).toFixed(2)} AED`}
-                      </Text>
-                      {row.billSub && (
-                        <Text
-                          style={[
-                            styles.billSubText,
-                            isOver ? styles.billSubTextOver : { color: THEME.slate400 }
-                          ]}
-                        >
-                          {row.billSub}
-                        </Text>
-                      )}
-                    </View>
-
-                    {/* 9. STATUS */}
+                    {/* 8. STATUS */}
                     <View style={[{ flex: 1.2 }]}>
                       <View
                         style={[

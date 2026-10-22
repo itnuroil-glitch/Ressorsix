@@ -319,6 +319,9 @@ app.use((err, req, res, next) => {
 });
 
 // Launch server
+// Telecom pages that need their own Role Permissions rows (idempotent)
+require('./config/ensureTelecomModules')().catch(() => { });
+
 app.listen(PORT, '0.0.0.0', () => {
   const ip = getLocalNetworkIp();
   console.log(`\n==================================================`);
