@@ -279,6 +279,8 @@ exports.getUsageReport = async (req, res) => {
     const vat = num(r.vat_amount ?? r.vat_current_period);
 
     // bill lines (everything except the total row); plan / extra / VAT classification
+    // Balance brought forward / payments are not usage, so they never count as extra
+    const NOT_USAGE = /previous|payment|balance|carried|brought|adjust/i;
     const lines = items
       .filter(i => String(i.record_type).toUpperCase() !== 'BILL')
       .map(i => {
@@ -286,10 +288,11 @@ exports.getUsageReport = async (req, res) => {
         return {
           description: i.category,
           type: t,
-          part: t === 'SERVICE' ? 'Plan' : (t === 'VAT' ? 'VAT' : 'Extra usage'),
+          part: t === 'SERVICE' ? 'Plan' : (t === 'VAT' ? 'VAT' : (NOT_USAGE.test(i.category || '') ? 'Other' : 'Extra usage')),
           amount: round2(num(i.amount)),
         };
-      });
+      })
+      .filter(l => Math.abs(l.amount) > 0.004);
 
     // extra by source (charges and parking, VAT left out)
     const sources = lines.filter(l => l.part === 'Extra usage' && l.amount > 0).map(l => ({ name: l.description, amount: l.amount }));
@@ -347,6 +350,9 @@ exports.getUsageReport = async (req, res) => {
 
     const plan = m.plan;
     const extra = m.extra;
+    // Charges on the bill that have no line item of their own: show them so the slices add up to the extra
+    const listedExtra = sources.reduce((sum, x) => sum + x.amount, 0);
+    if (extra - listedExtra > 0.5) sources.push({ name: 'Other charges', amount: round2(extra - listedExtra) });
     const delta = (cur, before) => (before === null || before === undefined ? null : round2(cur - before));
 
     const selected = {

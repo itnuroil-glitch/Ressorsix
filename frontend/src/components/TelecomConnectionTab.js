@@ -1676,7 +1676,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                   </View>
                 </View>
 
-                {/* Row 3: Account No * | Serial Name */}
+                {/* Row 3: Account No * | Serial Number */}
                 <View style={[styles.formTwoColRow, { zIndex: 5 }]}>
                   <View style={styles.formCol}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
@@ -1718,7 +1718,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     )}
                   </View>
                   <View style={styles.formCol}>
-                    <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Serial Name</Text>
+                    <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Serial Number</Text>
                     <TextInput
                       style={[
                         styles.exactTextInput,
@@ -2374,7 +2374,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     <Row>
                       <Field required label="Account No" value={dash(activeItem.accountNumber)} />
                       <Field
-                        label="Serial Name"
+                        label="Serial Number"
                         value={dash(activeItem.iccid)}
                         disabled={!isSim}
                         helper="SIM only"
