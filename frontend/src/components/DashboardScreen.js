@@ -52,6 +52,7 @@ import TelecomTestTab from './TelecomTestTab';
 import ImportTelecomBillsTab from './ImportTelecomBillsTab';
 import ExcessUsageReportTab from './ExcessUsageReportTab';
 import TelecomReportTab from './TelecomReportTab';
+import UsageReportTab from './UsageReportTab';
 import TeleCategoryTab from './TeleCategoryTab';
 import TelePackageTab from './TelePackageTab';
 import TeleProviderTab from './TeleProviderTab';
@@ -543,6 +544,8 @@ export default function DashboardScreen({ user, onSignOut }) {
   const [billRequest, setBillRequest] = useState(null);
   // Number + bill period to show in the Telecom Report (set by the Bill Details popup)
   const [reportRequest, setReportRequest] = useState(null);
+  // Number / company / month for the per-number Usage Report page
+  const [usageRequest, setUsageRequest] = useState(null);
   const [userCompanyPermissions, setUserCompanyPermissions] = useState([]);
   const [userPermissionsLoading, setUserPermissionsLoading] = useState(true);
 
@@ -1011,6 +1014,18 @@ export default function DashboardScreen({ user, onSignOut }) {
             module_name: "Tele Service Provider",
             parent_id: settingsParent.id,
             route: "/tele-service-provider",
+            status: "active"
+          });
+        }
+
+        // Static "Tele Report" (per-number monthly usage report) under the Telecom parent
+        const hasTeleReport = data.some(m => m.route === '/tele-report' || String(m.module_name || '').trim().toLowerCase() === 'tele report');
+        if (telecomParent && !hasTeleReport) {
+          data.push({
+            id: 99965,
+            module_name: "Tele Report",
+            parent_id: telecomParent.id,
+            route: "/tele-report",
             status: "active"
           });
         }
@@ -2657,6 +2672,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (r === '/excess-usage-report' || n === 'excess usage report') return 'excess_usage_report';
     if (r === '/tele-package' || n === 'tele package' || modId === '99961') return 'tele_package';
     if (r === '/tele-service-provider' || n === 'tele service provider' || modId === '99964') return 'tele_service_provider';
+    if (r === '/tele-report' || n === 'tele report' || modId === '99965') return 'usage_report';
     if (r === '/tele-provider' || n === 'tele provider' || modId === '99962') return 'tele_provider';
     if (r === '/tele-connection-type' || n === 'tele connection type' || modId === '99963') return 'tele_connection_type';
 
@@ -2833,7 +2849,7 @@ export default function DashboardScreen({ user, onSignOut }) {
 
   // Helper to check view permissions for a given module ID
   const hasViewPermission = (moduleId) => {
-    if (moduleId === 99964 || moduleId === '99964' || moduleId === 99963 || moduleId === '99963' || moduleId === 99961 || moduleId === '99961' || moduleId === 99962 || moduleId === '99962' || moduleId === 65 || moduleId === '65' || moduleId === 66 || moduleId === '66' || moduleId === 68 || moduleId === '68' || moduleId === 99957 || moduleId === '99957' || moduleId === 99958 || moduleId === '99958' || moduleId === 99960 || moduleId === '99960' || moduleId === 'virtual-telecom-connection' || moduleId === 'virtual-phone-assignment' || moduleId === 'telecom_bill_details' || moduleId === 'telcome_bill_details') return true;
+    if (moduleId === 99965 || moduleId === '99965' || moduleId === 99964 || moduleId === '99964' || moduleId === 99963 || moduleId === '99963' || moduleId === 99961 || moduleId === '99961' || moduleId === 99962 || moduleId === '99962' || moduleId === 65 || moduleId === '65' || moduleId === 66 || moduleId === '66' || moduleId === 68 || moduleId === '68' || moduleId === 99957 || moduleId === '99957' || moduleId === 99958 || moduleId === '99958' || moduleId === 99960 || moduleId === '99960' || moduleId === 'virtual-telecom-connection' || moduleId === 'virtual-phone-assignment' || moduleId === 'telecom_bill_details' || moduleId === 'telcome_bill_details') return true;
     if (!user) return false;
     // Superadmin bypass
     if (String(user.roleId) === '1') return true;
@@ -2863,7 +2879,7 @@ export default function DashboardScreen({ user, onSignOut }) {
     if (tabId === 'plans') {
       return String(user.roleId) === '1';
     }
-    if (tabId === 'dashboard' || tabId === 'profile' || tabId === 'shipments' || tabId === 'analytics' || tabId === 'tele_doc_type' || tabId === 'telecom_report' || tabId === 'telecome_report' || tabId === 'telecom_connection' || tabId === 'telecome_connection' || tabId === 'phone_number_assignment' || tabId === 'phone_assignment' || tabId === 'excess_usage_report' || tabId === 'tele_package' || tabId === 'tele_provider' || tabId === 'tele_connection_type' || tabId === 'tele_service_provider') {
+    if (tabId === 'dashboard' || tabId === 'profile' || tabId === 'shipments' || tabId === 'analytics' || tabId === 'tele_doc_type' || tabId === 'telecom_report' || tabId === 'telecome_report' || tabId === 'telecom_connection' || tabId === 'telecome_connection' || tabId === 'phone_number_assignment' || tabId === 'phone_assignment' || tabId === 'excess_usage_report' || tabId === 'tele_package' || tabId === 'tele_provider' || tabId === 'tele_connection_type' || tabId === 'tele_service_provider' || tabId === 'usage_report') {
       return true;
     }
     const tabModules = modules.filter(m => getTabIdByRoute(m.module_name, m.route, m.id) === tabId);
@@ -7210,6 +7226,8 @@ export default function DashboardScreen({ user, onSignOut }) {
       case 'tele_report':
       case 'monthly_usage_dashboard':
         return <TelecomReportTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} reportRequest={reportRequest} onReportRequestHandled={() => setReportRequest(null)} onNavigate={(t) => setActiveTab(t)} />;
+      case 'usage_report':
+        return <UsageReportTab user={user} showToast={showToast} request={usageRequest} onRequestHandled={() => setUsageRequest(null)} onNavigate={(t) => setActiveTab(t)} />;
       case 'tele_service_provider':
         return <TeleServiceProviderTab user={user} showToast={showToast} permissions={getTabPermissions('tele_service_provider')} />;
       case 'tele_connection_type':
@@ -7249,7 +7267,7 @@ export default function DashboardScreen({ user, onSignOut }) {
         return <TelecomBillDetailsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} onNavigate={(t, req) => { if (req) setReportRequest(req); setActiveTab(t); }} />;
       case 'telecom_bill':
       case 'telecome_bill':
-        return <TelecomBillTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} onNavigate={(t) => setActiveTab(t)} billRequest={billRequest} onBillRequestHandled={() => setBillRequest(null)} onViewUsageReport={(info) => { setReportRequest(info); setActiveTab('telecom_report'); }} permissions={getTabPermissions('telecom_bill')} checkRowPermission={(compId, act) => checkRowPermission('telecom_bill', compId, act)} />;
+        return <TelecomBillTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} onNavigate={(t) => setActiveTab(t)} billRequest={billRequest} onBillRequestHandled={() => setBillRequest(null)} onViewUsageReport={(info) => { setUsageRequest(info); setActiveTab('usage_report'); }} permissions={getTabPermissions('telecom_bill')} checkRowPermission={(compId, act) => checkRowPermission('telecom_bill', compId, act)} />;
       case 'usage_charges':
       case 'usage_charge':
       case 'tele_usage_charges':

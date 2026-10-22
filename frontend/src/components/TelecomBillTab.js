@@ -2505,7 +2505,7 @@ const TelecomBillTab = ({
                           const to = toIso(rec.period_to);
                           const company = rec.company_name || parsedFd['Company'] || parsedFd['Company Name'] || '';
                           const month = to ? to.slice(0, 7) : (from ? from.slice(0, 7) : null);
-                          const info = { number, from: from && to ? from : null, to: from && to ? to : null, billNumber: rec.bill_number || '', company, month };
+                          const info = { number, from: from && to ? from : null, to: from && to ? to : null, billNumber: rec.bill_number || '', company, month, origin: returnToRef.current || 'telecom_bill' };
                           closeModal();
                           onViewUsageReport(info);
                         }}
