@@ -15,6 +15,7 @@ import { SearchableDropdown } from './CustomFieldsTab';
 import * as XLSX from 'xlsx';
 
 import { API_URL, resolveFileUrl } from '../config';
+import { getTelecomBillCalculation, formatAed, callDurationSeconds, secondsToDisplayMinutes } from '../utils/telecomBilling';
 
 const COLORS = {
   primary: '#004D34',
@@ -102,21 +103,20 @@ const filterBillDisplayItems = (rawItems) => {
 // -----------------------------------------------------------------------------
 // Telecom Bill Details (view popup): figures + plan comparison built from real data
 // -----------------------------------------------------------------------------
-const EXCESS_MARGIN_AED = 10;
-
 const buildBillInsights = (rec, connections, employees) => {
   const num = (v) => {
     const n = parseFloat(String(v === undefined || v === null ? '' : v).replace(/,/g, ''));
     return isNaN(n) ? 0 : n;
   };
   const keyOf = (v) => String(v || '').replace(/\D/g, '').slice(-9);
-  const money = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  const total = num(rec?.total_bill ?? rec?.['Total Bill'] ?? rec?.total_amount);
-  const plan = num(rec?.plan_rental ?? rec?.['Monthly Plan Amount'] ?? rec?.['Service Rental']);
+  const money = (n) => formatAed(n);
+  const calculation = getTelecomBillCalculation(rec);
+  const total = calculation.billInclVat;
+  const billExcl = calculation.billExclVat;
+  const plan = calculation.planExclVat;
   const usage = num(rec?.usage_charges ?? rec?.['Usage Charges']);
-  const vat = num(rec?.vat_current_period ?? rec?.vat_amount ?? rec?.['VAT']);
-  const excess = Math.max(0, total - vat - plan);
+  const vat = calculation.vat;
+  const excess = calculation.excessExclVat;
 
   const mobile = rec?.mobile_number || rec?.['Mobile Number / Account'] || rec?.account || '';
   const key = keyOf(mobile);
@@ -129,10 +129,6 @@ const buildBillInsights = (rec, connections, employees) => {
 
   // plan limit vs actual usage (used values come from the imported call logs when present)
   const logs = Array.isArray(rec?.call_logs) ? rec.call_logs : [];
-  const toMin = (d) => {
-    const m = /^(\d+):(\d{2}):(\d{2})$/.exec(String(d || '').trim());
-    return m ? Math.ceil((Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])) / 60) : 0;
-  };
   const groupOf = (l) => {
     const c = String(l.category || '').toLowerCase();
     if (/special|premium/.test(c)) return 'special';
@@ -140,8 +136,8 @@ const buildBillInsights = (rec, connections, employees) => {
     if (/international/.test(c)) return 'intl';
     return 'local';
   };
-  const agg = { local: { min: 0, amt: 0, n: 0 }, intl: { min: 0, amt: 0, n: 0 }, special: { min: 0, amt: 0, n: 0 } };
-  logs.forEach(l => { const g = agg[groupOf(l)]; if (!g) return; g.min += toMin(l.duration); g.amt += num(l.amount); g.n += 1; });
+  const agg = { local: { seconds: 0, amt: 0, n: 0 }, intl: { seconds: 0, amt: 0, n: 0 }, special: { seconds: 0, amt: 0, n: 0 } };
+  logs.forEach(l => { const g = agg[groupOf(l)]; if (!g) return; g.seconds += callDurationSeconds(l); g.amt += num(l.amount); g.n += 1; });
 
   // SMS used: national SMS counted from the SMS logs saved with the bill
   const smsLogs = Array.isArray(rec?.sms_logs) ? rec.sms_logs : [];
@@ -165,14 +161,16 @@ const buildBillInsights = (rec, connections, employees) => {
 
   const minRow = (label, limitFromConn, limitFromPdf, usedFromPdf, g) => {
     const limit = limitNum(limitFromConn) !== null ? limitNum(limitFromConn) : limitNum(limitFromPdf);
-    const used = has(usedFromPdf) ? num(usedFromPdf) : (hasLogs ? g.min : null);
+    const used = hasLogs ? secondsToDisplayMinutes(g.seconds) : null;
+    const providerReported = has(usedFromPdf) ? num(usedFromPdf) : null;
     const over = (limit !== null && used !== null && used > limit) ? used - limit : null;
     return {
       item: label,
       planLimit: limit !== null ? `${fmtN(limit)} min` : '–',
       used: used !== null ? `${fmtN(used)} min` : '–',
-      overBy: overText(limit, used, ' min'),
-      extraCharge: over !== null && g.amt > 0 ? money(g.amt) : '–',
+      providerReported: providerReported !== null ? `${fmtN(providerReported)} min` : '–',
+      overBy: limit === null || used === null ? 'Not calculated' : (over !== null ? `${fmtN(over)} min (not verified chargeable)` : 'Within allowance'),
+      extraCharge: g.amt > 0 ? money(g.amt) : '–',
       isExceeded: over !== null
     };
   };
@@ -195,6 +193,7 @@ const buildBillInsights = (rec, connections, employees) => {
       item: 'Data',
       planLimit: dataUnlimited ? 'Unlimited' : (dataLimit !== null ? `${fmtN(dataLimit)} ${dataUnit}` : '–'),
       used: dataUsed !== null ? `${fmtN(dataUsed)} GB` : '–',
+      providerReported: dataUsed !== null ? `${fmtN(dataUsed)} GB` : '–',
       overBy: overText(dataLimit, dataUsed, ' GB'),
       extraCharge: '–',
       isExceeded: dataOver !== null
@@ -203,6 +202,7 @@ const buildBillInsights = (rec, connections, employees) => {
       item: 'Local SMS',
       planLimit: smsLimit !== null ? fmtN(smsLimit) : '–',
       used: smsUsedFinal !== null ? fmtN(smsUsedFinal) : '–',
+      providerReported: smsUsedFinal !== null ? fmtN(smsUsedFinal) : '–',
       overBy: overText(smsLimit, smsUsedFinal),
       extraCharge: smsOver !== null && smsAmt > 0 ? money(smsAmt) : '–',
       isExceeded: smsOver !== null
@@ -210,15 +210,16 @@ const buildBillInsights = (rec, connections, employees) => {
     {
       item: 'Calls to special numbers',
       planLimit: 'Not included',
-      used: hasLogs ? `${agg.special.n} calls` : '–',
-      overBy: hasLogs && agg.special.n > 0 ? `${agg.special.n} calls · ${fmtN(agg.special.min)} min` : '–',
+      used: hasLogs ? `${agg.special.n} calls · ${fmtN(secondsToDisplayMinutes(agg.special.seconds))} min` : '–',
+      providerReported: '–',
+      overBy: 'Not calculated',
       extraCharge: hasLogs && agg.special.amt > 0 ? money(agg.special.amt) : '–',
       isExceeded: hasLogs && agg.special.n > 0
     }
   ];
   const exceededCount = rows.filter(r => r.isExceeded).length;
 
-  return { total, plan, usage, vat, excess, isOver: excess > EXCESS_MARGIN_AED, conn, employee, rows, exceededCount, hasLogs: hasLogs || !!us, money };
+  return { total, billExcl, plan, usage, vat, excess, isOver: calculation.isExcess, calculation, conn, employee, rows, exceededCount, hasLogs: hasLogs || !!us, money };
 };
 
 const TelecomBillTab = ({
@@ -755,8 +756,8 @@ const TelecomBillTab = ({
           f_issue: ext.issue_date || '',
           'Due Date': ext.due_date || ext.expiry_date || '',
           f_due: ext.due_date || ext.expiry_date || '',
-          'Monthly Plan Amount': ext.service_rental || ext.total_amount || '',
-          f_plan: ext.service_rental || ext.total_amount || '',
+          'Monthly Plan Amount': ext.plan_excl_vat ?? ext.service_rental ?? '',
+          f_plan: ext.plan_excl_vat ?? ext.service_rental ?? '',
           'Service Rental': ext.service_rental || '',
           f_rental: ext.service_rental || '',
           'Usage Charges': ext.usage_charges || '',
@@ -765,10 +766,15 @@ const TelecomBillTab = ({
           f_onetime: ext.one_time_charges || '',
           'Other Charges': ext.other_charges || '',
           f_other: ext.other_charges || '',
-          'VAT': ext.vat || '',
-          f_vat: ext.vat || '',
-          'Total Bill': ext.total_amount || '',
-          f_total: ext.total_amount || '',
+          'VAT': ext.current_period_vat ?? ext.vat ?? '',
+          f_vat: ext.current_period_vat ?? ext.vat ?? '',
+          'Total Bill': ext.current_period_incl_vat ?? ext.total_amount ?? '',
+          f_total: ext.current_period_incl_vat ?? ext.total_amount ?? '',
+          current_period_excl_vat: ext.current_period_excl_vat,
+          current_period_vat: ext.current_period_vat,
+          current_period_incl_vat: ext.current_period_incl_vat,
+          plan_excl_vat: ext.plan_excl_vat,
+          source_financials: ext.source_financials || ext,
           'Invoice PDF': file.name,
           f_pdf: file.name,
           pdf_filename: file.name,
@@ -796,10 +802,10 @@ const TelecomBillTab = ({
 
         const bNo = detectedBillNo;
         const mNo = detectedMobile;
-        const tBill = ext.total_amount || '';
-        const pRental = ext.service_rental || '';
-        const uCharge = ext.usage_charges || '';
-        const vVal = ext.vat || '';
+        const tBill = ext.current_period_incl_vat ?? ext.total_amount ?? '';
+        const pRental = ext.plan_excl_vat ?? ext.service_rental ?? '';
+        const uCharge = ext.usage_charges ?? '';
+        const vVal = ext.current_period_vat ?? ext.vat ?? '';
 
         const extractedTableRows = (excelRows && excelRows.length > 0) ? excelRows : (() => {
           const rows = [];
@@ -868,12 +874,34 @@ const TelecomBillTab = ({
             plan_rental: pRental,
             usage_charges: uCharge,
             vat_current_period: vVal,
+            current_period_excl_vat: ext.current_period_excl_vat,
+            current_period_vat: ext.current_period_vat,
+            current_period_incl_vat: ext.current_period_incl_vat,
+            plan_excl_vat: ext.plan_excl_vat,
+            one_time_charges: ext.one_time_charges,
+            third_party_charges: ext.third_party_charges,
+            credits_adjustments: ext.credits_adjustments,
+            previous_balance: ext.previous_balance,
+            payments: ext.payments,
+            balance_carried_forward: ext.balance_carried_forward,
+            total_amount_due: ext.total_amount_due,
+            account_number: ext.account_number,
+            vat_treatments: ext.vat_treatments,
+            reconciliation_status: ext.reconciliation_status,
+            reconciliation_difference: ext.reconciliation_difference,
+            calculation_status: ext.calculation_status,
+            source_financials: ext.source_financials || ext,
+            call_category_summaries: ext.call_category_summaries || [],
+            call_category_reconciliation: ext.call_category_reconciliation || [],
+            charge_components: ext.charge_components || [],
             period_from: pFrom,
             period_to: pTo,
             issue_date: ext.issue_date || '',
             due_date: ext.due_date || ''
           },
-          rows: extractedTableRows
+          rows: extractedTableRows,
+          call_logs: ext.call_logs || [],
+          sms_logs: ext.sms_logs || [],
         });
         setViewMode('table');
         setWizardStep(2);
@@ -931,10 +959,27 @@ const TelecomBillTab = ({
         mobile_number: summary.mobile_number || summary['Mobile Number / Account'] || pdfParsedData?.mobileNumber || formData['Mobile Number / Account'] || formData.f_account || '',
         company_name: selectedCompany || formData.Company || summary.company_name || '',
         telecom_provider: summary.telecom_provider || summary['Telecom Provider'] || pdfParsedData?.telecomProvider || formData['Telecom Provider'] || formData.f_provider || 'Etisalat',
-        total_bill: summary.total_bill || summary['Total Bill'] || pdfParsedData?.totalBill || formData['Total Bill'] || formData.f_total || 0,
-        plan_rental: summary.plan_rental || summary['Service Rental'] || summary['Monthly Plan Amount'] || formData['Service Rental'] || formData.f_rental || 0,
-        usage_charges: summary.usage_charges || summary['Usage Charges'] || formData['Usage Charges'] || formData.f_usage || 0,
-        vat_current_period: summary.vat_current_period || summary.VAT || pdfParsedData?.vat || formData['VAT'] || formData.f_vat || 0,
+        total_bill: summary.current_period_incl_vat ?? summary.total_bill ?? summary['Total Bill'] ?? pdfParsedData?.totalBill ?? formData['Total Bill'] ?? formData.f_total ?? null,
+        plan_rental: summary.plan_excl_vat ?? summary.plan_rental ?? summary['Service Rental'] ?? summary['Monthly Plan Amount'] ?? formData['Service Rental'] ?? formData.f_rental ?? null,
+        usage_charges: summary.usage_charges ?? summary['Usage Charges'] ?? formData['Usage Charges'] ?? formData.f_usage ?? null,
+        vat_current_period: summary.current_period_vat ?? summary.vat_current_period ?? summary.VAT ?? pdfParsedData?.vat ?? formData['VAT'] ?? formData.f_vat ?? null,
+        current_period_excl_vat: summary.current_period_excl_vat,
+        current_period_vat: summary.current_period_vat,
+        current_period_incl_vat: summary.current_period_incl_vat,
+        plan_excl_vat: summary.plan_excl_vat,
+        one_time_charges: summary.one_time_charges,
+        third_party_charges: summary.third_party_charges,
+        credits_adjustments: summary.credits_adjustments,
+        previous_balance: summary.previous_balance,
+        payments: summary.payments,
+        balance_carried_forward: summary.balance_carried_forward,
+        total_amount_due: summary.total_amount_due,
+        account_number: summary.account_number,
+        vat_treatments: summary.vat_treatments,
+        source_financials: summary.source_financials,
+        call_category_summaries: summary.call_category_summaries,
+        call_category_reconciliation: summary.call_category_reconciliation,
+        charge_components: summary.charge_components,
         pdf_filename: pdfParsedData?.fileName || pdfParsedData?.pdf_filename || summary.pdf_filename || formData['Invoice PDF'] || null,
         pdf_base64: pdfParsedData?.file_base64 || formData['Invoice PDF_base64'] || formData.pdf_base64 || null,
         period_from: pdfParsedData?.period_from || formData['Bill Period From'] || formData.f_from || null,
@@ -943,6 +988,7 @@ const TelecomBillTab = ({
         due_date: pdfParsedData?.due_date || formData['Due Date'] || formData.f_due || null,
         items: items,
         call_logs: callLogs,
+        sms_logs: pdfParsedData?.sms_logs || [],
         custom_field_id: customFields?.id || null,
         field_data: { 
           ...formData, 
@@ -954,7 +1000,11 @@ const TelecomBillTab = ({
           issue_date: formData['Bill Issue Date'] || formData.f_issue || pdfParsedData?.issue_date || null,
           due_date: formData['Due Date'] || formData.f_due || pdfParsedData?.due_date || null,
           items,
-          call_logs: callLogs
+          call_logs: callLogs,
+          sms_logs: pdfParsedData?.sms_logs || [],
+          call_category_summaries: summary.call_category_summaries || [],
+          call_category_reconciliation: summary.call_category_reconciliation || [],
+          charge_components: summary.charge_components || [],
         },
         clientid: selectedClient || user?.clientid || null,
         company_id: selectedCompany || formData.Company || null,
@@ -1374,12 +1424,13 @@ const TelecomBillTab = ({
     setFormData(prev => {
       const updated = { ...prev, [fieldKey]: value };
 
-      const totalBill = parseFloat(updated['Total Bill'] || updated['total_bill'] || 0);
-      const planAmount = parseFloat(updated['Monthly Plan Amount'] || updated['monthly_plan_amount'] || 0);
-      if (!isNaN(totalBill) && !isNaN(planAmount)) {
-        const excess = Math.max(0, totalBill - planAmount);
-        updated['Excess Amount'] = excess.toFixed(2);
-      }
+      const calculation = getTelecomBillCalculation({
+        current_period_excl_vat: updated.current_period_excl_vat,
+        current_period_incl_vat: updated.current_period_incl_vat ?? updated['Total Bill'] ?? updated.total_bill,
+        current_period_vat: updated.current_period_vat ?? updated.VAT,
+        plan_excl_vat: updated.plan_excl_vat ?? updated['Monthly Plan Amount'] ?? updated.monthly_plan_amount,
+      });
+      updated['Excess Amount'] = calculation.excessExclVat === null ? 'Needs review' : calculation.excessExclVat.toFixed(2);
       return updated;
     });
   };
@@ -1774,7 +1825,7 @@ const TelecomBillTab = ({
               <Text style={[styles.thCell, { flex: 1.4 }]}>COMPANY</Text>
               <Text style={[styles.thCell, { flex: 1.4 }]}>TELECOM PROVIDER</Text>
               <Text style={[styles.thCell, { flex: 1.3 }]}>ACCOUNT / MOBILE</Text>
-              <Text style={[styles.thCell, { flex: 1.1 }]}>TOTAL BILL</Text>
+              <Text style={[styles.thCell, { flex: 1.1 }]}>BILL — INCL. VAT</Text>
               <Text style={[styles.thCell, { flex: 1.3 }]}>BILL PERIOD FROM</Text>
               <Text style={[styles.thCell, { flex: 1.3 }]}>BILL PERIOD TO</Text>
               <Text style={[styles.thCell, { flex: 0.9, textAlign: 'center' }]}>STATUS</Text>
@@ -1787,8 +1838,8 @@ const TelecomBillTab = ({
               const company = r.company_name || r.Company || fd['Company'] || '—';
               let provider = r.telecom_provider || r['Telecom Provider'] || r.provider || fd['Telecom Provider'] || fd['telecom_provider'] || '—';
               const account = r.mobile_number || r['Mobile Number / Account'] || fd['Mobile Number / Account'] || fd['account'] || '—';
-              const rawTotal = r.total_bill || r['Total Bill'] || fd['Total Bill'] || fd['total_bill'];
-              const totalBill = rawTotal ? `AED ${rawTotal}` : '—';
+              const rowCalculation = getTelecomBillCalculation(r);
+              const totalBill = rowCalculation.billInclVat === null ? 'Needs review' : `AED ${formatAed(rowCalculation.billInclVat)}`;
 
               const cleanAcc = String(account || '').replace(/\D/g, '');
               const cleanBillNo = String(r.bill_number || '').trim();
@@ -2201,32 +2252,32 @@ const TelecomBillTab = ({
                           <>
                             <View style={styles.viewKpiRow}>
                               <View style={[styles.viewKpiCard, styles.viewKpiCardTotal]}>
-                                <Text style={styles.viewKpiTitleTotal}>TOTAL BILL</Text>
-                                <Text style={styles.viewKpiValueTotal}>AED {ins.money(ins.total)}</Text>
-                                <Text style={styles.viewKpiSubtextTotal}>Net payable incl. VAT</Text>
+                                <Text style={styles.viewKpiTitleTotal}>BILL — EXCLUDING VAT</Text>
+                                <Text style={styles.viewKpiValueTotal}>AED {ins.money(ins.billExcl)}</Text>
+                                <Text style={styles.viewKpiSubtextTotal}>Current period only</Text>
                               </View>
                               <View style={styles.viewKpiCard}>
-                                <Text style={styles.viewKpiTitle}>PLAN RENTAL</Text>
+                                <Text style={styles.viewKpiTitle}>PLAN — EXCLUDING VAT</Text>
                                 <Text style={styles.viewKpiValue}>AED {ins.money(ins.plan)}</Text>
-                                <Text style={styles.viewKpiSubtext}>Fixed monthly charge</Text>
+                                <Text style={styles.viewKpiSubtext}>Applicable billing-period plan</Text>
                               </View>
                               <View style={styles.viewKpiCard}>
-                                <Text style={styles.viewKpiTitle}>USAGE CHARGES</Text>
-                                <Text style={styles.viewKpiValue}>AED {ins.money(ins.usage)}</Text>
-                                <Text style={styles.viewKpiSubtext}>Calls, data, SMS</Text>
-                              </View>
-                              <View style={styles.viewKpiCard}>
-                                <Text style={styles.viewKpiTitle}>VAT (5%)</Text>
+                                <Text style={styles.viewKpiTitle}>VAT</Text>
                                 <Text style={styles.viewKpiValue}>AED {ins.money(ins.vat)}</Text>
-                                <Text style={styles.viewKpiSubtext}>Tax</Text>
+                                <Text style={styles.viewKpiSubtext}>Invoice-stated current period</Text>
+                              </View>
+                              <View style={styles.viewKpiCard}>
+                                <Text style={styles.viewKpiTitle}>BILL — INCLUDING VAT</Text>
+                                <Text style={styles.viewKpiValue}>AED {ins.money(ins.total)}</Text>
+                                <Text style={styles.viewKpiSubtext}>Current period only</Text>
                               </View>
                               <View style={[styles.viewKpiCard, ins.isOver && { backgroundColor: '#FEF2F2', borderColor: '#FCA5A5', borderWidth: 2 }]}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                  <Text style={[styles.viewKpiTitle, ins.isOver && { color: '#B91C1C' }]}>EXCESS USAGE</Text>
+                                  <Text style={[styles.viewKpiTitle, ins.isOver && { color: '#B91C1C' }]}>EXCESS — EXCLUDING VAT</Text>
                                   <Newtag />
                                 </View>
                                 <Text style={[styles.viewKpiValue, ins.isOver && { color: '#B91C1C' }]}>AED {ins.money(ins.excess)}</Text>
-                                <Text style={[styles.viewKpiSubtext, ins.isOver && { color: '#B91C1C' }]}>Over plan amount</Text>
+                                <Text style={[styles.viewKpiSubtext, ins.isOver && { color: '#B91C1C' }]}>Flagged only above AED 10.00</Text>
                               </View>
                             </View>
 
@@ -2289,17 +2340,19 @@ const TelecomBillTab = ({
                               <View style={styles.itemTableHeader}>
                                 <Text style={[styles.itemThCell, { flex: 2.5 }]}>ITEM</Text>
                                 <Text style={[styles.itemThCell, { flex: 1.5, textAlign: 'right' }]}>PLAN LIMIT</Text>
-                                <Text style={[styles.itemThCell, { flex: 1.5, textAlign: 'right' }]}>USED</Text>
-                                <Text style={[styles.itemThCell, { flex: 1.5, textAlign: 'right' }]}>OVER BY</Text>
-                                <Text style={[styles.itemThCell, { flex: 2, textAlign: 'right' }]}>EXTRA CHARGE (AED)</Text>
+                                <Text style={[styles.itemThCell, { flex: 1.5, textAlign: 'right' }]}>ACTUAL</Text>
+                                <Text style={[styles.itemThCell, { flex: 1.5, textAlign: 'right' }]}>PROVIDER REPORTED</Text>
+                                <Text style={[styles.itemThCell, { flex: 2, textAlign: 'right' }]}>DURATION ABOVE ALLOWANCE</Text>
+                                <Text style={[styles.itemThCell, { flex: 1.6, textAlign: 'right' }]}>INVOICE CHARGE (AED)</Text>
                               </View>
                               {ins.rows.map((r, i) => (
                                 <View key={r.item} style={[styles.itemTableRow, r.isExceeded && { backgroundColor: '#FEF2F2' }]}>
                                   <Text style={[styles.itemTdCell, { flex: 2.5, fontWeight: r.isExceeded ? '700' : '500', color: r.isExceeded ? '#B91C1C' : '#0F172A' }]}>{r.item}</Text>
                                   <Text style={[styles.itemTdCell, { flex: 1.5, textAlign: 'right', color: '#475569' }]}>{r.planLimit}</Text>
                                   <Text style={[styles.itemTdCell, { flex: 1.5, textAlign: 'right', fontWeight: r.isExceeded ? '700' : '500', color: r.isExceeded ? '#DC2626' : '#0F172A' }]}>{r.used}</Text>
-                                  <Text style={[styles.itemTdCell, { flex: 1.5, textAlign: 'right', fontWeight: r.isExceeded ? '700' : '500', color: r.isExceeded ? '#DC2626' : '#0F172A' }]}>{r.overBy}</Text>
-                                  <Text style={[styles.itemTdCell, { flex: 2, textAlign: 'right', fontWeight: r.isExceeded ? '700' : '500', color: r.isExceeded ? '#DC2626' : '#0F172A' }]}>{r.extraCharge}</Text>
+                                  <Text style={[styles.itemTdCell, { flex: 1.5, textAlign: 'right', color: '#475569' }]}>{r.providerReported}</Text>
+                                  <Text style={[styles.itemTdCell, { flex: 2, textAlign: 'right', fontWeight: r.isExceeded ? '700' : '500', color: r.isExceeded ? '#DC2626' : '#0F172A' }]}>{r.overBy}</Text>
+                                  <Text style={[styles.itemTdCell, { flex: 1.6, textAlign: 'right', fontWeight: r.extraCharge !== '–' ? '700' : '500', color: r.extraCharge !== '–' ? '#DC2626' : '#0F172A' }]}>{r.extraCharge}</Text>
                                 </View>
                               ))}
 
@@ -2384,20 +2437,20 @@ const TelecomBillTab = ({
                                 </Text>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
                                   <View style={styles.calcTag}>
-                                    <Text style={styles.calcTagText}>Plan Rental: AED {Number(editingRecord?.plan_rental || 0).toFixed(2)}</Text>
+                                    <Text style={styles.calcTagText}>Bill — excl. VAT: AED {ins.money(ins.billExcl)}</Text>
                                   </View>
                                   <Text style={{ fontWeight: '700', color: '#64748B' }}>+</Text>
                                   <View style={styles.calcTag}>
-                                    <Text style={styles.calcTagText}>Usage: AED {Number(editingRecord?.usage_charges || 0).toFixed(2)}</Text>
-                                  </View>
-                                  <Text style={{ fontWeight: '700', color: '#64748B' }}>+</Text>
-                                  <View style={styles.calcTag}>
-                                    <Text style={styles.calcTagText}>VAT (5%): AED {Number(editingRecord?.vat_current_period || 0).toFixed(2)}</Text>
+                                    <Text style={styles.calcTagText}>VAT: AED {ins.money(ins.vat)}</Text>
                                   </View>
                                   <Text style={{ fontWeight: '700', color: '#64748B' }}>=</Text>
+                                  <View style={styles.calcTag}>
+                                    <Text style={styles.calcTagText}>Bill — incl. VAT: AED {ins.money(ins.total)}</Text>
+                                  </View>
+                                  <Text style={{ fontWeight: '700', color: '#64748B' }}>→</Text>
                                   <View style={[styles.calcTag, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
                                     <Text style={[styles.calcTagText, { color: '#047857', fontWeight: '800' }]}>
-                                      Total Bill: AED {Number(editingRecord?.total_bill || 0).toFixed(2)}
+                                      {ins.calculation.reconciliationStatus === 'reconciled' ? 'Reconciled' : 'Needs review'}
                                     </Text>
                                   </View>
                                 </View>

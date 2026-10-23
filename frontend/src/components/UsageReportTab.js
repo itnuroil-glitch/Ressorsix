@@ -22,7 +22,7 @@ const SOURCE_COLORS = ['#C8372D', '#E07A5F', '#D9902F', '#4A6FA5', '#8A63B8', '#
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const SHADOW = Platform.OS === 'web' ? { boxShadow: '0 1px 2px rgba(15,23,42,0.05), 0 6px 20px rgba(15,23,42,0.04)' } : {};
 
-const fmt = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmt = (n) => n === null || n === undefined ? 'Needs review' : Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmt1 = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const fmt0 = (n) => Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
 const prettyDate = (iso) => {
@@ -195,7 +195,12 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
     if (!months.length) { if (showToast) showToast('Nothing to export yet', 'info'); return; }
     try {
       const rows = months.map(m => ({
-        Month: m.label, 'Bill No': m.bill_number, 'Total (AED)': m.total, 'Plan (AED)': m.plan, 'Extra excl. VAT (AED)': m.extra,
+        Month: m.label, 'Bill No': m.bill_number,
+        'Plan — excluding VAT (AED)': m.plan,
+        'Bill — excluding VAT (AED)': m.bill_excl_vat,
+        'VAT (AED)': m.vat,
+        'Bill — including VAT (AED)': m.total,
+        'Excess — excluding VAT (AED)': m.extra,
         'Extra %': m.extra_pct, 'Call minutes': m.call_minutes, 'Data (GB)': m.data_gb, 'Premium SMS': m.premium_sms,
         Status: m.status === 'over' ? 'Over plan' : 'Within plan',
       }));
@@ -267,7 +272,7 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
 
   // ---- history chart ----
   const histMonths = months.slice(-8);
-  const metricOf = (m) => (metric === 'amount' ? m.total : metric === 'minutes' ? m.call_minutes : metric === 'data' ? m.data_gb : m.premium_sms);
+  const metricOf = (m) => (metric === 'amount' ? m.bill_excl_vat : metric === 'minutes' ? m.call_minutes : metric === 'data' ? m.data_gb : m.premium_sms);
   const histMax = niceMax(Math.max(1, ...histMonths.map(metricOf)));
   const HIST_H = 240;
   const unitOf = metric === 'amount' ? '' : metric === 'minutes' ? ' min' : metric === 'data' ? ' GB' : '';
@@ -287,31 +292,32 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
 
   // ---- daily chart ----
   const daily = sel?.daily || [];
-  const dailyMax = niceMax(Math.max(10, ...daily.map(d => d.free_min + d.charged_min)));
+  const dailyMax = niceMax(Math.max(10, ...daily.map(d => d.uncharged_min + d.charged_call_min)));
   const DAILY_H = 220;
-  const ranOut = sel?.calls?.free_ran_out;
-  const ranOutIndex = ranOut ? daily.findIndex(d => d.date === ranOut.date) : -1;
+  const firstCharged = sel?.calls?.first_call_with_charge;
+  const firstChargedIndex = firstCharged ? daily.findIndex(d => d.date === firstCharged.date) : -1;
 
   const top = sel?.top_numbers?.[topTab] || [];
-  const topMax = Math.max(1, ...top.map(t => (topTab === 'by_extra' ? t.extra_amount : topTab === 'by_time' ? t.total_min : t.calls)));
+  const topMax = Math.max(1, ...top.map(t => (topTab === 'by_extra' ? t.charged_amount : topTab === 'by_time' ? t.total_min : t.calls)));
 
   const lines = sel?.lines || [];
   const lineMax = Math.max(1, ...lines.map(l => Math.abs(l.amount)));
   const total = sel?.kpis?.total || 0;
 
   const a = sel?.allowance;
-  const chargedMin = sel?.calls?.charged_min || 0;
-  const freeMin = sel?.calls?.free_min || 0;
-  const callTotalMin = freeMin + chargedMin;
+  const chargedMin = sel?.calls?.duration_of_calls_with_charges_minutes || 0;
+  const unchargedMin = sel?.calls?.uncharged_minutes || 0;
+  const callTotalMin = sel?.calls?.actual_total_minutes || 0;
 
   const over = sel?.status === 'over';
   const deltas = sel?.kpis?.deltas || null;
 
   const kpiCards = sel ? [
-    { icon: 'wallet-outline', tint: C.blueSoft, iconColor: C.blue, label: 'Total bill', value: `AED ${fmt(sel.kpis.total)}`, delta: deltas ? deltas.total : null, sub: deltas ? `vs ${deltas.prev_label}` : 'incl. VAT' },
-    { icon: 'ribbon-outline', tint: C.greenSoft, iconColor: C.green, label: 'Fixed plan', value: `AED ${fmt(sel.kpis.plan)}`, delta: deltas ? deltas.plan : null, sub: 'monthly plan' },
-    { icon: 'flame-outline', tint: C.redSoft, iconColor: C.red, label: 'Extra usage', value: `AED ${fmt(sel.kpis.extra)}`, delta: deltas ? deltas.extra : null, sub: `${sel.kpis.extra_pct}% of bill · excl. VAT`, alert: sel.kpis.extra > 0 },
-    { icon: 'time-outline', tint: '#EEF2F6', iconColor: '#475569', label: 'Extra minutes', value: `${fmt0(sel.kpis.extra_minutes)} min`, delta: undefined, sub: `${sel.calls.charged_calls} charged calls` },
+    { icon: 'ribbon-outline', tint: C.greenSoft, iconColor: C.green, label: 'Plan — excluding VAT', value: `AED ${fmt(sel.kpis.plan)}`, delta: deltas ? deltas.plan : null, sub: 'applicable billing period' },
+    { icon: 'wallet-outline', tint: C.blueSoft, iconColor: C.blue, label: 'Bill — excluding VAT', value: `AED ${fmt(sel.kpis.bill_excl_vat)}`, delta: undefined, sub: 'current period' },
+    { icon: 'receipt-outline', tint: '#EEF2F6', iconColor: '#475569', label: 'VAT', value: `AED ${fmt(sel.kpis.vat)}`, delta: undefined, sub: 'invoice-stated' },
+    { icon: 'card-outline', tint: C.blueSoft, iconColor: C.blue, label: 'Bill — including VAT', value: `AED ${fmt(sel.kpis.bill_incl_vat)}`, delta: deltas ? deltas.total : null, sub: 'current period' },
+    { icon: 'flame-outline', tint: C.redSoft, iconColor: C.red, label: 'Excess — excluding VAT', value: `AED ${fmt(sel.kpis.extra)}`, delta: deltas ? deltas.extra : null, sub: 'flagged only above AED 10.00', alert: sel.status === 'over' },
     { icon: 'chatbubble-ellipses-outline', tint: C.amberSoft, iconColor: C.amber, label: 'Premium SMS', value: `${sel.kpis.premium_sms}`, delta: deltas ? deltas.premium_sms : null, sub: `AED ${fmt(sel.kpis.premium_sms_amount)}` },
     { icon: 'cellular-outline', tint: C.blueSoft, iconColor: C.blue, label: 'Data used', value: `${fmt(sel.kpis.data_gb)} GB`, delta: deltas ? deltas.data_gb : null, unit: ' GB', sub: a?.data_limit_gb ? `plan ${fmt(a.data_limit_gb)} GB` : 'this month' },
   ] : [];
@@ -444,14 +450,23 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
                   <Text style={[st.shortTitle, { color: over ? '#912018' : C.green }]}>In short</Text>
                 </View>
                 <Text style={st.shortText}>
-                  Of the AED {fmt(sel.kpis.total)} bill, AED {fmt(sel.kpis.plan)} is the fixed plan.
-                  {sel.kpis.extra > 0
-                    ? ` The usage on top is AED ${fmt(sel.kpis.extra)} excl. VAT (${sel.kpis.extra_pct}% of the bill)${sources.length ? `, mostly ${sources.slice().sort((x, y) => y.amount - x.amount)[0].name.toLowerCase()}` : ''}.`
-                    : ' No extra usage this month.'}
-                  {sel.calls.free_ran_out ? ` Free minutes ran out on ${prettyDate(sel.calls.free_ran_out.date)}${sel.calls.free_ran_out.time ? ` at ${sel.calls.free_ran_out.time.slice(0, 5)}` : ''}.` : ''}
+                  Bill excluding VAT is AED {fmt(sel.kpis.bill_excl_vat)} against a plan excluding VAT of AED {fmt(sel.kpis.plan)}.
+                  {sel.status === 'needs_review'
+                    ? ' Some invoice values are missing, so this bill needs review.'
+                    : sel.kpis.extra > 0
+                      ? ` Excess excluding VAT is AED ${fmt(sel.kpis.extra)}${sources.length ? `, explained mainly by ${sources.slice().sort((x, y) => y.amount - x.amount)[0].name.toLowerCase()}` : ''}.`
+                      : ' No excess this month.'}
                 </Text>
               </View>
             </View>
+            {sel.bill.multi_number && (
+              <View style={st.multiBanner}>
+                <Ionicons name="information-circle-outline" size={17} color="#1E40AF" />
+                <Text style={st.multiText}>
+                  This bill covers {sel.bill.numbers.length} numbers ({sel.bill.numbers.join(', ')}). The amounts above are for the whole bill, not for this number alone; call details below are for this number.
+                </Text>
+              </View>
+            )}
           </Card>
 
           {/* KPIs */}
@@ -476,7 +491,7 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
             <Card style={{ flex: 2 }}>
               <SectionHead
                 icon="bar-chart-outline" title="Bill history — month wise"
-                caption={`${metric === 'amount' ? 'Fixed plan (grey) and the rest of the bill (red), AED incl. VAT. ' : 'Per month for this number. '}Click a bar to open that month.`}
+                caption={`${metric === 'amount' ? 'Plan and bill on the same excluding-VAT basis. ' : 'Per month for this number. '}Click a bar to open that month.`}
                 right={<Tabs items={[['amount', 'Amount'], ['minutes', 'Minutes'], ['data', 'Data'], ['sms', 'SMS']]} value={metric} onChange={setMetric} />}
               />
               <View style={{ marginTop: 22 }}>
@@ -486,14 +501,14 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
                       const v = metricOf(m);
                       const h = Math.max(3, (v / histMax) * HIST_H);
                       const isSel = sel && m.key === sel.month;
-                      const planH = metric === 'amount' ? Math.min(h, (Math.min(m.plan, m.total) / histMax) * HIST_H) : 0;
+                      const planH = metric === 'amount' ? Math.min(h, (Math.min(m.plan || 0, m.bill_excl_vat || 0) / histMax) * HIST_H) : 0;
                       return (
                         <TouchableOpacity key={m.key} style={st.barSlot} onPress={() => setMonth(m.key)} activeOpacity={0.8}>
                           <Text style={[st.barVal, { bottom: h + 4 }]}>{metric === 'amount' ? fmt(v) : `${fmt1(v)}${unitOf}`}</Text>
                           <View style={[st.bar, isSel && st.barSel, { height: h }]}>
                             {metric === 'amount' ? (
                               <>
-                                <View style={{ flex: 1, backgroundColor: m.total - m.plan > 0.5 ? C.red : C.grey }} />
+                                <View style={{ flex: 1, backgroundColor: (m.bill_excl_vat || 0) - (m.plan || 0) > 0.5 ? C.red : C.grey }} />
                                 <View style={{ height: planH, backgroundColor: isSel ? C.greyDark : C.grey }} />
                               </>
                             ) : <View style={{ flex: 1, backgroundColor: isSel ? '#2F5588' : C.blue }} />}
@@ -556,11 +571,11 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
             <Card style={{ flex: 2 }}>
               <SectionHead
                 icon="call-outline" tint={C.blueSoft} title="Call minutes per day"
-                caption="Grey = covered by the plan (AED 0.00). Red = charged calls."
-                right={ranOut ? (
+                caption="Grey = calls with no invoice charge. Red = calls with an invoice charge; no tariff rate is inferred."
+                right={firstCharged ? (
                   <View style={[st.tag, st.tagRed]}>
                     <Ionicons name="alert-circle" size={14} color="#912018" />
-                    <Text style={[st.tagText, { color: '#912018' }]}>Charging started {prettyDate(ranOut.date)}{ranOut.time ? `, ${ranOut.time.slice(0, 5)}` : ''}</Text>
+                    <Text style={[st.tagText, { color: '#912018' }]}>First call with charge {prettyDate(firstCharged.date)}{firstCharged.time ? `, ${firstCharged.time.slice(0, 5)}` : ''}</Text>
                   </View>
                 ) : null}
               />
@@ -571,13 +586,13 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
                   <Plot height={DAILY_H} max={dailyMax}>
                     <View style={[st.barsRow, { gap: 3, paddingHorizontal: 6 }]}>
                       {daily.map((d, i) => {
-                        const hf = (d.free_min / dailyMax) * DAILY_H;
-                        const hc = (d.charged_min / dailyMax) * DAILY_H;
+                        const hf = (d.uncharged_min / dailyMax) * DAILY_H;
+                        const hc = (d.charged_call_min / dailyMax) * DAILY_H;
                         return (
                           <View key={d.date} style={st.dailyCol}>
-                            {i === ranOutIndex && <View style={st.ranOutLine} />}
-                            {d.charged_min > 0 && <View style={{ height: Math.max(2, hc), backgroundColor: C.red, borderTopLeftRadius: 3, borderTopRightRadius: 3 }} />}
-                            {d.free_min > 0 && <View style={{ height: Math.max(2, hf), backgroundColor: C.grey, borderTopLeftRadius: d.charged_min > 0 ? 0 : 3, borderTopRightRadius: d.charged_min > 0 ? 0 : 3 }} />}
+                            {i === firstChargedIndex && <View style={st.ranOutLine} />}
+                            {d.charged_call_min > 0 && <View style={{ height: Math.max(2, hc), backgroundColor: C.red, borderTopLeftRadius: 3, borderTopRightRadius: 3 }} />}
+                            {d.uncharged_min > 0 && <View style={{ height: Math.max(2, hf), backgroundColor: C.grey, borderTopLeftRadius: d.charged_call_min > 0 ? 0 : 3, borderTopRightRadius: d.charged_call_min > 0 ? 0 : 3 }} />}
                           </View>
                         );
                       })}
@@ -589,8 +604,8 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
                 </View>
               )}
               <View style={st.legend}>
-                <View style={st.legendItem}><View style={[st.dot, { backgroundColor: C.grey }]} /><Text style={st.legendText}>Included in plan · {fmt0(sel.calls.free_calls)} calls · {fmt1(sel.calls.free_min)} min</Text></View>
-                <View style={st.legendItem}><View style={[st.dot, { backgroundColor: C.red }]} /><Text style={st.legendText}>Charged · {fmt0(sel.calls.charged_calls)} calls · {fmt1(sel.calls.charged_min)} min · AED {fmt(sel.calls.charged_amount)}</Text></View>
+                <View style={st.legendItem}><View style={[st.dot, { backgroundColor: C.grey }]} /><Text style={st.legendText}>Calls without charges · {fmt0(sel.calls.uncharged_calls)} calls · {fmt1(sel.calls.uncharged_minutes)} min</Text></View>
+                <View style={st.legendItem}><View style={[st.dot, { backgroundColor: C.red }]} /><Text style={st.legendText}>Calls with charges · {fmt0(sel.calls.calls_with_charges)} calls · {fmt1(sel.calls.duration_of_calls_with_charges_minutes)} min · AED {fmt(sel.calls.charged_amount)}</Text></View>
               </View>
             </Card>
 
@@ -600,10 +615,17 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
                 <View style={st.meter}>
                   <View style={st.meterTop}><View style={st.meterNameRow}><Ionicons name="call-outline" size={14} color={C.muted} /><Text style={st.meterName}>Call minutes</Text></View><Text style={[st.meterVal, chargedMin > 0 && { color: C.red }]}>{fmt0(callTotalMin)} min</Text></View>
                   <View style={st.track}>
-                    <View style={{ flex: Math.max(freeMin, 0.001), backgroundColor: C.grey }} />
+                    <View style={{ flex: Math.max(unchargedMin, 0.001), backgroundColor: C.grey }} />
                     <View style={{ flex: Math.max(chargedMin, 0.001), backgroundColor: C.red }} />
                   </View>
-                  <Text style={st.meterSub}>{fmt0(freeMin)} min in plan · {fmt0(chargedMin)} min charged</Text>
+                  <Text style={st.meterSub}>{fmt1(unchargedMin)} min without charges · {fmt1(chargedMin)} min from calls with charges</Text>
+                  <Text style={st.meterSub}>
+                    Actual talk time {fmt1(sel.calls.actual_total_minutes)} min
+                    {sel.calls.provider_reported_minutes?.local == null ? '' : ` · provider reports ${fmt1(sel.calls.provider_reported_minutes.local)} local min`}
+                    {sel.calls.duration_above_allowance_minutes == null
+                      ? ' · duration above allowance not calculated (allowance or eligible categories unknown)'
+                      : ` · duration above allowance ${fmt1(sel.calls.duration_above_allowance_minutes)} min (not verified chargeable minutes)`}
+                  </Text>
                 </View>
                 <View style={st.meter}>
                   <View style={st.meterTop}><View style={st.meterNameRow}><Ionicons name="cellular-outline" size={14} color={C.muted} /><Text style={st.meterName}>Data</Text></View><Text style={st.meterVal}>{fmt(a.data_used_gb)}{a.data_limit_gb ? ` of ${fmt(a.data_limit_gb)}` : ''} GB</Text></View>
@@ -694,26 +716,26 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
                     <Text style={[st.th, { width: 34 }]}>#</Text>
                     <Text style={[st.th, { flex: 1.5 }]}>Number</Text>
                     <Text style={[st.th, st.r, { flex: 0.8 }]}>Calls</Text>
-                    <Text style={[st.th, st.r, { flex: 0.9 }]}>Min</Text>
-                    <Text style={[st.th, st.r, { flex: 0.9 }]}>Free</Text>
-                    <Text style={[st.th, st.r, { flex: 0.9 }]}>Extra</Text>
+                    <Text style={[st.th, st.r, { flex: 0.9 }]}>Total min</Text>
+                    <Text style={[st.th, st.r, { flex: 0.9 }]}>No-charge min</Text>
+                    <Text style={[st.th, st.r, { flex: 0.9 }]}>Charged-call min</Text>
                     <View style={{ flex: 1.1 }} />
-                    <Text style={[st.th, st.r, { flex: 1 }]}>AED</Text>
+                    <Text style={[st.th, st.r, { flex: 1 }]}>Extra AED</Text>
                   </View>
                   {top.map((t, i) => {
-                    const v = topTab === 'by_extra' ? t.extra_amount : topTab === 'by_time' ? t.total_min : t.calls;
+                    const v = topTab === 'by_extra' ? t.charged_amount : topTab === 'by_time' ? t.total_min : t.calls;
                     return (
                       <View key={`${t.number}-${i}`} style={st.tr}>
                         <View style={{ width: 34 }}><View style={[st.rank, i < 3 && st.rankTop]}><Text style={[st.rankText, i < 3 && { color: '#7A4B00' }]}>{i + 1}</Text></View></View>
                         <Text style={[st.td, st.bold, { flex: 1.5 }]}>{t.number}</Text>
                         <Text style={[st.td, st.r, { flex: 0.8 }]}>{t.calls}</Text>
                         <Text style={[st.td, st.r, { flex: 0.9 }]}>{fmt1(t.total_min)}</Text>
-                        <Text style={[st.td, st.r, { flex: 0.9 }]}>{fmt1(t.free_min)}</Text>
-                        <Text style={[st.td, st.r, { flex: 0.9 }]}>{fmt1(t.extra_min)}</Text>
+                        <Text style={[st.td, st.r, { flex: 0.9 }]}>{fmt1(t.uncharged_min)}</Text>
+                        <Text style={[st.td, st.r, { flex: 0.9 }]}>{fmt1(t.charged_call_min)}</Text>
                         <View style={{ flex: 1.1, paddingHorizontal: 8, justifyContent: 'center' }}>
                           <View style={st.barTrack}><View style={{ height: 8, borderRadius: 4, width: `${Math.max(4, (v / topMax) * 100)}%`, backgroundColor: topTab === 'by_extra' ? C.red : C.blue }} /></View>
                         </View>
-                        <Text style={[st.td, st.r, { flex: 1 }, t.extra_amount > 0 && { color: C.red, fontWeight: '800' }]}>{fmt(t.extra_amount)}</Text>
+                        <Text style={[st.td, st.r, { flex: 1 }, t.charged_amount > 0 && { color: C.red, fontWeight: '800' }]}>{fmt(t.charged_amount)}</Text>
                       </View>
                     );
                   })}
@@ -743,6 +765,17 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
                   <View style={{ flex: 1.4 }} />
                   <Text style={[st.td, st.r, st.bold, { flex: 0.9 }]}>{fmt(total)}</Text>
                 </View>
+                {!!sel.reconcile && (
+                  <View style={[st.recon, sel.reconcile.matches ? st.reconOk : st.reconWarn]}>
+                    <Ionicons name={sel.reconcile.matches ? 'checkmark-circle' : 'alert-circle'} size={16} color={sel.reconcile.matches ? C.green : '#92580A'} />
+                    <Text style={[st.reconText, { color: sel.reconcile.matches ? C.green : '#92580A' }]}>
+                      {sel.reconcile.matches
+                        ? `Lines add up to the bill total (AED ${fmt(sel.reconcile.bill_total)}).`
+                        : `Lines add up to AED ${fmt(sel.reconcile.lines_total)}, the bill total is AED ${fmt(sel.reconcile.bill_total)} (difference ${fmt(Math.abs(sel.reconcile.difference))}).`}
+                      {' '}Excess excluding VAT = max(0, bill excluding VAT − applicable plan excluding VAT). Invoice totals are preserved; detail lines only explain them.
+                    </Text>
+                  </View>
+                )}
               </View>
             </Card>
           </View>
@@ -878,5 +911,11 @@ const st = StyleSheet.create({
   rank: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
   rankTop: { backgroundColor: '#FDEBC8' },
   rankText: { fontSize: 12, fontWeight: '800', color: '#475569' },
+  recon: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 14, padding: 12, borderRadius: 10, borderWidth: 1 },
+  reconOk: { backgroundColor: '#F2FAF6', borderColor: '#CDE8DC' },
+  reconWarn: { backgroundColor: '#FEF6E7', borderColor: '#F6DDA8' },
+  reconText: { flex: 1, fontSize: 12.5, lineHeight: 18 },
+  multiBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 16, padding: 12, borderRadius: 10, backgroundColor: '#EEF4FF', borderWidth: 1, borderColor: '#C7D8FA' },
+  multiText: { flex: 1, fontSize: 13, color: '#1E3A8A', lineHeight: 19 },
   barTrack: { height: 8, borderRadius: 4, backgroundColor: '#F1F5F9', overflow: 'hidden' },
 });

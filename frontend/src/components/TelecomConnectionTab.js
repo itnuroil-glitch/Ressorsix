@@ -15,14 +15,10 @@ import { Ionicons } from '@expo/vector-icons';
 import * as XLSX from 'xlsx';
 import { SHADOWS } from '../theme';
 import { API_URL } from '../config';
+import { getTelecomBillCalculation } from '../utils/telecomBilling';
 import {
-  INITIAL_TELECOM_CONNECTIONS,
   STATIC_CONNECTION_TYPES,
-  STATIC_PROVIDERS,
-  STATIC_COMPANIES,
   STATIC_DATA_UNITS,
-  STATIC_TELECOM_HISTORY_LOGS,
-  STATIC_EMPLOYEES,
 } from './telecomConnectionData';
 
 // Color Tokens matching the exact UI in the screenshot
@@ -141,9 +137,9 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
   const defaultFormState = {
     id: '',
     connectionType: 'SIM', // 'SIM' | 'Internet' | 'Landline'
-    company: 'ASAS Gen Tr LLC',
+    company: '',
     subCompany: user?.full_name || 'Krish',
-    provider: 'e& (Etisalat)',
+    provider: '',
     connectionNumber: '',
     accountNumber: '',
     iccid: '',
@@ -296,12 +292,16 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
               return { ...m, currentBillAED: null, isOverPlan: false, billSub: '' };
             }
             const b = matching[0];
-            const total = parseFloat(b.total_bill ?? b['Total Bill'] ?? b.total_amount) || 0;
-            const vat = parseFloat(b.vat_current_period ?? b.vat_amount ?? b['VAT']) || 0;
-            const billExcl = vat > 0 && total > vat ? total - vat : total;
-            const excess = billExcl - (m.monthlyRentAED || 0);
-            const over = excess > 10;
-            return { ...m, currentBillAED: billExcl, isOverPlan: over, billSub: over ? `+${excess.toFixed(2)} over plan` : '' };
+            const calculation = getTelecomBillCalculation(b);
+            const billExcl = calculation.billExclVat;
+            const excess = calculation.excessExclVat;
+            const over = calculation.isExcess;
+            return {
+              ...m,
+              currentBillAED: billExcl,
+              isOverPlan: over,
+              billSub: calculation.status === 'needs_review' ? 'Needs review' : (over ? `+${excess.toFixed(2)} over plan` : ''),
+            };
           });
           const billInfoById = new Map(withBills.map(w => [w.id, w]));
           setConnections(prev => prev.map(c => {
@@ -424,7 +424,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     fetchTeleServiceAccounts();
   }, []);
 
-  // Dynamic company lists from backend API (falling back to STATIC_COMPANIES)
+  // Company choices come only from live master data.
   const companyOptions = useMemo(() => {
     if (apiCompanies && apiCompanies.length > 0) {
       const names = apiCompanies
@@ -433,7 +433,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
       const unique = Array.from(new Set(names));
       if (unique.length > 0) return unique;
     }
-    return STATIC_COMPANIES.filter(c => c !== 'All Companies');
+    return [];
   }, [apiCompanies]);
 
   // Company filter lists only companies that have connections (with the connection count)
@@ -532,13 +532,13 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     return unique.length > 0 ? unique : ['SIM', 'Internet', 'Landline'];
   }, [teleConnTypes]);
 
-  // Providers come from the Tele Provider master (falls back to the built-in list while the master is empty)
+  // Providers come only from the Tele Provider master.
   const providerOptions = useMemo(() => {
     const names = teleProviders
       .filter(pr => String(pr.status || 'Active').toLowerCase() === 'active' && pr.provider_name)
       .map(pr => String(pr.provider_name).trim());
     const unique = Array.from(new Set(names));
-    return unique.length > 0 ? unique : STATIC_PROVIDERS.filter(pv => pv !== 'All Providers');
+    return unique;
   }, [teleProviders]);
 
   // Package plans come only from the Tele Package master (Settings > Tele Package)
@@ -592,11 +592,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
       ];
     }
 
-    // Fallback to STATIC_EMPLOYEES if API is loading or offline
-    const list = STATIC_EMPLOYEES.filter(
-      e => e.name === 'Unassigned' || !comp || e.company.toLowerCase().trim() === comp || e.company === 'All'
-    );
-    return list.length > 0 ? list : [{ id: 'unassigned', name: 'Unassigned', company: formData.company, joinDate: '' }];
+    return [{ id: 'unassigned', name: 'Unassigned', company: formData.company, joinDate: '' }];
   }, [apiEmployees, formData.company]);
 
   // Tab Badge Counts
@@ -1188,7 +1184,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
               <Text style={[styles.colHeader, { flex: 1.8 }]}>PLAN NAME</Text>
               <Text style={[styles.colHeader, { flex: 1.4 }]}>MONTHLY AMOUNT</Text>
               <Text style={[styles.colHeader, { flex: 1.2 }]}>STATUS</Text>
-              <Text style={[styles.colHeader, { flex: 1.7, textAlign: 'center' }]}>ACTION</Text>
+              <Text style={[styles.colHeader, { flex: 2, textAlign: 'center' }]}>ACTION</Text>
             </View>
 
             {/* Table Body Rows */}
@@ -1307,7 +1303,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                       </View>
                     </View>
 
-                    {/* 10. ACTION (Eye, Pencil, Person-Add, Trash) */}
+                    {/* 10. ACTION (Eye, Pencil, Person-Add, Trash, List) */}
                     <View style={styles.actionsCol}>
                       {/* View */}
                       <TouchableOpacity
@@ -1345,6 +1341,16 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                         }}
                       >
                         <Ionicons name="trash-outline" size={16} color={THEME.redAlertText} />
+                      </TouchableOpacity>
+
+                      {/* List button - visual only */}
+                      <TouchableOpacity
+                        style={[styles.tableActionIconBtn, styles.listActionIconBtn]}
+                        activeOpacity={0.7}
+                        title="List"
+                        accessibilityLabel={`List for ${row.connectionNumber}`}
+                      >
+                        <Ionicons name="list-outline" size={17} color={THEME.slate900} />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -2039,28 +2045,6 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     placeholder="e.g. Standard 100 AED Plan"
                     placeholderTextColor={THEME.slate400}
                   />
-                </View>
-
-                <View style={{ width: '100%' }}>
-                  <Text style={[styles.exactFieldLabel, { marginBottom: 8 }]}>Plan Type</Text>
-                  <View style={{ flexDirection: 'row', gap: 12 }}>
-                    {['Recurring', 'One Time'].map(opt => {
-                      const selected = (planDraft.planType || 'Recurring') === opt;
-                      return (
-                        <TouchableOpacity
-                          key={opt}
-                          style={[styles.planTypeOption, selected && styles.planTypeOptionActive]}
-                          onPress={() => setPlanDraft(prev => ({ ...prev, planType: opt }))}
-                          activeOpacity={0.8}
-                        >
-                          <View style={[styles.planTypeRadio, selected && styles.planTypeRadioActive]}>
-                            {selected && <View style={styles.planTypeRadioDot} />}
-                          </View>
-                          <Text style={[styles.planTypeText, selected && styles.planTypeTextActive]}>{opt}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
                 </View>
 
                 <View style={styles.planModalField}>
@@ -3092,14 +3076,25 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   actionsCol: {
-    flex: 1.7,
+    flex: 2,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: 8,
   },
   tableActionIconBtn: {
     padding: 3,
+  },
+  listActionIconBtn: {
+    width: 28,
+    height: 28,
+    padding: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: THEME.white,
+    borderWidth: 1,
+    borderColor: THEME.slate200,
+    borderRadius: 4,
   },
 
   // 4. Footer & Pagination Bar
@@ -3651,33 +3646,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  planTypeOption: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 11,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
-  },
-  planTypeOptionActive: { borderColor: '#0E5434', backgroundColor: '#F0FDF4' },
-  planTypeRadio: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-    borderColor: '#94A3B8',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  planTypeRadioActive: { borderColor: '#0E5434' },
-  planTypeRadioDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#0E5434' },
-  planTypeText: { fontSize: 13, fontWeight: '600', color: '#475569' },
-  planTypeTextActive: { color: '#0E5434', fontWeight: '700' },
   planAddBtn: {
     width: 40,
     height: 40,

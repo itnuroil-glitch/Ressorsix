@@ -32,13 +32,7 @@ export const STATIC_DATA_UNITS = ['GB', 'MB', 'TB', 'Unlimited'];
 export const INITIAL_TELECOM_CONNECTIONS = [];
 
 // Audit logs for History button
-export const STATIC_TELECOM_HISTORY_LOGS = [
-  { id: 'LOG-1', action: 'Created Connection', line: '0527901846', user: 'Krish', date: '15 Oct 2026 15:42', details: 'Added new SIM connection under ASAS Gen Tr LLC' },
-  { id: 'LOG-2', action: 'Bill Audited', line: '0501070455', user: 'Automated Billing OCR', date: '01 Oct 2026 09:15', details: 'Sep 2026 excess usage flagged: AED 941.70 (+741.70 over plan)' },
-  { id: 'LOG-3', action: 'Employee De-assigned', line: '0586942412', user: 'HR Admin', date: '30 Sep 2026 17:00', details: 'Line moved to UNASSIGNED after Leena Thomas departure' },
-  { id: 'LOG-4', action: 'Plan Upgraded', line: '04-2856310', user: 'IT Director', date: '01 Jun 2026 11:30', details: 'Upgraded from 200 Mbps to Business Fibre 500 Mbps' },
-  { id: 'LOG-5', action: 'Excess Alert', line: '06-5351769', user: 'System', date: '01 Oct 2026 09:15', details: 'Sep 2026 excess usage: AED 286.30 (+136.30 over plan)' }
-];
+export const STATIC_TELECOM_HISTORY_LOGS = [];
 
 export const STATIC_EMPLOYEES = [
   { id: 'EMP-1', name: 'Ahmed Rashid', company: 'ASAS Gen Tr LLC', joinDate: '01/01/2026' },

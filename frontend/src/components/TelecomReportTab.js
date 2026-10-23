@@ -1070,7 +1070,7 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed, 
 
         {/* Category Filters Pill Row */}
         <View style={styles.filterPillsRow}>
-          {['All', 'National Call', 'International Call', 'Calls to Special Number', 'National SMS', 'International SMS', 'Premium SMS', 'Roaming SMS', 'Outgoing Roaming Call', 'Incoming Roaming Call'].map((cat, i) => (
+          {['All', 'Calls to Mobile', 'Calls to Telephone / Landline', 'Calls to Special Numbers', 'International Calls', 'Incoming Roaming Calls', 'Outgoing Roaming Calls', 'Unclassified', 'National SMS', 'International SMS', 'Premium SMS', 'Roaming SMS'].map((cat, i) => (
             <TouchableOpacity
               key={i}
               style={[styles.filterPill, selectedCategoryFilter === cat && styles.filterPillActive]}
@@ -1182,7 +1182,7 @@ export default function TelecomReportTab({ user, showToast, isSidebarCollapsed, 
                     log.category.includes('International') && { backgroundColor: '#EFF6FF', color: COLORS.info },
                     log.category.includes('Premium') && { backgroundColor: '#FEE2E2', color: '#991B1B' },
                     log.category.includes('SMS') && !log.category.includes('Premium') && !log.category.includes('International') && { backgroundColor: '#E0F2FE', color: '#0369A1' },
-                    log.category === 'Calls to Special Number' && { backgroundColor: '#FFFBEB', color: COLORS.warning },
+                    /Calls to Special Number/i.test(log.category || '') && { backgroundColor: '#FFFBEB', color: COLORS.warning },
                     log.category.includes('Roaming') && { backgroundColor: '#F3E8FF', color: COLORS.purple }
                   ]}>
                     {log.sub_heading && log.sub_heading !== log.category ? `${log.category} (${log.sub_heading})` : log.category}

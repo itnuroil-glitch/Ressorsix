@@ -7185,12 +7185,12 @@ export default function DashboardScreen({ user, onSignOut }) {
       case 'telecome_data':
         return <SimDetailsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('sim_details')} checkRowPermission={(compId, act) => checkRowPermission('sim_details', compId, act)} title="Telecom Data" buttonLabel="+ Add Telecom Data" />;
       case 'telecom_test':
-        return <TelecomTestTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
+        return <TelecomTestTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} onNavigate={setActiveTab} />;
       case 'excess_usage_report':
         return <ExcessUsageReportTab user={user} showToast={showToast} onNavigate={(t) => setActiveTab(t)} onOpenBill={(id, back) => { setBillRequest({ id, returnTo: back }); setActiveTab('telecom_bill'); }} />;
       case 'import_telecom_bills':
       case 'import_telecome_bills':
-        return <ImportTelecomBillsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
+        return <ImportTelecomBillsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} onNavigate={setActiveTab} />;
       case 'telecom_connection':
       case 'telecome_connection':
         return <TelecomConnectionTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;

@@ -26,6 +26,9 @@ const GROUPS = [
     parentName: 'settings',
     templateNames: ['company legal form', 'company licensing authority'],
     templateRoutes: [],
+    // subscription plans: the Tele masters belong with the Telecom features
+    planTemplateNames: ['telecom bill form'],
+    planTemplateRoutes: ['/telecom-bill-form'],
     modules: [
       { name: 'Tele Package', route: '/tele-package' },
       { name: 'Tele Provider', route: '/tele-provider' },
@@ -111,6 +114,19 @@ async function ensureGroup(group, have, hasPlanTable) {
   if (!templateId) return;
   await copyPermissions(templateId, targets, have);
 
+  // which module decides plan membership (defaults to the permission template)
+  let planTemplateId = templateId;
+  if (group.planTemplateNames) {
+    const pt = await db.query(
+      `SELECT id FROM module
+       WHERE (is_deleted = false OR is_deleted IS NULL)
+         AND (LOWER(module_name) = ANY($1) OR route = ANY($2))
+       ORDER BY id LIMIT 1`,
+      [group.planTemplateNames, group.planTemplateRoutes && group.planTemplateRoutes.length ? group.planTemplateRoutes : ['']]
+    );
+    if (pt.rows.length) planTemplateId = pt.rows[0].id;
+  }
+
   if (hasPlanTable) {
     for (const target of targets) {
       await db.query(
@@ -118,7 +134,7 @@ async function ensureGroup(group, have, hasPlanTable) {
          SELECT pm.plan_id, $1 FROM tbl_plan_modules pm
          WHERE pm.enabled_module = $2
            AND NOT EXISTS (SELECT 1 FROM tbl_plan_modules y WHERE y.plan_id = pm.plan_id AND y.enabled_module = $1)`,
-        [target, templateId]
+        [target, planTemplateId]
       ).catch(err => console.warn('[MIGRATION] Could not extend plan modules:', err.message));
     }
   }

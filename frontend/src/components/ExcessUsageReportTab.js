@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import * as XLSX from 'xlsx';
 import { API_URL } from '../config';
+import { getTelecomBillCalculation, getChargeExplanations, formatAed, callDurationSeconds, secondsToDisplayMinutes } from '../utils/telecomBilling';
 
 // A bill counts as excess when it is more than this many AED above the plan amount
 const EXCESS_MARGIN_AED = 10;
@@ -79,40 +80,28 @@ const monthLabel = (key) => {
   return `${MONTHS[mNum - 1]} ${y}`;
 };
 
-const toMin = (d) => {
-  const m = /^(\d+):(\d{2}):(\d{2})$/.exec(String(d || '').trim());
-  return m ? Math.ceil((Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])) / 60) : 0;
-};
-
 // What pushed the bill over the plan: call-log overages first, then the extra charges on the bill
 const usageReasons = (bill, conn) => {
   const reasons = [];
   const logs = Array.isArray(bill.call_logs) ? bill.call_logs : [];
-  if (logs.length > 0) {
-    const agg = { local: 0, intl: 0, special: 0, roaming: 0 }; // roaming calls are not part of the plan limits
-    const cnt = { special: 0 };
-    logs.forEach(l => {
-      const c = String(l.category || '').toLowerCase();
-      const g = /special|premium/.test(c) ? 'special' : /roaming/.test(c) ? 'roaming' : /international/.test(c) ? 'intl' : 'local';
-      agg[g] += toMin(l.duration);
-      if (g === 'special') cnt.special += 1;
-    });
+  const eligible = Array.isArray(bill.allowance_eligible_categories) ? bill.allowance_eligible_categories : [];
+  if (logs.length > 0 && bill.allowance_categories_verified === true && eligible.length > 0) {
+    const secondsFor = categories => logs.reduce((sum, log) => (
+      categories.includes(log.category) ? sum + callDurationSeconds(log) : sum
+    ), 0);
     const localLimit = parseFloat(conn?.local_minutes);
     const intlLimit = parseFloat(conn?.international_minutes);
-    if (!isNaN(localLimit) && agg.local > localLimit) reasons.push(`Local minutes +${agg.local - localLimit}`);
-    if (!isNaN(intlLimit) && agg.intl > intlLimit) reasons.push(`Intl minutes +${agg.intl - intlLimit}`);
-    if (cnt.special > 0) reasons.push(`Special numbers ${cnt.special} calls`);
+    const localCategories = eligible.filter(category => !/international/i.test(category));
+    const internationalCategories = eligible.filter(category => /international/i.test(category));
+    const localSeconds = secondsFor(localCategories);
+    const intlSeconds = secondsFor(internationalCategories);
+    if (!isNaN(localLimit) && localCategories.length && localSeconds > localLimit * 60) reasons.push(`Duration above local allowance: ${secondsToDisplayMinutes(localSeconds - localLimit * 60)} min (not verified chargeable minutes)`);
+    if (!isNaN(intlLimit) && internationalCategories.length && intlSeconds > intlLimit * 60) reasons.push(`Duration above international allowance: ${secondsToDisplayMinutes(intlSeconds - intlLimit * 60)} min (not verified chargeable minutes)`);
   }
-  const items = Array.isArray(bill.items) ? bill.items : [];
-  items.forEach(it => {
-    const t = String(it.record_type || '').toUpperCase();
-    const amt = num(it.amount);
-    if (t === 'CHARGE' && amt > 0) reasons.push(`${it.category || 'Extra charge'} ${fmt(amt)}`);
+  getChargeExplanations(bill).forEach(part => {
+    const showCount = part.count && /special-number|premium sms/i.test(part.label);
+    reasons.push(`${part.label}:${showCount ? ` ${part.count} ·` : ''} AED ${fmt(part.amount)}${part.parent ? ` (${part.parent} component)` : ''}`);
   });
-  if (reasons.length === 0) {
-    const usage = num(bill.usage_charges);
-    if (usage > 0) reasons.push(`Usage charges ${fmt(usage)}`);
-  }
   return reasons;
 };
 
@@ -160,20 +149,11 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate, onOp
   useEffect(() => {
     if (!monthFilter && monthOptions.length > 0) {
       const validMonths = monthOptions.filter(m => m !== 'All Months');
-      const connByKey = new Map();
-      connections.forEach(c => { const k = keyOf(c.connection_number); if (k && !connByKey.has(k)) connByKey.set(k, c); });
 
       const monthWithExcess = validMonths.find(m => {
         return bills.some(b => {
           if (billMonthKey(b) !== m) return false;
-          const total = num(b.total_bill ?? b['Total Bill'] ?? b.total_amount);
-          const vat = num(b.vat_current_period ?? b.vat_amount ?? b['VAT']);
-          const billExcl = vat > 0 && total > vat ? total - vat : total;
-          const conn = connByKey.get(keyOf(b.mobile_number || b['Mobile Number / Account']));
-          const connPlan = conn ? num(conn.monthly_plan_amount) : 0;
-          const billPlan = num(b.plan_rental ?? b['Monthly Plan Amount'] ?? b['Service Rental']);
-          const plan = connPlan > 0 ? connPlan : billPlan;
-          return (billExcl - plan) > EXCESS_MARGIN_AED;
+          return getTelecomBillCalculation(b).isExcess;
         });
       });
 
@@ -183,7 +163,7 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate, onOp
         setMonthFilter(validMonths.length > 0 ? validMonths[0] : 'All Months');
       }
     }
-  }, [monthOptions, monthFilter, bills, connections]);
+  }, [monthOptions, monthFilter, bills]);
 
   // companies that have a connection or a bill
   const companyOptions = useMemo(() => {
@@ -224,17 +204,14 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate, onOp
     const all = Array.from(latest.values())
       .filter(x => companyFilter === 'All Companies' || x.company === companyFilter)
       .map(({ id: billId, gk, bill, conn, company, rawNo, month }) => {
-        const total = num(bill.total_bill ?? bill['Total Bill'] ?? bill.total_amount);
-        const vat = num(bill.vat_current_period ?? bill.vat_amount ?? bill['VAT']);
-        const billExcl = vat > 0 && total > vat ? total - vat : total;
-        const connPlan = conn ? num(conn.monthly_plan_amount) : 0;
-        const billPlan = num(bill.plan_rental ?? bill['Monthly Plan Amount'] ?? bill['Service Rental']);
-        const plan = connPlan > 0 ? connPlan : billPlan;
-        const excess = billExcl - plan;
+        const calc = getTelecomBillCalculation(bill);
+        const plan = calc.planExclVat;
+        const billExcl = calc.billExclVat;
+        const excess = calc.excessExclVat;
         const emp = conn ? employees.find(e => (e.full_name || e.name) === conn.employee_name) : null;
         const empName = conn ? (conn.employee_name || '').trim() : '';
         const reasons = usageReasons(bill, conn || {});
-        if (reasons.length === 0 && excess > 0) {
+        if (reasons.length === 0 && excess !== null && excess > 0) {
           reasons.push(`+AED ${fmt(excess)} over plan`);
         }
         return {
@@ -247,11 +224,12 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate, onOp
           company,
           type: conn ? (conn.connection_type || 'SIM') : inferType(rawNo),
           provider: (conn && conn.provider) || bill.telecom_provider || '',
-          plan, billExcl, excess,
+          plan, billExcl, vat: calc.vat, billIncl: calc.billInclVat, excess,
+          calculationStatus: calc.status,
           reasons,
         };
       });
-    return { rows: all.filter(r => r.excess > EXCESS_MARGIN_AED).sort((a, b) => b.excess - a.excess), billedCount: all.length };
+    return { rows: all.filter(r => r.calculationStatus === 'ready' && r.excess > EXCESS_MARGIN_AED).sort((a, b) => b.excess - a.excess), billedCount: all.length };
   }, [bills, connections, employees, monthFilter, companyFilter]);
 
   const typeOptions = useMemo(() => ['All', ...Array.from(new Set(rows.map(r => r.type)))], [rows]);
@@ -268,8 +246,9 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate, onOp
     try {
       const data = visible.map(r => ({
         Number: r.number, Employee: r.employee, Department: r.sub, Company: r.company, Type: r.type,
-        Provider: r.provider, 'Plan Amount (AED)': r.plan, 'Bill Amount excl. VAT (AED)': r.billExcl,
-        'Excess (AED)': r.excess, 'Usage Over Limit': r.reasons.join('; '),
+        Provider: r.provider, 'Plan — excluding VAT (AED)': r.plan, 'Bill — excluding VAT (AED)': r.billExcl,
+        'VAT (AED)': r.vat, 'Bill — including VAT (AED)': r.billIncl,
+        'Excess — excluding VAT (AED)': r.excess, 'Usage Over Limit': r.reasons.join('; '),
       }));
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
@@ -369,18 +348,24 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate, onOp
           </View>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={{ flexGrow: 1, minWidth: '100%' }}>
-          <View style={{ minWidth: 1100, flex: 1, width: '100%' }}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator
+          contentContainerStyle={styles.tableScrollContent}
+        >
+          <View style={styles.tableInner}>
             <View style={styles.thRow}>
-              <Text style={[styles.th, { flex: 1.3 }]}>NUMBER</Text>
-              <Text style={[styles.th, { flex: 1.5 }]}>EMPLOYEE</Text>
-              <Text style={[styles.th, { flex: 1.7 }]}>COMPANY</Text>
-              <Text style={[styles.th, { flex: 0.9 }]}>TYPE</Text>
-              <Text style={[styles.th, { flex: 1.4 }]}>PROVIDER</Text>
-              <Text style={[styles.th, { flex: 1.35, textAlign: 'right' }]}>PLAN AMOUNT</Text>
-              <Text style={[styles.th, { flex: 1.35, textAlign: 'right' }]}>BILL AMOUNT</Text>
-              <Text style={[styles.th, { flex: 1.35, textAlign: 'right' }]}>EXCESS (AED)</Text>
-              <Text style={[styles.th, { flex: 2.4 }]}>USAGE OVER LIMIT</Text>
+              <Text style={[styles.th, { flex: 1.15 }]}>NUMBER</Text>
+              <Text style={[styles.th, { flex: 1.4 }]}>EMPLOYEE</Text>
+              <Text style={[styles.th, { flex: 1.2 }]}>COMPANY</Text>
+              <Text style={[styles.th, { flex: 0.6 }]}>TYPE</Text>
+              <Text style={[styles.th, { flex: 1.1 }]}>PROVIDER</Text>
+              <Text style={[styles.th, { flex: 0.95, textAlign: 'right' }]}>{'PLAN\nEXCL. VAT'}</Text>
+              <Text style={[styles.th, { flex: 0.95, textAlign: 'right' }]}>{'BILL\nEXCL. VAT'}</Text>
+              <Text style={[styles.th, { flex: 0.7, textAlign: 'right' }]}>VAT</Text>
+              <Text style={[styles.th, { flex: 0.95, textAlign: 'right' }]}>{'BILL\nINCL. VAT'}</Text>
+              <Text style={[styles.th, { flex: 0.95, textAlign: 'right' }]}>{'EXCESS\nEXCL. VAT'}</Text>
+              <Text style={[styles.th, styles.usageColumn, styles.usageHeader]}>{'USAGE\nOVER LIMIT'}</Text>
             </View>
             {visible.length === 0 ? (
               <Text style={{ padding: 28, color: '#64748B', fontSize: 14 }}>
@@ -390,7 +375,7 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate, onOp
               </Text>
             ) : visible.map(r => (
               <View key={r.key} style={styles.tr}>
-                <TouchableOpacity style={{ flex: 1.3 }} onPress={() => {
+                <TouchableOpacity style={{ flex: 1.15 }} onPress={() => {
                   if (onOpenBill && r.billId) onOpenBill(r.billId, 'excess_usage_report');
                   else if (onNavigate) onNavigate('telecom_bill');
                 }}>
@@ -399,21 +384,23 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate, onOp
                     <Text style={{ fontSize: 11, color: '#64748B', fontWeight: '600', marginTop: 2 }}>{r.month}</Text>
                   )}
                 </TouchableOpacity>
-                <View style={{ flex: 1.5 }}>
+                <View style={{ flex: 1.4, minWidth: 0 }}>
                   <Text style={styles.empName}>{r.employee}</Text>
                   {!!r.sub && <Text style={styles.empSub}>{r.sub}</Text>}
                 </View>
-                <Text style={[styles.td, { flex: 1.7 }]}>{r.company}</Text>
-                <View style={{ flex: 0.9, alignItems: 'flex-start' }}>
+                <Text style={[styles.td, { flex: 1.2, minWidth: 0 }]}>{r.company}</Text>
+                <View style={{ flex: 0.6, alignItems: 'flex-start' }}>
                   <View style={styles.tagGrey}><Text style={styles.tagGreyText}>{r.type}</Text></View>
                 </View>
-                <View style={{ flex: 1.4, alignItems: 'flex-start' }}>
+                <View style={{ flex: 1.1, alignItems: 'flex-start' }}>
                   <View style={styles.tagRed}><Text style={styles.tagRedText}>{r.provider || '—'}</Text></View>
                 </View>
-                <Text style={[styles.td, { flex: 1.35, textAlign: 'right' }]}>{fmt(r.plan)}</Text>
-                <Text style={[styles.td, { flex: 1.35, textAlign: 'right' }]}>{fmt(r.billExcl)}</Text>
-                <Text style={[styles.td, { flex: 1.1, textAlign: 'right', fontWeight: '800', color: '#B91C1C', fontSize: 15 }]}>{fmt(r.excess)}</Text>
-                <View style={{ flex: 2.4, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                <Text style={[styles.td, { flex: 0.95, textAlign: 'right' }]}>{formatAed(r.plan)}</Text>
+                <Text style={[styles.td, { flex: 0.95, textAlign: 'right' }]}>{formatAed(r.billExcl)}</Text>
+                <Text style={[styles.td, { flex: 0.7, textAlign: 'right' }]}>{formatAed(r.vat)}</Text>
+                <Text style={[styles.td, { flex: 0.95, textAlign: 'right' }]}>{formatAed(r.billIncl)}</Text>
+                <Text style={[styles.td, { flex: 0.95, textAlign: 'right', fontWeight: '800', color: '#B91C1C', fontSize: 15 }]}>{formatAed(r.excess)}</Text>
+                <View style={[styles.usageColumn, styles.usageCell]}>
                   {r.reasons.length === 0
                     ? <Text style={{ color: '#94A3B8', fontSize: 12 }}>–</Text>
                     : r.reasons.map((x, i) => (
@@ -426,7 +413,7 @@ export default function ExcessUsageReportTab({ user, showToast, onNavigate, onOp
         </ScrollView>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>Bill amount excludes VAT. A bill counts as excess when it is more than AED {EXCESS_MARGIN_AED} above the plan amount.</Text>
+          <Text style={styles.footerText}>Bill and plan are compared excluding VAT. Excess is flagged only when it is more than AED {EXCESS_MARGIN_AED.toFixed(2)}.</Text>
           <Text style={styles.footerText}>Click a number to open its bill</Text>
         </View>
       </View>
@@ -453,10 +440,14 @@ const styles = StyleSheet.create({
   pill: { paddingVertical: 9, paddingHorizontal: 18, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#FFFFFF' },
   pillActive: { backgroundColor: '#4A0E1C', borderColor: '#4A0E1C' },
   pillText: { fontSize: 13, fontWeight: '700', color: '#0F172A' },
-  thRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#E2E8F0', paddingVertical: 14, paddingHorizontal: 24, columnGap: 16 },
-  th: { fontSize: 11, fontWeight: '800', color: '#475569', letterSpacing: 0.5 },
-  tr: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF7F6', borderBottomWidth: 1, borderBottomColor: '#F5E1DE', paddingVertical: 18, paddingHorizontal: 24, columnGap: 16 },
-  td: { fontSize: 14, color: '#334155' },
+  tableScrollContent: { flexGrow: 1 },
+  tableInner: { width: '100%', minWidth: 1450 },
+  thRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#E2E8F0', paddingVertical: 10, paddingHorizontal: 16, columnGap: 10 },
+  th: { minWidth: 0, flexShrink: 1, fontSize: 10.5, lineHeight: 13, fontWeight: '800', color: '#475569', letterSpacing: 0.35 },
+  usageColumn: { width: 330, flexGrow: 0, flexShrink: 0 },
+  usageHeader: { alignSelf: 'stretch', textAlignVertical: 'center', paddingLeft: 14, borderLeftWidth: 1, borderLeftColor: '#E2E8F0' },
+  tr: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF7F6', borderBottomWidth: 1, borderBottomColor: '#F5E1DE', paddingVertical: 14, paddingHorizontal: 16, columnGap: 10 },
+  td: { fontSize: 13.5, color: '#334155' },
   numberLink: { fontSize: 15, fontWeight: '800', color: '#B91C1C', textDecorationLine: 'underline' },
   empName: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
   empSub: { fontSize: 12, color: '#64748B', marginTop: 2 },
@@ -464,8 +455,9 @@ const styles = StyleSheet.create({
   tagGreyText: { fontSize: 11, fontWeight: '700', color: '#334155' },
   tagRed: { backgroundColor: '#FDE2E2', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 6 },
   tagRedText: { fontSize: 11, fontWeight: '700', color: '#B91C1C' },
-  reasonPill: { backgroundColor: '#FDE2E2', paddingHorizontal: 11, paddingVertical: 5, borderRadius: 14 },
-  reasonText: { fontSize: 12, fontWeight: '700', color: '#B91C1C' },
+  reasonPill: { width: '100%', minWidth: 0, backgroundColor: '#FDE2E2', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
+  reasonText: { width: '100%', minWidth: 0, fontSize: 11.5, lineHeight: 15, fontWeight: '700', color: '#B91C1C', flexShrink: 1 },
+  usageCell: { minWidth: 0, alignItems: 'stretch', gap: 6, paddingLeft: 14, borderLeftWidth: 1, borderLeftColor: '#F1D5D1' },
   footer: { flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, padding: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0' },
   footerText: { fontSize: 12, color: '#475569' },
 });

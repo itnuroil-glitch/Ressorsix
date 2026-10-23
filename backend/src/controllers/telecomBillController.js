@@ -1,5 +1,6 @@
 // Telecom Bill Controller - Parity & Analytics Sync 2026-08-24 17:58
 const db = require('../config/db');
+const { calculateTelecomBill, durationToSeconds } = require('../utils/telecomBilling');
 const fs = require('fs');
 const path = require('path');
 
@@ -215,7 +216,7 @@ const resolveDatesFromPdfFile = async (rawPdfFilename, billNumber) => {
       }
     }
 
-    // Fallback: Check filename for date pattern (e.g. 0501070455_2027529957_2026-04-01.pdf)
+    // Fallback: check the uploaded filename for an ISO billing-date suffix.
     if (!periodFrom || !periodTo) {
       const fnDateMatch = String(targetPath || rawPdfFilename || '').match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
       if (fnDateMatch) {
@@ -458,12 +459,12 @@ async function getBillColAliases() {
     const existingCols = new Set(colsRes.rows.map(r => r.column_name));
 
     const totalSelect = existingCols.has('total_amount') && existingCols.has('total_bill')
-      ? 'COALESCE(tb.total_amount, tb.total_bill, 0)'
-      : (existingCols.has('total_amount') ? 'COALESCE(tb.total_amount, 0)' : (existingCols.has('total_bill') ? 'COALESCE(tb.total_bill, 0)' : '0'));
+      ? 'COALESCE(tb.total_amount, tb.total_bill)'
+      : (existingCols.has('total_amount') ? 'tb.total_amount' : (existingCols.has('total_bill') ? 'tb.total_bill' : 'NULL'));
 
     const vatSelect = existingCols.has('vat_amount') && existingCols.has('vat_current_period')
-      ? 'COALESCE(tb.vat_amount, tb.vat_current_period, 0)'
-      : (existingCols.has('vat_amount') ? 'COALESCE(tb.vat_amount, 0)' : (existingCols.has('vat_current_period') ? 'COALESCE(tb.vat_current_period, 0)' : '0'));
+      ? 'COALESCE(tb.vat_amount, tb.vat_current_period)'
+      : (existingCols.has('vat_amount') ? 'tb.vat_amount' : (existingCols.has('vat_current_period') ? 'tb.vat_current_period' : 'NULL'));
 
     const providerSelect = existingCols.has('provider') && existingCols.has('telecom_provider')
       ? "COALESCE(tb.provider, tb.telecom_provider, '')"
@@ -581,8 +582,9 @@ exports.getAllTelecomBills = async (req, res) => {
       const usageSums = usageMap.get(String(row.bill_number || '').trim()) || [];
 
       const providerVal = row.telecom_provider || row.provider || '';
-      const totalAmt = row.total_bill || row.total_amount || 0;
-      const vatAmt = row.vat_current_period || row.vat_amount || 0;
+      const calculation = calculateTelecomBill(row);
+      const totalAmt = calculation.bill_incl_vat ?? row.total_bill ?? row.total_amount ?? null;
+      const vatAmt = calculation.vat;
 
       const rawFd = typeof row.field_data === 'string' ? JSON.parse(row.field_data || '{}') : (row.field_data || {});
 
@@ -704,8 +706,8 @@ exports.getAllTelecomBills = async (req, res) => {
         'Telecom Provider': providerVal,
         'Total Bill': totalAmt,
         'VAT': vatAmt,
-        'Monthly Plan Amount': row.plan_rental,
-        'Service Rental': row.plan_rental,
+        'Monthly Plan Amount': calculation.plan_excl_vat,
+        'Service Rental': calculation.plan_excl_vat,
         'Usage Charges': row.usage_charges,
         'Payment Status': billStatus,
         period_from: periodFrom,
@@ -720,6 +722,11 @@ exports.getAllTelecomBills = async (req, res) => {
         call_logs: callLogs,
         sms_logs: smsLogs,
         usage_summaries: usageSums,
+        calculation,
+        bill_excl_vat: calculation.bill_excl_vat,
+        bill_incl_vat: calculation.bill_incl_vat,
+        excess_excl_vat: calculation.excess_excl_vat,
+        is_excess: calculation.is_excess,
         field_data: {
           ...rawFd,
           Company: row.company_name,
@@ -729,7 +736,7 @@ exports.getAllTelecomBills = async (req, res) => {
           'Telecom Provider': providerVal,
           'Total Bill': totalAmt,
           'VAT': vatAmt,
-          'Service Rental': row.plan_rental,
+          'Service Rental': calculation.plan_excl_vat,
           'Usage Charges': row.usage_charges,
           'Payment Status': billStatus,
           status: billStatus,
@@ -744,7 +751,8 @@ exports.getAllTelecomBills = async (req, res) => {
           items: childItems,
           call_logs: callLogs,
           sms_logs: smsLogs,
-          usage_summaries: usageSums
+          usage_summaries: usageSums,
+          calculation
         }
       };
     }));
@@ -941,8 +949,8 @@ exports.getTelecomBillById = async (req, res) => {
         bill_number: cleanBillResult,
         'Mobile Number / Account': row.mobile_number,
         'Telecom Provider': row.telecom_provider || row.provider,
-        'Total Bill': row.total_bill || row.total_amount,
-        'VAT': row.vat_current_period || row.vat_amount,
+        'Total Bill': row.total_bill ?? row.total_amount,
+        'VAT': row.vat_current_period ?? row.vat_amount,
         'Service Rental': row.plan_rental,
         'Usage Charges': row.usage_charges,
         'Payment Status': billStatus,
@@ -1019,10 +1027,21 @@ exports.createTelecomBill = async (req, res) => {
     const company_name = body.company_name || body.company_id || fd.Company || fd.f_company || '';
     const telecom_provider = body.telecom_provider || fd['Telecom Provider'] || fd.f_provider || '';
 
-    const total_bill = parseFloat(body.total_bill || fd['Total Bill'] || fd.f_total || 0) || 0;
-    const plan_rental = parseFloat(body.plan_rental || fd['Service Rental'] || fd['Monthly Plan Amount'] || fd.f_rental || 0) || 0;
-    const usage_charges = parseFloat(body.usage_charges || fd['Usage Charges'] || fd.f_usage || 0) || 0;
-    const vat_current_period = parseFloat(body.vat_current_period || fd.VAT || fd.f_vat || 0) || 0;
+    const sourceFinancials = body.source_financials || fd.source_financials || {};
+    const optionalMoney = (...values) => {
+      const value = values.find(v => v !== undefined && v !== null && v !== '');
+      if (value === undefined) return null;
+      const parsed = Number(String(value).replace(/,/g, ''));
+      return Number.isFinite(parsed) ? Number(parsed.toFixed(2)) : null;
+    };
+    const current_period_excl_vat = optionalMoney(body.current_period_excl_vat, sourceFinancials.current_period_excl_vat, fd.current_period_excl_vat);
+    const current_period_vat = optionalMoney(body.current_period_vat, sourceFinancials.current_period_vat, body.vat_current_period, fd.VAT, fd.f_vat);
+    const current_period_incl_vat = optionalMoney(body.current_period_incl_vat, sourceFinancials.current_period_incl_vat, body.total_bill, fd['Total Bill'], fd.f_total);
+    const plan_excl_vat = optionalMoney(body.plan_excl_vat, sourceFinancials.plan_excl_vat, body.plan_rental, fd['Service Rental'], fd['Monthly Plan Amount'], fd.f_rental);
+    const total_bill = current_period_incl_vat;
+    const plan_rental = plan_excl_vat;
+    const usage_charges = optionalMoney(body.usage_charges, sourceFinancials.usage_charges, fd['Usage Charges'], fd.f_usage);
+    const vat_current_period = current_period_vat;
 
     const clientid = body.clientid ? String(body.clientid) : null;
     const status = body.status && body.status.toLowerCase() !== 'pending' ? body.status : (fd['Payment Status'] && fd['Payment Status'].toLowerCase() !== 'pending' ? fd['Payment Status'] : 'Active');
@@ -1104,6 +1123,37 @@ exports.createTelecomBill = async (req, res) => {
       insertCols.push('vat_amount');
       values.push(vat_current_period);
     }
+
+    const canonicalValues = {
+      account_number: body.account_number || sourceFinancials.account_number || null,
+      current_period_excl_vat,
+      current_period_vat,
+      current_period_incl_vat,
+      plan_excl_vat,
+      one_time_charges: optionalMoney(body.one_time_charges, sourceFinancials.one_time_charges),
+      third_party_charges: optionalMoney(body.third_party_charges, sourceFinancials.third_party_charges),
+      credits_adjustments: optionalMoney(body.credits_adjustments, sourceFinancials.credits_adjustments),
+      previous_balance: optionalMoney(body.previous_balance, sourceFinancials.previous_balance),
+      payments: optionalMoney(body.payments, sourceFinancials.payments),
+      balance_carried_forward: optionalMoney(body.balance_carried_forward, sourceFinancials.balance_carried_forward),
+      total_amount_due: optionalMoney(body.total_amount_due, sourceFinancials.total_amount_due),
+      vat_treatments: JSON.stringify(body.vat_treatments || sourceFinancials.vat_treatments || []),
+      financial_source: Object.keys(sourceFinancials).length ? 'invoice_pdf' : 'manual',
+      calculation_status: sourceFinancials.calculation_status || (current_period_excl_vat !== null && plan_excl_vat !== null ? 'ready' : 'needs_review'),
+      reconciliation_status: sourceFinancials.reconciliation_status || 'needs_review',
+      reconciliation_difference: optionalMoney(sourceFinancials.reconciliation_difference),
+      source_financials: JSON.stringify(sourceFinancials),
+      financials_extracted_at: Object.keys(sourceFinancials).length ? new Date() : null,
+      calculation_version: 5,
+      call_category_summaries: JSON.stringify(body.call_category_summaries || fd.call_category_summaries || []),
+      call_category_reconciliation: JSON.stringify(body.call_category_reconciliation || fd.call_category_reconciliation || []),
+      charge_components: JSON.stringify(body.charge_components || fd.charge_components || []),
+    };
+    Object.entries(canonicalValues).forEach(([column, value]) => {
+      if (!existingCols.has(column)) return;
+      insertCols.push(column);
+      values.push(value);
+    });
 
     if (existingCols.has('clientid')) {
       insertCols.push('clientid');
@@ -1231,8 +1281,9 @@ exports.createTelecomBill = async (req, res) => {
       try {
         const logRes = await db.query(
           `INSERT INTO tbl_telecome_call_logs
-            (${logFk}, bill_number, source_number, call_date, call_time, destination_number, duration, category, amount, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+            (${logFk}, bill_number, source_number, call_date, call_time, destination_number, duration, duration_seconds,
+             category, category_source, source_section, unit_type, unit_count, amount, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
            RETURNING *`,
           [
             parentId,
@@ -1242,7 +1293,12 @@ exports.createTelecomBill = async (req, res) => {
             log.call_time || 'N/A',
             log.destination_number || 'N/A',
             log.duration || '00:00:00',
-            log.category || 'Calls to Mobile',
+            log.duration_seconds ?? durationToSeconds(log.duration),
+            log.category || 'Unclassified',
+            log.category_source || 'unclassified',
+            log.source_section || null,
+            log.unit_type || 'calls',
+            log.unit_count || 1,
             parseFloat(log.amount || 0)
           ]
         ).catch(() => null);
@@ -1263,14 +1319,14 @@ exports.createTelecomBill = async (req, res) => {
       'Bill Number': parentRow.bill_number,
       'Mobile Number / Account': parentRow.mobile_number,
       'Telecom Provider': parentRow.telecom_provider || parentRow.provider,
-      'Total Bill': parentRow.total_bill || parentRow.total_amount,
+      'Total Bill': parentRow.total_bill ?? parentRow.total_amount,
       field_data: {
         Company: parentRow.company_name,
         'Bill Number': parentRow.bill_number,
         'Mobile Number / Account': parentRow.mobile_number,
         'Telecom Provider': parentRow.telecom_provider || parentRow.provider,
-        'Total Bill': parentRow.total_bill || parentRow.total_amount,
-        'VAT': parentRow.vat_current_period || parentRow.vat_amount,
+        'Total Bill': parentRow.total_bill ?? parentRow.total_amount,
+        'VAT': parentRow.vat_current_period ?? parentRow.vat_amount,
         'Payment Status': parentRow.status,
         items: insertedItems,
         call_logs: insertedLogs
@@ -1291,16 +1347,17 @@ exports.updateTelecomBill = async (req, res) => {
     const { id } = req.params;
     const body = req.body || {};
     const fd = body.field_data || {};
+    const firstPresent = (...values) => values.find(v => v !== undefined && v !== null && v !== '');
 
     const bill_number = body.bill_number || fd['Bill Number'] || fd.f_billno;
     const mobile_number = body.mobile_number || fd['Mobile Number / Account'] || fd.f_account;
     const company_name = body.company_name || body.company_id || fd.Company || fd.f_company;
     const telecom_provider = body.telecom_provider || fd['Telecom Provider'] || fd.f_provider;
 
-    const total_bill = body.total_bill || fd['Total Bill'] || fd.f_total;
-    const plan_rental = body.plan_rental || fd['Service Rental'] || fd['Monthly Plan Amount'];
-    const usage_charges = body.usage_charges || fd['Usage Charges'];
-    const vat_current_period = body.vat_current_period || fd.VAT || fd.f_vat;
+    const total_bill = firstPresent(body.current_period_incl_vat, body.total_bill, fd['Total Bill'], fd.f_total);
+    const plan_rental = firstPresent(body.plan_excl_vat, body.plan_rental, fd['Service Rental'], fd['Monthly Plan Amount']);
+    const usage_charges = firstPresent(body.usage_charges, fd['Usage Charges']);
+    const vat_current_period = firstPresent(body.current_period_vat, body.vat_current_period, fd.VAT, fd.f_vat);
     const status = body.status || fd['Payment Status'] || fd.f_status;
     const clientid = body.clientid;
 
@@ -1323,22 +1380,46 @@ exports.updateTelecomBill = async (req, res) => {
       else if (existingCols.has('provider')) { setClauses.push(`provider = $${pIdx++}`); params.push(telecom_provider); }
     }
 
-    if (total_bill) {
+    if (total_bill !== undefined && total_bill !== null && total_bill !== '') {
       if (existingCols.has('total_bill')) { setClauses.push(`total_bill = $${pIdx++}`); params.push(parseFloat(total_bill)); }
       else if (existingCols.has('total_amount')) { setClauses.push(`total_amount = $${pIdx++}`); params.push(parseFloat(total_bill)); }
     }
 
-    if (plan_rental && existingCols.has('plan_rental')) {
+    if (plan_rental !== undefined && plan_rental !== null && plan_rental !== '' && existingCols.has('plan_rental')) {
       setClauses.push(`plan_rental = $${pIdx++}`); params.push(parseFloat(plan_rental));
     }
 
-    if (usage_charges && existingCols.has('usage_charges')) {
+    if (usage_charges !== undefined && usage_charges !== null && usage_charges !== '' && existingCols.has('usage_charges')) {
       setClauses.push(`usage_charges = $${pIdx++}`); params.push(parseFloat(usage_charges));
     }
 
-    if (vat_current_period) {
+    if (vat_current_period !== undefined && vat_current_period !== null && vat_current_period !== '') {
       if (existingCols.has('vat_current_period')) { setClauses.push(`vat_current_period = $${pIdx++}`); params.push(parseFloat(vat_current_period)); }
       else if (existingCols.has('vat_amount')) { setClauses.push(`vat_amount = $${pIdx++}`); params.push(parseFloat(vat_current_period)); }
+    }
+
+    const canonicalUpdate = body.source_financials || fd.source_financials || {};
+    const canonicalColumns = [
+      'account_number', 'current_period_excl_vat', 'current_period_vat', 'current_period_incl_vat',
+      'plan_excl_vat', 'one_time_charges', 'third_party_charges', 'credits_adjustments',
+      'previous_balance', 'payments', 'balance_carried_forward', 'total_amount_due',
+      'reconciliation_status', 'reconciliation_difference', 'calculation_status',
+    ];
+    canonicalColumns.forEach(column => {
+      const value = body[column] !== undefined ? body[column] : canonicalUpdate[column];
+      if (!existingCols.has(column) || value === undefined) return;
+      setClauses.push(`${column} = $${pIdx++}`);
+      params.push(value === '' ? null : value);
+    });
+    if (existingCols.has('vat_treatments') && (body.vat_treatments !== undefined || canonicalUpdate.vat_treatments !== undefined)) {
+      setClauses.push(`vat_treatments = $${pIdx++}::jsonb`);
+      params.push(JSON.stringify(body.vat_treatments || canonicalUpdate.vat_treatments || []));
+    }
+    if (existingCols.has('source_financials') && Object.keys(canonicalUpdate).length) {
+      setClauses.push(`source_financials = $${pIdx++}::jsonb`);
+      params.push(JSON.stringify(canonicalUpdate));
+      if (existingCols.has('financial_source')) setClauses.push(`financial_source = 'invoice_pdf'`);
+      if (existingCols.has('financials_extracted_at')) setClauses.push(`financials_extracted_at = CURRENT_TIMESTAMP`);
     }
 
     if (status && existingCols.has('status')) { setClauses.push(`status = $${pIdx++}`); params.push(status); }
@@ -1553,8 +1634,8 @@ exports.getTelecomReportAnalytics = async (req, res) => {
           ${hasCallLogs ? `(SELECT COUNT(*) FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number) ${compWhereJoined})` : '0'} + 
           ${hasSmsLogs ? `(SELECT COUNT(*) FROM tbl_telecome_sms_logs s LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number) ${compWhereJoined})` : '0'} AS total_call_logs,
           ${hasSmsLogs ? `(SELECT COUNT(*) FROM tbl_telecome_sms_logs s LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number) ${compWhereJoined})` : '0'} AS total_sms_logs,
-          ${hasCallLogs ? `(SELECT COUNT(*) FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number) WHERE c.category = 'International Call' ${compAndJoined})` : '0'} AS total_intl_calls,
-          ${hasCallLogs ? `(SELECT COALESCE(SUM(c.amount), 0) FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number) WHERE c.category = 'International Call' ${compAndJoined})` : '0'} AS total_intl_cost,
+          ${hasCallLogs ? `(SELECT COUNT(*) FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number) WHERE c.category IN ('International Call', 'International Calls') ${compAndJoined})` : '0'} AS total_intl_calls,
+          ${hasCallLogs ? `(SELECT COALESCE(SUM(c.amount), 0) FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number) WHERE c.category IN ('International Call', 'International Calls') ${compAndJoined})` : '0'} AS total_intl_cost,
           (SELECT COUNT(DISTINCT mobile_number) FROM tbl_telecome_bill ${compWhereAlone}) AS total_active_lines
       `, compParam);
       if (summaryRes.rows.length > 0) {
@@ -1645,7 +1726,7 @@ exports.getTelecomReportAnalytics = async (req, res) => {
 
     try {
       const intlSubQueries = [];
-      if (hasCallLogs) intlSubQueries.push(`SELECT c.destination_number, c.amount FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number) WHERE c.category = 'International Call' ${compAndJoined}`);
+      if (hasCallLogs) intlSubQueries.push(`SELECT c.destination_number, c.amount FROM tbl_telecome_call_logs c LEFT JOIN tbl_telecome_bill b ON (c.${logFk} = b.${pkCol} OR c.bill_number = b.bill_number) WHERE c.category IN ('International Call', 'International Calls') ${compAndJoined}`);
       if (hasSmsLogs) intlSubQueries.push(`SELECT s.destination_number, s.amount FROM tbl_telecome_sms_logs s LEFT JOIN tbl_telecome_bill b ON (s.${logFk} = b.${pkCol} OR s.bill_number = b.bill_number) WHERE s.sms_type = 'International SMS' ${compAndJoined}`);
 
       if (intlSubQueries.length > 0) {
@@ -1813,159 +1894,12 @@ exports.getTelecomReportAnalytics = async (req, res) => {
   }
 };
 
-exports.getTelecomTestAuditReport = async (req, res) => {
-  try {
-    const reportData = {
-      account: {
-        mobileNumber: '054 305 1035',
-        companyName: 'ASAS GEN TR LLC',
-        billNumber: 'INV2048551311',
-        billingPeriod: '1–31 August 2026',
-        reportDate: 'Oct 3, 2026',
-        auditor: 'Navaneetha Krishnan',
-        provider: 'e& (Etisalat)',
-        planName: 'Special SMB offer5 (10.5 GB)',
-        includedMinutesEstimated: 900,
-        includedDataGB: 10.5
-      },
-      billSummary: {
-        totalBill: 258.81,
-        totalExclVat: 247.72,
-        totalVat: 11.09,
-        planAmount: 105.00,
-        extraUsageAmount: 153.81,
-        extraUsagePercent: 59.4,
-        dataUsedGB: 10.01,
-        dataIncludedGB: 10.5,
-        dataExtraCost: 0.00
-      },
-      billItems: [
-        { item: 'Monthly plan (Special SMB offer5, 10.5 GB)', amountExclVat: 100.00, vat: 5.00, total: 105.00, category: 'Plan' },
-        { item: 'Extra calls to mobiles (after free minutes ran out)', amountExclVat: 114.96, vat: 5.75, total: 120.71, category: 'Voice Extra' },
-        { item: 'Extra calls to landline 06-5995922', amountExclVat: 2.96, vat: 0.15, total: 3.11, category: 'Voice Extra' },
-        { item: 'Parking SMS to 05566 (10 SMS)', amountExclVat: 3.80, vat: 0.19, total: 3.99, category: 'SMS' },
-        { item: 'Sharjah mParking fees (no VAT)', amountExclVat: 26.00, vat: 0.00, total: 26.00, category: 'Parking' }
-      ],
-      minutesAudit: {
-        exhaustionDate: '17 Aug 2026',
-        exhaustionTime: '15:27',
-        exhaustionMinutes: 897,
-        ratePerMinute: 0.30,
-        rateBillingUnit: 'second',
-        periods: [
-          { period: '1 Aug – 17 Aug 15:27 (inside plan)', calls: 398, minutes: 896, chargeExclVat: 0.00, status: 'Covered by Plan' },
-          { period: '17 Aug 15:27 – 31 Aug (extra usage)', calls: 218, minutes: 392, chargeExclVat: 117.92, status: 'Over Limit (~AED 0.30/min)' },
-          { period: 'Calls to 050-2728659 (favourite / free)', calls: 24, minutes: 86, chargeExclVat: 0.00, status: 'Free Favourite Number' }
-        ],
-        totalCalls: 640,
-        totalMinutes: 1374,
-        totalTalkTimeFormatted: '22:53:53',
-        totalChargeExclVat: 117.92
-      },
-      kpiSummary: {
-        outgoingCalls: 640,
-        totalTalkTime: '22:53:53',
-        uniqueNumbers: 75,
-        avgCallLength: '2:09',
-        callChargesBeforeVat: 117.92
-      },
-      highlights: [
-        {
-          type: 'most_called',
-          title: 'CALLED MOST OFTEN',
-          number: '052 503 8532',
-          stat: '131 calls (20.5% of all calls)',
-          subtext: 'Active on 28 of 31 days · 3:33:39 total talk time · avg 1:38 per call'
-        },
-        {
-          type: 'longest_talk',
-          title: 'LONGEST TOTAL TALK TIME',
-          number: '052 390 9665',
-          stat: '4:46:21 across 54 calls',
-          subtext: '20.8% of all talk time · avg 5:18 per call · Longest single call 0:26:24'
-        },
-        {
-          type: 'concentration',
-          title: 'HIGH CALL CONCENTRATION',
-          number: 'Top 4 Numbers = 52% of calls',
-          stat: '333 of 640 calls (55.5% of talk time: 12:43:07)',
-          subtext: '27 numbers were dialled only once during the entire month'
-        }
-      ],
-      parkingLogs: [
-        { date: '20 Aug', time: '23:02', smsCost: 0.38, parkingFee: 2.00, total: 2.38 },
-        { date: '13 Aug', time: '19:51', smsCost: 0.38, parkingFee: 3.00, total: 3.38 },
-        { date: '13 Aug', time: '18:49', smsCost: 0.38, parkingFee: 3.00, total: 3.38 },
-        { date: '13 Aug', time: '17:53', smsCost: 0.38, parkingFee: 2.00, total: 2.38 },
-        { date: '13 Aug', time: '09:51', smsCost: 0.38, parkingFee: 3.00, total: 3.38 },
-        { date: '13 Aug', time: '01:45', smsCost: 0.38, parkingFee: 5.00, total: 5.38 },
-        { date: '12 Aug', time: '13:15', smsCost: 0.38, parkingFee: 2.00, total: 2.38 },
-        { date: '11 Aug', time: '12:36', smsCost: 0.38, parkingFee: 2.00, total: 2.38 },
-        { date: '10 Aug', time: '13:36', smsCost: 0.38, parkingFee: 2.00, total: 2.38 },
-        { date: '2 Aug', time: '20:42', smsCost: 0.38, parkingFee: 2.00, total: 2.38 }
-      ],
-      managementAccounts: [
-        {
-          account: '054 305 1035',
-          user: 'ASAS GEN TR LLC',
-          planInclVat: 105.00,
-          totalBill: 258.81,
-          excessAmount: 153.81,
-          remarks: 'Excessive local voice overage (392 min over 900 quota) + frequent SMS parking fees.',
-          reasonForExcess: 'Allowance exhausted on 17 Aug at 15:27 (AED 123.82) + Sharjah mParking (AED 29.99).',
-          recommendation: 'Evaluate 1,400 min business plan upgrade; use Sharjah digital app for parking to eliminate carrier fees.'
-        },
-        {
-          account: '050 107 0455',
-          user: 'Bynur Agro Trading LLC',
-          planInclVat: 115.50,
-          totalBill: 251.49,
-          excessAmount: 135.99,
-          remarks: 'Data overage & extra mobile calls.',
-          reasonForExcess: 'Extra voice calls beyond plan threshold + supplemental data bundle usage.',
-          recommendation: 'Monitor international calling usage and bundle higher data allowance.'
-        },
-        {
-          account: '052 480 6401',
-          user: 'Operations Line (du)',
-          planInclVat: 491.75,
-          totalBill: 506.99,
-          excessAmount: 15.24,
-          remarks: 'Minimal overage within acceptable operational threshold.',
-          reasonForExcess: 'Occasional off-net calls and premium SMS queries.',
-          recommendation: 'Current plan is well-sized for workload.'
-        }
-      ],
-      recommendations: [
-        {
-          title: 'Calls beyond the plan – AED 123.82 incl. VAT',
-          details: 'About 392 minutes were charged over the quota at ~AED 0.30/min. A business plan with ~1,400 local minutes would cover this month\'s calling comfortably; evaluate plan upgrade cost vs AED 124 overage.',
-          impact: 'High',
-          potentialSavings: 'AED 80 - 120 / mo'
-        },
-        {
-          title: 'Parking by SMS – AED 29.99 total',
-          details: 'AED 26.00 is the parking fee and AED 3.99 is carrier SMS fees. Using the Sharjah digital parking app instead of SMS will eliminate the recurring SMS surcharges.',
-          impact: 'Medium',
-          potentialSavings: 'AED 3.99 / mo + automated receipts'
-        },
-        {
-          title: 'Add Top Numbers as Free/Favourite',
-          details: 'Numbers 056-8421267 and 052-5038532 alone generated AED 41.84 extra cost (excl. VAT). Adding one or both as preferred business numbers (like 050-2728659) can instantly recover this amount.',
-          impact: 'High',
-          potentialSavings: 'AED 41.84 / mo'
-        }
-      ]
-    };
 
-    res.status(200).json({
-      success: true,
-      message: 'Telecom Test Audit Report fetched successfully',
-      data: reportData
-    });
-  } catch (err) {
-    console.error('Error fetching telecom test audit report:', err);
-    res.status(500).json({ error: err.message || 'Internal Server Error' });
-  }
+exports.getTelecomTestAuditReport = async (_req, res) => {
+  res.status(410).json({
+    success: false,
+    code: 'STATIC_TELECOM_AUDIT_REMOVED',
+    message: 'The fixed Telecom Test dataset was retired. Use the invoice-backed Telecom Bill and Usage Report endpoints.'
+  });
 };
 
