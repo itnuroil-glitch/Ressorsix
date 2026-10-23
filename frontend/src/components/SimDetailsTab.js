@@ -113,7 +113,8 @@ export default function SimDetailsTab({
   isSidebarCollapsed,
   permissions,
   title = "Telecom Details",
-  buttonLabel = "+ Add Telecom Details"
+  buttonLabel = "+ Add Telecom Details",
+  initialViewMode = 'sim'
 }) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width > 768;
@@ -183,7 +184,7 @@ export default function SimDetailsTab({
   const [addOnRecords, setAddOnRecords] = useState([]);
   const [loadingAddOns, setLoadingAddOns] = useState(false);
   const [addOnSearch, setAddOnSearch] = useState('');
-  const [viewMode, setViewMode] = useState('sim'); // 'sim' or 'addon'
+  const [viewMode, setViewMode] = useState(initialViewMode); // 'sim' or 'addon'
   const [addOnPage, setAddOnPage] = useState(1);
 
   const fetchAddOnRecords = async () => {

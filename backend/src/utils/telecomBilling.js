@@ -40,6 +40,13 @@ const moneyToFils = (value) => {
 
 const filsToMoney = (value) => value === UNKNOWN ? null : Number((value / 100).toFixed(2));
 
+const abovePlanPercent = (excessExclVat, planExclVat) => {
+  const excess = moneyToFils(excessExclVat);
+  const plan = moneyToFils(planExclVat);
+  if (excess === UNKNOWN || plan === UNKNOWN || plan <= 0) return null;
+  return Number(((excess / plan) * 100).toFixed(2));
+};
+
 const firstAmount = (text, patterns) => {
   for (const pattern of patterns) {
     const match = text.match(pattern);
@@ -229,6 +236,7 @@ module.exports = {
   callDurationSeconds,
   sumCallSeconds,
   secondsToDisplayMinutes,
+  abovePlanPercent,
   extractTelecomFinancials,
   calculateTelecomBill,
 };

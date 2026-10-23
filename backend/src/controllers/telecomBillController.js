@@ -1048,6 +1048,25 @@ exports.createTelecomBill = async (req, res) => {
     let pdf_filename = body.pdf_filename || fd['Invoice PDF'] || fd.f_pdf || null;
     const pdf_base64 = body.pdf_base64 || body.file_base64 || fd['Invoice PDF_base64'] || fd.pdf_base64 || null;
 
+    if (bill_number && last9(mobile_number)) {
+      const existing = await db.query(
+        `SELECT * FROM tbl_telecome_bill
+         WHERE bill_number = $1
+           AND RIGHT(REGEXP_REPLACE(COALESCE(mobile_number, ''), '\\D', '', 'g'), 9) = $2
+           AND COALESCE(clientid::text, '') = COALESCE($3::text, '')
+         ORDER BY created_at ASC NULLS LAST LIMIT 1`,
+        [bill_number, last9(mobile_number), clientid]
+      );
+      if (existing.rows.length) {
+        const row = existing.rows[0];
+        const id = row.tele_bill_id || row.bill_id || row.id;
+        return res.status(200).json({
+          ...row, id, tele_bill_id: id, bill_id: id, duplicate: true,
+          message: 'This invoice is already imported. The existing record was kept.',
+        });
+      }
+    }
+
     if (pdf_base64 && typeof pdf_base64 === 'string') {
       const savedPath = saveAttachmentLocally(pdf_base64, pdf_filename || body.file_name || 'telecom_bill.pdf');
       if (savedPath) {
@@ -1144,7 +1163,7 @@ exports.createTelecomBill = async (req, res) => {
       reconciliation_difference: optionalMoney(sourceFinancials.reconciliation_difference),
       source_financials: JSON.stringify(sourceFinancials),
       financials_extracted_at: Object.keys(sourceFinancials).length ? new Date() : null,
-      calculation_version: 5,
+      calculation_version: 6,
       call_category_summaries: JSON.stringify(body.call_category_summaries || fd.call_category_summaries || []),
       call_category_reconciliation: JSON.stringify(body.call_category_reconciliation || fd.call_category_reconciliation || []),
       charge_components: JSON.stringify(body.charge_components || fd.charge_components || []),

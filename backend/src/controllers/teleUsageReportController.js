@@ -4,8 +4,10 @@ const {
   callDurationSeconds,
   sumCallSeconds,
   secondsToDisplayMinutes,
+  abovePlanPercent,
 } = require('../utils/telecomBilling');
 const { canonicalCallCategory, aggregateCallCategories } = require('../utils/telecomUsage');
+const { createUsageReportPdf } = require('../utils/usageReportPdf');
 
 // Monthly usage report for ONE telecom number: month-wise history plus the full breakdown of the selected month.
 // Built from tbl_telecome_bill and its children (items, call logs, SMS logs, usage summary) and the connection record.
@@ -231,6 +233,30 @@ exports.getUsageReportOptions = async (req, res) => {
 };
 
 // ---------------------------------------------------------------------------
+// POST /api/telecom-bills/usage-report/pdf -> downloadable PDF for the report
+// currently displayed in Tele Report.
+// ---------------------------------------------------------------------------
+exports.downloadUsageReportPdf = async (req, res) => {
+  try {
+    const report = req.body && req.body.report;
+    if (!report || !report.selected) {
+      return res.status(400).json({ message: 'A selected usage report is required.' });
+    }
+    const bytes = await createUsageReportPdf(report);
+    const phone = digits(report.number || report.connection?.number) || 'number';
+    const month = String(report.selected.month || 'report').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filename = `Tele_Report_${phone}_${month}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', bytes.length);
+    return res.status(200).send(Buffer.from(bytes));
+  } catch (error) {
+    console.error('Error generating usage report PDF:', error);
+    return res.status(500).json({ message: 'Could not generate the PDF report.' });
+  }
+};
+
+// ---------------------------------------------------------------------------
 // GET /api/telecom-bills/usage-report?number=...&month=YYYY-MM
 // ---------------------------------------------------------------------------
 exports.getUsageReport = async (req, res) => {
@@ -430,7 +456,10 @@ exports.getUsageReport = async (req, res) => {
       const parkingAmount = round2(sources.filter(x => /parking/i.test(x.name || '')).reduce((t, x) => t + x.amount, 0));
       const premiumRows = bSms.filter(x => /premium/i.test(x.sms_type || ''));
       const pdfPremium = pdfLines.find(x => /premium/i.test(x.name));
-      const premiumCount = pdfPremium && method === 'bill pdf' ? pdfPremium.units : premiumAmount > 0 ? premiumRows.reduce((n, x) => n + (Number(x.sms_count) || 1), 0) : 0;
+      const componentPremium = storedComponents.find(x => /premium/i.test(x.name || '') && x.units !== null);
+      const premiumCount = componentPremium ? componentPremium.units
+        : pdfPremium && method === 'bill pdf' ? pdfPremium.units
+          : premiumAmount > 0 ? premiumRows.reduce((n, x) => n + (Number(x.sms_count) || 1), 0) : 0;
 
       return { row, total, billExcl, vat, plan, extra, canonical, items: bItems, calls: bCalls, smsLogs: bSms, usage: bUsage, sources, method, premiumAmount, parkingAmount, premiumCount };
     };
@@ -454,10 +483,10 @@ exports.getUsageReport = async (req, res) => {
         vat: A.vat === null ? null : round2(A.vat),
         plan: A.plan === null ? null : round2(A.plan),
         extra: A.extra === null ? null : round2(A.extra),
-        extra_pct: A.total > 0 && A.extra !== null ? Math.round((A.extra / A.total) * 100) : 0,
+        extra_pct: abovePlanPercent(A.extra, A.plan),
         call_minutes: round2(callSecs / 60),
         calls: A.calls.length,
-        data_gb: A.usage ? num(A.usage.data_used_gb) : 0,
+        data_gb: A.usage ? nullableNum(A.usage.data_used_gb) : null,
         premium_sms: A.premiumCount,
         status: A.canonical.calculation_status === 'needs_review' ? 'needs_review' : (A.extra > EXCESS_MARGIN_AED ? 'over' : 'within'),
       };
@@ -477,6 +506,11 @@ exports.getUsageReport = async (req, res) => {
     const total = A.total;
     const vat = A.vat;
     const sources = A.sources;
+    const chargeComponents = jsonArray(r.charge_components);
+    const dataChargeComponents = chargeComponents.filter(component => String(component.unit_type || '').toLowerCase() === 'data');
+    const invoiceDataCharge = dataChargeComponents.length
+      ? round2(dataChargeComponents.reduce((sum, component) => sum + (nullableNum(component.amount_excl_vat ?? component.amount) || 0), 0))
+      : null;
 
     // "Where the money went": plan + each extra source + VAT, so the lines add up to the bill total
     const lines = [
@@ -595,7 +629,8 @@ exports.getUsageReport = async (req, res) => {
         duration_of_calls_with_charges: secondsToDisplayMinutes(chargedSecs),
         premium_sms: premiumCount,
         premium_sms_amount: round2(premiumAmount),
-        data_gb: usage ? num(usage.data_used_gb) : 0,
+        data_gb: usage ? nullableNum(usage.data_used_gb) : null,
+        data_charge_excl_vat: invoiceDataCharge,
         deltas: prev ? {
           total: delta(m.total, prev.total), plan: delta(plan, prev.plan), extra: delta(extra, prev.extra),
           call_minutes: delta(m.call_minutes, prev.call_minutes), data_gb: delta(m.data_gb, prev.data_gb),
@@ -642,10 +677,14 @@ exports.getUsageReport = async (req, res) => {
         actual_local_minutes: secondsToDisplayMinutes(actualLocalSeconds),
         provider_reported_local_minutes: usage ? nullableNum(usage.local_minutes_used) : null,
         local_minutes_limit: localAllowanceMinutes,
-        intl_minutes_used: usage ? num(usage.intl_minutes_used) : 0,
-        roaming_minutes_used: usage ? num(usage.roaming_minutes_used) : 0,
-        data_used_gb: usage ? num(usage.data_used_gb) : 0,
-        data_limit_gb: usage && usage.data_limit_gb ? num(usage.data_limit_gb) : null,
+        intl_minutes_used: usage ? nullableNum(usage.intl_minutes_used) : null,
+        roaming_minutes_used: usage ? nullableNum(usage.roaming_minutes_used) : null,
+        data_used_gb: usage ? nullableNum(usage.data_used_gb) : null,
+        data_limit_gb: usage ? nullableNum(usage.data_limit_gb) : null,
+        data_difference_gb: usage && nullableNum(usage.data_used_gb) !== null && nullableNum(usage.data_limit_gb) !== null
+          ? round2(nullableNum(usage.data_used_gb) - nullableNum(usage.data_limit_gb))
+          : null,
+        invoice_data_charge_excl_vat: invoiceDataCharge,
         data_unlimited: !!(usage && usage.data_unlimited),
         roaming_data_gb: usage ? num(usage.roaming_data_gb) : 0,
         premium_sms: premiumCount, premium_sms_amount: round2(premiumAmount),

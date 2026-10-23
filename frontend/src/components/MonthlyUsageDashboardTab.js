@@ -34,7 +34,7 @@ const EMPTY_DASHBOARD = {
     bill_incl_vat: null,
     plan: null,
     extra: null,
-    extra_pct: 0,
+    extra_pct: null,
     charged_call_duration_minutes: 0,
     premium_sms: 0,
     premium_sms_amount: 0,
@@ -56,13 +56,17 @@ const EMPTY_DASHBOARD = {
   },
   allowances: [],
   month_wise_history: [],
-  history_totals: { total: 0, plan: 0, extra: 0, extra_pct: 0, call_min: 0, data_gb: 0, premium_sms: 0 },
+  history_totals: { total: 0, plan: 0, extra: 0, extra_pct: null, call_min: 0, data_gb: 0, premium_sms: 0 },
   top_10_numbers: [],
   top_10_total: { calls: 0, total_min: 0, uncharged_min: 0, charged_call_min: 0, charged_aed: 0, note: '' },
   where_money_went: [],
   total_amount_due: null,
 };
 const moneyText = (value) => value === null || value === undefined ? 'Needs review' : Number(value).toFixed(2);
+const percentText = (value) => value === null || value === undefined ? 'N/A' : `${Number(value).toFixed(2)}%`;
+const abovePlanPercent = (extra, plan) => extra == null || plan == null || Number(plan) <= 0
+  ? null
+  : Number(((Number(extra) / Number(plan)) * 100).toFixed(2));
 export default function MonthlyUsageDashboardTab({
   user,
   showToast,
@@ -193,7 +197,7 @@ export default function MonthlyUsageDashboardTab({
     const vat = kpis.vat == null ? null : Number(kpis.vat);
     const plan = kpis.plan == null ? null : Number(kpis.plan);
     const extra = kpis.extra == null ? null : Number(kpis.extra);
-    const extraPct = billExclVat > 0 && extra !== null ? Math.round((extra / billExclVat) * 100) : 0;
+    const extraPct = kpis.extra_pct == null ? abovePlanPercent(extra, plan) : Number(kpis.extra_pct);
 
     // Sources
     const rawSources = sel.sources || [];
@@ -245,11 +249,11 @@ export default function MonthlyUsageDashboardTab({
       vat: m.vat == null ? null : Number(m.vat),
       plan: m.plan == null ? null : Number(m.plan),
       extra: m.extra == null ? null : Number(m.extra),
-      extra_pct: m.extra_pct || (m.total > 0 ? Math.round((m.extra / m.total) * 100) : 0),
+      extra_pct: m.extra_pct == null ? abovePlanPercent(m.extra, m.plan) : Number(m.extra_pct),
       call_min: parseFloat(m.call_minutes) || 0,
       data_gb: parseFloat(m.data_gb) || 0,
       premium_sms: parseInt(m.premium_sms) || 0,
-      status: m.status === 'over' ? 'Over plan' : 'Within plan',
+      status: m.status === 'over' ? 'Over plan' : m.status === 'needs_review' ? 'Needs review' : 'Within plan',
       selected: m.key === sel.month
     }));
 
@@ -258,7 +262,10 @@ export default function MonthlyUsageDashboardTab({
       total: historyRows.reduce((acc, r) => acc + r.total, 0),
       plan: historyRows.reduce((acc, r) => acc + r.plan, 0),
       extra: historyRows.reduce((acc, r) => acc + r.extra, 0),
-      extra_pct: historyRows.length > 0 ? Math.round((historyRows.reduce((acc, r) => acc + r.extra, 0) / (historyRows.reduce((acc, r) => acc + r.total, 0) || 1)) * 100) : 0,
+      extra_pct: abovePlanPercent(
+        historyRows.every(r => r.extra != null) ? historyRows.reduce((acc, r) => acc + r.extra, 0) : null,
+        historyRows.every(r => r.plan != null) ? historyRows.reduce((acc, r) => acc + r.plan, 0) : null,
+      ),
       call_min: historyRows.reduce((acc, r) => acc + r.call_min, 0),
       data_gb: historyRows.reduce((acc, r) => acc + r.data_gb, 0),
       premium_sms: historyRows.reduce((acc, r) => acc + r.premium_sms, 0)
@@ -313,8 +320,10 @@ export default function MonthlyUsageDashboardTab({
         charged_call_duration_minutes: calls.duration_of_calls_with_charges_minutes || 0,
         premium_sms: allowance.premium_sms || 0,
         premium_sms_amount: allowance.premium_sms_amount || 0,
-        data_gb: allowance.data_used_gb || 0,
+        data_gb: allowance.data_used_gb ?? null,
         data_limit_gb: allowance.data_limit_gb ?? null,
+        data_difference_gb: allowance.data_difference_gb ?? null,
+        invoice_data_charge_excl_vat: allowance.invoice_data_charge_excl_vat ?? null,
         deltas: kpis.deltas
       },
       chart_months: chartMonths,
@@ -346,7 +355,9 @@ export default function MonthlyUsageDashboardTab({
           used_label: dataLimit === null ? `${allowance.data_used_gb || 0} GB used · limit unknown` : `${allowance.data_used_gb || 0} of ${dataLimit} GB`,
           pct: dataLimit > 0 ? Math.min(100, (((allowance.data_used_gb || 0) / dataLimit) * 100)) : 0,
           color: '#F97316',
-          note: dataLimit === null ? 'Plan allowance needs review' : `${dataLimit} GB plan allowance`
+          note: dataLimit === null
+            ? 'Plan allowance needs review'
+            : `${Number(allowance.data_difference_gb || 0).toFixed(2)} GB difference · invoice data charge AED ${moneyText(allowance.invoice_data_charge_excl_vat)}; usage difference is not assumed chargeable`
         },
         {
           title: 'Premium SMS',
@@ -1213,7 +1224,7 @@ export default function MonthlyUsageDashboardTab({
               <Text style={[styles.thCell, { flex: 1.2, textAlign: 'right' }]}>TOTAL AED</Text>
               <Text style={[styles.thCell, { flex: 1.2, textAlign: 'right' }]}>PLAN AED</Text>
               <Text style={[styles.thCell, { flex: 1.2, textAlign: 'right' }]}>EXTRA AED</Text>
-              <Text style={[styles.thCell, { flex: 1, textAlign: 'right' }]}>EXTRA %</Text>
+              <Text style={[styles.thCell, { flex: 1, textAlign: 'right' }]}>ABOVE PLAN %</Text>
               <Text style={[styles.thCell, { flex: 1.2, textAlign: 'right' }]}>CALL MIN</Text>
               <Text style={[styles.thCell, { flex: 1.1, textAlign: 'right' }]}>DATA GB</Text>
               <Text style={[styles.thCell, { flex: 1.3, textAlign: 'right' }]}>PREMIUM SMS</Text>
@@ -1243,22 +1254,22 @@ export default function MonthlyUsageDashboardTab({
                     {row.bill_no}
                   </Text>
                   <Text style={[styles.tdCell, { flex: 1.2, textAlign: 'right', fontWeight: '700' }]}>
-                    {row.total.toFixed(2)}
+                    {moneyText(row.total)}
                   </Text>
                   <Text style={[styles.tdCell, { flex: 1.2, textAlign: 'right' }]}>
-                    {row.plan.toFixed(2)}
+                    {moneyText(row.plan)}
                   </Text>
                   <Text style={[styles.tdCell, { flex: 1.2, textAlign: 'right', color: isOver ? '#E11D48' : '#0F172A', fontWeight: isOver ? '700' : '400' }]}>
-                    {row.extra.toFixed(2)}
+                    {moneyText(row.extra)}
                   </Text>
                   <Text style={[styles.tdCell, { flex: 1, textAlign: 'right', color: isOver ? '#E11D48' : '#64748B' }]}>
-                    {row.extra_pct}%
+                    {percentText(row.extra_pct)}
                   </Text>
                   <Text style={[styles.tdCell, { flex: 1.2, textAlign: 'right' }]}>
                     {row.call_min.toLocaleString()}
                   </Text>
                   <Text style={[styles.tdCell, { flex: 1.1, textAlign: 'right' }]}>
-                    {row.data_gb.toFixed(1)}
+                    {row.data_gb == null ? 'Needs review' : row.data_gb.toFixed(2)}
                   </Text>
                   <Text style={[styles.tdCell, { flex: 1.3, textAlign: 'right' }]}>
                     {row.premium_sms}
@@ -1289,7 +1300,7 @@ export default function MonthlyUsageDashboardTab({
                 {dashData.history_totals.extra.toFixed(2)}
               </Text>
               <Text style={[styles.tdTotalCell, { flex: 1, textAlign: 'right', color: '#E11D48' }]}>
-                {dashData.history_totals.extra_pct}%
+                {percentText(dashData.history_totals.extra_pct)}
               </Text>
               <Text style={[styles.tdTotalCell, { flex: 1.2, textAlign: 'right' }]}>
                 {dashData.history_totals.call_min.toLocaleString()}
@@ -1343,14 +1354,14 @@ export default function MonthlyUsageDashboardTab({
           {/* Numbers Table */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={{ minWidth: 540 }}>
-              <View style={styles.tableHeaderRow}>
-                <Text style={[styles.thCell, { width: 32 }]}>#</Text>
-                <Text style={[styles.thCell, { flex: 1.6 }]}>NUMBER</Text>
-                <Text style={[styles.thCell, { flex: 1, textAlign: 'right' }]}>CALLS</Text>
-                <Text style={[styles.thCell, { flex: 1.3, textAlign: 'right' }]}>TOTAL MIN</Text>
-                <Text style={[styles.thCell, { flex: 1.2, textAlign: 'right' }]}>NO-CHARGE MIN</Text>
-                <Text style={[styles.thCell, { flex: 1.8, textAlign: 'right' }]}>CHARGED-CALL MIN</Text>
-                <Text style={[styles.thCell, { flex: 1.3, textAlign: 'right' }]}>CALL CHARGES</Text>
+              <View style={[styles.tableHeaderRow, styles.topNumbersHeader]}>
+                <Text style={[styles.thCell, styles.topNumbersHeaderText, { width: 32, textAlign: 'center' }]}>#</Text>
+                <Text style={[styles.thCell, styles.topNumbersHeaderText, { flex: 1.6 }]}>Number</Text>
+                <Text style={[styles.thCell, styles.topNumbersHeaderText, { flex: 1, textAlign: 'right' }]}>Calls</Text>
+                <Text style={[styles.thCell, styles.topNumbersHeaderText, { flex: 1.3, textAlign: 'right' }]}>Total min</Text>
+                <Text style={[styles.thCell, styles.topNumbersHeaderText, { flex: 1.2, textAlign: 'right' }]}>No-charge{`\n`}min</Text>
+                <Text style={[styles.thCell, styles.topNumbersHeaderText, { flex: 1.8, textAlign: 'center' }]}>Charged-call{`\n`}min</Text>
+                <Text style={[styles.thCell, styles.topNumbersHeaderText, { flex: 1.3, textAlign: 'right' }]}>Extra AED</Text>
               </View>
 
               {displayedTopNumbers.map((row) => (
@@ -2318,6 +2329,20 @@ const styles = StyleSheet.create({
     color: '#64748B',
     letterSpacing: 0.5,
     paddingHorizontal: 6,
+  },
+  topNumbersHeader: {
+    minHeight: 52,
+    paddingVertical: 7,
+    marginBottom: 4,
+    borderBottomWidth: 0,
+    borderRadius: 10,
+  },
+  topNumbersHeaderText: {
+    fontSize: 9,
+    lineHeight: 11,
+    letterSpacing: 0.25,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   tableDataRow: {
     flexDirection: 'row',
