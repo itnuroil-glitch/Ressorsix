@@ -14,190 +14,55 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as XLSX from 'xlsx';
 import { API_URL } from '../config';
+import { openMonthlyUsagePdf } from '../utils/monthlyUsagePdf';
 
-// -----------------------------------------------------------------------------
-// EXACT REFERENCE DATASET FOR JUNE 2026 (ASAS GEN TR LLC · 054 305 1035)
-// -----------------------------------------------------------------------------
-const SAMPLE_COMPANY = 'ASAS Gen Tr LLC';
-const SAMPLE_NUMBER = '054 305 1035';
-
-const SAMPLE_TIMELINE_MONTHS = [
-  { key: '2026-01', label: 'Jan', status: 'no_bill', text: 'no bill' },
-  { key: '2026-02', label: 'Feb', status: 'within', total: 79.21, text: '79.21' },
-  { key: '2026-03', label: 'Mar', status: 'within', total: 79.21, text: '79.21' },
-  { key: '2026-04', label: 'Apr', status: 'over', total: 96.80, text: '96.80' },
-  { key: '2026-05', label: 'May', status: 'within', total: 79.21, text: '79.21' },
-  { key: '2026-06', label: 'Jun', status: 'over', total: 545.09, text: '545.09', extra: 440.09 },
-  { key: '2026-07', label: 'Jul', status: 'no_bill', text: '—' },
-  { key: '2026-08', label: 'Aug', status: 'no_bill', text: '—' },
-  { key: '2026-09', label: 'Sep', status: 'no_bill', text: '—' },
-  { key: '2026-10', label: 'Oct', status: 'no_bill', text: '—' },
-  { key: '2026-11', label: 'Nov', status: 'no_bill', text: '—' },
-  { key: '2026-12', label: 'Dec', status: 'no_bill', text: '—' },
-];
-
-const SAMPLE_JUNE_DASHBOARD = {
-  number: '054 305 1035',
-  key: '543051035',
-  company: 'ASAS Gen Tr LLC',
-  plan_name: 'Business Mobile Postpaid',
-  employee: 'Ayyappan Murukanandan',
-  bill_number: 'INV2039279589',
-  period_label: '1–30 Jun 2026',
-  due_date: '15 Jul 2026',
-  status: 'over',
-  summary_text: 'In short: of the AED 545.09 bill only AED 105.00 is the fixed plan. The other AED 440.09 (81%) is extra: calls 297.47, data add-on 72.45, parking 59.00, premium SMS 11.17. Free minutes ran out on 15 Jun, 1:56 pm.',
+const EMPTY_DASHBOARD = {
+  number: '',
+  key: '',
+  company: '',
+  plan_name: '',
+  employee: '',
+  bill_number: '',
+  period_label: '',
+  due_date: '',
+  status: 'needs_review',
+  summary_text: 'No verified invoice data is available for this selection.',
   kpis: {
-    total: 545.09,
-    plan: 105.00,
-    extra: 440.09,
-    extra_pct: 81,
-    extra_minutes: 941,
-    premium_sms: 28,
-    premium_sms_amount: 11.17,
-    data_gb: 17.81,
-    data_limit_gb: 30.5,
-    deltas: {
-      total_pct: 588,
-      prev_total: 79.21,
-      prev_label: 'May',
-    }
+    total: null,
+    bill_excl_vat: null,
+    vat: null,
+    bill_incl_vat: null,
+    plan: null,
+    extra: null,
+    extra_pct: 0,
+    charged_call_duration_minutes: 0,
+    premium_sms: 0,
+    premium_sms_amount: 0,
+    data_gb: 0,
+    data_limit_gb: null,
+    deltas: null,
   },
-  chart_months: [
-    { key: '2026-02', label: 'Feb', total: 79.21, plan: 79.21, extra: 0.00, minutes: 705, data: 7.9, sms: 0 },
-    { key: '2026-03', label: 'Mar', total: 79.21, plan: 79.21, extra: 0.00, minutes: 688, data: 8.4, sms: 0 },
-    { key: '2026-04', label: 'Apr', total: 96.80, plan: 79.21, extra: 17.59, minutes: 1042, data: 11.6, sms: 3 },
-    { key: '2026-05', label: 'May', total: 79.21, plan: 79.21, extra: 0.00, minutes: 790, data: 9.1, sms: 0 },
-    { key: '2026-06', label: 'Jun', total: 545.09, plan: 105.00, extra: 440.09, minutes: 1906, data: 17.81, sms: 28, selected: true }
-  ],
-  sources: [
-    { name: 'Extra calls', amount: 297.47, pct: 68, color: '#E11D48' },
-    { name: 'Data add-on', amount: 72.45, pct: 16, color: '#F97316' },
-    { name: 'Parking', amount: 59.00, pct: 13, color: '#F59E0B' },
-    { name: 'Premium SMS', amount: 11.17, pct: 3, color: '#334155' }
-  ],
+  chart_months: [],
+  sources: [],
   call_minutes_per_day: {
-    exhaustion_flag: '15 Jun · free minutes ran out',
-    exhaustion_time: '15 Jun, 1:56 pm',
-    included_calls: 336,
-    included_minutes: 965.1,
-    charged_calls: 444,
-    charged_minutes: 940.9,
-    charged_amount: 283.31,
-    daily_bars: [
-      { day: 1, free_min: 42.1, charged_min: 0 },
-      { day: 2, free_min: 68.3, charged_min: 0 },
-      { day: 3, free_min: 71.0, charged_min: 0 },
-      { day: 4, free_min: 55.4, charged_min: 0 },
-      { day: 5, free_min: 84.2, charged_min: 0 },
-      { day: 6, free_min: 39.5, charged_min: 0 },
-      { day: 7, free_min: 76.8, charged_min: 0 },
-      { day: 8, free_min: 62.1, charged_min: 0 },
-      { day: 9, free_min: 88.0, charged_min: 0 },
-      { day: 10, free_min: 91.5, charged_min: 0 },
-      { day: 11, free_min: 64.0, charged_min: 0 },
-      { day: 12, free_min: 70.3, charged_min: 0 },
-      { day: 13, free_min: 58.7, charged_min: 0 },
-      { day: 14, free_min: 63.2, charged_min: 0 },
-      { day: 15, free_min: 30.0, charged_min: 48.5 }, // exhaustion day
-      { day: 16, free_min: 0, charged_min: 82.1 },
-      { day: 17, free_min: 0, charged_min: 75.4 },
-      { day: 18, free_min: 0, charged_min: 69.2 },
-      { day: 19, free_min: 0, charged_min: 84.7 },
-      { day: 20, free_min: 0, charged_min: 52.3 },
-      { day: 21, free_min: 0, charged_min: 71.0 },
-      { day: 22, free_min: 0, charged_min: 63.8 },
-      { day: 23, free_min: 0, charged_min: 78.4 },
-      { day: 24, free_min: 0, charged_min: 59.2 },
-      { day: 25, free_min: 0, charged_min: 66.5 },
-      { day: 26, free_min: 0, charged_min: 74.0 },
-      { day: 27, free_min: 0, charged_min: 49.3 },
-      { day: 28, free_min: 0, charged_min: 58.1 },
-      { day: 29, free_min: 0, charged_min: 62.4 },
-      { day: 30, free_min: 0, charged_min: 45.0 }
-    ]
+    first_charge_flag: '',
+    first_charge_time: '',
+    uncharged_calls: 0,
+    uncharged_minutes: 0,
+    charged_calls: 0,
+    charged_minutes: 0,
+    charged_amount: 0,
+    daily_bars: [],
   },
-  allowances: [
-    {
-      title: 'Local minutes',
-      used_label: '1,906 of ~965 free',
-      pct: 197,
-      color: '#E11D48',
-      note: 'Free minutes used up on 15 Jun · 941 min charged'
-    },
-    {
-      title: 'Local data',
-      used_label: '17.81 of 30.5 GB',
-      pct: 58.4,
-      color: '#F97316',
-      note: '10.5 GB plan + 20 GB add-on bought 15 Jun (AED 72.45)'
-    },
-    {
-      title: 'Premium SMS',
-      used_label: '28 sent',
-      pct: 100,
-      color: '#E11D48',
-      note: 'Not in plan · AED 0.38 each · AED 11.17'
-    },
-    {
-      title: 'mParking (Sharjah)',
-      used_label: '26 payments',
-      pct: 85,
-      color: '#7C3AED',
-      note: '3rd-party charge · AED 59.00'
-    }
-  ],
-  month_wise_history: [
-    { month: 'February 2026', key: '2026-02', bill_no: 'INV2011824392', total: 79.21, plan: 79.21, extra: 0.00, extra_pct: 0, call_min: 705, data_gb: 7.9, premium_sms: 0, status: 'Within plan' },
-    { month: 'March 2026', key: '2026-03', bill_no: 'INV2017122668', total: 79.21, plan: 79.21, extra: 0.00, extra_pct: 0, call_min: 688, data_gb: 8.4, premium_sms: 0, status: 'Within plan' },
-    { month: 'April 2026', key: '2026-04', bill_no: 'INV2024561177', total: 96.80, plan: 79.21, extra: 17.59, extra_pct: 18, call_min: 1042, data_gb: 11.6, premium_sms: 3, status: 'Over plan' },
-    { month: 'May 2026', key: '2026-05', bill_no: 'INV2031804420', total: 79.21, plan: 79.21, extra: 0.00, extra_pct: 0, call_min: 790, data_gb: 9.1, premium_sms: 0, status: 'Within plan' },
-    { month: 'June 2026', key: '2026-06', bill_no: 'INV2039279589', total: 545.09, plan: 105.00, extra: 440.09, extra_pct: 81, call_min: 1906, data_gb: 17.81, premium_sms: 28, status: 'Over plan', selected: true },
-  ],
-  history_totals: {
-    total: 879.52,
-    plan: 421.84,
-    extra: 457.68,
-    extra_pct: 52,
-    call_min: 5131,
-    data_gb: 54.9,
-    premium_sms: 31
-  },
-  top_10_numbers: [
-    { rank: 1, number: '0523909665', calls: 60, total_min: 409.4, free_min: 182.6, extra_min: 226.7, extra_aed: 68.09 },
-    { rank: 2, number: '0525038532', calls: 156, total_min: 279.1, free_min: 91.2, extra_min: 187.9, extra_aed: 56.56 },
-    { rank: 3, number: '0524806401', calls: 84, total_min: 150.9, free_min: 53.2, extra_min: 97.7, extra_aed: 29.43 },
-    { rank: 4, number: '0559742427', calls: 59, total_min: 111.7, free_min: 29.2, extra_min: 82.4, extra_aed: 24.82 },
-    { rank: 5, number: '0542172643', calls: 80, total_min: 78.9, free_min: 43.0, extra_min: 35.9, extra_aed: 10.89 },
-    { rank: 6, number: '0567764865', calls: 66, total_min: 66.1, free_min: 34.9, extra_min: 31.2, extra_aed: 9.42 },
-    { rank: 7, number: '0508143664', calls: 7, total_min: 30.8, free_min: 0.0, extra_min: 30.8, extra_aed: 9.26 },
-    { rank: 8, number: '0502834282', calls: 31, total_min: 349.8, free_min: 323.4, extra_min: 26.4, extra_aed: 7.95 },
-    { rank: 9, number: '0561073669', calls: 8, total_min: 22.7, free_min: 0.0, extra_min: 22.7, extra_aed: 6.83 },
-    { rank: 10, number: '0507050063', calls: 9, total_min: 39.5, free_min: 17.6, extra_min: 21.9, extra_aed: 6.59 },
-  ],
-  top_10_total: {
-    calls: 560,
-    total_min: 1538.8,
-    free_min: 775.2,
-    extra_min: 763.6,
-    extra_aed: 229.84,
-    note: 'These 10 numbers account for AED 229.84 (81%) of the AED 283.31 extra call charge.'
-  },
-  where_money_went: [
-    { line: 'Plan rental (10.5 GB)', amount: 100.00, is_extra: false },
-    { line: 'VAT on plan', amount: 5.00, is_extra: false },
-    { line: 'Extra calls to mobiles', amount: 282.09, is_extra: true },
-    { line: 'Extra calls to landlines', amount: 1.22, is_extra: true },
-    { line: 'VAT on extra calls', amount: 14.16, is_extra: true },
-    { line: '20 GB data add-on (15 Jun)', amount: 69.00, is_extra: true },
-    { line: 'VAT on data add-on', amount: 3.45, is_extra: true },
-    { line: 'mParking (Sharjah)', amount: 59.00, is_extra: true },
-    { line: 'Premium SMS (parking)', amount: 10.64, is_extra: true },
-    { line: 'VAT on premium SMS', amount: 0.53, is_extra: true },
-  ],
-  total_amount_due: 545.09
+  allowances: [],
+  month_wise_history: [],
+  history_totals: { total: 0, plan: 0, extra: 0, extra_pct: 0, call_min: 0, data_gb: 0, premium_sms: 0 },
+  top_10_numbers: [],
+  top_10_total: { calls: 0, total_min: 0, uncharged_min: 0, charged_call_min: 0, charged_aed: 0, note: '' },
+  where_money_went: [],
+  total_amount_due: null,
 };
-
+const moneyText = (value) => value === null || value === undefined ? 'Needs review' : Number(value).toFixed(2);
 export default function MonthlyUsageDashboardTab({
   user,
   showToast,
@@ -213,24 +78,23 @@ export default function MonthlyUsageDashboardTab({
   const [loading, setLoading] = useState(false);
   const [optionsLoading, setOptionsLoading] = useState(true);
   const [companies, setCompanies] = useState([]);
-  const [selectedCompany, setSelectedCompany] = useState(SAMPLE_COMPANY);
-  const [selectedNumber, setSelectedNumber] = useState(SAMPLE_NUMBER);
-  const [selectedMonth, setSelectedMonth] = useState('2026-06');
+  const [selectedCompany, setSelectedCompany] = useState('');
+  const [selectedNumber, setSelectedNumber] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState('');
   const [compareMode, setCompareMode] = useState('previous'); // 'previous' | 'last_year'
 
   // Sub-tabs in charts & tables
   const [chartMetric, setChartMetric] = useState('Amount'); // 'Amount' | 'Minutes' | 'Data' | 'SMS'
-  const [historyYearTab, setHistoryYearTab] = useState('2026'); // '2026' | '2025' | '12m'
+  const [historyYearTab, setHistoryYearTab] = useState(String(new Date().getFullYear()));
   const [topSortTab, setTopSortTab] = useState('highest_extra'); // 'most_calls' | 'longest_time' | 'highest_extra'
 
   // Dashboard Data State
-  const [dashData, setDashData] = useState(SAMPLE_JUNE_DASHBOARD);
-  const [isUsingSampleData, setIsUsingSampleData] = useState(true);
+  const [dashData, setDashData] = useState(EMPTY_DASHBOARD);
 
   // Email modal state
   const [emailModalVisible, setEmailModalVisible] = useState(false);
-  const [emailTarget, setEmailTarget] = useState('ayyappan@asasgroup.ae');
-  const [emailSubject, setEmailSubject] = useState('Telecom Monthly Usage Report - June 2026 (054 305 1035)');
+  const [emailTarget, setEmailTarget] = useState('');
+  const [emailSubject, setEmailSubject] = useState('Telecom Monthly Usage Report');
   const [emailSending, setEmailSending] = useState(false);
 
   // Fetch available options (companies and phone numbers)
@@ -273,24 +137,7 @@ export default function MonthlyUsageDashboardTab({
       const res = await fetch(`${API_URL}/api/telecom-bills/usage-report/options`);
       if (res.ok) {
         const json = await res.json();
-        let comps = json.companies || [];
-
-        // Ensure ASAS Gen Tr LLC with 054 305 1035 is available in list
-        const hasAsas = comps.some(c => c.name.toLowerCase().includes('asas'));
-        if (!hasAsas) {
-          comps = [
-            {
-              name: SAMPLE_COMPANY,
-              numbers: [
-                { number: '054 305 1035', key: '543051035', type: 'Mobile Postpaid', plan: 'Business Mobile Postpaid', employee: 'Ayyappan Murukanandan', bills: 5 },
-                { number: '052 790 1846', key: '527901846', type: 'Mobile Postpaid', plan: 'Standard 100 AED Plan', employee: 'Fatima Zahra', bills: 4 },
-                { number: '058 694 2412', key: '586942412', type: 'Mobile Postpaid', plan: 'Normal 100 AED Plan', employee: 'Ahmed Rashid', bills: 3 },
-                { number: '055 593 4544', key: '555934544', type: 'Mobile Postpaid', plan: 'Standard 200 AED Plan', employee: 'Priya Nair', bills: 3 }
-              ]
-            },
-            ...comps
-          ];
-        }
+        const comps = json.companies || [];
         setCompanies(comps);
 
         // If no company selected yet, choose first
@@ -302,25 +149,14 @@ export default function MonthlyUsageDashboardTab({
         }
       }
     } catch (err) {
-      console.warn('Could not fetch usage report options, using defaults:', err);
-      setCompanies([
-        {
-          name: SAMPLE_COMPANY,
-          numbers: [
-            { number: '054 305 1035', key: '543051035', type: 'Mobile Postpaid', plan: 'Business Mobile Postpaid', employee: 'Ayyappan Murukanandan', bills: 5 }
-          ]
-        }
-      ]);
+      console.warn('Could not fetch usage report options:', err);
+      setCompanies([]);
     } finally {
       setOptionsLoading(false);
     }
   };
 
   const loadDashboardData = async (companyName, phoneNumber, monthKey) => {
-    // If selecting the reference sample number and June 2026, load pristine sample
-    const digitsOnly = String(phoneNumber || '').replace(/\D/g, '');
-    const isSample = digitsOnly.endsWith('543051035') || digitsOnly === '0543051035';
-
     setLoading(true);
     try {
       const url = `${API_URL}/api/telecom-bills/usage-report?number=${encodeURIComponent(phoneNumber)}&month=${encodeURIComponent(monthKey || '')}&company=${encodeURIComponent(companyName || '')}`;
@@ -331,7 +167,6 @@ export default function MonthlyUsageDashboardTab({
           // Adapt backend response to dashboard shape
           const adapted = shapeBackendData(json, companyName, phoneNumber);
           setDashData(adapted);
-          setIsUsingSampleData(false);
           setLoading(false);
           return;
         }
@@ -340,11 +175,7 @@ export default function MonthlyUsageDashboardTab({
       console.warn('API error loading usage report:', e);
     }
 
-    // Fallback: if sample line or no DB bill found, display the reference audited sample dataset
-    if (isSample || !dashData) {
-      setDashData(SAMPLE_JUNE_DASHBOARD);
-      setIsUsingSampleData(true);
-    }
+    setDashData({ ...EMPTY_DASHBOARD, company: companyName || '', number: phoneNumber || '' });
     setLoading(false);
   };
 
@@ -357,10 +188,12 @@ export default function MonthlyUsageDashboardTab({
     const conn = json.connection || {};
     const bill = sel.bill || {};
 
-    const total = parseFloat(kpis.total) || 0;
-    const plan = parseFloat(kpis.plan) || 0;
-    const extra = parseFloat(kpis.extra) || Math.max(0, total - plan);
-    const extraPct = total > 0 ? Math.round((extra / total) * 100) : 0;
+    const total = kpis.bill_incl_vat == null ? null : Number(kpis.bill_incl_vat);
+    const billExclVat = kpis.bill_excl_vat == null ? null : Number(kpis.bill_excl_vat);
+    const vat = kpis.vat == null ? null : Number(kpis.vat);
+    const plan = kpis.plan == null ? null : Number(kpis.plan);
+    const extra = kpis.extra == null ? null : Number(kpis.extra);
+    const extraPct = billExclVat > 0 && extra !== null ? Math.round((extra / billExclVat) * 100) : 0;
 
     // Sources
     const rawSources = sel.sources || [];
@@ -375,19 +208,17 @@ export default function MonthlyUsageDashboardTab({
             color: colors[idx % colors.length]
           };
         })
-      : [
-          { name: 'Extra calls', amount: extra * 0.7, pct: 70, color: '#E11D48' },
-          { name: 'Data add-on', amount: extra * 0.2, pct: 20, color: '#F97316' },
-          { name: 'Other', amount: extra * 0.1, pct: 10, color: '#F59E0B' }
-        ];
+      : [];
 
     // Chart Months
     const chartMonths = (json.months || []).map(m => ({
       key: m.key,
       label: m.label ? m.label.split(' ')[0] : m.key,
-      total: parseFloat(m.total) || 0,
-      plan: parseFloat(m.plan) || 0,
-      extra: parseFloat(m.extra) || 0,
+      total: m.bill_excl_vat == null ? null : Number(m.bill_excl_vat),
+      bill_incl_vat: m.total == null ? null : Number(m.total),
+      vat: m.vat == null ? null : Number(m.vat),
+      plan: m.plan == null ? null : Number(m.plan),
+      extra: m.extra == null ? null : Number(m.extra),
       minutes: parseFloat(m.call_minutes) || 0,
       data: parseFloat(m.data_gb) || 0,
       sms: parseInt(m.premium_sms) || 0,
@@ -399,19 +230,21 @@ export default function MonthlyUsageDashboardTab({
     const dailyBars = rawDaily.length > 0
       ? rawDaily.map((d, idx) => ({
           day: d.day || idx + 1,
-          free_min: parseFloat(d.free_min) || 0,
-          charged_min: parseFloat(d.charged_min) || 0
+          uncharged_min: parseFloat(d.uncharged_min) || 0,
+          charged_call_min: parseFloat(d.charged_call_min) || 0
         }))
-      : SAMPLE_JUNE_DASHBOARD.call_minutes_per_day.daily_bars;
+      : [];
 
     // Month-wise history table rows
     const historyRows = (json.months || []).map(m => ({
       month: m.label || m.key,
       key: m.key,
       bill_no: m.bill_number || `INV-${m.key.replace('-', '')}`,
-      total: parseFloat(m.total) || 0,
-      plan: parseFloat(m.plan) || 0,
-      extra: parseFloat(m.extra) || 0,
+      total: m.bill_excl_vat == null ? null : Number(m.bill_excl_vat),
+      bill_incl_vat: m.total == null ? null : Number(m.total),
+      vat: m.vat == null ? null : Number(m.vat),
+      plan: m.plan == null ? null : Number(m.plan),
+      extra: m.extra == null ? null : Number(m.extra),
       extra_pct: m.extra_pct || (m.total > 0 ? Math.round((m.extra / m.total) * 100) : 0),
       call_min: parseFloat(m.call_minutes) || 0,
       data_gb: parseFloat(m.data_gb) || 0,
@@ -441,10 +274,13 @@ export default function MonthlyUsageDashboardTab({
       number: t.number || '050xxxxxxx',
       calls: parseInt(t.calls) || 1,
       total_min: parseFloat(t.total_min) || 0,
-      free_min: parseFloat(t.free_min) || 0,
-      extra_min: parseFloat(t.extra_min) || 0,
-      extra_aed: parseFloat(t.extra_amount) || 0
+      uncharged_min: parseFloat(t.uncharged_min) || 0,
+      charged_call_min: parseFloat(t.charged_call_min) || 0,
+      charged_aed: parseFloat(t.charged_amount) || 0
     }));
+
+    const localMinutesLimit = allowance.local_minutes_limit == null ? null : Number(allowance.local_minutes_limit);
+    const dataLimit = allowance.data_limit_gb == null ? null : Number(allowance.data_limit_gb);
 
     // Where money went
     const lines = (sel.lines || []).map(l => ({
@@ -462,46 +298,55 @@ export default function MonthlyUsageDashboardTab({
       bill_number: bill.bill_number || `INV-${sel.month}`,
       period_label: `${bill.period_from || '1'}–${bill.period_to || '30'} ${sel.label}`,
       due_date: bill.due_date || 'Due 15th',
-      status: extra > 10 ? 'over' : 'within',
-      summary_text: `In short: of the AED ${total.toFixed(2)} bill, only AED ${plan.toFixed(2)} is the fixed plan. The other AED ${extra.toFixed(2)} (${extraPct}%) is extra usage.`,
+      status: sel.status || 'needs_review',
+      summary_text: sel.status === 'needs_review'
+        ? 'Some invoice values are missing. This bill needs review.'
+        : `Bill excluding VAT is AED ${billExclVat.toFixed(2)} against a plan excluding VAT of AED ${plan.toFixed(2)}. Excess excluding VAT is AED ${extra.toFixed(2)}.`,
       kpis: {
         total,
+        bill_excl_vat: billExclVat,
+        vat,
+        bill_incl_vat: total,
         plan,
         extra,
         extra_pct: extraPct,
-        extra_minutes: calls.charged_min || 0,
+        charged_call_duration_minutes: calls.duration_of_calls_with_charges_minutes || 0,
         premium_sms: allowance.premium_sms || 0,
         premium_sms_amount: allowance.premium_sms_amount || 0,
         data_gb: allowance.data_used_gb || 0,
-        data_limit_gb: allowance.data_limit_gb || 10.5,
+        data_limit_gb: allowance.data_limit_gb ?? null,
         deltas: kpis.deltas
       },
-      chart_months: chartMonths.length > 0 ? chartMonths : SAMPLE_JUNE_DASHBOARD.chart_months,
-      sources: sources.length > 0 ? sources : SAMPLE_JUNE_DASHBOARD.sources,
+      chart_months: chartMonths,
+      sources,
       call_minutes_per_day: {
-        exhaustion_flag: calls.free_ran_out ? `${calls.free_ran_out.date} · free minutes ran out` : 'Within monthly allowance',
-        exhaustion_time: calls.free_ran_out ? `${calls.free_ran_out.date}, ${calls.free_ran_out.time}` : 'Allowance intact',
-        included_calls: calls.free_calls || 0,
-        included_minutes: calls.free_min || 0,
-        charged_calls: calls.charged_calls || 0,
-        charged_minutes: calls.charged_min || 0,
+        first_charge_flag: calls.first_call_with_charge ? `${calls.first_call_with_charge.date} · first call with a charge` : 'No calls with charges',
+        first_charge_time: calls.first_call_with_charge ? `${calls.first_call_with_charge.date}, ${calls.first_call_with_charge.time}` : '',
+        uncharged_calls: calls.uncharged_calls || 0,
+        uncharged_minutes: calls.uncharged_minutes || 0,
+        charged_calls: calls.calls_with_charges || 0,
+        charged_minutes: calls.duration_of_calls_with_charges_minutes || 0,
         charged_amount: calls.charged_amount || 0,
         daily_bars: dailyBars
       },
       allowances: [
         {
           title: 'Local minutes',
-          used_label: `${(calls.total_min || 0).toLocaleString()} of ~965 free`,
-          pct: Math.min(200, (((calls.total_min || 0) / 965) * 100)),
-          color: (calls.charged_min || 0) > 0 ? '#E11D48' : '#059669',
-          note: (calls.charged_min || 0) > 0 ? `${calls.charged_min} min charged extra` : 'Fully covered inside free limit'
+          used_label: `${(calls.actual_local_minutes || 0).toLocaleString()} actual min${allowance.provider_reported_local_minutes == null ? '' : ` · provider reports ${allowance.provider_reported_local_minutes}`}`,
+          pct: localMinutesLimit > 0 ? Math.min(200, (((calls.actual_local_minutes || 0) / localMinutesLimit) * 100)) : 0,
+          color: calls.duration_above_allowance_minutes > 0 ? '#E11D48' : '#059669',
+          note: calls.duration_above_allowance_minutes == null
+            ? 'Applicable allowance or eligible categories are not confirmed'
+            : calls.duration_above_allowance_minutes > 0
+              ? `${calls.duration_above_allowance_minutes} min above allowance; not verified chargeable minutes`
+              : `Within the ${localMinutesLimit.toLocaleString()} min allowance`
         },
         {
           title: 'Local data',
-          used_label: `${allowance.data_used_gb || 0} of ${allowance.data_limit_gb || 10.5} GB`,
-          pct: Math.min(100, (((allowance.data_used_gb || 0) / (allowance.data_limit_gb || 10.5)) * 100)),
+          used_label: dataLimit === null ? `${allowance.data_used_gb || 0} GB used · limit unknown` : `${allowance.data_used_gb || 0} of ${dataLimit} GB`,
+          pct: dataLimit > 0 ? Math.min(100, (((allowance.data_used_gb || 0) / dataLimit) * 100)) : 0,
           color: '#F97316',
-          note: `${allowance.data_limit_gb || 10.5} GB plan allowance`
+          note: dataLimit === null ? 'Plan allowance needs review' : `${dataLimit} GB plan allowance`
         },
         {
           title: 'Premium SMS',
@@ -518,19 +363,19 @@ export default function MonthlyUsageDashboardTab({
           note: '3rd-party city parking fees'
         }
       ],
-      month_wise_history: historyRows.length > 0 ? historyRows : SAMPLE_JUNE_DASHBOARD.month_wise_history,
+      month_wise_history: historyRows,
       history_totals: historyTotals,
-      top_10_numbers: top10.length > 0 ? top10 : SAMPLE_JUNE_DASHBOARD.top_10_numbers,
+      top_10_numbers: top10,
       top_10_total: {
         calls: top10.reduce((s, x) => s + x.calls, 0),
         total_min: Math.round(top10.reduce((s, x) => s + x.total_min, 0) * 10) / 10,
-        free_min: Math.round(top10.reduce((s, x) => s + x.free_min, 0) * 10) / 10,
-        extra_min: Math.round(top10.reduce((s, x) => s + x.extra_min, 0) * 10) / 10,
-        extra_aed: Math.round(top10.reduce((s, x) => s + x.extra_aed, 0) * 100) / 100,
+        uncharged_min: Math.round(top10.reduce((s, x) => s + x.uncharged_min, 0) * 10) / 10,
+        charged_call_min: Math.round(top10.reduce((s, x) => s + x.charged_call_min, 0) * 10) / 10,
+        charged_aed: Math.round(top10.reduce((s, x) => s + x.charged_aed, 0) * 100) / 100,
         note: `Top ${top10.length} destinations by consumption.`
       },
-      where_money_went: lines.length > 0 ? lines : SAMPLE_JUNE_DASHBOARD.where_money_went,
-      total_amount_due: total
+      where_money_went: lines,
+      total_amount_due: kpis.bill_incl_vat ?? total
     };
   };
 
@@ -541,13 +386,10 @@ export default function MonthlyUsageDashboardTab({
   };
 
   const handleStepMonth = (direction) => {
-    const months = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11', '2026-12'];
-    const idx = months.indexOf(selectedMonth);
-    if (direction === 'prev' && idx > 0) {
-      setSelectedMonth(months[idx - 1]);
-    } else if (direction === 'next' && idx < months.length - 1) {
-      setSelectedMonth(months[idx + 1]);
-    }
+    const base = /^\d{4}-\d{2}$/.test(selectedMonth) ? `${selectedMonth}-01T00:00:00` : new Date().toISOString();
+    const date = new Date(base);
+    date.setMonth(date.getMonth() + (direction === 'prev' ? -1 : 1));
+    setSelectedMonth(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`);
   };
 
   // Available numbers for the currently selected company
@@ -555,6 +397,22 @@ export default function MonthlyUsageDashboardTab({
     const comp = companies.find(c => c.name.toLowerCase() === selectedCompany.toLowerCase());
     return comp ? comp.numbers : [];
   }, [companies, selectedCompany]);
+
+  const timelineMonths = useMemo(() => {
+    const year = /^\d{4}/.test(selectedMonth) ? selectedMonth.slice(0, 4) : String(new Date().getFullYear());
+    const byKey = new Map((dashData.chart_months || []).map(month => [month.key, month]));
+    return Array.from({ length: 12 }, (_, index) => {
+      const key = `${year}-${String(index + 1).padStart(2, '0')}`;
+      const row = byKey.get(key);
+      return {
+        key,
+        label: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][index],
+        status: row ? (row.extra > 10 ? 'over' : 'within') : 'no_bill',
+        total: row ? row.total : null,
+        text: row && row.total != null ? Number(row.total).toFixed(2) : '—',
+      };
+    });
+  }, [dashData.chart_months, selectedMonth]);
 
   // Export to Excel (Full multi-sheet workbook)
   const handleExportExcel = () => {
@@ -572,11 +430,12 @@ export default function MonthlyUsageDashboardTab({
         ['Invoice Number', dashData.bill_number],
         ['', ''],
         ['KEY PERFORMANCE INDICATORS', ''],
-        ['Total Bill (AED)', dashData.kpis.total],
-        ['Fixed Plan (AED)', dashData.kpis.plan],
-        ['Extra Usage (AED)', dashData.kpis.extra],
-        ['Extra Usage (%)', `${dashData.kpis.extra_pct}%`],
-        ['Extra Minutes', dashData.kpis.extra_minutes],
+        ['Plan — excluding VAT (AED)', dashData.kpis.plan],
+        ['Bill — excluding VAT (AED)', dashData.kpis.bill_excl_vat],
+        ['VAT (AED)', dashData.kpis.vat],
+        ['Bill — including VAT (AED)', dashData.kpis.bill_incl_vat],
+        ['Excess — excluding VAT (AED)', dashData.kpis.extra],
+        ['Duration of calls with charges (minutes)', dashData.kpis.charged_call_duration_minutes],
         ['Premium SMS Count', dashData.kpis.premium_sms],
         ['Data Used (GB)', dashData.kpis.data_gb],
       ];
@@ -585,20 +444,20 @@ export default function MonthlyUsageDashboardTab({
 
       // 2. Month-Wise History Sheet
       const historyRows = [
-        ['Month', 'Bill Number', 'Total (AED)', 'Plan (AED)', 'Extra (AED)', 'Extra %', 'Call Minutes', 'Data (GB)', 'Premium SMS', 'Status']
+        ['Month', 'Bill Number', 'Plan — excluding VAT', 'Bill — excluding VAT', 'VAT', 'Bill — including VAT', 'Excess — excluding VAT', 'Call Minutes', 'Data (GB)', 'Premium SMS', 'Status']
       ];
       dashData.month_wise_history.forEach(h => {
-        historyRows.push([h.month, h.bill_no, h.total, h.plan, h.extra, `${h.extra_pct}%`, h.call_min, h.data_gb, h.premium_sms, h.status]);
+        historyRows.push([h.month, h.bill_no, h.plan, h.total, h.vat, h.bill_incl_vat, h.extra, h.call_min, h.data_gb, h.premium_sms, h.status]);
       });
       const wsHistory = XLSX.utils.aoa_to_sheet(historyRows);
       XLSX.utils.book_append_sheet(wb, wsHistory, 'Month History');
 
       // 3. Top 10 Numbers Sheet
       const topRows = [
-        ['Rank', 'Number', 'Calls Count', 'Total Minutes', 'Free Minutes', 'Extra Minutes', 'Extra Charge (AED)']
+        ['Rank', 'Number', 'Calls Count', 'Actual Minutes', 'Duration of Calls Without Charges', 'Duration of Calls With Charges', 'Actual Call Charges (AED)']
       ];
       dashData.top_10_numbers.forEach(t => {
-        topRows.push([t.rank, t.number, t.calls, t.total_min, t.free_min, t.extra_min, t.extra_aed]);
+        topRows.push([t.rank, t.number, t.calls, t.total_min, t.uncharged_min, t.charged_call_min, t.charged_aed]);
       });
       const wsTop = XLSX.utils.aoa_to_sheet(topRows);
       XLSX.utils.book_append_sheet(wb, wsTop, 'Top 10 Numbers');
@@ -626,9 +485,12 @@ export default function MonthlyUsageDashboardTab({
   // Download PDF / Print
   const handleDownloadPdf = () => {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      window.print();
+      const opened = openMonthlyUsagePdf(dashData, selectedMonth);
+      if (!opened && showToast) {
+        showToast('Please allow pop-ups to download the PDF report.', 'error');
+      }
     } else {
-      if (showToast) showToast('PDF Export triggered. Saving file...', 'info');
+      if (showToast) showToast('PDF download is currently available on the web version.', 'info');
     }
   };
 
@@ -654,7 +516,7 @@ export default function MonthlyUsageDashboardTab({
   // Max value for daily call minutes
   const maxDailyMin = useMemo(() => {
     const bars = dashData.call_minutes_per_day?.daily_bars || [];
-    return Math.max(...bars.map(b => (b.free_min || 0) + (b.charged_min || 0)), 100);
+    return Math.max(...bars.map(b => (b.uncharged_min || 0) + (b.charged_call_min || 0)), 100);
   }, [dashData.call_minutes_per_day]);
 
   // Sorted Top Numbers
@@ -666,7 +528,7 @@ export default function MonthlyUsageDashboardTab({
     if (topSortTab === 'longest_time') {
       return list.sort((a, b) => b.total_min - a.total_min);
     }
-    return list.sort((a, b) => b.extra_aed - a.extra_aed);
+    return list.sort((a, b) => b.charged_aed - a.charged_aed);
   }, [dashData.top_10_numbers, topSortTab]);
 
   return (
@@ -784,12 +646,6 @@ export default function MonthlyUsageDashboardTab({
                   {n.number} {n.plan ? `(${n.plan})` : ''}
                 </option>
               ))}
-              {/* Ensure sample number is option */}
-              {!availableNumbers.some(n => n.number.replace(/\D/g, '').endsWith('543051035')) && (
-                <option value={SAMPLE_NUMBER}>
-                  {SAMPLE_NUMBER} (Business Mobile Postpaid)
-                </option>
-              )}
             </select>
           </View>
 
@@ -804,7 +660,7 @@ export default function MonthlyUsageDashboardTab({
                 <Ionicons name="chevron-back" size={16} color="#0F172A" />
               </TouchableOpacity>
               <Text style={styles.monthStepperText}>
-                {dashData.period_label ? dashData.period_label.replace(/^\d+–\d+\s+/, '') : 'June 2026'}
+                {dashData.period_label ? dashData.period_label.replace(/^\d+–\d+\s+/, '') : (selectedMonth || 'No bill selected')}
               </Text>
               <TouchableOpacity
                 onPress={() => handleStepMonth('next')}
@@ -845,7 +701,7 @@ export default function MonthlyUsageDashboardTab({
       {/* ----------------------------------------------------------------- */}
       <View style={styles.timelineContainer}>
         <View style={styles.timelineLegendRow}>
-          <Text style={styles.timelineYearText}>2026</Text>
+          <Text style={styles.timelineYearText}>{selectedMonth ? selectedMonth.slice(0, 4) : new Date().getFullYear()}</Text>
           <View style={styles.legendDotGroup}>
             <View style={[styles.legendMiniDot, { backgroundColor: '#64748B' }]} />
             <Text style={styles.legendMiniText}>within plan</Text>
@@ -865,7 +721,7 @@ export default function MonthlyUsageDashboardTab({
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.timelinePillsScroll}
         >
-          {SAMPLE_TIMELINE_MONTHS.map((m, idx) => {
+          {timelineMonths.map((m, idx) => {
             const isSelected = selectedMonth === m.key;
             const isNoBill = m.status === 'no_bill';
             const isOverPlan = m.status === 'over';
@@ -975,54 +831,68 @@ export default function MonthlyUsageDashboardTab({
       {/* 5. 6 KPI CARDS ROW */}
       {/* ----------------------------------------------------------------- */}
       <View style={styles.kpiGrid}>
-        {/* Total Bill */}
+        {/* Bill excluding VAT */}
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiTitle}>Total bill</Text>
+          <Text style={styles.kpiTitle}>Bill — excluding VAT</Text>
           <Text style={styles.kpiValueMain}>
-            AED {(dashData.kpis.total || 0).toFixed(2)}
+            AED {moneyText(dashData.kpis.bill_excl_vat)}
           </Text>
           <View style={styles.kpiTrendRow}>
-            <Text style={[styles.kpiTrendText, { color: '#E11D48' }]}>
-              ▲ 588% vs May 79.21
-            </Text>
+            <Text style={[styles.kpiTrendText, { color: '#64748B' }]}>Current period</Text>
           </View>
         </View>
 
         {/* Fixed Plan */}
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiTitle}>Fixed plan</Text>
+          <Text style={styles.kpiTitle}>Plan — excluding VAT</Text>
           <Text style={styles.kpiValueMain}>
-            AED {(dashData.kpis.plan || 0).toFixed(2)}
+            AED {moneyText(dashData.kpis.plan)}
           </Text>
           <View style={styles.kpiTrendRow}>
-            <Text style={[styles.kpiTrendText, { color: '#64748B' }]}>
-              ▬ 0% incl. VAT
-            </Text>
+            <Text style={[styles.kpiTrendText, { color: '#64748B' }]}>Applicable billing period</Text>
           </View>
         </View>
 
-        {/* Extra Usage */}
+        {/* VAT */}
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiTitle}>Extra usage</Text>
-          <Text style={[styles.kpiValueMain, { color: '#E11D48' }]}>
-            AED {(dashData.kpis.extra || 0).toFixed(2)}
+          <Text style={styles.kpiTitle}>VAT</Text>
+          <Text style={styles.kpiValueMain}>
+            AED {moneyText(dashData.kpis.vat)}
           </Text>
           <View style={styles.kpiTrendRow}>
-            <Text style={[styles.kpiTrendText, { color: '#E11D48' }]}>
-              ▲ new {dashData.kpis.extra_pct}% of the bill
-            </Text>
+            <Text style={[styles.kpiTrendText, { color: '#64748B' }]}>Invoice-stated current period</Text>
+          </View>
+        </View>
+
+        {/* Bill including VAT */}
+        <View style={styles.kpiCard}>
+          <Text style={styles.kpiTitle}>Bill — including VAT</Text>
+          <Text style={styles.kpiValueMain}>
+            AED {moneyText(dashData.kpis.bill_incl_vat)}
+          </Text>
+          <View style={styles.kpiTrendRow}>
+            <Text style={[styles.kpiTrendText, { color: '#64748B' }]}>Current period</Text>
+          </View>
+        </View>
+
+        {/* Excess excluding VAT */}
+        <View style={styles.kpiCard}>
+          <Text style={styles.kpiTitle}>Excess — excluding VAT</Text>
+          <Text style={[styles.kpiValueMain, { color: '#E11D48' }]}>AED {moneyText(dashData.kpis.extra)}</Text>
+          <View style={styles.kpiTrendRow}>
+            <Text style={[styles.kpiTrendText, { color: '#E11D48' }]}>Flagged only above AED 10.00</Text>
           </View>
         </View>
 
         {/* Extra Minutes */}
         <View style={styles.kpiCard}>
-          <Text style={styles.kpiTitle}>Extra minutes</Text>
+          <Text style={styles.kpiTitle}>Duration of calls with charges</Text>
           <Text style={[styles.kpiValueMain, { color: '#E11D48' }]}>
-            {Math.round(dashData.kpis.extra_minutes || 0)} min
+            {dashData.kpis.charged_call_duration_minutes || 0} min
           </Text>
           <View style={styles.kpiTrendRow}>
             <Text style={[styles.kpiTrendText, { color: '#E11D48' }]}>
-              ▲ {Math.round(dashData.kpis.extra_minutes || 0)} after free minutes
+              From itemized calls with invoice amounts
             </Text>
           </View>
         </View>
@@ -1035,7 +905,7 @@ export default function MonthlyUsageDashboardTab({
           </Text>
           <View style={styles.kpiTrendRow}>
             <Text style={[styles.kpiTrendText, { color: '#E11D48' }]}>
-              ▲ {dashData.kpis.premium_sms || 0} AED {(dashData.kpis.premium_sms_amount || 11.17).toFixed(2)} incl. VAT
+              {dashData.kpis.premium_sms || 0} · AED {moneyText(dashData.kpis.premium_sms_amount)}
             </Text>
           </View>
         </View>
@@ -1048,7 +918,7 @@ export default function MonthlyUsageDashboardTab({
           </Text>
           <View style={styles.kpiTrendRow}>
             <Text style={[styles.kpiTrendText, { color: '#E11D48' }]}>
-              ▲ 96% 10.5 plan + 20 add-on
+              {dashData.kpis.data_limit_gb == null ? 'Plan limit needs review' : `Plan ${dashData.kpis.data_limit_gb} GB`}
             </Text>
           </View>
         </View>
@@ -1064,7 +934,7 @@ export default function MonthlyUsageDashboardTab({
             <View>
               <Text style={styles.cardTitle}>Bill history — month wise</Text>
               <Text style={styles.cardSubtitle}>
-                Fixed plan (grey) and extra usage (red), AED incl. VAT. Click a bar to open that month.
+                Plan and bill compared on the same excluding-VAT basis. Click a bar to open that month.
               </Text>
             </View>
 
@@ -1215,7 +1085,7 @@ export default function MonthlyUsageDashboardTab({
             <View>
               <Text style={styles.cardTitle}>Call minutes per day</Text>
               <Text style={styles.cardSubtitle}>
-                Grey = covered by the plan (AED 0.00). Red = charged at AED 0.30 a minute.
+                Grey = calls with no invoice charge. Red = calls with an invoice charge. No tariff rate is inferred.
               </Text>
             </View>
 
@@ -1223,7 +1093,7 @@ export default function MonthlyUsageDashboardTab({
             <View style={styles.exhaustionPill}>
               <Ionicons name="alert-circle-outline" size={13} color="#E11D48" />
               <Text style={styles.exhaustionPillText}>
-                {dashData.call_minutes_per_day.exhaustion_flag}
+                {dashData.call_minutes_per_day.first_charge_flag}
               </Text>
             </View>
           </View>
@@ -1232,22 +1102,18 @@ export default function MonthlyUsageDashboardTab({
           <View style={styles.dailyChartBox}>
             <View style={styles.dailyBarsTrack}>
               {dashData.call_minutes_per_day.daily_bars.map((d) => {
-                const totalMin = (d.free_min || 0) + (d.charged_min || 0);
+                const totalMin = (d.uncharged_min || 0) + (d.charged_call_min || 0);
                 const heightPct = Math.min(100, (totalMin / maxDailyMin) * 100);
-                const freePct = totalMin > 0 ? (d.free_min / totalMin) * 100 : 0;
-                const chargedPct = totalMin > 0 ? (d.charged_min / totalMin) * 100 : 0;
-                const isExhaustionDay = d.day === 15;
+                const freePct = totalMin > 0 ? (d.uncharged_min / totalMin) * 100 : 0;
+                const chargedPct = totalMin > 0 ? (d.charged_call_min / totalMin) * 100 : 0;
 
                 return (
                   <View key={d.day} style={styles.dailyBarCol}>
-                    {isExhaustionDay && (
-                      <View style={styles.exhaustionMarkerLine} />
-                    )}
                     <View style={[styles.dailyBarPillar, { height: `${heightPct}%` }]}>
-                      {d.charged_min > 0 && (
+                      {d.charged_call_min > 0 && (
                         <View style={[styles.dailySegmentCharged, { height: `${chargedPct}%` }]} />
                       )}
-                      {d.free_min > 0 && (
+                      {d.uncharged_min > 0 && (
                         <View style={[styles.dailySegmentFree, { height: `${freePct}%` }]} />
                       )}
                     </View>
@@ -1265,13 +1131,13 @@ export default function MonthlyUsageDashboardTab({
             <View style={styles.dailyLegendItem}>
               <View style={[styles.legendBox, { backgroundColor: '#94A3B8' }]} />
               <Text style={styles.dailyLegendText}>
-                Included in plan · {dashData.call_minutes_per_day.included_calls} calls · {dashData.call_minutes_per_day.included_minutes} min
+                Calls without charges · {dashData.call_minutes_per_day.uncharged_calls} calls · {dashData.call_minutes_per_day.uncharged_minutes} min
               </Text>
             </View>
             <View style={styles.dailyLegendItem}>
               <View style={[styles.legendBox, { backgroundColor: '#E11D48' }]} />
               <Text style={[styles.dailyLegendText, { color: '#E11D48', fontWeight: '700' }]}>
-                Charged · {dashData.call_minutes_per_day.charged_calls} calls · {dashData.call_minutes_per_day.charged_minutes} min · AED {dashData.call_minutes_per_day.charged_amount}
+                Calls with charges · {dashData.call_minutes_per_day.charged_calls} calls · {dashData.call_minutes_per_day.charged_minutes} min · AED {dashData.call_minutes_per_day.charged_amount}
               </Text>
             </View>
           </View>
@@ -1450,7 +1316,7 @@ export default function MonthlyUsageDashboardTab({
             <View>
               <Text style={styles.cardTitle}>Top 10 numbers called</Text>
               <Text style={styles.cardSubtitle}>
-                {dashData.period_label ? dashData.period_label.replace(/^\d+–\d+\s+/, '') : 'June 2026'} · extra charge excl. VAT.
+                {dashData.period_label ? dashData.period_label.replace(/^\d+–\d+\s+/, '') : (selectedMonth || 'No bill selected')} · excess excluding VAT.
               </Text>
             </View>
 
@@ -1482,9 +1348,9 @@ export default function MonthlyUsageDashboardTab({
                 <Text style={[styles.thCell, { flex: 1.6 }]}>NUMBER</Text>
                 <Text style={[styles.thCell, { flex: 1, textAlign: 'right' }]}>CALLS</Text>
                 <Text style={[styles.thCell, { flex: 1.3, textAlign: 'right' }]}>TOTAL MIN</Text>
-                <Text style={[styles.thCell, { flex: 1.2, textAlign: 'right' }]}>FREE MIN</Text>
-                <Text style={[styles.thCell, { flex: 1.8, textAlign: 'right' }]}>EXTRA MIN</Text>
-                <Text style={[styles.thCell, { flex: 1.3, textAlign: 'right' }]}>EXTRA AED</Text>
+                <Text style={[styles.thCell, { flex: 1.2, textAlign: 'right' }]}>NO-CHARGE MIN</Text>
+                <Text style={[styles.thCell, { flex: 1.8, textAlign: 'right' }]}>CHARGED-CALL MIN</Text>
+                <Text style={[styles.thCell, { flex: 1.3, textAlign: 'right' }]}>CALL CHARGES</Text>
               </View>
 
               {displayedTopNumbers.map((row) => (
@@ -1495,20 +1361,20 @@ export default function MonthlyUsageDashboardTab({
                   </Text>
                   <Text style={[styles.tdCell, { flex: 1, textAlign: 'right' }]}>{row.calls}</Text>
                   <Text style={[styles.tdCell, { flex: 1.3, textAlign: 'right' }]}>{row.total_min.toFixed(1)}</Text>
-                  <Text style={[styles.tdCell, { flex: 1.2, textAlign: 'right' }]}>{row.free_min.toFixed(1)}</Text>
+                  <Text style={[styles.tdCell, { flex: 1.2, textAlign: 'right' }]}>{row.uncharged_min.toFixed(1)}</Text>
 
                   {/* Extra Minutes with mini visual bar */}
                   <View style={[{ flex: 1.8, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }]}>
                     <View style={styles.miniBarTrack}>
-                      <View style={[styles.miniBarFill, { width: `${Math.min(100, (row.extra_min / 250) * 100)}%` }]} />
+                      <View style={[styles.miniBarFill, { width: `${Math.min(100, (row.charged_call_min / 250) * 100)}%` }]} />
                     </View>
-                    <Text style={[styles.tdCell, { color: row.extra_min > 0 ? '#E11D48' : '#64748B', fontWeight: row.extra_min > 0 ? '700' : '400' }]}>
-                      {row.extra_min.toFixed(1)}
+                    <Text style={[styles.tdCell, { color: row.charged_call_min > 0 ? '#E11D48' : '#64748B', fontWeight: row.charged_call_min > 0 ? '700' : '400' }]}>
+                      {row.charged_call_min.toFixed(1)}
                     </Text>
                   </View>
 
-                  <Text style={[styles.tdCell, { flex: 1.3, textAlign: 'right', color: row.extra_aed > 0 ? '#E11D48' : '#0F172A', fontWeight: row.extra_aed > 0 ? '700' : '400' }]}>
-                    {row.extra_aed.toFixed(2)}
+                  <Text style={[styles.tdCell, { flex: 1.3, textAlign: 'right', color: row.charged_aed > 0 ? '#E11D48' : '#0F172A', fontWeight: row.charged_aed > 0 ? '700' : '400' }]}>
+                    {row.charged_aed.toFixed(2)}
                   </Text>
                 </View>
               ))}
@@ -1518,9 +1384,9 @@ export default function MonthlyUsageDashboardTab({
                 <Text style={[styles.tdTotalCell, { flex: 2.1 }]}>Top 10 total</Text>
                 <Text style={[styles.tdTotalCell, { flex: 1, textAlign: 'right' }]}>{dashData.top_10_total.calls}</Text>
                 <Text style={[styles.tdTotalCell, { flex: 1.3, textAlign: 'right' }]}>{dashData.top_10_total.total_min.toFixed(1)}</Text>
-                <Text style={[styles.tdTotalCell, { flex: 1.2, textAlign: 'right' }]}>{dashData.top_10_total.free_min.toFixed(1)}</Text>
-                <Text style={[styles.tdTotalCell, { flex: 1.8, textAlign: 'right', color: '#E11D48' }]}>{dashData.top_10_total.extra_min.toFixed(1)}</Text>
-                <Text style={[styles.tdTotalCell, { flex: 1.3, textAlign: 'right', color: '#E11D48' }]}>{dashData.top_10_total.extra_aed.toFixed(2)}</Text>
+                <Text style={[styles.tdTotalCell, { flex: 1.2, textAlign: 'right' }]}>{dashData.top_10_total.uncharged_min.toFixed(1)}</Text>
+                <Text style={[styles.tdTotalCell, { flex: 1.8, textAlign: 'right', color: '#E11D48' }]}>{dashData.top_10_total.charged_call_min.toFixed(1)}</Text>
+                <Text style={[styles.tdTotalCell, { flex: 1.3, textAlign: 'right', color: '#E11D48' }]}>{dashData.top_10_total.charged_aed.toFixed(2)}</Text>
               </View>
             </View>
           </ScrollView>
@@ -1584,7 +1450,7 @@ export default function MonthlyUsageDashboardTab({
       {/* ----------------------------------------------------------------- */}
       <View style={styles.footerNoteBox}>
         <Text style={styles.footerNoteText}>
-          Design preview with sample data. Figures for June 2026 come from the current report design; other months are illustrative.
+          Figures are loaded from the selected invoice and billing period. Missing source values are marked for review.
         </Text>
       </View>
 
@@ -1636,7 +1502,7 @@ export default function MonthlyUsageDashboardTab({
                 <Text style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
                   • Mobile: {dashData.number} ({dashData.plan_name})
                   {'\n'}• Period: {dashData.period_label}
-                  {'\n'}• Total Bill: AED {dashData.kpis.total.toFixed(2)} (Over plan extra: AED {dashData.kpis.extra.toFixed(2)})
+                  {'\n'}• Bill excluding VAT: AED {moneyText(dashData.kpis.bill_excl_vat)} (Excess excluding VAT: AED {moneyText(dashData.kpis.extra)})
                   {'\n'}• Attached format: PDF & Excel Breakdown
                 </Text>
               </View>

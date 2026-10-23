@@ -1,4 +1,11 @@
 const db = require('../config/db');
+const {
+  calculateTelecomBill,
+  callDurationSeconds,
+  sumCallSeconds,
+  secondsToDisplayMinutes,
+} = require('../utils/telecomBilling');
+const { canonicalCallCategory, aggregateCallCategories } = require('../utils/telecomUsage');
 
 // Monthly usage report for ONE telecom number: month-wise history plus the full breakdown of the selected month.
 // Built from tbl_telecome_bill and its children (items, call logs, SMS logs, usage summary) and the connection record.
@@ -13,15 +20,105 @@ const num = (v) => {
   return isNaN(n) ? 0 : n;
 };
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
-const durSec = (s) => {
-  const m = /^(\d+):(\d{2}):(\d{2})$/.exec(String(s || '').trim());
-  return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : 0;
+const nullableNum = (v) => {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+const callGroup = (call) => {
+  const category = canonicalCallCategory(call && call.category);
+  if (category === 'Calls to Special Numbers') return 'special';
+  if (/Roaming/.test(category)) return 'roaming';
+  if (category === 'International Calls') return 'international';
+  if (category === 'Calls to Mobile' || category === 'Calls to Telephone / Landline') return 'local';
+  return 'unclassified';
+};
+const jsonArray = value => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') { try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : []; } catch (e) { return []; } }
+  return [];
 };
 const iso = (v) => {
   if (!v) return null;
   const d = new Date(v);
   if (isNaN(d.getTime())) return null;
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+
+// ---- charges printed on the bill PDF itself ("Usage charges" section) ----
+// Lines look like:  Calls to Special Number 5 00:25:12 7.57 0.38  |  Premium SMS 28 - 9.28 0.46  |  mParking * 18 - 55.35 0.00
+// Only used when the printed lines add up to the extra usage, so a mis-read PDF can never change the totals.
+const fs = require('fs');
+const path = require('path');
+const pdfLinesCache = new Map();
+const findBillPdf = (row, billNumber) => {
+  const dir = path.join(__dirname, '../../Attachment');
+  if (!fs.existsSync(dir)) return null;
+  const base = path.basename(String(row.pdf_filename || ''));
+  if (base && fs.existsSync(path.join(dir, base))) return path.join(dir, base);
+  const bd = digits(billNumber);
+  if (bd.length < 6) return null;
+  const files = fs.readdirSync(dir).filter(f => /\.pdf$/i.test(f) && f.includes(bd));
+  if (!files.length) return null;
+  files.sort((a, b) => fs.statSync(path.join(dir, b)).mtimeMs - fs.statSync(path.join(dir, a)).mtimeMs);
+  return path.join(dir, files[0]);
+};
+const parseUsageSection = (text) => {
+  const start = text.search(/Usage charges\s+[\d,]+\.\d{2}\s*AED/i);
+  if (start < 0) return [];
+  let body = text.slice(start);
+  const end = body.search(/One-time charges\s+[\d,]+\.\d{2}\s*AED/i);
+  if (end > 0) body = body.slice(0, end);
+  const out = [];
+  body.split(/\r?\n/).forEach(line => {
+    const l = line.trim();
+    if (/\b\d{9,}\b/.test(l.replace(/\d+\s*KB/i, ''))) return; // group headers carry the account number
+    const m = /^(.+?)\s*\*?\s+(\d+)\s+(\d{2}:\d{2}:\d{2}|-)\s+([\d,]+\.\d{2})\s+[\d,]+\.\d{2}$/.exec(l);
+    if (!m) return;
+    const amount = parseFloat(m[4].replace(/,/g, ''));
+    if (amount > 0.004) out.push({ name: m[1].replace(/\s*\*$/, '').trim(), amount: round2(amount), units: Number(m[2]), duration: m[3] === '-' ? '' : m[3] });
+  });
+  return out;
+};
+// du bills print one block per number: "Plan monthly fees 315.00 / Add-on fees 0.00 / Usage & one-time fees 188.36".
+// The saved plan_rental of such bills is unreliable (it can hold last month's amount), so the printed blocks are used.
+const duCache = new Map();
+const getDuFees = async (row, billNumber) => {
+  if (!/\bdu\b|emirates integrated/i.test(String(row.telecom_provider || ''))) return null;
+  const key = String(billNumber);
+  if (duCache.has(key)) return duCache.get(key);
+  let out = null;
+  try {
+    const file = findBillPdf(row, billNumber);
+    if (file) {
+      const { PDFParse } = require('pdf-parse');
+      const res = await new PDFParse({ data: fs.readFileSync(file) }).getText();
+      const text = (res && res.text) || '';
+      const re = /Plan monthly fees\s+([\d,]+\.\d{2})\s+Add-on fees\s+([\d,]+\.\d{2})\s+Usage & one-time fees\s+([\d,]+\.\d{2})/g;
+      let m, plan = 0, addon = 0, usage = 0, n = 0;
+      while ((m = re.exec(text))) { plan += parseFloat(m[1].replace(/,/g, '')); addon += parseFloat(m[2].replace(/,/g, '')); usage += parseFloat(m[3].replace(/,/g, '')); n++; }
+      if (n) out = { plan: round2(plan + addon), usage: round2(usage), numbers: n };
+    }
+  } catch (e) { out = null; }
+  if (out) duCache.set(key, out);
+  return out;
+};
+const getPdfCharges = async (row, billNumber) => {
+  const key = String(billNumber);
+  if (pdfLinesCache.has(key)) return pdfLinesCache.get(key);
+  let lines = [];
+  try {
+    const file = findBillPdf(row, billNumber);
+    if (file) {
+      const { PDFParse } = require('pdf-parse');
+      const inst = new PDFParse({ data: fs.readFileSync(file) });
+      const res = await inst.getText();
+      lines = parseUsageSection((res && res.text) || '');
+    }
+  } catch (e) { lines = []; }
+  if (lines.length) pdfLinesCache.set(key, lines);
+  return lines;
 };
 
 let colCache = null;
@@ -192,10 +289,15 @@ exports.getUsageReport = async (req, res) => {
     const pks = bills.map(b => b.pk);
 
     const itemFk = (await getCols('tbl_telecome_bill_items')).has('tele_bill_id') ? 'tele_bill_id' : 'bill_id';
+    const callCols = await getCols('tbl_telecome_call_logs');
+    const durationSecondsSelect = callCols.has('duration_seconds') ? 'duration_seconds' : 'NULL AS duration_seconds';
+    const billingUnitsSelect = callCols.has('provider_billing_units') ? 'provider_billing_units' : 'NULL AS provider_billing_units';
+    const roundingRuleSelect = callCols.has('billing_rounding_rule') ? 'billing_rounding_rule' : 'NULL AS billing_rounding_rule';
     const [itemsRes, callsRes, smsRes, usageRes] = await Promise.all([
       db.query(`SELECT * FROM tbl_telecome_bill_items WHERE ${itemFk} = ANY($1) ORDER BY item_id ASC`, [pks]).catch(() => ({ rows: [] })),
       db.query(
-        `SELECT bill_number, call_date, call_time, destination_number, duration, category, amount
+        `SELECT bill_number, call_date, call_time, destination_number, duration,
+                ${durationSecondsSelect}, ${billingUnitsSelect}, ${roundingRuleSelect}, category, amount
          FROM tbl_telecome_call_logs
          WHERE bill_number = ANY($1) AND regexp_replace(COALESCE(source_number,''), '\\D', '', 'g') LIKE $2`,
         [billNumbers, `%${key}`]
@@ -232,128 +334,239 @@ exports.getUsageReport = async (req, res) => {
     const usageByBill = new Map();
     usageRes.rows.forEach(u => { if (!usageByBill.has(u.bill_number)) usageByBill.set(u.bill_number, u); });
 
-    const connPlan = conn ? num(conn.monthly_plan_amount) : 0;
+    const NOT_USAGE = /previous|payment|balance|carried|brought|adjust/i; // balance brought forward / payments are not usage
+    const sumAmt = (arr) => arr.reduce((t, x) => t + x.amount, 0);
+
+    // One bill, analysed from the PDF-extracted data.
+    //   Ground truth = the bill header: total, VAT and plan rental.
+    //   Extra usage (excl. VAT) = total - VAT - plan.
+    //   The extra is then explained by the most reliable breakdown that really adds up to it:
+    //     1. the charge lines printed on the bill, when they add up to the extra
+    //     2. otherwise the charged calls grouped by category (each call carries its own charge),
+    //        plus an "Other charges" remainder for anything the call log does not show
+    const analyseBill = (bl) => {
+      const row = bl.row;
+      const du = duByBill.get(bl.billNumber); // du prints the real plan per number; the saved plan can hold last month's amount
+      const canonical = calculateTelecomBill(du ? { ...row, plan_excl_vat: du.plan, plan_rental: du.plan } : row);
+      let total = canonical.bill_incl_vat;
+      const vat = canonical.vat;
+      const planRental = canonical.plan_excl_vat;
+      const plan = du ? du.plan : planRental;
+      const billExcl = canonical.bill_excl_vat;
+      // The invoice totals are authoritative. Never replace them with a recomputed
+      // sum merely because rounded detail lines differ.
+      const extra = canonical.excess_excl_vat;
+      const bItems = itemsByPk.get(String(bl.pk)) || [];
+      const bCalls = callsByBill.get(bl.billNumber) || [];
+      const bSms = smsByBill.get(bl.billNumber) || [];
+      const bUsage = usageByBill.get(bl.billNumber) || null;
+      const tol = Math.max(0.05, (extra || 0) * 0.005);
+
+      const itemExtra = bItems
+        .filter(i => ['CHARGE', 'PARKING'].includes(String(i.record_type || '').toUpperCase()) && !NOT_USAGE.test(i.category || ''))
+        .map(i => ({ name: i.category, amount: round2(num(i.amount)) }))
+        .filter(x => x.amount > 0.004 && !/^(total\s+)?usage\s+charges?$/i.test(String(x.name || '').trim())); // a lump total explains nothing
+
+      const catMap = new Map();
+      bCalls.forEach(c => {
+        const amt = num(c.amount);
+        if (amt > 0) catMap.set(c.category || 'Calls', (catMap.get(c.category || 'Calls') || 0) + amt);
+      });
+      const toList = (m) => Array.from(m.entries()).map(([name, amount]) => ({ name, amount: round2(amount) }));
+      let callExtra = toList(catMap);
+      // SMS charges join the breakdown only when they still fit inside the extra usage on the bill
+      const smsMap = new Map(catMap);
+      bSms.forEach(x => {
+        const amt = num(x.amount);
+        if (amt > 0) smsMap.set(x.sms_type || 'SMS', (smsMap.get(x.sms_type || 'SMS') || 0) + amt);
+      });
+      const withSms = toList(smsMap);
+      if (sumAmt(withSms) <= extra + tol) callExtra = withSms;
+
+      let sources = [];
+      let method = 'none';
+      const pdfLines = pdfByBill.get(bl.billNumber) || [];
+      const storedComponents = jsonArray(row.charge_components)
+        .map(component => ({
+          name: component.label || component.category || 'Other charge',
+          amount: round2(num(component.amount_excl_vat ?? component.amount)),
+          units: nullableNum(component.unit_count),
+          unit_type: component.unit_type || null,
+          parent_subtotal: component.parent_subtotal || null,
+        }))
+        .filter(component => component.amount > 0.004);
+      if (extra !== null && extra > tol && storedComponents.length) {
+        sources = storedComponents;
+        const componentTotal = round2(sumAmt(sources));
+        const adjustment = round2(extra - componentTotal);
+        if (Math.abs(adjustment) > tol) sources.push({
+          name: adjustment < 0 ? 'Credits / adjustments' : 'Other invoice charges',
+          amount: adjustment, units: null, unit_type: 'reconciliation', parent_subtotal: null,
+        });
+        method = 'invoice charge components';
+      } else if (extra !== null && extra > tol && du) {
+        sources = [{ name: `Usage & one-time fees (${du.numbers} number${du.numbers > 1 ? 's' : ''})`, amount: round2(extra) }];
+        method = 'du bill subtotal';
+      } else if (extra !== null && extra > tol) {
+        if (pdfLines.length > 1 && Math.abs(sumAmt(pdfLines) - extra) <= tol) {
+          sources = pdfLines.map(x => ({ name: x.name, amount: x.amount })); method = 'bill pdf';
+        } else if (itemExtra.length && Math.abs(sumAmt(itemExtra) - extra) <= tol) {
+          sources = itemExtra; method = 'bill lines';
+        } else {
+          const callsSum = sumAmt(callExtra);
+          sources = callExtra.slice();
+          method = 'call log';
+          if (callsSum <= extra + tol) {
+            const rest = round2(extra - callsSum);
+            if (rest > tol) { sources.push({ name: '3rd party / other charges', amount: rest }); method = 'call log + other'; }
+          } else {
+            method = 'call log (more than the bill shows)';
+          }
+        }
+      }
+      sources.sort((x, y) => y.amount - x.amount);
+
+      const premiumAmount = round2(sources.filter(x => /premium/i.test(x.name || '')).reduce((t, x) => t + x.amount, 0));
+      const parkingAmount = round2(sources.filter(x => /parking/i.test(x.name || '')).reduce((t, x) => t + x.amount, 0));
+      const premiumRows = bSms.filter(x => /premium/i.test(x.sms_type || ''));
+      const pdfPremium = pdfLines.find(x => /premium/i.test(x.name));
+      const premiumCount = pdfPremium && method === 'bill pdf' ? pdfPremium.units : premiumAmount > 0 ? premiumRows.reduce((n, x) => n + (Number(x.sms_count) || 1), 0) : 0;
+
+      return { row, total, billExcl, vat, plan, extra, canonical, items: bItems, calls: bCalls, smsLogs: bSms, usage: bUsage, sources, method, premiumAmount, parkingAmount, premiumCount };
+    };
+    const duByBill = new Map();
+    for (const bl of bills) duByBill.set(bl.billNumber, await getDuFees(bl.row, bl.billNumber));
+    const pdfByBill = new Map();
+    for (const bl of bills) pdfByBill.set(bl.billNumber, await getPdfCharges(bl.row, bl.billNumber));
+    const analyses = bills.map(analyseBill);
 
     // ---- month-wise rows for every bill of this number ----
-    const months = bills.map(b => {
-      const r = b.row;
-      const total = num(r.total_amount ?? r.total_bill);
-      const vat = num(r.vat_amount ?? r.vat_current_period);
-      const planRental = num(r.plan_rental);
-      const plan = connPlan > 0 ? connPlan : planRental;
-      const exclVat = vat > 0 && total > vat ? total - vat : total;
-      const extra = Math.max(0, exclVat - plan);
-      const calls = callsByBill.get(b.billNumber) || [];
-      const sms = smsByBill.get(b.billNumber) || [];
-      const usage = usageByBill.get(b.billNumber);
-      const callSecs = calls.reduce((s, c) => s + durSec(c.duration), 0);
+    const months = bills.map((bl, idx) => {
+      const A = analyses[idx];
+      const callSecs = sumCallSeconds(A.calls);
       return {
-        key: b.monthKey,
-        label: monthLabelOf(b.monthKey),
-        bill_id: b.pk,
-        bill_number: b.billNumber,
-        total: round2(total),
-        plan: round2(plan),
-        extra: round2(extra),
-        extra_pct: total > 0 ? Math.round((extra / total) * 100) : 0,
+        key: bl.monthKey,
+        label: monthLabelOf(bl.monthKey),
+        bill_id: bl.pk,
+        bill_number: bl.billNumber,
+        total: A.total === null ? null : round2(A.total),
+        bill_excl_vat: A.billExcl === null ? null : round2(A.billExcl),
+        vat: A.vat === null ? null : round2(A.vat),
+        plan: A.plan === null ? null : round2(A.plan),
+        extra: A.extra === null ? null : round2(A.extra),
+        extra_pct: A.total > 0 && A.extra !== null ? Math.round((A.extra / A.total) * 100) : 0,
         call_minutes: round2(callSecs / 60),
-        calls: calls.length,
-        data_gb: usage ? num(usage.data_used_gb) : 0,
-        premium_sms: sms.filter(s => /premium/i.test(s.sms_type || '')).reduce((n, s) => n + (Number(s.sms_count) || 1), 0),
-        status: extra > EXCESS_MARGIN_AED ? 'over' : 'within',
+        calls: A.calls.length,
+        data_gb: A.usage ? num(A.usage.data_used_gb) : 0,
+        premium_sms: A.premiumCount,
+        status: A.canonical.calculation_status === 'needs_review' ? 'needs_review' : (A.extra > EXCESS_MARGIN_AED ? 'over' : 'within'),
       };
     });
 
     // ---- the selected month ----
-    let sel = bills.find(b => b.monthKey === wantedMonth);
+    let sel = bills.find(bl => bl.monthKey === wantedMonth);
     if (!sel) sel = bills[bills.length - 1];
     const selIdx = bills.indexOf(sel);
     const m = months[selIdx];
     const prev = selIdx > 0 ? months[selIdx - 1] : null;
-    const r = sel.row;
-    const items = itemsByPk.get(String(sel.pk)) || [];
-    const calls = callsByBill.get(sel.billNumber) || [];
-    const smsLogs = smsByBill.get(sel.billNumber) || [];
-    const usage = usageByBill.get(sel.billNumber) || null;
-    const total = num(r.total_amount ?? r.total_bill);
-    const vat = num(r.vat_amount ?? r.vat_current_period);
+    const A = analyses[selIdx];
+    const r = A.row;
+    const calls = A.calls;
+    const smsLogs = A.smsLogs;
+    const usage = A.usage;
+    const total = A.total;
+    const vat = A.vat;
+    const sources = A.sources;
 
-    // bill lines (everything except the total row); plan / extra / VAT classification
-    // Balance brought forward / payments are not usage, so they never count as extra
-    const NOT_USAGE = /previous|payment|balance|carried|brought|adjust/i;
-    const lines = items
-      .filter(i => String(i.record_type).toUpperCase() !== 'BILL')
-      .map(i => {
-        const t = String(i.record_type || '').toUpperCase();
-        return {
-          description: i.category,
-          type: t,
-          part: t === 'SERVICE' ? 'Plan' : (t === 'VAT' ? 'VAT' : (NOT_USAGE.test(i.category || '') ? 'Other' : 'Extra usage')),
-          amount: round2(num(i.amount)),
-        };
-      })
-      .filter(l => Math.abs(l.amount) > 0.004);
-
-    // extra by source (charges and parking, VAT left out)
-    const sources = lines.filter(l => l.part === 'Extra usage' && l.amount > 0).map(l => ({ name: l.description, amount: l.amount }));
+    // "Where the money went": plan + each extra source + VAT, so the lines add up to the bill total
+    const lines = [
+      { description: 'Plan — excluding VAT', type: 'SERVICE', part: 'Plan', amount: A.plan === null ? null : round2(A.plan) },
+      ...sources.map(x => ({ description: x.name, type: 'CHARGE', part: 'Extra usage', amount: x.amount })),
+      { description: 'VAT', type: 'VAT', part: 'VAT', amount: vat === null ? null : round2(vat) },
+    ].filter(l => l.amount !== null && Math.abs(l.amount) > 0.004);
+    const listedTotal = round2(lines.reduce((t, l) => t + l.amount, 0));
+    const reconcile = {
+      method: A.method,
+      bill_total: total === null ? null : round2(total),
+      lines_total: listedTotal,
+      difference: total === null ? null : round2(total - listedTotal),
+      matches: total !== null && Math.abs(total - listedTotal) <= Math.max(0.05, total * 0.002),
+      plan_known: A.plan !== null,
+      calculation_status: A.canonical.calculation_status,
+    };
 
     // calls: free vs charged, per day
     const parsed = calls.map(c => ({
       c, ts: Date.parse(`${c.call_date} ${c.call_time || ''}`.trim()) || Date.parse(c.call_date) || 0,
-      secs: durSec(c.duration), amt: num(c.amount),
+      secs: callDurationSeconds(c), amt: num(c.amount),
     })).sort((a, b) => a.ts - b.ts);
     const perDay = new Map();
-    let freeCalls = 0; let freeSecs = 0; let chargedCalls = 0; let chargedSecs = 0; let chargedAmount = 0;
-    let freeRanOut = null;
+    let unchargedCalls = 0; let unchargedSecs = 0; let chargedCalls = 0; let chargedSecs = 0; let chargedAmount = 0;
+    let firstChargedCall = null;
     parsed.forEach(p => {
       const d = new Date(p.ts);
       const dayKey = p.ts ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : 'unknown';
-      if (!perDay.has(dayKey)) perDay.set(dayKey, { date: dayKey, day: p.ts ? d.getDate() : 0, free_min: 0, charged_min: 0 });
+      if (!perDay.has(dayKey)) perDay.set(dayKey, { date: dayKey, day: p.ts ? d.getDate() : 0, uncharged_min: 0, charged_call_min: 0 });
       const slot = perDay.get(dayKey);
       if (p.amt > 0) {
-        slot.charged_min += p.secs / 60; chargedCalls += 1; chargedSecs += p.secs; chargedAmount += p.amt;
-        if (!freeRanOut) freeRanOut = { date: dayKey, time: p.c.call_time || '' };
+        slot.charged_call_min += p.secs / 60; chargedCalls += 1; chargedSecs += p.secs; chargedAmount += p.amt;
+        if (!firstChargedCall) firstChargedCall = { date: dayKey, time: p.c.call_time || '' };
       } else {
-        slot.free_min += p.secs / 60; freeCalls += 1; freeSecs += p.secs;
+        slot.uncharged_min += p.secs / 60; unchargedCalls += 1; unchargedSecs += p.secs;
       }
     });
     const daily = Array.from(perDay.values())
       .filter(x => x.date !== 'unknown')
       .sort((a, b) => a.date.localeCompare(b.date))
-      .map(x => ({ ...x, free_min: round2(x.free_min), charged_min: round2(x.charged_min) }));
+      .map(x => ({ ...x, uncharged_min: round2(x.uncharged_min), charged_call_min: round2(x.charged_call_min) }));
 
     // top numbers called
     const dest = new Map();
     parsed.forEach(p => {
       const k = String(p.c.destination_number || '').trim() || 'Unknown';
-      if (!dest.has(k)) dest.set(k, { number: k, calls: 0, total_min: 0, free_min: 0, extra_min: 0, extra_amount: 0 });
+      if (!dest.has(k)) dest.set(k, { number: k, calls: 0, total_min: 0, uncharged_min: 0, charged_call_min: 0, charged_amount: 0 });
       const d = dest.get(k);
       d.calls += 1; d.total_min += p.secs / 60;
-      if (p.amt > 0) { d.extra_min += p.secs / 60; d.extra_amount += p.amt; } else { d.free_min += p.secs / 60; }
+      if (p.amt > 0) { d.charged_call_min += p.secs / 60; d.charged_amount += p.amt; } else { d.uncharged_min += p.secs / 60; }
     });
     const destAll = Array.from(dest.values()).map(d => ({
-      ...d, total_min: round2(d.total_min), free_min: round2(d.free_min), extra_min: round2(d.extra_min), extra_amount: round2(d.extra_amount),
+      ...d,
+      total_min: round2(d.total_min),
+      uncharged_min: round2(d.uncharged_min),
+      charged_call_min: round2(d.charged_call_min),
+      charged_amount: round2(d.charged_amount),
     }));
     const top = (sorter) => destAll.slice().sort(sorter).slice(0, 10);
     const topNumbers = {
       by_calls: top((a, b) => b.calls - a.calls || b.total_min - a.total_min),
       by_time: top((a, b) => b.total_min - a.total_min),
-      by_extra: top((a, b) => b.extra_amount - a.extra_amount || b.extra_min - a.extra_min).filter(d => d.extra_amount > 0),
+      by_extra: top((a, b) => b.charged_amount - a.charged_amount || b.charged_call_min - a.charged_call_min).filter(d => d.charged_amount > 0),
     };
 
-    // SMS and parking
-    const premium = smsLogs.filter(s => /premium/i.test(s.sms_type || ''));
-    const premiumCount = premium.reduce((n, s) => n + (Number(s.sms_count) || 1), 0);
-    const premiumAmount = premium.reduce((s, x) => s + num(x.amount), 0);
-    const normalSms = smsLogs.filter(s => !/premium/i.test(s.sms_type || '')).reduce((n, s) => n + (Number(s.sms_count) || 1), 0);
-    const parkingAmount = num(r.mparking_total) || lines.filter(l => /parking/i.test(l.description || '')).reduce((s, l) => s + l.amount, 0);
+    // SMS and parking come from the same reconciled breakdown, so they never exceed the bill
+    const premiumCount = A.premiumCount;
+    const premiumAmount = A.premiumAmount;
+    const normalSms = smsLogs.filter(x => !/premium/i.test(x.sms_type || '')).reduce((n, x) => n + (Number(x.sms_count) || 1), 0);
+    const parkingAmount = A.parkingAmount;
 
     const plan = m.plan;
     const extra = m.extra;
-    // Charges on the bill that have no line item of their own: show them so the slices add up to the extra
-    const listedExtra = sources.reduce((sum, x) => sum + x.amount, 0);
-    if (extra - listedExtra > 0.5) sources.push({ name: 'Other charges', amount: round2(extra - listedExtra) });
-    const delta = (cur, before) => (before === null || before === undefined ? null : round2(cur - before));
+    const actualTotalSeconds = unchargedSecs + chargedSecs;
+    const actualLocalSeconds = sumCallSeconds(calls, c => callGroup(c) === 'local');
+    const localAllowanceMinutes = nullableNum(usage && usage.local_minutes_limit) ?? nullableNum(conn && conn.local_minutes);
+    const eligibleCategories = jsonArray(r.allowance_eligible_categories);
+    const allowanceCategoriesVerified = r.allowance_categories_verified === true && eligibleCategories.length > 0;
+    const eligibleLocalSeconds = allowanceCategoriesVerified
+      ? sumCallSeconds(calls, c => eligibleCategories.includes(c.category) && callGroup(c) === 'local')
+      : null;
+    const durationAboveAllowanceSeconds = localAllowanceMinutes === null || eligibleLocalSeconds === null
+      ? null
+      : Math.max(0, eligibleLocalSeconds - Math.round(localAllowanceMinutes * 60));
+    const billingUnits = calls.some(c => nullableNum(c.provider_billing_units) !== null)
+      ? calls.reduce((sum, c) => sum + (nullableNum(c.provider_billing_units) || 0), 0)
+      : null;
+    const billingRoundingRules = Array.from(new Set(calls.map(c => c.billing_rounding_rule).filter(Boolean)));
+    const delta = (cur, before) => (cur === null || cur === undefined || before === null || before === undefined ? null : round2(cur - before));
 
     const selected = {
       month: sel.monthKey,
@@ -368,14 +581,18 @@ exports.getUsageReport = async (req, res) => {
         provider: r.telecom_provider || r.provider || (conn && conn.provider) || '',
         company: r.company_name || (conn && conn.company_name) || '',
         status: r.status || '',
+        numbers: String(r.mobile_number || '').split(/[,|\n]+/).map(x => x.trim()).filter(Boolean),
+        multi_number: String(r.mobile_number || '').split(/[,|\n]+/).map(x => x.trim()).filter(Boolean).length > 1,
       },
       kpis: {
         total: m.total,
+        bill_excl_vat: m.bill_excl_vat,
+        bill_incl_vat: m.total,
         plan,
         extra,
         extra_pct: m.extra_pct,
-        vat: round2(vat),
-        extra_minutes: round2(chargedSecs / 60),
+        vat: m.vat,
+        duration_of_calls_with_charges: secondsToDisplayMinutes(chargedSecs),
         premium_sms: premiumCount,
         premium_sms_amount: round2(premiumAmount),
         data_gb: usage ? num(usage.data_used_gb) : 0,
@@ -386,19 +603,45 @@ exports.getUsageReport = async (req, res) => {
         } : null,
       },
       status: m.status,
+      reconcile,
       sources,
       lines,
       calls: {
-        free_calls: freeCalls, free_min: round2(freeSecs / 60),
-        charged_calls: chargedCalls, charged_min: round2(chargedSecs / 60), charged_amount: round2(chargedAmount),
-        total_calls: freeCalls + chargedCalls, total_min: round2((freeSecs + chargedSecs) / 60),
-        free_ran_out: freeRanOut,
+        actual_total_seconds: actualTotalSeconds,
+        actual_total_minutes: secondsToDisplayMinutes(actualTotalSeconds),
+        actual_local_seconds: actualLocalSeconds,
+        actual_local_minutes: secondsToDisplayMinutes(actualLocalSeconds),
+        uncharged_calls: unchargedCalls,
+        uncharged_seconds: unchargedSecs,
+        uncharged_minutes: secondsToDisplayMinutes(unchargedSecs),
+        calls_with_charges: chargedCalls,
+        duration_of_calls_with_charges_seconds: chargedSecs,
+        duration_of_calls_with_charges_minutes: secondsToDisplayMinutes(chargedSecs),
+        charged_amount: round2(chargedAmount),
+        total_calls: unchargedCalls + chargedCalls,
+        first_call_with_charge: firstChargedCall,
+        provider_reported_minutes: usage ? {
+          local: nullableNum(usage.local_minutes_used),
+          international: nullableNum(usage.intl_minutes_used),
+          roaming: nullableNum(usage.roaming_minutes_used),
+        } : null,
+        provider_billing_units: billingUnits,
+        billing_rounding_rules: billingRoundingRules,
+        applicable_local_allowance_minutes: localAllowanceMinutes,
+        duration_above_allowance_seconds: durationAboveAllowanceSeconds,
+        duration_above_allowance_minutes: durationAboveAllowanceSeconds === null ? null : secondsToDisplayMinutes(durationAboveAllowanceSeconds),
+        duration_above_allowance_verified_chargeable: false,
+        allowance_categories_verified: allowanceCategoriesVerified,
+        allowance_eligible_categories: eligibleCategories,
+        category_aggregates: aggregateCallCategories(calls),
+        category_reconciliation: jsonArray(r.call_category_reconciliation),
       },
       daily,
       top_numbers: topNumbers,
       allowance: {
-        local_minutes_used: usage ? num(usage.local_minutes_used) : round2((freeSecs + chargedSecs) / 60),
-        local_minutes_limit: usage && usage.local_minutes_limit ? num(usage.local_minutes_limit) : null,
+        actual_local_minutes: secondsToDisplayMinutes(actualLocalSeconds),
+        provider_reported_local_minutes: usage ? nullableNum(usage.local_minutes_used) : null,
+        local_minutes_limit: localAllowanceMinutes,
         intl_minutes_used: usage ? num(usage.intl_minutes_used) : 0,
         roaming_minutes_used: usage ? num(usage.roaming_minutes_used) : 0,
         data_used_gb: usage ? num(usage.data_used_gb) : 0,

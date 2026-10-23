@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { calculateTelecomBill } = require('../utils/telecomBilling');
 
 // Recurring / One Time plan type stored with the connection's plan
 db.query(`ALTER TABLE tbl_tele_connection ADD COLUMN IF NOT EXISTS plan_type VARCHAR(20) DEFAULT 'Recurring'`)
@@ -632,7 +633,7 @@ exports.getLatestBills = async (req, res) => {
     const cols = await getBillCols();
     const pk = ['tele_bill_id', 'bill_id', 'id'].find(c => cols.has(c)) || 'tele_bill_id';
     const pick = (...names) => names.filter(n => cols.has(n)).map(n => `tb.${n}`);
-    const coalesce = (names, fallback = '0') => {
+    const coalesce = (names, fallback = 'NULL') => {
       const list = pick(...names);
       return list.length ? `COALESCE(${list.join(', ')}, ${fallback})` : fallback;
     };
@@ -657,6 +658,8 @@ exports.getLatestBills = async (req, res) => {
       `${coalesce(['period_to', 'bill_period_to'], 'NULL')} AS period_to`,
       `${coalesce(['total_amount', 'total_bill'])} AS total_bill`,
       `${coalesce(['vat_amount', 'vat_current_period'])} AS vat_current_period`,
+      ...['current_period_excl_vat', 'current_period_vat', 'current_period_incl_vat', 'plan_excl_vat']
+        .filter(name => cols.has(name)).map(name => `tb.${name}`),
     ].join(', ');
 
     const result = await db.query(
@@ -679,6 +682,7 @@ exports.getLatestBills = async (req, res) => {
           periodTo = `${y}-${String(mo).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
         }
       }
+      const calculation = calculateTelecomBill(row);
       return {
         id: row.id,
         tele_bill_id: row.tele_bill_id,
@@ -689,6 +693,11 @@ exports.getLatestBills = async (req, res) => {
         created_at: row.created_at,
         total_bill: row.total_bill,
         vat_current_period: row.vat_current_period,
+        calculation,
+        bill_excl_vat: calculation.bill_excl_vat,
+        bill_incl_vat: calculation.bill_incl_vat,
+        excess_excl_vat: calculation.excess_excl_vat,
+        is_excess: calculation.is_excess,
       };
     });
 

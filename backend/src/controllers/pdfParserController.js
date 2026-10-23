@@ -1,6 +1,8 @@
 const { PDFDocument } = require('pdf-lib');
 const pdfParseReq = require('pdf-parse');
 const { extractUsageSummaries, saveUsageSummaries } = require('../utils/usageSummaryExtractor');
+const { extractTelecomFinancials, durationToSeconds } = require('../utils/telecomBilling');
+const { extractTelecomUsage } = require('../utils/telecomUsage');
 const db = require('../config/db');
 
 const getPdfParseFn = () => {
@@ -424,37 +426,41 @@ exports.parsePdfDocument = async (req, res) => {
       }
     }
 
+    // Financial values are extracted once from invoice-level labels. Category and
+    // transaction repeats are retained as explanations, never added to the bill again.
+    const invoiceFinancials = extractTelecomFinancials(rawText);
+
     // H. Match Service Rentals
-    let matchedServiceRental = '';
+    let matchedServiceRental = invoiceFinancials.plan_excl_vat ?? '';
     const rentalRegex = /(?:service\s*rentals?|rental\s*charges?|monthly\s*rental|plan\s*charges?|monthly\s*plan|rentals?)\s*[:.-]?\s*[\r\n]*\s*(?:AED|\$)?\s*([\d,]+\.?\d{0,2})/i;
     const rentalMatch = rawText.match(rentalRegex);
-    if (rentalMatch) matchedServiceRental = rentalMatch[1].replace(/,/g, '').trim();
+    if (matchedServiceRental === '' && rentalMatch) matchedServiceRental = rentalMatch[1].replace(/,/g, '').trim();
 
     // I. Match Usage Charges
-    let matchedUsageCharges = '';
+    let matchedUsageCharges = invoiceFinancials.usage_charges ?? '';
     const usageRegex = /(?:usage\s*charges?|usage|call\s*charges?|extra\s*usage)\s*[:.-]?\s*[\r\n]*\s*(?:AED|\$)?\s*([\d,]+\.?\d{0,2})/i;
     const usageMatch = rawText.match(usageRegex);
-    if (usageMatch) matchedUsageCharges = usageMatch[1].replace(/,/g, '').trim();
+    if (matchedUsageCharges === '' && usageMatch) matchedUsageCharges = usageMatch[1].replace(/,/g, '').trim();
 
     // J. Match One-Time Charges
-    let matchedOneTimeCharges = '';
+    let matchedOneTimeCharges = invoiceFinancials.one_time_charges ?? '';
     const oneTimeRegex = /(?:one-time\s*charges?|one\s*time|activation\s*fee|setup\s*fee)\s*[:.-]?\s*[\r\n]*\s*(?:AED|\$)?\s*([\d,]+\.?\d{0,2})/i;
     const oneTimeMatch = rawText.match(oneTimeRegex);
-    if (oneTimeMatch) matchedOneTimeCharges = oneTimeMatch[1].replace(/,/g, '').trim();
+    if (matchedOneTimeCharges === '' && oneTimeMatch) matchedOneTimeCharges = oneTimeMatch[1].replace(/,/g, '').trim();
 
     // K. Match Other Charges / Credits
-    let matchedOtherCharges = '';
+    let matchedOtherCharges = invoiceFinancials.credits_adjustments ?? '';
     const otherRegex = /(?:other\s*credits?\s*&\s*charges?|other\s*charges?|discounts?|adjustments?)\s*[:.-]?\s*[\r\n]*\s*(?:AED|\$)?\s*([\d,]+\.?\d{0,2})/i;
     const otherMatch = rawText.match(otherRegex);
-    if (otherMatch) matchedOtherCharges = otherMatch[1].replace(/,/g, '').trim();
+    if (matchedOtherCharges === '' && otherMatch) matchedOtherCharges = otherMatch[1].replace(/,/g, '').trim();
 
     // L. Match VAT Amount
-    let matchedVat = '';
+    let matchedVat = invoiceFinancials.current_period_vat ?? '';
     const vatPatterns = [
       /(?:vat\s*(?:on\s*taxable\s*services)?\s*(?:[-–]?\s*current\s*period)?|vat\s*amount|tax\s*amount|5%\s*vat|vat\s*\(5%\)|tax\s*\(5%\))\s*[:.-]?\s*[\r\n]*\s*(?:AED|\$)?\s*([\d,]+\.?\d{2})/i,
       /VAT\s*(?:[^\n\r\d]*?)\s*([\d,]+\.\d{2})/i
     ];
-    for (const pat of vatPatterns) {
+    for (const pat of matchedVat === '' ? vatPatterns : []) {
       const vatMatch = rawText.match(pat);
       if (vatMatch && vatMatch[1]) {
         matchedVat = vatMatch[1].replace(/,/g, '').trim();
@@ -501,13 +507,12 @@ exports.parsePdfDocument = async (req, res) => {
     }
 
     // N. Match Total / Bill Amount Regex (Includes du "this month's bill" patterns)
-    let matchedTotalAmount = '';
+    let matchedTotalAmount = invoiceFinancials.current_period_incl_vat ?? '';
     const amountPatterns = [
       /(?:this\s*month['’]?s\s*bill|your\s*bill\s*for\s*this\s*month)\s*[\r\n]*\s*(?:for\s*account\s*number\s*\d+)?\s*[\r\n]*\s*AED\s*([\d,]+\.\d{2})/i,
-      /(?:current\s*month\s*charges|total\s*bill|net\s*amount|grand\s*total|total\s*due|amount\s*due|total\s*amount|total\s*current\s*charges|amount\s*payable|total\s*payable)\s*[:.-]?\s*[\r\n]*\s*(?:AED|USD|\$|SAR|QAR)?\s*([\d,]+\.?\d{2})/i,
-      /(?:AED|USD|\$)\s*([\d,]+\.\d{2})/i
+      /(?:current\s*month\s*charges|current[- ]period\s*charges|total\s*current\s*charges)\s*[:.-]?\s*[\r\n]*\s*(?:AED|USD|\$|SAR|QAR)?\s*([\d,]+\.?\d{2})/i,
     ];
-    for (const pat of amountPatterns) {
+    for (const pat of matchedTotalAmount === '' ? amountPatterns : []) {
       const m = rawText.match(pat);
       if (m && m[1] && parseFloat(m[1].replace(/,/g, '')) > 0) {
         matchedTotalAmount = m[1].replace(/,/g, '').trim();
@@ -515,42 +520,8 @@ exports.parsePdfDocument = async (req, res) => {
       }
     }
 
-    // Universal Fallback for Decimal Amounts (Find all decimal numbers in rawText)
-    const allDecimals = [];
-    const decRegex = /\b(\d{1,6}\.\d{2})\b/g;
-    let decMatch;
-    while ((decMatch = decRegex.exec(rawText)) !== null) {
-      const val = parseFloat(decMatch[1]);
-      if (val > 0 && !allDecimals.includes(val)) {
-        allDecimals.push(val);
-      }
-    }
-    allDecimals.sort((a, b) => b - a); // Sort descending
-
-    if (!matchedTotalAmount && allDecimals.length > 0) {
-      matchedTotalAmount = allDecimals[0].toFixed(2);
-    }
-
-    if (!matchedServiceRental) {
-      if (allDecimals.length > 1) {
-        matchedServiceRental = allDecimals[1].toFixed(2);
-      } else if (matchedTotalAmount) {
-        matchedServiceRental = matchedTotalAmount;
-      }
-    }
-
-    const totNum = parseFloat(matchedTotalAmount || 0);
-    const vatNum = parseFloat(matchedVat || 0);
-    const netCharges = parseFloat(matchedServiceRental || 0) + parseFloat(matchedUsageCharges || 0) + parseFloat(matchedOneTimeCharges || 0) + parseFloat(matchedOtherCharges || 0);
-
-    // Sanity Check: VAT cannot exceed total bill or 30% of total bill
-    if (!matchedVat || (totNum > 0 && vatNum >= totNum) || (totNum > 0 && vatNum > totNum * 0.3)) {
-      if (netCharges > 0) {
-        matchedVat = (netCharges * 0.05).toFixed(2);
-      } else if (totNum > 0) {
-        matchedVat = (totNum * 0.05 / 1.05).toFixed(2);
-      }
-    }
+    // Never guess a plan from unrelated decimals and never manufacture 5% VAT.
+    // Missing VAT remains null/unknown so the bill is routed to review.
 
     // Universal Fallback for Document / Bill Number
     if (!matchedDocNumber || /^(your|bill|account|number|date|invoice|mullah)$/i.test(matchedDocNumber) || !/\d/.test(matchedDocNumber)) {
@@ -742,6 +713,7 @@ exports.parsePdfDocument = async (req, res) => {
           call_time: callMatch[2],
           destination_number: destNum,
           duration: callMatch[5],
+          duration_seconds: durationToSeconds(callMatch[5]),
           category: finalCategory,
           sub_heading: activeSubHeading || finalCategory,
           amount: parseFloat(callMatch[6] || 0)
@@ -805,6 +777,17 @@ exports.parsePdfDocument = async (req, res) => {
         }
       }
     }
+
+    // Replace the legacy prefix-based classification with the shared,
+    // invoice-section-driven extraction. Ambiguous rows remain Unclassified.
+    const structuredUsage = extractTelecomUsage(rawText, {
+      provider: matchedTelecomProvider,
+      billNumber: matchedDocNumber,
+      sourceNumber: matchedMobileAccount,
+      periodTo: matchedPeriodTo,
+    });
+    extractedCallLogs.splice(0, extractedCallLogs.length, ...structuredUsage.call_logs);
+    extractedSmsLogs.splice(0, extractedSmsLogs.length, ...structuredUsage.sms_logs);
 
     // Summary SMS Fallback (if no itemized SMS log rows were in the PDF)
     if (extractedSmsLogs.length === 0) {
@@ -872,8 +855,8 @@ exports.parsePdfDocument = async (req, res) => {
       try {
         await db.query(
           `INSERT INTO tbl_telecome_sms_logs 
-            (provider, bill_number, source_number, destination_number, sms_date, sms_time, sms_type, sub_heading, sms_count, amount, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, CURRENT_TIMESTAMP)`,
+            (provider, bill_number, source_number, destination_number, sms_date, sms_time, sms_type, sub_heading, sms_count, unit_type, unit_count, amount, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)`,
           [
             matchedTelecomProvider || 'Etisalat',
             sms.bill_number || matchedDocNumber || '',
@@ -883,6 +866,9 @@ exports.parsePdfDocument = async (req, res) => {
             sms.call_time || '00:00',
             sms.category || 'National SMS',
             sms.sub_heading || sms.category || 'N/A',
+            sms.unit_count || 1,
+            sms.unit_type || 'messages',
+            sms.unit_count || 1,
             sms.amount || 0.00
           ]
         );
@@ -899,8 +885,9 @@ exports.parsePdfDocument = async (req, res) => {
       try {
         await db.query(
           `INSERT INTO tbl_telecome_call_logs 
-            (bill_number, source_number, call_date, call_time, destination_number, duration, category, amount, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)`,
+            (bill_number, source_number, call_date, call_time, destination_number, duration, duration_seconds,
+             category, category_source, source_section, unit_type, unit_count, amount, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)`,
           [
             call.bill_number || matchedDocNumber || '',
             call.source_number || matchedMobileAccount || '',
@@ -908,7 +895,12 @@ exports.parsePdfDocument = async (req, res) => {
             call.call_time || '00:00',
             call.destination_number || 'N/A',
             call.duration || '00:00:00',
-            call.category || 'National Call',
+            call.duration_seconds ?? durationToSeconds(call.duration),
+            call.category || 'Unclassified',
+            call.category_source || 'unclassified',
+            call.source_section || null,
+            call.unit_type || 'calls',
+            call.unit_count || 1,
             call.amount || 0.00
           ]
         );
@@ -936,11 +928,32 @@ exports.parsePdfDocument = async (req, res) => {
         period_from: matchedPeriodFrom,
         period_to: matchedPeriodTo,
         service_rental: matchedServiceRental,
+        plan_excl_vat: invoiceFinancials.plan_excl_vat,
         usage_charges: matchedUsageCharges,
         one_time_charges: matchedOneTimeCharges,
         other_charges: matchedOtherCharges,
-        vat: matchedVat,
+        third_party_charges: invoiceFinancials.third_party_charges,
+        credits_adjustments: invoiceFinancials.credits_adjustments,
+        vat: matchedVat === '' ? null : matchedVat,
+        current_period_vat: invoiceFinancials.current_period_vat,
+        current_period_excl_vat: invoiceFinancials.current_period_excl_vat,
+        current_period_incl_vat: invoiceFinancials.current_period_incl_vat,
         total_amount: matchedTotalAmount,
+        previous_balance: invoiceFinancials.previous_balance,
+        payments: invoiceFinancials.payments,
+        balance_carried_forward: invoiceFinancials.balance_carried_forward,
+        total_amount_due: invoiceFinancials.total_amount_due,
+        account_number: invoiceFinancials.account_number,
+        invoice_number: invoiceFinancials.invoice_number,
+        vat_treatments: invoiceFinancials.vat_treatments,
+        reconciliation_status: invoiceFinancials.reconciliation_status,
+        reconciliation_difference: invoiceFinancials.reconciliation_difference,
+        calculation_status: invoiceFinancials.calculation_status,
+        source_financials: invoiceFinancials,
+        call_category_summaries: structuredUsage.call_category_summaries,
+        call_category_aggregates: structuredUsage.call_category_aggregates,
+        call_category_reconciliation: structuredUsage.call_category_reconciliation,
+        charge_components: structuredUsage.charge_components,
         remarks: matchedRemarks,
         call_logs: extractedCallLogs,
         sms_logs: extractedSmsLogs,
