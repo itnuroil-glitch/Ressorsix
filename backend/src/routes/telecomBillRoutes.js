@@ -6,6 +6,7 @@ const teleUsageReportController = require('../controllers/teleUsageReportControl
 router.get('/', telecomBillController.getAllTelecomBills);
 router.get('/usage-report/options', teleUsageReportController.getUsageReportOptions);
 router.get('/usage-report', teleUsageReportController.getUsageReport);
+router.post('/usage-report/pdf', teleUsageReportController.downloadUsageReportPdf);
 router.get('/report-analytics', telecomBillController.getTelecomReportAnalytics);
 router.get('/test-report', telecomBillController.getTelecomTestAuditReport);
 router.get('/:id', telecomBillController.getTelecomBillById);

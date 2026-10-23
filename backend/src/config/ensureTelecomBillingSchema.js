@@ -77,7 +77,7 @@ async function backfillFromOriginalPdfs() {
   const rows = await db.query(
     `SELECT ${pk} AS id, pdf_filename, bill_number, mobile_number, telecom_provider FROM tbl_telecome_bill
      WHERE pdf_filename IS NOT NULL
-       AND (financials_extracted_at IS NULL OR calculation_status = 'needs_review' OR COALESCE(calculation_version, 0) < 5)`
+       AND (financials_extracted_at IS NULL OR calculation_status = 'needs_review' OR COALESCE(calculation_version, 0) < 6)`
   );
   const callColsResult = await db.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'tbl_telecome_call_logs'`).catch(() => ({ rows: [] }));
   const callCols = new Set(callColsResult.rows.map(row => row.column_name));
@@ -126,7 +126,7 @@ async function backfillFromOriginalPdfs() {
            call_category_reconciliation = $20::jsonb,
            charge_components = $21::jsonb,
            financials_extracted_at = CURRENT_TIMESTAMP,
-           calculation_version = 5
+           calculation_version = 6
          WHERE ${pk} = $22`,
         [
           values.account_number, values.current_period_excl_vat, values.current_period_vat,
@@ -187,6 +187,46 @@ async function backfillFromOriginalPdfs() {
   console.log(`[MIGRATION] Telecom invoice backfill: ${updated} recalculated, ${missingPdf} missing original PDF, ${failed} failed, ${rows.rows.length} eligible.`);
 }
 
+async function deduplicateTelecomBills() {
+  const billCols = await db.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'tbl_telecome_bill'`);
+  const have = new Set(billCols.rows.map(row => row.column_name));
+  const pk = ['tele_bill_id', 'bill_id', 'id'].find(column => have.has(column));
+  if (!pk || !have.has('bill_number') || !have.has('mobile_number')) return 0;
+  const clientKey = have.has('clientid') ? "COALESCE(clientid::text, '')" : "''";
+  const duplicates = await db.query(`
+    SELECT ${pk} AS duplicate_id, MIN(${pk}) OVER (
+      PARTITION BY bill_number,
+        RIGHT(REGEXP_REPLACE(COALESCE(mobile_number, ''), '\\D', '', 'g'), 9),
+        ${clientKey}
+    ) AS canonical_id
+    FROM tbl_telecome_bill
+    WHERE NULLIF(TRIM(COALESCE(bill_number, '')), '') IS NOT NULL
+  `);
+  const mappings = duplicates.rows.filter(row => String(row.duplicate_id) !== String(row.canonical_id));
+  if (!mappings.length) return 0;
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const mapping of mappings) {
+      await client.query('UPDATE tbl_telecom_bill_logs SET bill_id = $1 WHERE bill_id = $2', [mapping.canonical_id, mapping.duplicate_id]).catch(() => null);
+      for (const table of ['tbl_telecome_bill_items', 'tbl_telecome_call_logs', 'tbl_telecome_sms_logs']) {
+        const cols = await client.query('SELECT column_name FROM information_schema.columns WHERE table_name = $1', [table]);
+        const fk = ['tele_bill_id', 'bill_id'].find(column => cols.rows.some(row => row.column_name === column));
+        if (fk) await client.query(`DELETE FROM ${table} WHERE ${fk} = $1`, [mapping.duplicate_id]);
+      }
+      await client.query(`DELETE FROM tbl_telecome_bill WHERE ${pk} = $1`, [mapping.duplicate_id]);
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+  return mappings.length;
+}
+
 async function ensureTelecomBillingSchema() {
   try {
     const exists = await db.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'tbl_telecome_bill'`);
@@ -223,6 +263,19 @@ async function ensureTelecomBillingSchema() {
       await db.query(`ALTER TABLE tbl_telecome_bill_items ADD COLUMN IF NOT EXISTS source_level VARCHAR(30)`);
       await db.query(`ALTER TABLE tbl_telecome_bill_items ADD COLUMN IF NOT EXISTS included_in_current_total BOOLEAN DEFAULT true`);
     }
+    const removedDuplicates = await deduplicateTelecomBills();
+    const uniqueCols = await db.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'tbl_telecome_bill'`);
+    const uniqueClientKey = uniqueCols.rows.some(row => row.column_name === 'clientid') ? "COALESCE(clientid::text, '')" : "''";
+    await db.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_telecome_bill_invoice_number_client
+      ON tbl_telecome_bill (
+        bill_number,
+        RIGHT(REGEXP_REPLACE(COALESCE(mobile_number, ''), '\\D', '', 'g'), 9),
+        ${uniqueClientKey}
+      )
+      WHERE NULLIF(TRIM(COALESCE(bill_number, '')), '') IS NOT NULL
+    `).catch(error => console.warn(`[MIGRATION] Could not create Telecom bill idempotency index: ${error.message}`));
+    if (removedDuplicates) console.log(`[MIGRATION] Telecom invoice deduplication: ${removedDuplicates} duplicate record(s) merged.`);
     await backfillFromOriginalPdfs();
   } catch (error) {
     console.error('[MIGRATION] ensureTelecomBillingSchema failed:', error.message);

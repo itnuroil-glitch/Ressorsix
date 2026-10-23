@@ -7181,6 +7181,8 @@ export default function DashboardScreen({ user, onSignOut }) {
       case 'telecom_details':
       case 'telecome_details':
         return <SimDetailsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('sim_details')} checkRowPermission={(compId, act) => checkRowPermission('sim_details', compId, act)} title="Telecom Details" buttonLabel="+ Add Telecom Details" />;
+      case 'sim_addons':
+        return <SimDetailsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('sim_details')} checkRowPermission={(compId, act) => checkRowPermission('sim_details', compId, act)} title="Telecom Details" buttonLabel="+ Add Telecom Details" initialViewMode="addon" />;
       case 'telecom_data':
       case 'telecome_data':
         return <SimDetailsTab user={user} showToast={showToast} renderTableToolbar={renderTableToolbar} renderTablePagination={renderTablePagination} isSidebarCollapsed={isSidebarCollapsed} permissions={getTabPermissions('sim_details')} checkRowPermission={(compId, act) => checkRowPermission('sim_details', compId, act)} title="Telecom Data" buttonLabel="+ Add Telecom Data" />;
@@ -7193,7 +7195,7 @@ export default function DashboardScreen({ user, onSignOut }) {
         return <ImportTelecomBillsTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} onNavigate={setActiveTab} />;
       case 'telecom_connection':
       case 'telecome_connection':
-        return <TelecomConnectionTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;
+        return <TelecomConnectionTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} onNavigate={setActiveTab} />;
       case 'phone_number_assignment':
       case 'phone_assignment':
         return <PhoneNumberAssignmentTab user={user} showToast={showToast} isSidebarCollapsed={isSidebarCollapsed} />;

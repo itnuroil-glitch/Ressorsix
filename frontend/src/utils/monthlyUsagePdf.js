@@ -13,6 +13,7 @@ const numberValue = (value) => {
 const money = (value) => value === null || value === undefined ? 'Needs review' : numberValue(value).toFixed(2);
 const decimal = (value, places = 1) => numberValue(value).toFixed(places);
 const integer = (value) => Math.round(numberValue(value)).toLocaleString('en-US');
+const percentage = (value) => value === null || value === undefined ? 'N/A' : `${numberValue(value).toFixed(2)}%`;
 
 const tableRows = (rows, renderRow, emptyColumns) => {
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -72,12 +73,13 @@ const createMonthlyRows = (rows) => tableRows(rows, (row) => {
       <td class="num">${money(row.vat)}</td>
       <td class="num">${money(row.bill_incl_vat)}</td>
       <td class="num ${over ? 'danger' : ''}">${money(row.extra)}</td>
+      <td class="num ${over ? 'danger' : ''}">${percentage(row.extra_pct)}</td>
       <td class="num">${integer(row.call_min)}</td>
       <td class="num">${decimal(row.data_gb)}</td>
       <td class="num">${integer(row.premium_sms)}</td>
       <td><span class="status ${over ? 'status-over' : 'status-ok'}">${escapeHtml(row.status)}</span></td>
     </tr>`;
-}, 11);
+}, 12);
 
 const createTopNumberRows = (rows) => tableRows(rows, (row) => `
   <tr>
@@ -135,7 +137,7 @@ export const buildMonthlyUsagePrintHtml = (data, selectedMonth) => {
     .value { margin-top: 2px; font-weight: 700; font-size: 10px; overflow-wrap: anywhere; }
     .summary { border-left: 4px solid ${isOver ? '#d12e26' : '#15936b'}; background: ${isOver ? '#fff5f4' : '#f1faf6'}; border-radius: 6px; padding: 8px 10px; margin-bottom: 9px; }
     .summary strong { display: block; margin-bottom: 2px; text-transform: uppercase; font-size: 8px; letter-spacing: .5px; }
-    .kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 7px; margin-bottom: 9px; }
+    .kpis { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 9px; }
     .kpi { padding: 8px; min-height: 58px; }
     .kpi-title { color: #66758a; font-weight: 700; font-size: 8px; }
     .kpi-value { font-size: 15px; font-weight: 800; margin-top: 5px; white-space: nowrap; }
@@ -214,6 +216,7 @@ export const buildMonthlyUsagePrintHtml = (data, selectedMonth) => {
       <div class="kpi"><div class="kpi-title">VAT</div><div class="kpi-value">AED ${money(kpis.vat)}</div></div>
       <div class="kpi"><div class="kpi-title">Bill — including VAT</div><div class="kpi-value">AED ${money(kpis.bill_incl_vat)}</div></div>
       <div class="kpi"><div class="kpi-title">Excess — excluding VAT</div><div class="kpi-value danger">AED ${money(kpis.extra)}</div></div>
+      <div class="kpi"><div class="kpi-title">Above plan %</div><div class="kpi-value danger">${percentage(kpis.extra_pct)}</div></div>
       <div class="kpi"><div class="kpi-title">Duration of calls with charges</div><div class="kpi-value">${decimal(kpis.charged_call_duration_minutes, 2)} min</div></div>
     </section>
 
@@ -244,10 +247,10 @@ export const buildMonthlyUsagePrintHtml = (data, selectedMonth) => {
       </div>
       <div class="section-title"><h2>Month-wise report</h2><span class="muted">Amounts in AED</span></div>
       <table>
-        <thead><tr><th>Month</th><th>Bill no.</th><th class="num">Plan — excl. VAT</th><th class="num">Bill — excl. VAT</th><th class="num">VAT</th><th class="num">Bill — incl. VAT</th><th class="num">Excess — excl. VAT</th><th class="num">Call min</th><th class="num">Data GB</th><th class="num">Prem. SMS</th><th>Status</th></tr></thead>
+        <thead><tr><th>Month</th><th>Bill no.</th><th class="num">Plan — excl. VAT</th><th class="num">Bill — excl. VAT</th><th class="num">VAT</th><th class="num">Bill — incl. VAT</th><th class="num">Excess — excl. VAT</th><th class="num">Above plan %</th><th class="num">Call min</th><th class="num">Data GB</th><th class="num">Prem. SMS</th><th>Status</th></tr></thead>
         <tbody>
           ${createMonthlyRows(data?.month_wise_history)}
-          <tr class="total-row"><td colspan="2">Total</td><td class="num">${money(historyTotals.plan)}</td><td class="num">${money(historyTotals.total)}</td><td colspan="2"></td><td class="num danger">${money(historyTotals.extra)}</td><td class="num">${integer(historyTotals.call_min)}</td><td class="num">${decimal(historyTotals.data_gb)}</td><td class="num">${integer(historyTotals.premium_sms)}</td><td></td></tr>
+          <tr class="total-row"><td colspan="2">Total</td><td class="num">${money(historyTotals.plan)}</td><td class="num">${money(historyTotals.total)}</td><td colspan="2"></td><td class="num danger">${money(historyTotals.extra)}</td><td class="num danger">${percentage(historyTotals.extra_pct)}</td><td class="num">${integer(historyTotals.call_min)}</td><td class="num">${decimal(historyTotals.data_gb, 2)}</td><td class="num">${integer(historyTotals.premium_sms)}</td><td></td></tr>
         </tbody>
       </table>
 

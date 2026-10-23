@@ -79,6 +79,32 @@ const fromDateInputValue = (str) => {
   return str;
 };
 
+const getDubaiDateInputValue = () => {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Dubai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+  } catch (e) {
+    return new Date().toISOString().slice(0, 10);
+  }
+};
+
+const createEmptyAddonDraft = () => ({
+  planName: '',
+  planAmount: '',
+  activationDate: getDubaiDateInputValue(),
+  subscriptionType: 'Recurring',
+  dataAllowance: '',
+  localMinutes: '',
+  intlMinutes: '',
+  localSMS: '',
+  intlSMS: '',
+  cug: '',
+});
+
 // Styles used only by the Number Assignment modal
 const naStyles = {
   greenBox: { backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0', borderRadius: 12, padding: 14 },
@@ -92,7 +118,7 @@ const naStyles = {
 };
 
 export default function TelecomConnectionTab({ user, showToast, isSidebarCollapsed }) {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
 
   // Local State (Starts empty, populated from live backend API)
   const [connections, setConnections] = useState([]);
@@ -116,6 +142,12 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
   const [historyLoading, setHistoryLoading] = useState(false);
   const [billMonthLabel, setBillMonthLabel] = useState('');
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [actionMenu, setActionMenu] = useState(null);
+  const [isAddonModalOpen, setIsAddonModalOpen] = useState(false);
+  const [addonConnection, setAddonConnection] = useState(null);
+  const [addonDraft, setAddonDraft] = useState(createEmptyAddonDraft);
+  const [addonDraftError, setAddonDraftError] = useState('');
+  const [isSavingAddon, setIsSavingAddon] = useState(false);
 
   // Dropdown popover open states inside the Add/Edit form
   const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = useState(false);
@@ -612,6 +644,92 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
   // ---------------------------------------------------------------------------
   // CRUD ACTIONS
   // ---------------------------------------------------------------------------
+  const handleOpenAddon = (item) => {
+    setActionMenu(null);
+    setAddonConnection(item);
+    setAddonDraft(createEmptyAddonDraft());
+    setAddonDraftError('');
+    setIsAddonModalOpen(true);
+  };
+
+  const handleCloseAddon = () => {
+    if (isSavingAddon) return;
+    setIsAddonModalOpen(false);
+    setAddonConnection(null);
+    setAddonDraftError('');
+  };
+
+  const handleSaveAddon = async () => {
+    if (!addonConnection) return;
+
+    const addonName = String(addonDraft.planName || '').trim();
+    const amountText = String(addonDraft.planAmount ?? '').trim();
+    const amount = Number(amountText);
+    if (!addonName) {
+      setAddonDraftError('Package Plan Name is required');
+      return;
+    }
+    if (!amountText || !Number.isFinite(amount) || amount < 0) {
+      setAddonDraftError('Enter a valid Monthly Plan Amount');
+      return;
+    }
+
+    const companyRecord = (apiCompanies || []).find(company =>
+      String(company.company_name || company.name || '').trim().toLowerCase()
+        === String(addonConnection.company || '').trim().toLowerCase()
+    );
+
+    const payload = {
+      tele_id: addonConnection.id,
+      client_id: user?.clientid || user?.client_id || user?.clientId || null,
+      company_id: companyRecord?.id || companyRecord?.company_id || null,
+      country_id: user?.country_id || user?.countryid || null,
+      role_id: user?.roleId || user?.role_id || null,
+      user_id: user?.id || user?.userId || user?.user_id || null,
+      account_number: addonConnection.accountNumber || addonConnection.connectionNumber,
+      activation_date: addonDraft.activationDate,
+      plan_name: addonName,
+      plan_amount: amount.toFixed(2),
+      subscription_type: addonDraft.subscriptionType,
+      addon_type: 'Package Plan',
+      addon_details: JSON.stringify({
+        data_allowance: String(addonDraft.dataAllowance || '').trim() || null,
+        local_minutes: String(addonDraft.localMinutes || '').trim() || null,
+        international_minutes: String(addonDraft.intlMinutes || '').trim() || null,
+        local_sms: String(addonDraft.localSMS || '').trim() || null,
+        international_sms: String(addonDraft.intlSMS || '').trim() || null,
+        cug: String(addonDraft.cug || '').trim() || null,
+      }),
+      status: 'Active',
+    };
+
+    setIsSavingAddon(true);
+    setAddonDraftError('');
+    try {
+      const res = await fetch(`${API_URL}/api/add-ons`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const raw = await res.text();
+      let data = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch (e) { data = {}; }
+      if (!res.ok) throw new Error(data.message || `Failed to save add-on (HTTP ${res.status})`);
+
+      if (showToast) showToast(`Add-on added to ${addonConnection.connectionNumber}`, 'success');
+      setIsAddonModalOpen(false);
+      setAddonConnection(null);
+      setAddonDraft(createEmptyAddonDraft());
+    } catch (err) {
+      console.error('Error saving add-on:', err);
+      setAddonDraftError(err.message || 'Failed to save add-on');
+      if (showToast) showToast(err.message || 'Failed to save add-on', 'error');
+    } finally {
+      setIsSavingAddon(false);
+    }
+  };
+
   // Coming from a bill's "Add to Telecom Connection" button: open the add form already filled in
   useEffect(() => {
     let raw = null;
@@ -1324,14 +1442,6 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                         <Ionicons name="pencil-outline" size={16} color={THEME.textGreen} />
                       </TouchableOpacity>
 
-                      {/* Reassign / Transfer */}
-                      <TouchableOpacity
-                        style={styles.tableActionIconBtn}
-                        onPress={() => handleOpenReassign(row)}
-                      >
-                        <Ionicons name="person-add-outline" size={16} color={THEME.blueLink} />
-                      </TouchableOpacity>
-
                       {/* Delete */}
                       <TouchableOpacity
                         style={styles.tableActionIconBtn}
@@ -1343,12 +1453,18 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                         <Ionicons name="trash-outline" size={16} color={THEME.redAlertText} />
                       </TouchableOpacity>
 
-                      {/* List button - visual only */}
+                      {/* More actions */}
                       <TouchableOpacity
                         style={[styles.tableActionIconBtn, styles.listActionIconBtn]}
+                        onPress={(event) => {
+                          const { pageX = width - 24, pageY = 0 } = event.nativeEvent || {};
+                          setActionMenu({ row, x: pageX, y: pageY });
+                        }}
                         activeOpacity={0.7}
-                        title="List"
-                        accessibilityLabel={`List for ${row.connectionNumber}`}
+                        title="More actions"
+                        accessibilityLabel={`More actions for ${row.connectionNumber}`}
+                        accessibilityRole="button"
+                        accessibilityState={{ expanded: actionMenu?.row?.id === row.id }}
                       >
                         <Ionicons name="list-outline" size={17} color={THEME.slate900} />
                       </TouchableOpacity>
@@ -1407,6 +1523,235 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
           </View>
         </View>
       </View>
+
+      {/* ROW ACTION DROPDOWN */}
+      <Modal
+        visible={Boolean(actionMenu)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setActionMenu(null)}
+      >
+        <TouchableOpacity
+          style={styles.actionMenuOverlay}
+          activeOpacity={1}
+          onPress={() => setActionMenu(null)}
+        >
+          <View
+            style={[
+              styles.actionMenu,
+              {
+                left: Math.max(12, Math.min((actionMenu?.x || width) - 154, width - 182)),
+                top: Math.max(12, Math.min((actionMenu?.y || 0) + 16, height - 116)),
+              },
+            ]}
+            onStartShouldSetResponder={() => true}
+          >
+            <TouchableOpacity
+              style={styles.actionMenuItem}
+              onPress={() => {
+                const row = actionMenu?.row;
+                setActionMenu(null);
+                if (row) handleOpenReassign(row);
+              }}
+            >
+              <Ionicons name="person-add-outline" size={17} color={THEME.blueLink} />
+              <Text style={styles.actionMenuText}>Assignment</Text>
+            </TouchableOpacity>
+            <View style={styles.actionMenuDivider} />
+            <TouchableOpacity
+              style={styles.actionMenuItem}
+              onPress={() => {
+                const row = actionMenu?.row;
+                if (row) handleOpenAddon(row);
+              }}
+            >
+              <Ionicons name="add-circle-outline" size={17} color={THEME.textGreen} />
+              <Text style={styles.actionMenuText}>Add-on</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Add-on is intentionally available only from a connection row action. */}
+      <Modal
+        visible={isAddonModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCloseAddon}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { maxWidth: 640, width: '92%' }]}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalTitle}>Plan Details</Text>
+                <Text style={styles.modalSubtitle}>Create a new add-on package plan</Text>
+              </View>
+              <TouchableOpacity
+                onPress={handleCloseAddon}
+                disabled={isSavingAddon}
+                accessibilityLabel="Close add-on form"
+              >
+                <Ionicons name="close" size={22} color={THEME.slate500} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 520 }} contentContainerStyle={{ padding: 20 }}>
+              <View style={styles.planModalGrid}>
+                <View style={{ width: '100%' }}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>
+                    Package Plan Name <Text style={{ color: THEME.redAlertText }}>*</Text>
+                  </Text>
+                  <TextInput
+                    style={styles.exactTextInput}
+                    value={addonDraft.planName}
+                    onChangeText={val => {
+                      setAddonDraft(prev => ({ ...prev, planName: val }));
+                      setAddonDraftError('');
+                    }}
+                    placeholder="e.g. Standard 100 AED Plan"
+                    placeholderTextColor={THEME.slate400}
+                  />
+                </View>
+
+                <View style={styles.planModalField}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>
+                    Monthly Plan Amount (AED) <Text style={{ color: THEME.redAlertText }}>*</Text>
+                  </Text>
+                  <TextInput
+                    style={styles.exactTextInput}
+                    value={addonDraft.planAmount}
+                    onChangeText={val => {
+                      setAddonDraft(prev => ({ ...prev, planAmount: val }));
+                      setAddonDraftError('');
+                    }}
+                    placeholder="100"
+                    keyboardType="decimal-pad"
+                    placeholderTextColor={THEME.slate400}
+                  />
+                  <Text style={styles.fieldHelperText}>Bills above this amount are marked as excess</Text>
+                </View>
+
+                <View style={styles.planModalField}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Data Allowance</Text>
+                  <TextInput
+                    style={styles.exactTextInput}
+                    value={addonDraft.dataAllowance}
+                    onChangeText={val => setAddonDraft(prev => ({ ...prev, dataAllowance: val }))}
+                    placeholder="10.5"
+                    keyboardType="decimal-pad"
+                    placeholderTextColor={THEME.slate400}
+                  />
+                </View>
+
+                <View style={{ width: '100%' }}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 8 }]}>Billing Frequency</Text>
+                  <View style={styles.addonRadioGroup} accessibilityRole="radiogroup">
+                    {[
+                      { label: 'Recurring', value: 'Recurring' },
+                      { label: 'One time', value: 'One Time' },
+                    ].map(option => {
+                      const selected = addonDraft.subscriptionType === option.value;
+                      return (
+                        <TouchableOpacity
+                          key={option.value}
+                          style={[styles.addonRadioOption, selected && styles.addonRadioOptionActive]}
+                          onPress={() => setAddonDraft(prev => ({ ...prev, subscriptionType: option.value }))}
+                          accessibilityRole="radio"
+                          accessibilityState={{ checked: selected }}
+                          activeOpacity={0.8}
+                        >
+                          <View style={[styles.addonRadioCircle, selected && styles.addonRadioCircleActive]}>
+                            {selected && <View style={styles.addonRadioDot} />}
+                          </View>
+                          <Text style={[styles.addonRadioText, selected && styles.addonRadioTextActive]}>
+                            {option.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <View style={styles.planModalField}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Local Minutes</Text>
+                  <TextInput
+                    style={styles.exactTextInput}
+                    value={addonDraft.localMinutes}
+                    onChangeText={val => setAddonDraft(prev => ({ ...prev, localMinutes: val }))}
+                    placeholder="750"
+                    keyboardType="numeric"
+                    placeholderTextColor={THEME.slate400}
+                  />
+                </View>
+
+                <View style={styles.planModalField}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>International Minutes</Text>
+                  <TextInput
+                    style={styles.exactTextInput}
+                    value={addonDraft.intlMinutes}
+                    onChangeText={val => setAddonDraft(prev => ({ ...prev, intlMinutes: val }))}
+                    placeholder="250"
+                    keyboardType="numeric"
+                    placeholderTextColor={THEME.slate400}
+                  />
+                </View>
+
+                <View style={styles.planModalField}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Local SMS</Text>
+                  <TextInput
+                    style={styles.exactTextInput}
+                    value={addonDraft.localSMS}
+                    onChangeText={val => setAddonDraft(prev => ({ ...prev, localSMS: val }))}
+                    placeholder="65"
+                    keyboardType="numeric"
+                    placeholderTextColor={THEME.slate400}
+                  />
+                </View>
+
+                <View style={styles.planModalField}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>International SMS</Text>
+                  <TextInput
+                    style={styles.exactTextInput}
+                    value={addonDraft.intlSMS}
+                    onChangeText={val => setAddonDraft(prev => ({ ...prev, intlSMS: val }))}
+                    placeholder="65"
+                    keyboardType="numeric"
+                    placeholderTextColor={THEME.slate400}
+                  />
+                </View>
+
+                <View style={styles.planModalField}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>CUG</Text>
+                  <TextInput
+                    style={styles.exactTextInput}
+                    value={addonDraft.cug}
+                    onChangeText={val => setAddonDraft(prev => ({ ...prev, cug: val }))}
+                    placeholder="10000"
+                    keyboardType="numeric"
+                    placeholderTextColor={THEME.slate400}
+                  />
+                </View>
+              </View>
+
+              {!!addonDraftError && <Text style={styles.addonErrorText}>{addonDraftError}</Text>}
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity style={styles.secondaryBtn} onPress={handleCloseAddon} disabled={isSavingAddon}>
+                <Text style={styles.secondaryBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.primaryBtn, isSavingAddon && { opacity: 0.65 }]}
+                onPress={handleSaveAddon}
+                disabled={isSavingAddon}
+              >
+                {isSavingAddon && <ActivityIndicator size="small" color={THEME.white} />}
+                <Text style={styles.primaryBtnText}>{isSavingAddon ? 'Saving...' : 'Save Plan'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* --------------------------------------------------------------------- */}
       {/* MODAL: ADD / EDIT TELECOM CONNECTION (EXACT DESIGN MATCH)             */}
@@ -3096,6 +3441,37 @@ const styles = StyleSheet.create({
     borderColor: THEME.slate200,
     borderRadius: 4,
   },
+  actionMenuOverlay: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  actionMenu: {
+    position: 'absolute',
+    width: 170,
+    paddingVertical: 5,
+    backgroundColor: THEME.white,
+    borderWidth: 1,
+    borderColor: THEME.slate200,
+    borderRadius: 8,
+    ...SHADOWS.md,
+  },
+  actionMenuItem: {
+    minHeight: 40,
+    paddingHorizontal: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  actionMenuText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: THEME.slate800,
+  },
+  actionMenuDivider: {
+    height: 1,
+    marginHorizontal: 10,
+    backgroundColor: THEME.slate100,
+  },
 
   // 4. Footer & Pagination Bar
   tableFooterBar: {
@@ -3662,6 +4038,60 @@ const styles = StyleSheet.create({
   },
   planModalField: {
     width: '48%',
+  },
+  addonRadioGroup: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  addonRadioOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 42,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
+  addonRadioOptionActive: {
+    borderColor: '#0E5434',
+    backgroundColor: '#F0FDF4',
+  },
+  addonRadioCircle: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: '#94A3B8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  addonRadioCircleActive: {
+    borderColor: '#0E5434',
+  },
+  addonRadioDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#0E5434',
+  },
+  addonRadioText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  addonRadioTextActive: {
+    color: '#0E5434',
+    fontWeight: '700',
+  },
+  addonErrorText: {
+    marginTop: 12,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#DC2626',
   },
   planUnitChip: {
     paddingVertical: 4,

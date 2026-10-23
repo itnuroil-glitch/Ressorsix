@@ -10,7 +10,6 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as XLSX from 'xlsx';
 import { API_URL } from '../config';
 
 const C = {
@@ -92,6 +91,7 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
   const [topTab, setTopTab] = useState('by_extra');
   const [backTo, setBackTo] = useState(null); // only set when opened from a bill
   const [viewYear, setViewYear] = useState(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const clientQuery = user?.clientid ? `clientid=${user.clientid}` : '';
 
@@ -191,26 +191,39 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
   });
   const lastBillKey = months.length ? months[months.length - 1].key : '';
 
-  const exportExcel = () => {
-    if (!months.length) { if (showToast) showToast('Nothing to export yet', 'info'); return; }
+  const downloadPdf = async () => {
+    if (!report?.selected || downloadingPdf) {
+      if (!report?.selected && showToast) showToast('Select a bill month before downloading the PDF', 'info');
+      return;
+    }
+    setDownloadingPdf(true);
     try {
-      const rows = months.map(m => ({
-        Month: m.label, 'Bill No': m.bill_number,
-        'Plan — excluding VAT (AED)': m.plan,
-        'Bill — excluding VAT (AED)': m.bill_excl_vat,
-        'VAT (AED)': m.vat,
-        'Bill — including VAT (AED)': m.total,
-        'Excess — excluding VAT (AED)': m.extra,
-        'Extra %': m.extra_pct, 'Call minutes': m.call_minutes, 'Data (GB)': m.data_gb, 'Premium SMS': m.premium_sms,
-        Status: m.status === 'over' ? 'Over plan' : 'Within plan',
-      }));
-      const ws = XLSX.utils.json_to_sheet(rows);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Usage');
-      XLSX.writeFile(wb, `usage-report-${report?.key || 'number'}.xlsx`);
-    } catch (err) {
-      console.error(err);
-      if (showToast) showToast('Could not export the report', 'error');
+      const response = await fetch(`${API_URL}/api/telecom-bills/usage-report/pdf`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ report }),
+      });
+      if (!response.ok) throw new Error('PDF generation failed');
+      const blob = await response.blob();
+      const disposition = response.headers.get('content-disposition') || '';
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      const fallbackNumber = String(report.number || 'number').replace(/\D/g, '') || 'number';
+      const filename = match?.[1] || `Tele_Report_${fallbackNumber}_${report.selected.month}.pdf`;
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      if (showToast) showToast('PDF report downloaded successfully', 'success');
+    } catch (error) {
+      console.error('Could not download usage report PDF:', error);
+      if (showToast) showToast('Could not download the PDF report', 'error');
+    } finally {
+      setDownloadingPdf(false);
     }
   };
 
@@ -308,6 +321,7 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
   const chargedMin = sel?.calls?.duration_of_calls_with_charges_minutes || 0;
   const unchargedMin = sel?.calls?.uncharged_minutes || 0;
   const callTotalMin = sel?.calls?.actual_total_minutes || 0;
+  const categoryIssues = (sel?.calls?.category_reconciliation || []).filter(item => item.status !== 'matched');
 
   const over = sel?.status === 'over';
   const deltas = sel?.kpis?.deltas || null;
@@ -319,7 +333,7 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
     { icon: 'card-outline', tint: C.blueSoft, iconColor: C.blue, label: 'Bill — including VAT', value: `AED ${fmt(sel.kpis.bill_incl_vat)}`, delta: deltas ? deltas.total : null, sub: 'current period' },
     { icon: 'flame-outline', tint: C.redSoft, iconColor: C.red, label: 'Excess — excluding VAT', value: `AED ${fmt(sel.kpis.extra)}`, delta: deltas ? deltas.extra : null, sub: 'flagged only above AED 10.00', alert: sel.status === 'over' },
     { icon: 'chatbubble-ellipses-outline', tint: C.amberSoft, iconColor: C.amber, label: 'Premium SMS', value: `${sel.kpis.premium_sms}`, delta: deltas ? deltas.premium_sms : null, sub: `AED ${fmt(sel.kpis.premium_sms_amount)}` },
-    { icon: 'cellular-outline', tint: C.blueSoft, iconColor: C.blue, label: 'Data used', value: `${fmt(sel.kpis.data_gb)} GB`, delta: deltas ? deltas.data_gb : null, unit: ' GB', sub: a?.data_limit_gb ? `plan ${fmt(a.data_limit_gb)} GB` : 'this month' },
+    { icon: 'cellular-outline', tint: C.blueSoft, iconColor: C.blue, label: 'Data used', value: `${fmt(sel.kpis.data_gb)} GB`, delta: deltas ? deltas.data_gb : null, unit: ' GB', sub: a?.data_limit_gb != null ? `plan ${fmt(a.data_limit_gb)} GB · difference ${fmt(a.data_difference_gb)} GB · data charge AED ${fmt(a.invoice_data_charge_excl_vat)}` : 'plan limit needs review' },
   ] : [];
 
   // ----------------------------------------------------------------- render
@@ -341,14 +355,12 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
           </View>
         </View>
         <View style={{ flexDirection: 'row', gap: 10 }}>
-          <TouchableOpacity style={st.btn} onPress={exportExcel} activeOpacity={0.8}>
-            <Ionicons name="download-outline" size={16} color={C.ink} />
-            <Text style={st.btnText}>Export Excel</Text>
-          </TouchableOpacity>
           {Platform.OS === 'web' && (
-            <TouchableOpacity style={[st.btn, st.btnGreen]} onPress={() => { try { window.print(); } catch (e) { } }} activeOpacity={0.8}>
-              <Ionicons name="print-outline" size={16} color="#fff" />
-              <Text style={[st.btnText, { color: '#fff' }]}>Download PDF</Text>
+            <TouchableOpacity style={[st.btn, st.btnGreen, downloadingPdf && { opacity: 0.65 }]} onPress={downloadPdf} disabled={downloadingPdf} activeOpacity={0.8}>
+              {downloadingPdf
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Ionicons name="download-outline" size={16} color="#fff" />}
+              <Text style={[st.btnText, { color: '#fff' }]}>{downloadingPdf ? 'Preparing PDF...' : 'Download PDF'}</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -621,11 +633,13 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
                   <Text style={st.meterSub}>{fmt1(unchargedMin)} min without charges · {fmt1(chargedMin)} min from calls with charges</Text>
                   <Text style={st.meterSub}>
                     Actual talk time {fmt1(sel.calls.actual_total_minutes)} min
+                    {' · includes incoming roaming where present'}
                     {sel.calls.provider_reported_minutes?.local == null ? '' : ` · provider reports ${fmt1(sel.calls.provider_reported_minutes.local)} local min`}
                     {sel.calls.duration_above_allowance_minutes == null
                       ? ' · duration above allowance not calculated (allowance or eligible categories unknown)'
                       : ` · duration above allowance ${fmt1(sel.calls.duration_above_allowance_minutes)} min (not verified chargeable minutes)`}
                   </Text>
+                  {categoryIssues.length > 0 ? <Text style={[st.meterSub, { color: C.red }]}>Needs review: {categoryIssues.map(item => `${item.category} (${(item.mismatches || []).join(', ')})`).join('; ')}</Text> : null}
                 </View>
                 <View style={st.meter}>
                   <View style={st.meterTop}><View style={st.meterNameRow}><Ionicons name="cellular-outline" size={14} color={C.muted} /><Text style={st.meterName}>Data</Text></View><Text style={st.meterVal}>{fmt(a.data_used_gb)}{a.data_limit_gb ? ` of ${fmt(a.data_limit_gb)}` : ''} GB</Text></View>
@@ -633,7 +647,7 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
                     <View style={{ flex: a.data_limit_gb ? Math.min(a.data_used_gb, a.data_limit_gb) : Math.max(a.data_used_gb, 0.001), backgroundColor: a.data_limit_gb && a.data_used_gb > a.data_limit_gb ? C.red : C.blue }} />
                     {a.data_limit_gb ? <View style={{ flex: Math.max(a.data_limit_gb - a.data_used_gb, 0.001), backgroundColor: '#EEF2F6' }} /> : null}
                   </View>
-                  <Text style={st.meterSub}>{a.data_unlimited ? 'Unlimited data plan' : a.data_limit_gb ? (a.data_used_gb > a.data_limit_gb ? `${fmt(a.data_used_gb - a.data_limit_gb)} GB over the plan data` : 'Within the plan data') : 'Plan data limit not recorded'}</Text>
+                  <Text style={st.meterSub}>{a.data_unlimited ? 'Unlimited data plan' : a.data_limit_gb != null ? `${fmt(a.data_difference_gb)} GB difference · invoice data charge AED ${fmt(a.invoice_data_charge_excl_vat)} (usage difference is not assumed chargeable)` : 'Plan data limit not recorded'}</Text>
                 </View>
                 <View style={st.meter}>
                   <View style={st.meterTop}><View style={st.meterNameRow}><Ionicons name="chatbubble-ellipses-outline" size={14} color={C.muted} /><Text style={st.meterName}>Premium SMS</Text></View><Text style={[st.meterVal, a.premium_sms > 0 && { color: C.red }]}>{a.premium_sms} sent</Text></View>
@@ -658,7 +672,7 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
               <View style={{ minWidth: 1000, flexGrow: 1, marginTop: 14 }}>
                 <View style={st.thead}>
-                  {[['Month', 1.4], ['Bill no.', 1.6], ['Total AED', 1], ['Plan AED', 1], ['Extra AED', 1], ['Extra %', 0.8], ['Call min', 1], ['Data GB', 0.9], ['Premium SMS', 1.1], ['Status', 1.3]].map(([h, f], i) => (
+                  {[['Month', 1.4], ['Bill no.', 1.6], ['Bill incl. VAT', 1], ['Plan excl. VAT', 1], ['Excess excl. VAT', 1], ['Above plan %', 0.9], ['Call min', 1], ['Data GB', 0.9], ['Premium SMS', 1.1], ['Status', 1.3]].map(([h, f], i) => (
                     <Text key={h} style={[st.th, { flex: f }, i >= 2 && i <= 8 && { textAlign: 'right' }, i === 9 && { textAlign: 'right', paddingLeft: 14 }]}>{h}</Text>
                   ))}
                 </View>
@@ -671,7 +685,7 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
                       <Text style={[st.td, st.r, { flex: 1 }, isSel && st.bold]}>{fmt(m.total)}</Text>
                       <Text style={[st.td, st.r, { flex: 1 }]}>{fmt(m.plan)}</Text>
                       <Text style={[st.td, st.r, { flex: 1 }, m.extra > 0 && { color: C.red, fontWeight: '800' }]}>{fmt(m.extra)}</Text>
-                      <Text style={[st.td, st.r, { flex: 0.8 }, m.extra > 0 && { color: C.red }]}>{m.extra_pct}%</Text>
+                      <Text style={[st.td, st.r, { flex: 0.9 }, m.extra > 0 && { color: C.red }]}>{m.extra_pct == null ? 'N/A' : `${Number(m.extra_pct).toFixed(2)}%`}</Text>
                       <Text style={[st.td, st.r, { flex: 1 }]}>{fmt0(m.call_minutes)}</Text>
                       <Text style={[st.td, st.r, { flex: 0.9 }]}>{fmt1(m.data_gb)}</Text>
                       <Text style={[st.td, st.r, { flex: 1.1 }]}>{m.premium_sms}</Text>
@@ -690,7 +704,7 @@ export default function UsageReportTab({ user, showToast, request, onRequestHand
                   <Text style={[st.td, st.r, st.bold, { flex: 1 }]}>{fmt(months.reduce((s, m) => s + m.total, 0))}</Text>
                   <Text style={[st.td, st.r, st.bold, { flex: 1 }]}>{fmt(months.reduce((s, m) => s + m.plan, 0))}</Text>
                   <Text style={[st.td, st.r, st.bold, { flex: 1, color: C.red }]}>{fmt(months.reduce((s, m) => s + m.extra, 0))}</Text>
-                  <Text style={[st.td, { flex: 0.8 }]} />
+                  <Text style={[st.td, { flex: 0.9 }]} />
                   <Text style={[st.td, st.r, st.bold, { flex: 1 }]}>{fmt0(months.reduce((s, m) => s + m.call_minutes, 0))}</Text>
                   <Text style={[st.td, st.r, st.bold, { flex: 0.9 }]}>{fmt1(months.reduce((s, m) => s + m.data_gb, 0))}</Text>
                   <Text style={[st.td, st.r, st.bold, { flex: 1.1 }]}>{months.reduce((s, m) => s + m.premium_sms, 0)}</Text>

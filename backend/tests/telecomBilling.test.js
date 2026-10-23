@@ -4,6 +4,7 @@ const {
   durationToSeconds,
   sumCallSeconds,
   secondsToDisplayMinutes,
+  abovePlanPercent,
 } = require('../src/utils/telecomBilling');
 const {
   parseCallRows,
@@ -33,6 +34,12 @@ describe('Telecom call durations', () => {
 });
 
 describe('Telecom invoice financials', () => {
+  test('calculates Above plan % from excess and the applicable plan', () => {
+    expect(abovePlanPercent(135.46, 110)).toBe(123.15);
+    expect(abovePlanPercent(10, 0)).toBeNull();
+    expect(abovePlanPercent(null, 110)).toBeNull();
+  });
+
   test('uses stated fully taxable current-period values', () => {
     const parsed = extractTelecomFinancials(`
       Service Rentals 100.00
