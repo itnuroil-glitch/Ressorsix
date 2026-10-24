@@ -79,23 +79,9 @@ const fromDateInputValue = (str) => {
   return str;
 };
 
-const getDubaiDateInputValue = () => {
-  try {
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Dubai',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(new Date());
-  } catch (e) {
-    return new Date().toISOString().slice(0, 10);
-  }
-};
-
 const createEmptyAddonDraft = () => ({
   planName: '',
   planAmount: '',
-  activationDate: getDubaiDateInputValue(),
   subscriptionType: 'Recurring',
   dataAllowance: '',
   localMinutes: '',
@@ -674,57 +660,43 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
       return;
     }
 
-    const companyRecord = (apiCompanies || []).find(company =>
-      String(company.company_name || company.name || '').trim().toLowerCase()
-        === String(addonConnection.company || '').trim().toLowerCase()
-    );
-
     const payload = {
-      tele_id: addonConnection.id,
-      client_id: user?.clientid || user?.client_id || user?.clientId || null,
-      company_id: companyRecord?.id || companyRecord?.company_id || null,
-      country_id: user?.country_id || user?.countryid || null,
-      role_id: user?.roleId || user?.role_id || null,
-      user_id: user?.id || user?.userId || user?.user_id || null,
-      account_number: addonConnection.accountNumber || addonConnection.connectionNumber,
-      activation_date: addonDraft.activationDate,
-      plan_name: addonName,
-      plan_amount: amount.toFixed(2),
-      subscription_type: addonDraft.subscriptionType,
-      addon_type: 'Package Plan',
-      addon_details: JSON.stringify({
-        data_allowance: String(addonDraft.dataAllowance || '').trim() || null,
-        local_minutes: String(addonDraft.localMinutes || '').trim() || null,
-        international_minutes: String(addonDraft.intlMinutes || '').trim() || null,
-        local_sms: String(addonDraft.localSMS || '').trim() || null,
-        international_sms: String(addonDraft.intlSMS || '').trim() || null,
-        cug: String(addonDraft.cug || '').trim() || null,
-      }),
+      package_name: addonName,
+      plan_type: addonDraft.subscriptionType,
+      monthly_plan_amount: amount.toFixed(2),
+      data_allowance: String(addonDraft.dataAllowance || '').trim() || null,
+      data_unit: 'GB',
+      local_minutes: String(addonDraft.localMinutes || '').trim() || null,
+      international_minutes: String(addonDraft.intlMinutes || '').trim() || null,
+      local_sms: String(addonDraft.localSMS || '').trim() || null,
+      international_sms: String(addonDraft.intlSMS || '').trim() || null,
+      cug: String(addonDraft.cug || '').trim() || null,
       status: 'Active',
+      client_id: user?.clientid || user?.client_id || user?.clientId || null,
     };
 
     setIsSavingAddon(true);
     setAddonDraftError('');
     try {
-      const res = await fetch(`${API_URL}/api/add-ons`, {
+      const res = await fetch(`${API_URL}/api/tele-packages`, {
         method: 'POST',
-        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const raw = await res.text();
       let data = {};
       try { data = raw ? JSON.parse(raw) : {}; } catch (e) { data = {}; }
-      if (!res.ok) throw new Error(data.message || `Failed to save add-on (HTTP ${res.status})`);
+      if (!res.ok) throw new Error(data.message || `Failed to save package plan (HTTP ${res.status})`);
 
-      if (showToast) showToast(`Add-on added to ${addonConnection.connectionNumber}`, 'success');
+      await fetchTelePackages();
+      if (showToast) showToast(`${addonName} added to Tele Package`, 'success');
       setIsAddonModalOpen(false);
       setAddonConnection(null);
       setAddonDraft(createEmptyAddonDraft());
     } catch (err) {
-      console.error('Error saving add-on:', err);
-      setAddonDraftError(err.message || 'Failed to save add-on');
-      if (showToast) showToast(err.message || 'Failed to save add-on', 'error');
+      console.error('Error saving package plan:', err);
+      setAddonDraftError(err.message || 'Failed to save package plan');
+      if (showToast) showToast(err.message || 'Failed to save package plan', 'error');
     } finally {
       setIsSavingAddon(false);
     }

@@ -40,8 +40,67 @@ const readAmount = (v) => {
   return isNaN(n) ? null : n;
 };
 
+// Earlier versions of the connection-row Plan Details form stored package plans
+// in tbl_add_on. Bring those records into the Tele Package master once, while
+// keeping the migration idempotent by package name and client.
+const syncLegacyAddonPackagePlans = async () => {
+  const tableCheck = await db.query(`SELECT to_regclass('public.tbl_add_on') AS table_name`);
+  if (!tableCheck.rows[0]?.table_name) return;
+
+  const legacy = await db.query(`
+    SELECT client_id, plan_name, plan_amount, subscription_type, addon_details, status
+    FROM tbl_add_on
+    WHERE LOWER(COALESCE(addon_type, '')) = 'package plan'
+      AND COALESCE(plan_name, '') <> ''
+      AND LOWER(COALESCE(status, 'active')) = 'active'
+  `);
+
+  for (const row of legacy.rows) {
+    let details = {};
+    try {
+      details = typeof row.addon_details === 'string'
+        ? JSON.parse(row.addon_details)
+        : (row.addon_details || {});
+    } catch (e) {
+      details = {};
+    }
+
+    const clientId = row.client_id === undefined || row.client_id === null
+      ? null
+      : String(row.client_id);
+    await db.query(
+      `INSERT INTO tbl_tele_package
+        (package_name, monthly_plan_amount, data_allowance, data_unit, local_minutes, international_minutes,
+         local_sms, international_sms, cug, status, client_id, is_deleted, plan_type)
+       SELECT $1, $2, $3, 'GB', $4, $5, $6, $7, $8, 'Active', $9, 0, $10
+       WHERE NOT EXISTS (
+         SELECT 1
+         FROM tbl_tele_package
+         WHERE LOWER(package_name) = LOWER($1)
+           AND is_deleted = 0
+           AND (($9::text IS NULL AND client_id IS NULL) OR client_id = $9::text OR client_id IS NULL)
+       )`,
+      [
+        clean(row.plan_name),
+        readAmount(row.plan_amount) || 0,
+        clean(details.data_allowance),
+        clean(details.local_minutes),
+        clean(details.international_minutes),
+        clean(details.local_sms),
+        clean(details.international_sms),
+        clean(details.cug),
+        clientId,
+        normPlanType(row.subscription_type),
+      ]
+    );
+  }
+};
+
 exports.getAllTelePackages = async (req, res) => {
   try {
+    await syncLegacyAddonPackagePlans().catch(error => {
+      console.error('Could not sync legacy add-on package plans:', error.message);
+    });
     const clientId = req.query.client_id || req.query.clientid;
     let queryText = `SELECT * FROM tbl_tele_package WHERE is_deleted = 0`;
     const params = [];
