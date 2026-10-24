@@ -18,6 +18,26 @@ const normalizeFrequency = (value) => (
     : 'Recurring'
 );
 
+const readDate = (value) => {
+  const cleaned = clean(value);
+  if (!cleaned || !/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) return null;
+  const date = new Date(`${cleaned}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? null : cleaned;
+};
+
+const readPositiveInteger = (value) => {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+};
+
+const calculateExpiryDate = (activationDate, validityDays) => {
+  if (!activationDate || !validityDays) return null;
+  const date = new Date(`${activationDate}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + validityDays);
+  return date.toISOString().slice(0, 10);
+};
+
 const initTable = async () => {
   await db.query(`
     CREATE TABLE IF NOT EXISTS tbl_tele_addon (
@@ -32,12 +52,23 @@ const initTable = async () => {
       local_sms VARCHAR(50),
       international_sms VARCHAR(50),
       cug VARCHAR(50),
+      activation_date DATE,
+      end_date DATE,
+      validity_days INTEGER,
+      expiry_date DATE,
       client_id VARCHAR(100),
       status VARCHAR(50) DEFAULT 'Active',
       is_deleted INT DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
+  `);
+  await db.query(`
+    ALTER TABLE tbl_tele_addon
+      ADD COLUMN IF NOT EXISTS activation_date DATE,
+      ADD COLUMN IF NOT EXISTS end_date DATE,
+      ADD COLUMN IF NOT EXISTS validity_days INTEGER,
+      ADD COLUMN IF NOT EXISTS expiry_date DATE
   `);
   await db.query(`
     CREATE INDEX IF NOT EXISTS idx_tele_addon_connection
@@ -105,20 +136,29 @@ const ready = initTable()
   .then(migrateLegacyPackageAddons)
   .catch(error => console.error('Error initializing tbl_tele_addon:', error));
 
-const readPayload = (body = {}) => ({
-  teleConnectionId: Number.parseInt(body.tele_connection_id, 10),
-  packagePlanName: clean(body.package_plan_name),
-  monthlyPlanAmount: readAmount(body.monthly_plan_amount),
-  dataAllowance: clean(body.data_allowance),
-  billingFrequency: normalizeFrequency(body.billing_frequency),
-  localMinutes: clean(body.local_minutes),
-  internationalMinutes: clean(body.international_minutes),
-  localSms: clean(body.local_sms),
-  internationalSms: clean(body.international_sms),
-  cug: clean(body.cug),
-  clientId: body.client_id === undefined || body.client_id === null ? null : String(body.client_id),
-  status: clean(body.status) || 'Active',
-});
+const readPayload = (body = {}) => {
+  const billingFrequency = normalizeFrequency(body.billing_frequency);
+  const activationDate = readDate(body.activation_date);
+  const validityDays = billingFrequency === 'One Time' ? readPositiveInteger(body.validity_days) : null;
+  return {
+    teleConnectionId: Number.parseInt(body.tele_connection_id, 10),
+    packagePlanName: clean(body.package_plan_name),
+    monthlyPlanAmount: readAmount(body.monthly_plan_amount),
+    dataAllowance: clean(body.data_allowance),
+    billingFrequency,
+    localMinutes: clean(body.local_minutes),
+    internationalMinutes: clean(body.international_minutes),
+    localSms: clean(body.local_sms),
+    internationalSms: clean(body.international_sms),
+    cug: clean(body.cug),
+    activationDate,
+    endDate: billingFrequency === 'Recurring' ? readDate(body.end_date) : null,
+    validityDays,
+    expiryDate: billingFrequency === 'One Time' ? calculateExpiryDate(activationDate, validityDays) : null,
+    clientId: body.client_id === undefined || body.client_id === null ? null : String(body.client_id),
+    status: clean(body.status) || 'Active',
+  };
+};
 
 const validatePayload = async (payload, res) => {
   if (!Number.isInteger(payload.teleConnectionId)) {
@@ -173,13 +213,14 @@ exports.createTeleAddon = async (req, res) => {
       `INSERT INTO tbl_tele_addon (
          tele_connection_id, package_plan_name, monthly_plan_amount, data_allowance,
          billing_frequency, local_minutes, international_minutes, local_sms, international_sms,
-         cug, client_id, status, is_deleted
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0)
+         cug, activation_date, end_date, validity_days, expiry_date, client_id, status, is_deleted
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 0)
        RETURNING *`,
       [
         payload.teleConnectionId, payload.packagePlanName, payload.monthlyPlanAmount,
         payload.dataAllowance, payload.billingFrequency, payload.localMinutes,
         payload.internationalMinutes, payload.localSms, payload.internationalSms, payload.cug,
+        payload.activationDate, payload.endDate, payload.validityDays, payload.expiryDate,
         payload.clientId, payload.status,
       ]
     );
@@ -200,13 +241,15 @@ exports.updateTeleAddon = async (req, res) => {
          tele_connection_id = $1, package_plan_name = $2, monthly_plan_amount = $3,
          data_allowance = $4, billing_frequency = $5, local_minutes = $6,
          international_minutes = $7, local_sms = $8, international_sms = $9, cug = $10,
-         client_id = $11, status = $12, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $13 AND is_deleted = 0
+         activation_date = $11, end_date = $12, validity_days = $13, expiry_date = $14,
+         client_id = $15, status = $16, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $17 AND is_deleted = 0
        RETURNING *`,
       [
         payload.teleConnectionId, payload.packagePlanName, payload.monthlyPlanAmount,
         payload.dataAllowance, payload.billingFrequency, payload.localMinutes,
         payload.internationalMinutes, payload.localSms, payload.internationalSms, payload.cug,
+        payload.activationDate, payload.endDate, payload.validityDays, payload.expiryDate,
         payload.clientId, payload.status, req.params.id,
       ]
     );
