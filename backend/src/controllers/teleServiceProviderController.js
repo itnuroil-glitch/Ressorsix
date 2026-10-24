@@ -7,6 +7,7 @@ const initTable = async () => {
       CREATE TABLE IF NOT EXISTS tbl_tele_service_provider (
         id SERIAL PRIMARY KEY,
         company_name VARCHAR(255) NOT NULL,
+        connection_type VARCHAR(255),
         service_provider VARCHAR(255) NOT NULL,
         account_number VARCHAR(100) NOT NULL,
         status VARCHAR(50) DEFAULT 'Active',
@@ -15,6 +16,49 @@ const initTable = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+    `);
+    await db.query(`
+      ALTER TABLE tbl_tele_service_provider
+      ADD COLUMN IF NOT EXISTS connection_type VARCHAR(255);
+    `);
+
+    // Backfill legacy rows only when an existing connection gives one unambiguous type
+    // for the same company, provider and account number. Unknown rows remain NULL.
+    await db.query(`
+      UPDATE tbl_tele_service_provider AS service
+      SET connection_type = matched.connection_type,
+          updated_at = CURRENT_TIMESTAMP
+      FROM (
+        SELECT
+          LOWER(TRIM(company_name)) AS company_key,
+          LOWER(TRIM(provider)) AS provider_key,
+          LOWER(TRIM(account_number)) AS account_key,
+          MIN(TRIM(connection_type)) AS connection_type
+        FROM tbl_tele_connection
+        WHERE is_deleted = 0
+          AND NULLIF(TRIM(account_number), '') IS NOT NULL
+          AND NULLIF(TRIM(connection_type), '') IS NOT NULL
+        GROUP BY
+          LOWER(TRIM(company_name)),
+          LOWER(TRIM(provider)),
+          LOWER(TRIM(account_number))
+        HAVING COUNT(DISTINCT LOWER(TRIM(connection_type))) = 1
+      ) AS matched
+      WHERE NULLIF(TRIM(service.connection_type), '') IS NULL
+        AND LOWER(TRIM(service.company_name)) = matched.company_key
+        AND LOWER(TRIM(service.service_provider)) = matched.provider_key
+        AND LOWER(TRIM(service.account_number)) = matched.account_key;
+    `);
+
+    // Before this field existed, the telecom module treated an omitted
+    // connection type as SIM. Preserve that legacy behaviour for active rows
+    // that have no exact connection match, while leaving deleted history alone.
+    await db.query(`
+      UPDATE tbl_tele_service_provider
+      SET connection_type = 'SIM',
+          updated_at = CURRENT_TIMESTAMP
+      WHERE is_deleted = 0
+        AND NULLIF(TRIM(connection_type), '') IS NULL;
     `);
   } catch (err) {
     console.error('Error initializing tbl_tele_service_provider:', err);
@@ -27,6 +71,7 @@ const clean = (v) => (v === undefined || v === null ? '' : String(v).trim());
 const validate = (b) => {
   const missing = [];
   if (!clean(b.company_name)) missing.push('Company');
+  if (!clean(b.connection_type)) missing.push('Connection Type');
   if (!clean(b.service_provider)) missing.push('Service Provider');
   if (!clean(b.account_number)) missing.push('Account Number');
   return missing;
@@ -58,6 +103,7 @@ exports.createTeleServiceProvider = async (req, res) => {
       return res.status(400).json({ message: `Required: ${missing.join(', ')}.` });
     }
     const company = clean(b.company_name);
+    const connectionType = clean(b.connection_type);
     const provider = clean(b.service_provider);
     const account = clean(b.account_number);
     const clientId = b.client_id || b.clientid || null;
@@ -73,9 +119,10 @@ exports.createTeleServiceProvider = async (req, res) => {
     }
 
     const result = await db.query(
-      `INSERT INTO tbl_tele_service_provider (company_name, service_provider, account_number, status, client_id, is_deleted)
-       VALUES ($1, $2, $3, $4, $5, 0) RETURNING *`,
-      [company, provider, account, clean(b.status) || 'Active', clientId ? String(clientId) : null]
+      `INSERT INTO tbl_tele_service_provider
+         (company_name, connection_type, service_provider, account_number, status, client_id, is_deleted)
+       VALUES ($1, $2, $3, $4, $5, $6, 0) RETURNING *`,
+      [company, connectionType, provider, account, clean(b.status) || 'Active', clientId ? String(clientId) : null]
     );
     res.status(201).json({ message: 'Tele service provider created successfully.', serviceProvider: result.rows[0] });
   } catch (error) {
@@ -93,6 +140,7 @@ exports.updateTeleServiceProvider = async (req, res) => {
       return res.status(400).json({ message: `Required: ${missing.join(', ')}.` });
     }
     const company = clean(b.company_name);
+    const connectionType = clean(b.connection_type);
     const provider = clean(b.service_provider);
     const account = clean(b.account_number);
 
@@ -108,10 +156,10 @@ exports.updateTeleServiceProvider = async (req, res) => {
 
     const result = await db.query(
       `UPDATE tbl_tele_service_provider
-       SET company_name = $1, service_provider = $2, account_number = $3,
-           status = COALESCE($4, status), updated_at = CURRENT_TIMESTAMP
-       WHERE id = $5 AND is_deleted = 0 RETURNING *`,
-      [company, provider, account, clean(b.status) || null, id]
+       SET company_name = $1, connection_type = $2, service_provider = $3, account_number = $4,
+           status = COALESCE($5, status), updated_at = CURRENT_TIMESTAMP
+       WHERE id = $6 AND is_deleted = 0 RETURNING *`,
+      [company, connectionType, provider, account, clean(b.status) || null, id]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Tele service provider not found.' });

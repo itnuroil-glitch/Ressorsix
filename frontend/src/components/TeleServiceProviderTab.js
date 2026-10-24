@@ -14,7 +14,13 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { API_URL } from '../config';
 
-const EMPTY_FORM = { company_name: '', service_provider: '', account_number: '', status: 'Active' };
+const EMPTY_FORM = {
+  company_name: '',
+  connection_type: '',
+  service_provider: '',
+  account_number: '',
+  status: 'Active',
+};
 
 // Tele Service Provider master (Settings > Tele Service Provider):
 // which service provider a company uses, together with the account number.
@@ -34,12 +40,13 @@ export default function TeleServiceProviderTab({ user, showToast, permissions })
   const itemsPerPage = 8;
 
   const [companies, setCompanies] = useState([]);
+  const [connectionTypes, setConnectionTypes] = useState([]);
   const [providers, setProviders] = useState([]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
-  const [openList, setOpenList] = useState(null); // 'company' | 'provider' | null
+  const [openList, setOpenList] = useState(null); // 'company' | 'connectionType' | 'provider' | null
   const [showErrors, setShowErrors] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -70,20 +77,25 @@ export default function TeleServiceProviderTab({ user, showToast, permissions })
   const fetchOptions = async () => {
     try {
       const clientQuery = user?.clientid ? `?client_id=${user.clientid}` : '';
-      const [cRes, pRes] = await Promise.all([
+      const [cRes, tRes, pRes] = await Promise.all([
         fetch(`${API_URL}/api/companies`),
+        fetch(`${API_URL}/api/tele-connection-types${clientQuery}`),
         fetch(`${API_URL}/api/telecom-providers${clientQuery}`),
       ]);
       if (cRes.ok) {
         const c = await cRes.json();
         if (Array.isArray(c)) setCompanies(c);
       }
+      if (tRes.ok) {
+        const t = await tRes.json();
+        if (Array.isArray(t)) setConnectionTypes(t);
+      }
       if (pRes.ok) {
         const p = await pRes.json();
         if (Array.isArray(p)) setProviders(p);
       }
     } catch (err) {
-      console.warn('Could not load company / provider lists', err);
+      console.warn('Could not load company / connection type / provider lists', err);
     }
   };
 
@@ -102,10 +114,18 @@ export default function TeleServiceProviderTab({ user, showToast, permissions })
     return Array.from(new Set(names));
   }, [providers]);
 
+  const connectionTypeOptions = useMemo(() => {
+    const names = connectionTypes
+      .filter((t) => String(t.status || 'Active').toLowerCase() === 'active' && t.connection_type_name)
+      .map((t) => String(t.connection_type_name).trim());
+    return Array.from(new Set(names));
+  }, [connectionTypes]);
+
   const term = search.toLowerCase();
   const filtered = rows.filter(
     (r) =>
       (r.company_name || '').toLowerCase().includes(term) ||
+      (r.connection_type || '').toLowerCase().includes(term) ||
       (r.service_provider || '').toLowerCase().includes(term) ||
       (r.account_number || '').toLowerCase().includes(term)
   );
@@ -122,6 +142,7 @@ export default function TeleServiceProviderTab({ user, showToast, permissions })
       setEditingId(item.id);
       setForm({
         company_name: item.company_name || '',
+        connection_type: item.connection_type || '',
         service_provider: item.service_provider || '',
         account_number: item.account_number || '',
         status: item.status || 'Active',
@@ -138,6 +159,7 @@ export default function TeleServiceProviderTab({ user, showToast, permissions })
   const handleSave = async () => {
     const missingLabels = [];
     if (!form.company_name.trim()) missingLabels.push('Company');
+    if (!form.connection_type.trim()) missingLabels.push('Connection Type');
     if (!form.service_provider.trim()) missingLabels.push('Service Provider');
     if (!form.account_number.trim()) missingLabels.push('Account Number');
     if (missingLabels.length > 0) {
@@ -276,7 +298,7 @@ export default function TeleServiceProviderTab({ user, showToast, permissions })
             <Ionicons name="search" size={16} color="#94A3B8" style={{ marginRight: 8 }} />
             <TextInput
               style={styles.searchBarInput}
-              placeholder="Search company, provider or account..."
+              placeholder="Search company, connection type, provider or account..."
               value={search}
               onChangeText={(text) => {
                 setSearch(text);
@@ -303,6 +325,7 @@ export default function TeleServiceProviderTab({ user, showToast, permissions })
               <View style={styles.tableHeader}>
                 <Text numberOfLines={1} style={[styles.thCell, { flex: 0.8 }]}>ID</Text>
                 <Text numberOfLines={1} style={[styles.thCell, { flex: 3 }]}>COMPANY</Text>
+                <Text numberOfLines={1} style={[styles.thCell, { flex: 1.8 }]}>CONNECTION TYPE</Text>
                 <Text numberOfLines={1} style={[styles.thCell, { flex: 2.2 }]}>SERVICE PROVIDER</Text>
                 <Text numberOfLines={1} style={[styles.thCell, { flex: 2.2 }]}>ACCOUNT NUMBER</Text>
                 <Text numberOfLines={1} style={[styles.thCell, { flex: 1.4, textAlign: 'center' }]}>STATUS</Text>
@@ -318,6 +341,7 @@ export default function TeleServiceProviderTab({ user, showToast, permissions })
                   >
                     <Text style={[styles.tdCell, { flex: 0.8, fontWeight: '700' }]}>#{item.id}</Text>
                     <Text style={[styles.tdCell, { flex: 3, fontWeight: '600' }]}>{item.company_name}</Text>
+                    <Text style={[styles.tdCell, { flex: 1.8 }]}>{item.connection_type || '\u2014'}</Text>
                     <Text style={[styles.tdCell, { flex: 2.2 }]}>{item.service_provider}</Text>
                     <Text style={[styles.tdCell, { flex: 2.2, fontWeight: '600', color: '#166534' }]}>{item.account_number}</Text>
                     <View style={[styles.tdCell, { flex: 1.4, alignItems: 'center' }]}>
@@ -397,6 +421,13 @@ export default function TeleServiceProviderTab({ user, showToast, permissions })
 
             <ScrollView style={{ maxHeight: 520 }} contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
               {renderPicker('Company', 'company_name', companyOptions, 'Select company', 'company')}
+              {renderPicker(
+                'Connection Type',
+                'connection_type',
+                connectionTypeOptions,
+                'Select connection type',
+                'connectionType'
+              )}
               {renderPicker('Service Provider', 'service_provider', providerOptions, 'Select service provider', 'provider')}
 
               <View style={styles.formGroup}>
