@@ -83,6 +83,7 @@ const createEmptyAddonDraft = () => ({
   planName: '',
   planAmount: '',
   subscriptionType: 'Recurring',
+  status: 'Active',
   dataAllowance: '',
   localMinutes: '',
   intlMinutes: '',
@@ -121,6 +122,8 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
   // Modals
   const [isAddEditModalOpen, setIsAddEditModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [viewConnectionTab, setViewConnectionTab] = useState('details');
+  const [expandedAddonId, setExpandedAddonId] = useState(null);
   const [isReassignModalOpen, setIsReassignModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
@@ -134,6 +137,9 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
   const [addonDraft, setAddonDraft] = useState(createEmptyAddonDraft);
   const [addonDraftError, setAddonDraftError] = useState('');
   const [isSavingAddon, setIsSavingAddon] = useState(false);
+  const [editingAddonId, setEditingAddonId] = useState(null);
+  const [deleteAddonTarget, setDeleteAddonTarget] = useState(null);
+  const [isDeletingAddon, setIsDeletingAddon] = useState(false);
 
   // Dropdown popover open states inside the Add/Edit form
   const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = useState(false);
@@ -488,6 +494,18 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     }, {});
   }, [teleAddons]);
 
+  useEffect(() => {
+    if (isViewModalOpen) setViewConnectionTab('details');
+  }, [isViewModalOpen, activeItem?.id]);
+
+  useEffect(() => {
+    if (viewConnectionTab !== 'addons' || !activeItem) return;
+    const addons = teleAddonsByConnection[String(activeItem.id)] || [];
+    setExpandedAddonId(prev => (
+      addons.some(addon => String(addon.id) === String(prev)) ? prev : (addons[0]?.id || null)
+    ));
+  }, [viewConnectionTab, activeItem, teleAddonsByConnection]);
+
   // Company choices come only from live master data.
   const companyOptions = useMemo(() => {
     if (apiCompanies && apiCompanies.length > 0) {
@@ -676,10 +694,22 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
   // ---------------------------------------------------------------------------
   // CRUD ACTIONS
   // ---------------------------------------------------------------------------
-  const handleOpenAddon = (item) => {
+  const handleOpenAddon = (item, addon = null) => {
     setActionMenu(null);
     setAddonConnection(item);
-    setAddonDraft(createEmptyAddonDraft());
+    setEditingAddonId(addon?.id || null);
+    setAddonDraft(addon ? {
+      planName: String(addon.package_plan_name || ''),
+      planAmount: String(addon.monthly_plan_amount ?? ''),
+      subscriptionType: addon.billing_frequency || 'Recurring',
+      status: addon.status || 'Active',
+      dataAllowance: String(addon.data_allowance || ''),
+      localMinutes: String(addon.local_minutes || ''),
+      intlMinutes: String(addon.international_minutes || ''),
+      localSMS: String(addon.local_sms || ''),
+      intlSMS: String(addon.international_sms || ''),
+      cug: String(addon.cug || ''),
+    } : createEmptyAddonDraft());
     setAddonDraftError('');
     setIsAddonModalOpen(true);
   };
@@ -688,6 +718,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     if (isSavingAddon) return;
     setIsAddonModalOpen(false);
     setAddonConnection(null);
+    setEditingAddonId(null);
     setAddonDraftError('');
   };
 
@@ -717,27 +748,38 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
       local_sms: String(addonDraft.localSMS || '').trim() || null,
       international_sms: String(addonDraft.intlSMS || '').trim() || null,
       cug: String(addonDraft.cug || '').trim() || null,
-      status: 'Active',
+      status: addonDraft.status || 'Active',
       client_id: user?.clientid || user?.client_id || user?.clientId || null,
     };
 
     setIsSavingAddon(true);
     setAddonDraftError('');
     try {
-      const res = await fetch(`${API_URL}/api/tele-addons`, {
-        method: 'POST',
+      const res = await fetch(
+        editingAddonId ? `${API_URL}/api/tele-addons/${editingAddonId}` : `${API_URL}/api/tele-addons`,
+        {
+        method: editingAddonId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-      });
+        }
+      );
       const raw = await res.text();
       let data = {};
       try { data = raw ? JSON.parse(raw) : {}; } catch (e) { data = {}; }
       if (!res.ok) throw new Error(data.message || `Failed to save telecom add-on (HTTP ${res.status})`);
 
       await fetchTeleAddons();
-      if (showToast) showToast(`${addonName} added to ${addonConnection.connectionNumber}`, 'success');
+      if (showToast) {
+        showToast(
+          editingAddonId
+            ? `${addonName} updated successfully`
+            : `${addonName} added to ${addonConnection.connectionNumber}`,
+          'success'
+        );
+      }
       setIsAddonModalOpen(false);
       setAddonConnection(null);
+      setEditingAddonId(null);
       setAddonDraft(createEmptyAddonDraft());
     } catch (err) {
       console.error('Error saving telecom add-on:', err);
@@ -745,6 +787,26 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
       if (showToast) showToast(err.message || 'Failed to save telecom add-on', 'error');
     } finally {
       setIsSavingAddon(false);
+    }
+  };
+
+  const handleDeleteAddon = async () => {
+    if (!deleteAddonTarget) return;
+    setIsDeletingAddon(true);
+    try {
+      const res = await fetch(`${API_URL}/api/tele-addons/${deleteAddonTarget.id}`, { method: 'DELETE' });
+      const raw = await res.text();
+      let data = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch (e) { data = {}; }
+      if (!res.ok) throw new Error(data.message || `Failed to delete telecom add-on (HTTP ${res.status})`);
+      await fetchTeleAddons();
+      if (showToast) showToast(`${deleteAddonTarget.package_plan_name} deleted successfully`, 'success');
+      setDeleteAddonTarget(null);
+    } catch (err) {
+      console.error('Error deleting telecom add-on:', err);
+      if (showToast) showToast(err.message || 'Failed to delete telecom add-on', 'error');
+    } finally {
+      setIsDeletingAddon(false);
     }
   };
 
@@ -1339,7 +1401,6 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
             ) : (
               paginatedData.map((row) => {
                 const isOver = row.isOverPlan === true;
-                const rowAddons = teleAddonsByConnection[String(row.id)] || [];
 
                 return (
                   <View
@@ -1405,11 +1466,6 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     {/* 6. PLAN NAME */}
                     <View style={[{ flex: 1.8, paddingRight: 8 }]}>
                       <Text style={styles.planNameText} numberOfLines={1}>{row.planName}</Text>
-                      {rowAddons.map(addon => (
-                        <Text key={addon.id} style={styles.addonPlanNameText} numberOfLines={1}>
-                          + {addon.package_plan_name}
-                        </Text>
-                      ))}
                     </View>
 
                     {/* 7. MONTHLY AMOUNT */}
@@ -1593,7 +1649,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
         </TouchableOpacity>
       </Modal>
 
-      {/* Add-on is intentionally available only from a connection row action. */}
+      {/* Add-on create / edit form. */}
       <Modal
         visible={isAddonModalOpen}
         transparent
@@ -1604,8 +1660,10 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
           <View style={[styles.modalBox, { maxWidth: 640, width: '92%' }]}>
             <View style={styles.modalHeader}>
               <View>
-                <Text style={styles.modalTitle}>Add On Details</Text>
-                <Text style={styles.modalSubtitle}>Create a new add-on package plan</Text>
+                <Text style={styles.modalTitle}>{editingAddonId ? 'Edit Add On Details' : 'Add On Details'}</Text>
+                <Text style={styles.modalSubtitle}>
+                  {editingAddonId ? 'Update this add-on package plan' : 'Create a new add-on package plan'}
+                </Text>
               </View>
               <TouchableOpacity
                 onPress={handleCloseAddon}
@@ -1636,7 +1694,8 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
 
                 <View style={styles.planModalField}>
                   <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>
-                    Monthly Plan Amount (AED) <Text style={{ color: THEME.redAlertText }}>*</Text>
+                    {addonDraft.subscriptionType === 'Recurring' ? 'Monthly Plan Amount (AED)' : 'One-time Amount (AED)'}{' '}
+                    <Text style={{ color: THEME.redAlertText }}>*</Text>
                   </Text>
                   <TextInput
                     style={styles.exactTextInput}
@@ -1649,7 +1708,11 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     keyboardType="decimal-pad"
                     placeholderTextColor={THEME.slate400}
                   />
-                  <Text style={styles.fieldHelperText}>Bills above this amount are marked as excess</Text>
+                  <Text style={styles.fieldHelperText}>
+                    {addonDraft.subscriptionType === 'Recurring'
+                      ? 'Charged each billing cycle until cancelled.'
+                      : 'Charged once for this purchase.'}
+                  </Text>
                 </View>
 
                 <View style={styles.planModalField}>
@@ -1691,6 +1754,11 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                       );
                     })}
                   </View>
+                  <Text style={styles.fieldHelperText}>
+                    {addonDraft.subscriptionType === 'Recurring'
+                      ? 'Renews and is charged every billing cycle until cancelled.'
+                      : 'Charged once and does not renew automatically.'}
+                  </Text>
                 </View>
 
                 <View style={styles.planModalField}>
@@ -1767,7 +1835,9 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                 disabled={isSavingAddon}
               >
                 {isSavingAddon && <ActivityIndicator size="small" color={THEME.white} />}
-                <Text style={styles.primaryBtnText}>{isSavingAddon ? 'Saving...' : 'Save Plan'}</Text>
+                <Text style={styles.primaryBtnText}>
+                  {isSavingAddon ? 'Saving...' : (editingAddonId ? 'Update Plan' : 'Save Plan')}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -2641,8 +2711,60 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
               </TouchableOpacity>
             </View>
 
+            <View style={styles.viewConnectionTabs}>
+              <TouchableOpacity
+                style={[
+                  styles.viewConnectionTab,
+                  viewConnectionTab === 'details' && styles.viewConnectionTabActive,
+                ]}
+                onPress={() => setViewConnectionTab('details')}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name="document-text-outline"
+                  size={16}
+                  color={viewConnectionTab === 'details' ? THEME.textGreen : THEME.slate500}
+                />
+                <Text
+                  style={[
+                    styles.viewConnectionTabText,
+                    viewConnectionTab === 'details' && styles.viewConnectionTabTextActive,
+                  ]}
+                >
+                  Connection Details
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.viewConnectionTab,
+                  viewConnectionTab === 'addons' && styles.viewConnectionTabActive,
+                ]}
+                onPress={() => setViewConnectionTab('addons')}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name="add-circle-outline"
+                  size={16}
+                  color={viewConnectionTab === 'addons' ? THEME.textGreen : THEME.slate500}
+                />
+                <Text
+                  style={[
+                    styles.viewConnectionTabText,
+                    viewConnectionTab === 'addons' && styles.viewConnectionTabTextActive,
+                  ]}
+                >
+                  Add-on
+                </Text>
+                <View style={styles.viewConnectionTabCount}>
+                  <Text style={styles.viewConnectionTabCountText}>
+                    {activeItem ? (teleAddonsByConnection[String(activeItem.id)] || []).length : 0}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+
             {/* Read-only body: identical sections, order and field styling as the Edit form */}
-            {activeItem && (() => {
+            {viewConnectionTab === 'details' && activeItem && (() => {
               const dash = v => (v === undefined || v === null || String(v).trim() === '' ? '—' : String(v));
               const Field = ({ label, value, dropdown, calendar, required, helper, disabled }) => (
                 <View style={styles.formCol}>
@@ -2749,6 +2871,176 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
               );
             })()}
 
+            {viewConnectionTab === 'addons' && activeItem && (() => {
+              const addons = teleAddonsByConnection[String(activeItem.id)] || [];
+              const addonValue = value => (
+                value === undefined || value === null || String(value).trim() === '' ? '—' : String(value)
+              );
+              const AddonField = ({ label, value, fullWidth = false, required = false }) => (
+                <View style={fullWidth ? { width: '100%' } : styles.planModalField}>
+                  <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>
+                    {label}{required ? <Text style={{ color: THEME.redAlertText }}> *</Text> : null}
+                  </Text>
+                  <View style={[styles.exactTextInput, styles.viewAddonReadOnlyInput]}>
+                    <Text style={styles.viewAddonReadOnlyValue}>{addonValue(value)}</Text>
+                  </View>
+                </View>
+              );
+              const activeAddonCount = addons.filter(
+                addon => String(addon.status || 'Active').toLowerCase() === 'active'
+              ).length;
+              const recurringTotal = addons.reduce((total, addon) => {
+                if (String(addon.status || 'Active').toLowerCase() !== 'active') return total;
+                const frequency = String(addon.billing_frequency || 'Recurring')
+                  .toLowerCase()
+                  .replace(/[\s_-]/g, '');
+                const amount = Number(addon.monthly_plan_amount);
+                return frequency === 'recurring' && Number.isFinite(amount) ? total + amount : total;
+              }, 0);
+              return (
+                <ScrollView
+                  style={styles.addModalScroll}
+                  contentContainerStyle={styles.viewAddonContent}
+                  showsVerticalScrollIndicator={true}
+                >
+                  <View style={styles.viewAddonTopRow}>
+                    <View style={styles.viewAddonIntro}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <Text style={styles.viewAddonIntroTitle}>Add-on packages</Text>
+                        <View style={styles.viewAddonTotalBadge}>
+                          <Text style={styles.viewAddonTotalBadgeText}>
+                            {addons.length} {addons.length === 1 ? 'add-on' : 'add-ons'}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.viewAddonIntroText}>
+                        Extra packages saved for {activeItem.connectionNumber}.
+                      </Text>
+                    </View>
+                    <View style={styles.viewAddonSummaryStrip}>
+                      <View style={styles.viewAddonSummaryCell}>
+                        <Text style={styles.viewAddonSummaryValue}>{activeAddonCount} active add-ons</Text>
+                      </View>
+                      <View style={[styles.viewAddonSummaryCell, styles.viewAddonSummaryCellBorder]}>
+                        <Text style={styles.viewAddonSummaryLabel}>Total recurring</Text>
+                        <Text style={styles.viewAddonSummaryValue}>AED {recurringTotal.toFixed(2)}/month</Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {addons.length === 0 ? (
+                    <View style={styles.viewAddonEmpty}>
+                      <View style={styles.viewAddonEmptyIcon}>
+                        <Ionicons name="cube-outline" size={28} color={THEME.slate400} />
+                      </View>
+                      <Text style={styles.viewAddonEmptyTitle}>No add-ons added</Text>
+                      <Text style={styles.viewAddonEmptyText}>
+                        Add an extra package for this telecom connection.
+                      </Text>
+                    </View>
+                  ) : (
+                    addons.map(addon => {
+                      const amount = Number(addon.monthly_plan_amount);
+                      const amountLabel = Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
+                      const frequency = String(addon.billing_frequency || 'Recurring').toLowerCase();
+                      const isExpanded = String(expandedAddonId) === String(addon.id);
+                      return (
+                        <View
+                          key={addon.id}
+                          style={[styles.viewAddonFormCard, isExpanded && styles.viewAddonFormCardExpanded]}
+                        >
+                          <View style={[styles.viewAddonCompactHeader, isExpanded && styles.viewAddonCompactHeaderExpanded]}>
+                            <View style={styles.viewAddonCubeIcon}>
+                              <Ionicons name="cube-outline" size={21} color="#0E7A4D" />
+                            </View>
+                            <View style={styles.viewAddonNameCol}>
+                              <Text style={styles.viewAddonCompactName} numberOfLines={1}>
+                                {addon.package_plan_name}
+                              </Text>
+                              <Text style={styles.viewAddonFormSubtitle}>Saved package #{addon.id}</Text>
+                            </View>
+                            <View style={styles.viewAddonAmountCol}>
+                              <Text style={styles.viewAddonCompactAmount}>AED {amountLabel}</Text>
+                              <Text style={styles.viewAddonCompactAmountLabel}>
+                                {frequency === 'recurring' ? 'Monthly Plan Amount' : 'One-time Amount'}
+                              </Text>
+                            </View>
+                            <View style={styles.viewAddonFrequencyBadge}>
+                              <Ionicons
+                                name={frequency === 'recurring' ? 'sync-outline' : 'ellipse-outline'}
+                                size={13}
+                                color={frequency === 'recurring' ? '#0E5434' : '#64748B'}
+                              />
+                              <Text style={styles.viewAddonFrequencyText}>
+                                {addon.billing_frequency || 'Recurring'}
+                              </Text>
+                            </View>
+                            <View style={styles.viewAddonHeaderActions}>
+                              <View style={styles.viewAddonStatusBadge}>
+                                <Text style={styles.viewAddonStatusBadgeText}>{addon.status || 'Active'}</Text>
+                              </View>
+                              <TouchableOpacity
+                                style={styles.viewAddonEditBtn}
+                                onPress={() => {
+                                  setIsViewModalOpen(false);
+                                  handleOpenAddon(activeItem, addon);
+                                }}
+                                activeOpacity={0.8}
+                                accessibilityLabel={`Edit ${addon.package_plan_name}`}
+                              >
+                                <Ionicons name="pencil-outline" size={14} color="#166534" />
+                                <Text style={styles.viewAddonEditBtnText}>Edit</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={styles.viewAddonDeleteBtn}
+                                onPress={() => setDeleteAddonTarget(addon)}
+                                activeOpacity={0.8}
+                                accessibilityLabel={`Delete ${addon.package_plan_name}`}
+                              >
+                                <Ionicons name="trash-outline" size={14} color="#DC2626" />
+                                <Text style={styles.viewAddonDeleteBtnText}>Delete</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={styles.viewAddonExpandBtn}
+                                onPress={() => setExpandedAddonId(isExpanded ? null : addon.id)}
+                                activeOpacity={0.8}
+                                accessibilityLabel={`${isExpanded ? 'Collapse' : 'Expand'} ${addon.package_plan_name}`}
+                              >
+                                <Ionicons
+                                  name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                                  size={18}
+                                  color={THEME.slate700}
+                                />
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+
+                          {isExpanded && (
+                            <View style={styles.viewAddonExpandedBody}>
+                              <Text style={[styles.formSectionHeader, { marginBottom: 14 }]}>ADD-ON DETAILS</Text>
+                              <View style={styles.planModalGrid}>
+                                <AddonField
+                                  label="Monthly Plan Amount (AED)"
+                                  value={amountLabel}
+                                  required
+                                />
+                                <AddonField label="Data Allowance" value={addon.data_allowance} />
+                                <AddonField label="Local Minutes" value={addon.local_minutes} />
+                                <AddonField label="International Minutes" value={addon.international_minutes} />
+                                <AddonField label="Local SMS" value={addon.local_sms} />
+                                <AddonField label="International SMS" value={addon.international_sms} />
+                                <AddonField label="CUG" value={addon.cug} />
+                              </View>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })
+                  )}
+                </ScrollView>
+              );
+            })()}
+
             {/* Footer (same as Edit form): Close on the left, Edit Details on the right */}
             <View style={styles.addModalFooter}>
               <TouchableOpacity
@@ -2760,17 +3052,31 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
               </TouchableOpacity>
 
               <View style={styles.formFooterRightActions}>
-                <TouchableOpacity
-                  style={[styles.formSaveBtn, { flexDirection: 'row', alignItems: 'center', gap: 8 }]}
-                  onPress={() => {
-                    setIsViewModalOpen(false);
-                    handleOpenEdit(activeItem);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="pencil-outline" size={15} color="#FFFFFF" />
-                  <Text style={styles.formSaveBtnText}>Edit Details</Text>
-                </TouchableOpacity>
+                {viewConnectionTab === 'details' ? (
+                  <TouchableOpacity
+                    style={[styles.formSaveBtn, { flexDirection: 'row', alignItems: 'center', gap: 8 }]}
+                    onPress={() => {
+                      setIsViewModalOpen(false);
+                      handleOpenEdit(activeItem);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="pencil-outline" size={15} color="#FFFFFF" />
+                    <Text style={styles.formSaveBtnText}>Edit Details</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.formSaveBtn, { flexDirection: 'row', alignItems: 'center', gap: 8 }]}
+                    onPress={() => {
+                      setIsViewModalOpen(false);
+                      handleOpenAddon(activeItem);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="add-circle-outline" size={16} color="#FFFFFF" />
+                    <Text style={styles.formSaveBtnText}>Add Add-on</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           </View>
@@ -3051,7 +3357,53 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
       </Modal>
 
       {/* --------------------------------------------------------------------- */}
-      {/* MODAL: DELETE CONFIRMATION                                            */}
+      {/* MODAL: DELETE ADD-ON CONFIRMATION                                     */}
+      {/* --------------------------------------------------------------------- */}
+      <Modal
+        visible={Boolean(deleteAddonTarget)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => !isDeletingAddon && setDeleteAddonTarget(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { maxWidth: 420 }]}>
+            <View style={{ padding: 24, alignItems: 'center' }}>
+              <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                <Ionicons name="warning-outline" size={26} color={THEME.redAlertText} />
+              </View>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: THEME.slate900, marginBottom: 6, textAlign: 'center' }}>
+                Delete Add-on?
+              </Text>
+              <Text style={{ fontSize: 12, color: THEME.slate600, textAlign: 'center', lineHeight: 18 }}>
+                Are you sure you want to delete{' '}
+                <Text style={{ fontWeight: '700' }}>{deleteAddonTarget?.package_plan_name}</Text>?
+              </Text>
+            </View>
+
+            <View style={[styles.modalFooter, { justifyContent: 'center' }]}>
+              <TouchableOpacity
+                style={styles.secondaryBtn}
+                onPress={() => setDeleteAddonTarget(null)}
+                disabled={isDeletingAddon}
+              >
+                <Text style={styles.secondaryBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.primaryBtn, { backgroundColor: THEME.redAlertText }, isDeletingAddon && { opacity: 0.65 }]}
+                onPress={handleDeleteAddon}
+                disabled={isDeletingAddon}
+              >
+                {isDeletingAddon && <ActivityIndicator size="small" color={THEME.white} />}
+                <Ionicons name="trash-outline" size={15} color={THEME.white} />
+                <Text style={styles.primaryBtnText}>{isDeletingAddon ? 'Deleting...' : 'Delete Add-on'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* --------------------------------------------------------------------- */}
+      {/* MODAL: DELETE CONNECTION CONFIRMATION                                 */}
       {/* --------------------------------------------------------------------- */}
       <Modal visible={isDeleteModalOpen} transparent animationType="fade" onRequestClose={() => setIsDeleteModalOpen(false)}>
         <View style={styles.modalOverlay}>
@@ -4072,6 +4424,371 @@ const styles = StyleSheet.create({
   },
   planModalField: {
     width: '48%',
+  },
+  viewConnectionTabs: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+  },
+  viewConnectionTab: {
+    minHeight: 38,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  viewConnectionTabActive: {
+    borderColor: '#86C5A5',
+    backgroundColor: '#ECFDF5',
+  },
+  viewConnectionTabText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  viewConnectionTabTextActive: {
+    color: '#0E5434',
+  },
+  viewConnectionTabCount: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    backgroundColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewConnectionTabCountText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#475569',
+  },
+  viewAddonContent: {
+    padding: 20,
+    paddingBottom: 28,
+  },
+  viewAddonTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 18,
+    marginBottom: 16,
+  },
+  viewAddonIntro: {
+    flex: 1,
+  },
+  viewAddonIntroTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  viewAddonIntroText: {
+    marginTop: 3,
+    fontSize: 12,
+    color: '#64748B',
+  },
+  viewAddonTotalBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  viewAddonTotalBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0E5434',
+  },
+  viewAddonSummaryStrip: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D1FAE5',
+    backgroundColor: '#ECFDF5',
+    overflow: 'hidden',
+  },
+  viewAddonSummaryCell: {
+    minWidth: 125,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    justifyContent: 'center',
+  },
+  viewAddonSummaryCellBorder: {
+    borderLeftWidth: 1,
+    borderLeftColor: '#A7F3D0',
+  },
+  viewAddonSummaryLabel: {
+    fontSize: 10,
+    color: '#64748B',
+    marginBottom: 2,
+  },
+  viewAddonSummaryValue: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0E5434',
+  },
+  viewAddonEmpty: {
+    minHeight: 260,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#CBD5E1',
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  viewAddonEmptyIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  viewAddonEmptyTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#334155',
+  },
+  viewAddonEmptyText: {
+    marginTop: 5,
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  viewAddonFormCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#DCE5EF',
+    backgroundColor: '#FFFFFF',
+    marginBottom: 14,
+    overflow: 'hidden',
+  },
+  viewAddonFormCardExpanded: {
+    borderColor: '#38A169',
+  },
+  viewAddonCompactHeader: {
+    minHeight: 74,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  viewAddonCompactHeaderExpanded: {
+    backgroundColor: '#F0FDF4',
+    borderBottomWidth: 1,
+    borderBottomColor: '#D1FAE5',
+  },
+  viewAddonCubeIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewAddonNameCol: {
+    flex: 1.7,
+    minWidth: 130,
+  },
+  viewAddonCompactName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  viewAddonAmountCol: {
+    flex: 0.9,
+    minWidth: 95,
+    paddingLeft: 12,
+    borderLeftWidth: 1,
+    borderLeftColor: '#E2E8F0',
+  },
+  viewAddonCompactAmount: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  viewAddonCompactAmountLabel: {
+    marginTop: 2,
+    fontSize: 9,
+    color: '#94A3B8',
+  },
+  viewAddonExpandedBody: {
+    padding: 18,
+    backgroundColor: '#FFFFFF',
+  },
+  viewAddonFormHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  viewAddonFormSubtitle: {
+    marginTop: 3,
+    fontSize: 11,
+    color: '#64748B',
+  },
+  viewAddonHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  viewAddonStatusBadge: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  viewAddonStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#0E5434',
+  },
+  viewAddonEditBtn: {
+    minHeight: 30,
+    paddingHorizontal: 10,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    backgroundColor: '#F0FDF4',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  viewAddonEditBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  viewAddonDeleteBtn: {
+    minHeight: 30,
+    paddingHorizontal: 10,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    backgroundColor: '#FEF2F2',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  viewAddonDeleteBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  viewAddonExpandBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewAddonReadOnlyInput: {
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+  },
+  viewAddonReadOnlyValue: {
+    fontSize: 13,
+    color: '#1E293B',
+    fontWeight: '500',
+  },
+  viewAddonCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    marginBottom: 12,
+  },
+  viewAddonCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  viewAddonName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  viewAddonMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 7,
+  },
+  viewAddonFrequencyBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#ECFDF5',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  viewAddonFrequencyText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#0E5434',
+  },
+  viewAddonStatusText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  viewAddonAmountLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    color: '#94A3B8',
+  },
+  viewAddonAmount: {
+    marginTop: 3,
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0E5434',
+  },
+  viewAddonMetrics: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 14,
+    rowGap: 12,
+  },
+  viewAddonMetric: {
+    width: '33.333%',
+    paddingRight: 10,
+  },
+  viewAddonMetricLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#94A3B8',
+  },
+  viewAddonMetricValue: {
+    marginTop: 3,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
   },
   addonRadioGroup: {
     flexDirection: 'row',
