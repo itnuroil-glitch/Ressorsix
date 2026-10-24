@@ -345,7 +345,8 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
 
   const fetchTeleServiceAccounts = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/tele-service-providers`);
+      const clientQuery = user?.clientid ? `?client_id=${user.clientid}` : '';
+      const res = await fetch(`${API_URL}/api/tele-service-providers${clientQuery}`);
       if (res.ok) {
         const data = await res.json();
         setTeleServiceAccounts(Array.isArray(data) ? data : []);
@@ -355,19 +356,40 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     }
   };
 
-  // Account numbers saved in the Tele Service Provider master for a company + provider pair
-  const accountsFor = (company, provider) => {
+  // Account numbers saved in the Tele Service Provider master for an exact
+  // connection type + company + provider combination.
+  const accountsFor = (company, provider, connectionType) => {
     const c = String(company || '').trim().toLowerCase();
     const p = String(provider || '').trim().toLowerCase();
-    if (!c || !p) return [];
+    const t = String(connectionType || '').trim().toLowerCase();
+    if (!c || !p || !t) return [];
     const list = teleServiceAccounts
       .filter(r => String(r.status || 'Active').toLowerCase() === 'active'
         && String(r.company_name || '').trim().toLowerCase() === c
-        && String(r.service_provider || '').trim().toLowerCase() === p)
+        && String(r.service_provider || '').trim().toLowerCase() === p
+        && String(r.connection_type || '').trim().toLowerCase() === t)
       .map(r => String(r.account_number || '').trim())
       .filter(Boolean);
     return Array.from(new Set(list));
   };
+
+  // If master data arrives after the Add form opens, fill the matching account.
+  // Existing connections keep their saved account until one of the three selectors changes.
+  useEffect(() => {
+    if (!isAddEditModalOpen || activeItem) return;
+    const matches = accountsFor(formData.company, formData.provider, formData.connectionType);
+    setFormData(prev => {
+      const nextAccount = matches[0] || '';
+      return prev.accountNumber === nextAccount ? prev : { ...prev, accountNumber: nextAccount };
+    });
+  }, [
+    isAddEditModalOpen,
+    activeItem,
+    formData.company,
+    formData.provider,
+    formData.connectionType,
+    teleServiceAccounts,
+  ]);
 
   const fetchTeleConnTypes = async () => {
     try {
@@ -1827,7 +1849,10 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                             key={type}
                             style={[styles.dropdownItem, formData.connectionType === type && styles.dropdownItemActive]}
                             onPress={() => {
-                              setFormData({ ...formData, connectionType: type });
+                              setFormData(prev => {
+                                const accs = accountsFor(prev.company, prev.provider, type);
+                                return { ...prev, connectionType: type, accountNumber: accs[0] || '' };
+                              });
                               setIsConnTypeDropdownOpen(false);
                             }}
                           >
@@ -1884,8 +1909,8 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                               ]}
                               onPress={() => {
                                 setFormData(prev => {
-                                  const accs = accountsFor(comp, prev.provider);
-                                  return { ...prev, company: comp, ...(accs.length ? { accountNumber: accs[0] } : {}) };
+                                  const accs = accountsFor(comp, prev.provider, prev.connectionType);
+                                  return { ...prev, company: comp, accountNumber: accs[0] || '' };
                                 });
                                 setIsCompanyDropdownOpen(false);
                               }}
@@ -1954,8 +1979,8 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                               ]}
                               onPress={() => {
                                 setFormData(prev => {
-                                  const accs = accountsFor(prev.company, prov);
-                                  return { ...prev, provider: prov, ...(accs.length ? { accountNumber: accs[0] } : {}) };
+                                  const accs = accountsFor(prev.company, prov, prev.connectionType);
+                                  return { ...prev, provider: prov, accountNumber: accs[0] || '' };
                                 });
                                 setIsProviderDropdownOpen(false);
                               }}
@@ -2006,23 +2031,27 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                       </Text>
                     </View>
                     <TextInput
-                      style={[styles.exactTextInput, isMissing('accountNumber') && errBorder]}
+                      style={[
+                        styles.exactTextInput,
+                        { backgroundColor: THEME.slate100, color: THEME.slate600 },
+                        isMissing('accountNumber') && errBorder,
+                      ]}
                       value={formData.accountNumber}
-                      onChangeText={val => setFormData({ ...formData, accountNumber: val })}
-                      placeholder="Provider account number from the bill"
+                      editable={false}
+                      placeholder="Select type, company and provider"
                       placeholderTextColor={THEME.slate400}
                     />
                     {isMissing('accountNumber') && <Text style={styles.fieldErrorText}>Account No is required</Text>}
-                    {accountsFor(formData.company, formData.provider).length > 0 && (
+                    {accountsFor(formData.company, formData.provider, formData.connectionType).length > 0 ? (
                       <View style={{ marginTop: 6 }}>
                         <Text style={styles.fieldHelperText}>
-                          {accountsFor(formData.company, formData.provider).length > 1
-                            ? 'Accounts for this company and provider (Tele Service Provider):'
+                          {accountsFor(formData.company, formData.provider, formData.connectionType).length > 1
+                            ? 'Matching accounts from Tele Service Provider:'
                             : 'Filled from Tele Service Provider'}
                         </Text>
-                        {accountsFor(formData.company, formData.provider).length > 1 && (
+                        {accountsFor(formData.company, formData.provider, formData.connectionType).length > 1 && (
                           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                            {accountsFor(formData.company, formData.provider).map(acc => (
+                            {accountsFor(formData.company, formData.provider, formData.connectionType).map(acc => (
                               <TouchableOpacity
                                 key={acc}
                                 onPress={() => setFormData(prev => ({ ...prev, accountNumber: acc }))}
@@ -2036,7 +2065,11 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                           </View>
                         )}
                       </View>
-                    )}
+                    ) : formData.company && formData.provider && formData.connectionType ? (
+                      <Text style={[styles.fieldHelperText, { marginTop: 6, color: THEME.redAlertText }]}>
+                        No account is mapped for this connection type, company and provider in Tele Service Provider.
+                      </Text>
+                    ) : null}
                   </View>
                   <View style={styles.formCol}>
                     <Text style={[styles.exactFieldLabel, { marginBottom: 6 }]}>Serial Number</Text>
