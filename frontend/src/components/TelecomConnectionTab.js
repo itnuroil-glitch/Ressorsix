@@ -213,6 +213,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [anyDropdownOpen]);
   const [telePackages, setTelePackages] = useState([]);
+  const [teleAddons, setTeleAddons] = useState([]);
   const [teleProviders, setTeleProviders] = useState([]);
   const [teleConnTypes, setTeleConnTypes] = useState([]);
   const [teleServiceAccounts, setTeleServiceAccounts] = useState([]);
@@ -404,6 +405,18 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     }
   };
 
+  const fetchTeleAddons = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/tele-addons`);
+      if (res.ok) {
+        const data = await res.json();
+        setTeleAddons(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.warn('Could not fetch telecom add-ons', err);
+    }
+  };
+
   const fetchEmployees = async () => {
     try {
       const res = await fetch(`${API_URL}/api/employees`);
@@ -437,10 +450,21 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     fetchEmployees();
     fetchCompanies();
     fetchTelePackages();
+    fetchTeleAddons();
     fetchTeleProviders();
     fetchTeleConnTypes();
     fetchTeleServiceAccounts();
   }, []);
+
+  const teleAddonsByConnection = useMemo(() => {
+    return teleAddons.reduce((grouped, addon) => {
+      const connectionId = String(addon.tele_connection_id || '');
+      if (!connectionId) return grouped;
+      if (!grouped[connectionId]) grouped[connectionId] = [];
+      grouped[connectionId].push(addon);
+      return grouped;
+    }, {});
+  }, [teleAddons]);
 
   // Company choices come only from live master data.
   const companyOptions = useMemo(() => {
@@ -661,11 +685,11 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     }
 
     const payload = {
-      package_name: addonName,
-      plan_type: addonDraft.subscriptionType,
+      tele_connection_id: addonConnection.id,
+      package_plan_name: addonName,
       monthly_plan_amount: amount.toFixed(2),
       data_allowance: String(addonDraft.dataAllowance || '').trim() || null,
-      data_unit: 'GB',
+      billing_frequency: addonDraft.subscriptionType,
       local_minutes: String(addonDraft.localMinutes || '').trim() || null,
       international_minutes: String(addonDraft.intlMinutes || '').trim() || null,
       local_sms: String(addonDraft.localSMS || '').trim() || null,
@@ -678,7 +702,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
     setIsSavingAddon(true);
     setAddonDraftError('');
     try {
-      const res = await fetch(`${API_URL}/api/tele-packages`, {
+      const res = await fetch(`${API_URL}/api/tele-addons`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -686,17 +710,17 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
       const raw = await res.text();
       let data = {};
       try { data = raw ? JSON.parse(raw) : {}; } catch (e) { data = {}; }
-      if (!res.ok) throw new Error(data.message || `Failed to save package plan (HTTP ${res.status})`);
+      if (!res.ok) throw new Error(data.message || `Failed to save telecom add-on (HTTP ${res.status})`);
 
-      await fetchTelePackages();
-      if (showToast) showToast(`${addonName} added to Tele Package`, 'success');
+      await fetchTeleAddons();
+      if (showToast) showToast(`${addonName} added to ${addonConnection.connectionNumber}`, 'success');
       setIsAddonModalOpen(false);
       setAddonConnection(null);
       setAddonDraft(createEmptyAddonDraft());
     } catch (err) {
-      console.error('Error saving package plan:', err);
-      setAddonDraftError(err.message || 'Failed to save package plan');
-      if (showToast) showToast(err.message || 'Failed to save package plan', 'error');
+      console.error('Error saving telecom add-on:', err);
+      setAddonDraftError(err.message || 'Failed to save telecom add-on');
+      if (showToast) showToast(err.message || 'Failed to save telecom add-on', 'error');
     } finally {
       setIsSavingAddon(false);
     }
@@ -1293,6 +1317,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
             ) : (
               paginatedData.map((row) => {
                 const isOver = row.isOverPlan === true;
+                const rowAddons = teleAddonsByConnection[String(row.id)] || [];
 
                 return (
                   <View
@@ -1334,10 +1359,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                         }}
                       >
                         <Text
-                          style={[
-                            styles.phoneNumberText,
-                            isOver && styles.phoneNumberTextOver, // Red if over plan
-                          ]}
+                          style={styles.phoneNumberText}
                         >
                           {row.connectionNumber}
                         </Text>
@@ -1361,6 +1383,11 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
                     {/* 6. PLAN NAME */}
                     <View style={[{ flex: 1.8, paddingRight: 8 }]}>
                       <Text style={styles.planNameText} numberOfLines={1}>{row.planName}</Text>
+                      {rowAddons.map(addon => (
+                        <Text key={addon.id} style={styles.addonPlanNameText} numberOfLines={1}>
+                          + {addon.package_plan_name}
+                        </Text>
+                      ))}
                     </View>
 
                     {/* 7. MONTHLY AMOUNT */}
@@ -1555,7 +1582,7 @@ export default function TelecomConnectionTab({ user, showToast, isSidebarCollaps
           <View style={[styles.modalBox, { maxWidth: 640, width: '92%' }]}>
             <View style={styles.modalHeader}>
               <View>
-                <Text style={styles.modalTitle}>Plan Details</Text>
+                <Text style={styles.modalTitle}>Add On Details</Text>
                 <Text style={styles.modalSubtitle}>Create a new add-on package plan</Text>
               </View>
               <TouchableOpacity
@@ -3328,10 +3355,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#1D4ED8', // Blue link
   },
-  phoneNumberTextOver: {
-    color: '#DC2626', // Red if over plan
-    textDecorationLine: 'underline',
-  },
   employeeNameText: {
     fontSize: 14,
     fontWeight: '600',
@@ -3346,6 +3369,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#334155',
     fontWeight: '500',
+  },
+  addonPlanNameText: {
+    marginTop: 4,
+    fontSize: 11,
+    color: '#047857',
+    fontWeight: '700',
   },
   monthlyAmountText: {
     fontSize: 13,
