@@ -2782,8 +2782,14 @@ export default function DashboardScreen({ user, onSignOut }) {
     }
   }, [modules, activeTab]);
 
-  // Helper to check view permissions for a given module ID
-  const hasViewPermission = (moduleId) => {
+  const isPermissionGranted = value => (
+    value === true || value === 1 || String(value).toLowerCase() === 'true' || String(value) === '1'
+  );
+
+  // Check the permission assigned directly to a module. Module IDs are normalised
+  // because PostgreSQL/API responses and virtual modules do not always use the
+  // same number/string representation.
+  const hasDirectViewPermission = (moduleId) => {
     if (moduleId === 66 || moduleId === '66' || moduleId === 68 || moduleId === '68' || moduleId === 99957 || moduleId === '99957' || moduleId === 99958 || moduleId === '99958' || moduleId === 99960 || moduleId === '99960' || moduleId === 'virtual-telecom-connection' || moduleId === 'virtual-phone-assignment' || moduleId === 'telecom_bill_details' || moduleId === 'telcome_bill_details') return true;
     if (!user) return false;
     // Superadmin bypass
@@ -2796,16 +2802,29 @@ export default function DashboardScreen({ user, onSignOut }) {
     // 1. Check company-specific permissions across assigned companies if present
     if (userCompanyPermissions && userCompanyPermissions.length > 0 && userCompanyIds.length > 0) {
       const compPerms = userCompanyPermissions.filter(
-        p => p.module_id === moduleId && userCompanyIds.includes(String(p.company_id))
+        p => String(p.module_id) === String(moduleId) && userCompanyIds.includes(String(p.company_id))
       );
       if (compPerms.length > 0) {
-        return compPerms.some(p => p.can_view || p.full_control);
+        return compPerms.some(p => isPermissionGranted(p.can_view) || isPermissionGranted(p.full_control));
       }
     }
 
     // 2. Rely on Role-based userPermissions (global/default permissions where company_id is null)
-    const perm = userPermissions.find(p => p.module_id === moduleId);
-    return perm ? (perm.can_view || perm.full_control) : (user && String(user.roleId) === '1');
+    const perm = userPermissions.find(p => String(p.module_id) === String(moduleId));
+    return perm
+      ? (isPermissionGranted(perm.can_view) || isPermissionGranted(perm.full_control))
+      : false;
+  };
+
+  // A parent is a navigation container. If any child page is viewable, the
+  // parent must remain visible and pass the page guard even when a stale API
+  // response reports the parent row as false.
+  const hasViewPermission = (moduleId) => {
+    if (hasDirectViewPermission(moduleId)) return true;
+
+    return modules.some(child => (
+      String(child.parent_id) === String(moduleId) && hasDirectViewPermission(child.id)
+    ));
   };
 
   // Helper to check if user has access to a specific tab
