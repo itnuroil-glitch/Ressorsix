@@ -1,5 +1,36 @@
 const db = require('../config/db');
 
+const isGranted = value => (
+  value === true || value === 1 || String(value).toLowerCase() === 'true' || String(value) === '1'
+);
+
+// Parent modules are navigation containers. A user who can view any child must
+// also be able to see the parent menu, even when an older/stale parent row is
+// false. This does not grant access to any additional child page.
+const inheritParentViewFromChildren = (permissionRows, scopeKeys = []) => {
+  const rows = permissionRows.map(row => ({ ...row }));
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    rows.forEach(child => {
+      if (!child.parent_id || (!isGranted(child.can_view) && !isGranted(child.full_control))) return;
+
+      const parent = rows.find(candidate => (
+        String(candidate.module_id) === String(child.parent_id)
+        && scopeKeys.every(key => String(candidate[key] ?? '') === String(child[key] ?? ''))
+      ));
+
+      if (parent && !isGranted(parent.can_view)) {
+        parent.can_view = true;
+        changed = true;
+      }
+    });
+  }
+
+  return rows;
+};
+
 // @desc    Get permissions for a given role ID
 // @route   GET /api/roles/:roleId/permissions
 // @access  Public
@@ -97,6 +128,7 @@ exports.getRolePermissions = async (req, res) => {
     const companyPermRes = await db.query(
       `SELECT 
          rp.module_id,
+         m.parent_id,
          rp.company_id,
          rp.client_id,
          bool_or(rp.can_view) AS can_view,
@@ -108,8 +140,14 @@ exports.getRolePermissions = async (req, res) => {
        FROM role_permission rp 
        JOIN module m ON rp.module_id = m.id 
        WHERE rp.role_id = ANY($1) AND rp.company_id IS NOT NULL
-       GROUP BY rp.module_id, rp.company_id, rp.client_id`,
+       GROUP BY rp.module_id, m.parent_id, rp.company_id, rp.client_id`,
       [roleIds]
+    );
+
+    const effectivePermissions = inheritParentViewFromChildren(result.rows);
+    const effectiveCompanyPermissions = inheritParentViewFromChildren(
+      companyPermRes.rows,
+      ['company_id', 'client_id']
     );
 
     // If client role, filter modules based on subscription plan
@@ -125,7 +163,7 @@ exports.getRolePermissions = async (req, res) => {
       if (planId) {
         const planModRes = await db.query('SELECT enabled_module FROM tbl_plan_modules WHERE plan_id = $1', [planId]);
         const enabledModuleIds = planModRes.rows.map(r => r.enabled_module);
-        const filteredPermissions = result.rows
+        const filteredPermissions = effectivePermissions
           .filter(row => enabledModuleIds.includes(row.module_id))
           .map(row => ({
             ...row,
@@ -136,7 +174,7 @@ exports.getRolePermissions = async (req, res) => {
             full_control: row.full_control
           }));
         
-        const filteredCompanyPermissions = companyPermRes.rows
+        const filteredCompanyPermissions = effectiveCompanyPermissions
           .filter(row => enabledModuleIds.includes(row.module_id));
 
         return res.status(200).json({
@@ -158,8 +196,8 @@ exports.getRolePermissions = async (req, res) => {
     res.status(200).json({
       role: roleCheck.rows[0],
       roles: roleCheck.rows,
-      permissions: result.rows,
-      companyPermissions: companyPermRes.rows
+      permissions: effectivePermissions,
+      companyPermissions: effectiveCompanyPermissions
     });
   } catch (error) {
     console.error('Error fetching role permissions:', error);

@@ -20,7 +20,11 @@ exports.getAllModules = async (req, res) => {
         if (enabledModuleIds.length > 0) {
           const queryText = `
             SELECT * FROM module 
-            WHERE id = ANY($1) AND is_deleted = false 
+            WHERE (
+              id = ANY($1) 
+              OR id IN (SELECT parent_id FROM module WHERE id = ANY($1) AND parent_id IS NOT NULL)
+            ) 
+            AND (is_deleted = false OR is_deleted IS NULL) 
             ORDER BY parent_id NULLS FIRST, id ASC
           `;
           const result = await db.query(queryText, [enabledModuleIds]);
