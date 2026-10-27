@@ -938,17 +938,29 @@ export default function DashboardScreen({ user, onSignOut }) {
         return res.json();
       })
       .then((data) => {
-        // Check if any Vehicle sub-modules exist but the Vehicle parent (18) is missing
-        const hasVehicleSubmodule = data.some(m => [19, 23, 24].includes(m.id) || m.parent_id === 18);
-        const hasVehicleParent = data.some(m => m.id === 18);
+        // Check if any Vehicle sub-modules exist but the Vehicle parent is missing
+        const vehicleSubmodules = data.filter(m => {
+          const name = (m.module_name || '').toLowerCase();
+          const route = (m.route || '').toLowerCase();
+          return (name.includes('vehicle') || route.includes('vehicle') || route.includes('toll')) 
+            && name !== 'vehicle';
+        });
 
-        if (hasVehicleSubmodule && !hasVehicleParent) {
+        const hasVehicleParent = data.some(m => 
+          (m.module_name || '').trim().toLowerCase() === 'vehicle' && (m.parent_id === null || m.parent_id === undefined)
+        );
+
+        if (vehicleSubmodules.length > 0 && !hasVehicleParent) {
+          const detectedParentId = vehicleSubmodules.find(m => m.parent_id)?.parent_id || 18;
           data.push({
-            id: 18,
+            id: detectedParentId,
             module_name: "Vehicle",
             parent_id: null,
             route: null,
             status: "active"
+          });
+          vehicleSubmodules.forEach(m => {
+            if (!m.parent_id) m.parent_id = detectedParentId;
           });
         }
 
@@ -1022,7 +1034,7 @@ export default function DashboardScreen({ user, onSignOut }) {
         const ordered = [];
         parents.forEach(parent => {
           ordered.push(parent);
-          const children = data.filter(m => m.parent_id === parent.id);
+          const children = data.filter(m => String(m.parent_id) === String(parent.id));
           ordered.push(...children);
         });
         const orderedIds = new Set(ordered.map(m => m.id));
@@ -2869,9 +2881,9 @@ export default function DashboardScreen({ user, onSignOut }) {
         // If it's a parent module, show it if any of its children are visible
         const hasVisibleChildren = modules.some(child => {
           if (child.route === '/plans' || child.module_name === 'Plans') {
-            return child.parent_id === m.id && user && String(user.roleId) === '1';
+            return String(child.parent_id) === String(m.id) && user && String(user.roleId) === '1';
           }
-          return child.parent_id === m.id && hasViewPermission(child.id);
+          return String(child.parent_id) === String(m.id) && hasViewPermission(child.id);
         });
         return hasVisibleChildren;
       });
@@ -2928,7 +2940,7 @@ export default function DashboardScreen({ user, onSignOut }) {
             <View style={[styles.sidebarMenuItems, isSidebarCollapsed && { paddingHorizontal: 0, gap: 10, alignItems: 'center' }]}>
               {parentModules.map((parent) => {
                 const getDescendants = (parentId) => {
-                  const direct = effectiveModules.filter(m => m.parent_id === parentId);
+                  const direct = effectiveModules.filter(m => String(m.parent_id) === String(parentId));
                   let all = [...direct];
                   direct.forEach(child => {
                     all.push(...getDescendants(child.id));
